@@ -33,6 +33,7 @@ import { ComposicionSedePage } from './pages/herramientas/ComposicionSedePage';
 import { ComposicionImprimirPage } from './pages/herramientas/ComposicionImprimirPage';
 import { ComprobantesImprimirPage } from './pages/herramientas/ComprobantesImprimirPage';
 import { VideosServicioPage } from './pages/herramientas/VideosServicioPage';
+import { Idea1AgendaPage } from './pages/Idea1AgendaPage';
 
 export default function App() {
   const token = useAuthStore(s => s.token);
@@ -45,6 +46,8 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={token ? <Navigate to="/" replace /> : <LoginPage />} />
+      {/* Vista independiente para probar el diseño TSX de la agenda (Idea 1) */}
+      <Route path="/idea1" element={<Idea1AgendaPage />} />
       {/* Vista de impresión (sin Layout/sidebar) — matriz A4 horizontal para PDF */}
       <Route path="/imprimir/composicion-sede" element={<ComposicionImprimirPage />} />
       {/* Comprobantes del día en una sola hoja (cierre) */}

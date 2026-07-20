@@ -30,12 +30,13 @@ function useRelojLima() {
   });
   return { hora, fecha };
 }
-
+//Sacar para salida a produccion
 const CUENTAS_DEMO = [
   { label: 'Admin', email: 'admin@limablue.pe', pass: 'Admin1234!' },
   { label: 'Coordinadora', email: 'coordinadora@limablue.pe', pass: 'Admin1234!' },
   { label: 'Recepción Los Olivos', email: 'recepcion.losolivos@limablue.pe', pass: 'Recepcion2025!' },
 ];
+
 
 export function LoginPage() {
   const [email, setEmail] = useState('');
