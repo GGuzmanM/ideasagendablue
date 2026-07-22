@@ -15,15 +15,20 @@ import {
 export function Idea1AgendaPage() {
   const { sedeId, setSedeId, fecha, setFecha, unidadNegocioId, setUnidadNegocioId, fechaStr } = useAgendaStore();
 
-  // Estado y ref para el desplegable (Combobox) de Sedes
+  // Estado y refs para los desplegables (Combobox) de Sedes y Especialidades
   const [isSedeOpen, setIsSedeOpen] = useState(false);
+  const [isEspecialidadOpen, setIsEspecialidadOpen] = useState(false);
   const sedeDropdownRef = useRef<HTMLDivElement>(null);
+  const especialidadDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Cerrar el combobox al hacer clic fuera de él
+  // Cerrar desplegables al hacer clic fuera de ellos
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (sedeDropdownRef.current && !sedeDropdownRef.current.contains(event.target as Node)) {
         setIsSedeOpen(false);
+      }
+      if (especialidadDropdownRef.current && !especialidadDropdownRef.current.contains(event.target as Node)) {
+        setIsEspecialidadOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -44,17 +49,23 @@ export function Idea1AgendaPage() {
   }, [sedesDb, sedeId, setSedeId]);
 
   const activeSedeDb = sedesDb?.find((s) => s.id === sedeId);
+  const unidadesDisponibles = activeSedeDb?.unidadesNegocio || [];
 
-  // Auto-seleccionar primera unidad de negocio de la sede
+  // Auto-seleccionar por defecto el área de Podología
   useEffect(() => {
-    if (activeSedeDb && activeSedeDb.unidadesNegocio.length > 0) {
-      if (!unidadNegocioId || !activeSedeDb.unidadesNegocio.find((u) => u.id === unidadNegocioId)) {
-        setUnidadNegocioId(activeSedeDb.unidadesNegocio[0].id);
+    if (unidadesDisponibles.length > 0) {
+      if (!unidadNegocioId || !unidadesDisponibles.find((u) => u.id === unidadNegocioId)) {
+        const podologia = unidadesDisponibles.find((u) =>
+          u.nombre.toLowerCase().includes('podolog')
+        );
+        setUnidadNegocioId(podologia ? podologia.id : unidadesDisponibles[0].id);
       }
     }
-  }, [activeSedeDb, unidadNegocioId, setUnidadNegocioId]);
+  }, [unidadesDisponibles, unidadNegocioId, setUnidadNegocioId]);
 
   const activeSedeName = activeSedeDb?.nombre || 'Seleccionar Sede';
+  const activeUnidad = unidadesDisponibles.find((u) => u.id === unidadNegocioId) || unidadesDisponibles[0];
+  const activeUnidadName = activeUnidad?.nombre || 'Podología';
 
   // 2. Horario efectivo de la sede en la fecha seleccionada
   const { data: horarioData } = useQuery({
@@ -74,31 +85,33 @@ export function Idea1AgendaPage() {
     }
   }
 
-  // 3. Citas desde la Base de Datos para la Sede completa (100% en vivo)
+  // 3. Citas desde la Base de Datos filtradas por Sede y Especialidad / Unidad de Negocio
   const { data: citasDb } = useQuery({
-    queryKey: ['citas', 'idea1', sedeId, fechaStr()],
+    queryKey: ['citas', 'idea1', sedeId, unidadNegocioId, fechaStr()],
     queryFn: () =>
       citasApi.listar({
         sedeId: sedeId!,
+        unidadNegocioId: unidadNegocioId!,
         fecha: fechaStr(),
       }),
-    enabled: !!sedeId,
+    enabled: !!sedeId && !!unidadNegocioId,
     refetchInterval: 5_000,
   });
 
-  // 4. Doctores/Profesionales desde la Base de Datos para la Sede completa
+  // 4. Doctores/Profesionales desde la Base de Datos filtrados por Sede y Especialidad
   const { data: profesionalesDb } = useQuery({
-    queryKey: ['profesionales-sede', sedeId, fechaStr()],
+    queryKey: ['profesionales-sede', sedeId, unidadNegocioId, fechaStr()],
     queryFn: () =>
       profesionalesApi.listar({
         sedeId: sedeId!,
+        unidadNegocioId: unidadNegocioId!,
         fecha: fechaStr(),
         activo: true,
       }),
-    enabled: !!sedeId,
+    enabled: !!sedeId && !!unidadNegocioId,
   });
 
-  // Mapa de doctores para garantizar que cualquier doctor con cita asignada tenga su columna
+  // Mapa de doctores para garantizar que cualquier doctor con cita asignada en la unidad tenga su columna
   const doctoresMap = new Map<string, DoctorAgenda>();
 
   (profesionalesDb || []).forEach((p) => {
@@ -106,7 +119,7 @@ export function Idea1AgendaPage() {
       id: p.id,
       nombres: p.nombres,
       apellidos: p.apellidos,
-      especialidad: p.tipo || 'Podología',
+      especialidad: p.tipo || activeUnidadName,
       activo: p.activo,
       sedeId: p.sedeActual?.id || sedeId || '',
       avatarUrl: undefined,
@@ -121,7 +134,7 @@ export function Idea1AgendaPage() {
         id: pId,
         nombres: p?.nombres || 'Doctor',
         apellidos: p?.apellidos || '',
-        especialidad: 'Podología',
+        especialidad: activeUnidadName,
         activo: true,
         sedeId: sedeId || '',
       });
@@ -274,7 +287,7 @@ export function Idea1AgendaPage() {
   return (
     <div className="bg-background text-on-surface antialiased overflow-hidden flex h-screen w-full">
       {/* SIDE NAVBAR */}
-      <aside className="h-screen sticky top-0 left-0 w-sidebar-expanded bg-on-secondary-fixed border-r border-outline-variant/20 flex flex-col py-8 px-4 z-50 shrink-0">
+      <aside className="h-screen sticky top-0 left-0 w-sidebar-expanded bg-[#0e4f9f] border-r border-outline-variant/20 flex flex-col py-8 px-4 z-50 shrink-0">
         <div className="mb-10 px-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shadow-lg shadow-primary/20">
@@ -358,7 +371,7 @@ export function Idea1AgendaPage() {
       <main className="flex-1 flex flex-col min-w-0 bg-surface">
         {/* TOP NAVBAR */}
         <header className="docked full-width top-0 sticky z-40 bg-surface/80 backdrop-blur-md border-b border-outline-variant/30 shadow-sm flex justify-between items-center w-full px-8 h-16 shrink-0">
-          <div className="flex items-center gap-8 flex-1">
+          <div className="flex items-center gap-6 flex-1">
             <div className="relative w-full max-w-md group">
               <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-lg">
                 search
@@ -387,7 +400,7 @@ export function Idea1AgendaPage() {
                 className="flex items-center gap-2.5 px-4 py-2 bg-surface-container-lowest hover:bg-surface-container-low border border-outline-variant/50 rounded-xl text-on-surface font-semibold text-sm transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
               >
                 <span className="material-symbols-outlined text-primary text-xl">location_on</span>
-                <span className="truncate max-w-[160px]">{activeSedeName}</span>
+                <span className="truncate max-w-[140px]">{activeSedeName}</span>
                 <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
                 <span
                   className={`material-symbols-outlined text-on-surface-variant text-lg transition-transform duration-200 ${
@@ -442,6 +455,70 @@ export function Idea1AgendaPage() {
                 </div>
               )}
             </div>
+
+            {/* Combobox Desplegable de Especialidad / Unidad de Negocio */}
+            <div className="relative hidden md:block" ref={especialidadDropdownRef}>
+              <button
+                type="button"
+                onClick={() => setIsEspecialidadOpen((prev) => !prev)}
+                className="flex items-center gap-2.5 px-4 py-2 bg-surface-container-lowest hover:bg-surface-container-low border border-outline-variant/50 rounded-xl text-on-surface font-semibold text-sm transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+              >
+                <span className="material-symbols-outlined text-primary text-xl">stethoscope</span>
+                <span className="truncate max-w-[140px]">{activeUnidadName}</span>
+                <span className="w-2 h-2 rounded-full bg-primary shrink-0"></span>
+                <span
+                  className={`material-symbols-outlined text-on-surface-variant text-lg transition-transform duration-200 ${
+                    isEspecialidadOpen ? 'rotate-180' : ''
+                  }`}
+                >
+                  expand_more
+                </span>
+              </button>
+
+              {isEspecialidadOpen && unidadesDisponibles.length > 0 && (
+                <div className="absolute left-0 mt-2 w-60 bg-surface-container-lowest border border-outline-variant/40 rounded-2xl shadow-xl z-50 py-2 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                  <div className="px-3 py-2 text-xs font-bold text-on-surface-variant uppercase tracking-wider border-b border-outline-variant/20 flex items-center justify-between">
+                    <span>Especialidad / Área</span>
+                    <span className="bg-primary/10 text-primary px-2 py-0.5 rounded-full text-[10px] font-mono font-bold">
+                      {unidadesDisponibles.length}
+                    </span>
+                  </div>
+                  <div className="max-h-60 overflow-y-auto custom-scrollbar p-1">
+                    {unidadesDisponibles.map((u) => {
+                      const isSelected = u.id === unidadNegocioId;
+                      return (
+                        <button
+                          key={u.id}
+                          onClick={() => {
+                            setUnidadNegocioId(u.id);
+                            setIsEspecialidadOpen(false);
+                          }}
+                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                            isSelected
+                              ? 'bg-primary/10 text-primary font-bold'
+                              : 'text-on-surface hover:bg-surface-container'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 truncate">
+                            <span
+                              className={`w-2 h-2 rounded-full shrink-0 ${
+                                isSelected ? 'bg-primary' : 'bg-outline-variant'
+                              }`}
+                            />
+                            <span className="truncate">{u.nombre}</span>
+                          </div>
+                          {isSelected && (
+                            <span className="material-symbols-outlined text-primary text-base shrink-0">
+                              check
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="flex items-center gap-4">
@@ -471,7 +548,7 @@ export function Idea1AgendaPage() {
                   Horario Diario
                 </h2>
                 <span className="px-3 py-1 font-label-caps text-label-caps rounded-full bg-primary/10 text-primary border border-primary/20">
-                  {activeSedeName}
+                  {activeSedeName} • {activeUnidadName}
                 </span>
               </div>
               <div className="flex flex-wrap items-center gap-4 mt-4">
@@ -589,21 +666,21 @@ export function Idea1AgendaPage() {
             </div>
           </section>
 
-          {/* CALENDAR GRID CONTAINER CON SCROLL HORIZONTAL */}
+          {/* CALENDAR GRID CONTAINER CON SCROLL HORIZONTAL Y LÍNEAS VISIBLES */}
           <div className="bg-surface-container-lowest rounded-3xl border border-outline-variant/40 shadow-sm overflow-hidden flex flex-col h-[750px]">
             <div className="overflow-x-auto custom-scrollbar flex-1 flex flex-col">
               <div
                 className="min-w-max flex flex-col flex-1 relative"
                 style={{ width: `${80 + Math.max(doctores.length, 1) * 220}px` }}
               >
-                {/* GRID HEADER */}
+                {/* GRID HEADER (STICKY Z-30 OPACIDAD 100% PARA OCULTAR CITAS AL SCROLEAR) */}
                 <div
-                  className="grid border-b border-outline-variant/20 bg-surface-container-lowest sticky top-0 z-10"
+                  className="grid border-b border-outline-variant/30 bg-surface-container-lowest sticky top-0 z-30 shadow-sm"
                   style={{
                     gridTemplateColumns: `80px repeat(${Math.max(doctores.length, 1)}, minmax(220px, 1fr))`,
                   }}
                 >
-                  <div className="flex items-center justify-center border-r border-outline-variant/10">
+                  <div className="flex items-center justify-center border-r border-outline-variant/20 bg-surface-container-lowest">
                     <span className="material-symbols-outlined text-on-surface-variant">schedule</span>
                   </div>
 
@@ -611,8 +688,8 @@ export function Idea1AgendaPage() {
                     doctores.map((doc, idx) => (
                       <div
                         key={doc.id}
-                        className={`py-4 px-3 text-center ${
-                          idx < doctores.length - 1 ? 'border-r border-outline-variant/10' : ''
+                        className={`py-4 px-3 text-center bg-surface-container-lowest ${
+                          idx < doctores.length - 1 ? 'border-r border-outline-variant/20' : ''
                         }`}
                       >
                         <img
@@ -629,40 +706,40 @@ export function Idea1AgendaPage() {
                       </div>
                     ))
                   ) : (
-                    <div className="py-8 px-4 text-center text-on-surface-variant text-sm col-span-full font-medium">
-                      No hay doctores activos asignados a esta sede en la fecha seleccionada.
+                    <div className="py-8 px-4 text-center text-on-surface-variant text-sm col-span-full font-medium bg-surface-container-lowest">
+                      No hay doctores activos asignados a esta especialidad en la fecha seleccionada.
                     </div>
                   )}
                 </div>
 
-                {/* GRID CONTENT */}
+                {/* GRID CONTENT CON LÍNEAS VISIBLES ENTRE HORAS Y MÉDICOS */}
                 <div className="flex-1 overflow-y-auto custom-scrollbar relative">
                   <div className="relative">
                     {horarios.map((slot) => (
                       <div
                         key={slot.hora}
-                        className="grid h-20 border-b border-outline-variant/5"
+                        className="grid h-20 border-b border-outline-variant/15"
                         style={{
                           gridTemplateColumns: `80px repeat(${Math.max(doctores.length, 1)}, minmax(220px, 1fr))`,
                         }}
                       >
-                        <div className="flex items-center justify-center font-mono-label text-on-surface-variant border-r border-outline-variant/10 text-xs font-bold">
+                        <div className="flex items-center justify-center font-mono-label text-on-surface-variant border-r border-outline-variant/20 text-xs font-bold bg-surface-container-lowest/50">
                           {slot.hora}
                         </div>
                         {doctores.map((doc, idx) => (
                           <div
                             key={doc.id}
                             className={`h-full ${
-                              idx < doctores.length - 1 ? 'border-r border-outline-variant/5' : ''
+                              idx < doctores.length - 1 ? 'border-r border-outline-variant/15' : ''
                             }`}
                           />
                         ))}
                       </div>
                     ))}
 
-                    {/* OVERLAY DE CITAS POSICIONADAS DINÁMICAMENTE */}
+                    {/* OVERLAY DE CITAS (Z-10 PARA PASAR POR DEBAJO DEL HEADER) */}
                     <div
-                      className="absolute inset-0 left-[80px] grid pointer-events-none z-20"
+                      className="absolute inset-0 left-[80px] grid pointer-events-none z-10"
                       style={{
                         gridTemplateColumns: `repeat(${Math.max(doctores.length, 1)}, minmax(220px, 1fr))`,
                       }}
