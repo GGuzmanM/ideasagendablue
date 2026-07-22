@@ -23,7 +23,7 @@ export function Sidebar() {
   const items = navItems.filter(n => Array.isArray(n.permiso) ? n.permiso.some(p => perms.includes(p)) : perms.includes(n.permiso));
 
   return (
-    <nav className="w-16 bg-limablue-900 flex flex-col items-center py-3 gap-1 flex-shrink-0">
+    <nav className="w-16 bg-[#0e4f9f] flex flex-col items-center py-3 gap-1 flex-shrink-0">
       {/* Logo */}
       <div className="mb-4">
         <div className="w-9 h-9 bg-white rounded-xl flex items-center justify-center p-1.5" title="Limablue Agenda">

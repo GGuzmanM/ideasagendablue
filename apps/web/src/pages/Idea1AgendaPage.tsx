@@ -7,6 +7,14 @@ import {
   obtenerHorariosAgenda,
   getDefaultAvatar,
   formatearFechaAgenda,
+  formatearNombreDoctor,
+  mapearCitasDbACitaAgenda,
+  procesarYOrdenarDoctores,
+  calcularRangoHorarioAgenda,
+  obtenerAtajosFechaRapidos,
+  esMismoDia,
+  timeToMinutes,
+  calcularTopPxLineaActual,
   DoctorAgenda,
   CitaAgenda,
   SlotHorario,
@@ -18,6 +26,7 @@ export function Idea1AgendaPage() {
   // Estado y refs para los desplegables (Combobox) de Sedes y Especialidades
   const [isSedeOpen, setIsSedeOpen] = useState(false);
   const [isEspecialidadOpen, setIsEspecialidadOpen] = useState(false);
+  const [isPaletteOpen, setIsPaletteOpen] = useState(false);
   const sedeDropdownRef = useRef<HTMLDivElement>(null);
   const especialidadDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -74,14 +83,14 @@ export function Idea1AgendaPage() {
     enabled: !!sedeId,
   });
 
-  let horaInicioInt = 8;
-  let horaFinInt = 20;
+  let baseHoraInicioInt = 8;
+  let baseHoraFinInt = 20;
   if (horarioData?.efectivo?.abierto && horarioData.efectivo.apertura && horarioData.efectivo.cierre) {
     const aperturaH = parseInt(horarioData.efectivo.apertura.split(':')[0], 10);
     const cierreH = parseInt(horarioData.efectivo.cierre.split(':')[0], 10);
     if (!isNaN(aperturaH) && !isNaN(cierreH) && aperturaH < cierreH) {
-      horaInicioInt = aperturaH;
-      horaFinInt = cierreH;
+      baseHoraInicioInt = aperturaH;
+      baseHoraFinInt = cierreH;
     }
   }
 
@@ -144,109 +153,35 @@ export function Idea1AgendaPage() {
   // 5. Query de seleccionables para detectar bloqueos y vacaciones en tiempo real
   const { data: seleccionablesDb } = useQuery({
     queryKey: ['seleccionables', sedeId, unidadNegocioId, fechaStr()],
-    queryFn: () =>
-      profesionalesApi.seleccionables({
-        sedeId: sedeId!,
-        unidadNegocioId: unidadNegocioId!,
-        fecha: fechaStr(),
-      }),
+    queryFn: async () => {
+      try {
+        if (!sedeId || !unidadNegocioId) return [];
+        return await profesionalesApi.seleccionables({
+          sedeId,
+          unidadNegocioId,
+          fecha: fechaStr(),
+        });
+      } catch (err) {
+        console.warn('Error al cargar seleccionables/bloqueos:', err);
+        return [];
+      }
+    },
     enabled: !!sedeId && !!unidadNegocioId,
   });
 
-  const citas: CitaAgenda[] = (citasDb || []).map((c) => {
-    const hInicio = c.horaInicio || '09:00';
-    const duracion = c.duracionMinutos || 30;
-    const [h, m] = hInicio.split(':').map(Number);
-    const totalMin = (h || 0) * 60 + (m || 0) + duracion;
-    const endH = Math.floor(totalMin / 60);
-    const endM = totalMin % 60;
-    const hFin = `${endH.toString().padStart(2, '0')}:${endM.toString().padStart(2, '0')}`;
+  // 6. Transformación y ordenamiento de citas y doctores usando la capa de servicio
+  const citas: CitaAgenda[] = mapearCitasDbACitaAgenda(citasDb || []);
 
-    let estadoNormalizado: CitaAgenda['estado'] = 'AGENDADA';
-    const st = (c.estado || '').toLowerCase();
-    if (st === 'en_atencion' || st === 'en atencion' || st === 'en atención') estadoNormalizado = 'EN ATENCIÓN';
-    else if (st === 'confirmada' || st === 'llego' || st === 'llegó') estadoNormalizado = 'CONFIRMADA';
-    else if (st === 'completada') estadoNormalizado = 'COMPLETADA';
-    else if (st === 'no_show' || st === 'no show') estadoNormalizado = 'NO SHOW';
-
-    let etiquetaAsignacion = '';
-    if (c.origenAsignacion === 'elegida_por_paciente' || c.solicitadoProfesional) {
-      const primerNombre =
-        c.solicitadoProfesional?.nombres?.split(' ')[0] ||
-        c.profesional?.nombres?.split(' ')[0] ||
-        '';
-      if (primerNombre) etiquetaAsignacion = `Solo ${primerNombre}`;
-    }
-
-    const pacienteNombre = c.paciente
-      ? `${c.paciente.nombres} ${c.paciente.apellidoPaterno || ''} ${c.paciente.apellidoMaterno || ''}`.trim()
-      : 'Paciente';
-
-    const targetDoctorId = c.profesionalId || (c as any).solicitadoProfesionalId || c.solicitadoProfesional?.id || '';
-
-    return {
-      id: c.id,
-      doctorId: targetDoctorId,
-      horaInicio: hInicio,
-      horaFin: hFin,
-      duracionMinutos: duracion,
-      paciente: pacienteNombre,
-      motivo: c.servicio?.nombre || 'Consulta Médica',
-      servicioNombre: c.servicio?.nombre,
-      subcategoriaNombre: c.subcategoria?.nombre,
-      etiquetaAsignacion,
-      estado: estadoNormalizado,
-    };
+  const doctores: DoctorAgenda[] = procesarYOrdenarDoctores({
+    profesionalesDb,
+    citasDb,
+    citasAgenda: citas,
+    seleccionablesDb,
+    activeUnidadName,
+    sedeId,
   });
 
-  // Ordenar los doctores por prioridad:
-  // 1º Doctores con más citas pendientes (Jenny: 2 > Fiorella: 1 > Erika: 0)
-  // 2º Doctores en Vacaciones pasan al FINAL de la lista (derecha)
-  const doctores: DoctorAgenda[] = Array.from(doctoresMap.values())
-    .map((doc) => {
-      const sel = seleccionablesDb?.find((s) => s.id === doc.id);
-      const tieneVacaciones =
-        sel?.bloqueos?.some((b) => {
-          const m = (b.motivo || '').toLowerCase();
-          const t = (b.tipo || '').toLowerCase();
-          return m.includes('vacac') || t.includes('vacac') || m.includes('licencia') || t === 'permiso';
-        }) || false;
-
-      const count = citas.filter((c) => c.doctorId === doc.id).length;
-
-      return {
-        ...doc,
-        enVacaciones: tieneVacaciones,
-        citasCount: count,
-      };
-    })
-    .sort((a, b) => {
-      // Regla 1: Doctores en vacaciones pasan AL FINAL
-      if (a.enVacaciones && !b.enVacaciones) return 1;
-      if (!a.enVacaciones && b.enVacaciones) return -1;
-
-      // Regla 2: Mayor cantidad de citas primero
-      if ((b.citasCount || 0) !== (a.citasCount || 0)) {
-        return (b.citasCount || 0) - (a.citasCount || 0);
-      }
-
-      // Regla 3: Orden alfabético secundario por nombre
-      return a.nombres.localeCompare(b.nombres);
-    });
-
-  // Ajustar hora inicio y fin de la grilla si hay citas fuera del horario comercial regular
-  if (citas.length > 0) {
-    citas.forEach((c) => {
-      const startH = parseInt(c.horaInicio.split(':')[0], 10);
-      if (!isNaN(startH)) {
-        if (startH < horaInicioInt) horaInicioInt = startH;
-        const [h, m] = c.horaInicio.split(':').map(Number);
-        const endMin = (h || 0) * 60 + (m || 0) + (c.duracionMinutos || 30);
-        const endH = Math.ceil(endMin / 60);
-        if (endH > horaFinInt) horaFinInt = endH;
-      }
-    });
-  }
+  const { horaInicioInt, horaFinInt } = calcularRangoHorarioAgenda(baseHoraInicioInt, baseHoraFinInt, citas);
 
   const horarios: SlotHorario[] = obtenerHorariosAgenda(horaInicioInt, horaFinInt);
 
@@ -262,8 +197,54 @@ export function Idea1AgendaPage() {
   const completadasCitas = statsDb?.completadas ?? 0;
   const noShowCitas = statsDb?.noShows ?? 0;
 
-  // Estado del modal de comando (⌘K / Ctrl+K)
-  const [isPaletteOpen, setIsPaletteOpen] = useState(false);
+  // Refs para sincronización de scrollbars superior e inferior
+  const topScrollRef = useRef<HTMLDivElement>(null);
+  const mainScrollRef = useRef<HTMLDivElement>(null);
+  const isSyncingScroll = useRef(false);
+  const [scrollContentWidth, setScrollContentWidth] = useState(0);
+
+  useEffect(() => {
+    const updateWidth = () => {
+      if (mainScrollRef.current) {
+        setScrollContentWidth(mainScrollRef.current.scrollWidth);
+      }
+    };
+    updateWidth();
+    const timer = setTimeout(updateWidth, 300);
+    return () => clearTimeout(timer);
+  }, [doctores.length, sedeId, unidadNegocioId]);
+
+  const handleTopScroll = () => {
+    if (isSyncingScroll.current) return;
+    isSyncingScroll.current = true;
+    if (topScrollRef.current && mainScrollRef.current) {
+      mainScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft;
+    }
+    requestAnimationFrame(() => {
+      isSyncingScroll.current = false;
+    });
+  };
+
+  const handleMainScroll = () => {
+    if (isSyncingScroll.current) return;
+    isSyncingScroll.current = true;
+    if (topScrollRef.current && mainScrollRef.current) {
+      topScrollRef.current.scrollLeft = mainScrollRef.current.scrollLeft;
+    }
+    requestAnimationFrame(() => {
+      isSyncingScroll.current = false;
+    });
+  };
+
+  const scrollGrid = (direction: 'left' | 'right') => {
+    if (mainScrollRef.current) {
+      const scrollAmount = 360;
+      mainScrollRef.current.scrollBy({
+        left: direction === 'left' ? -scrollAmount : scrollAmount,
+        behavior: 'smooth',
+      });
+    }
+  };
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -279,56 +260,19 @@ export function Idea1AgendaPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // 6. Generación dinámica de atajos de fecha: "Hoy", "Mañana", "Sábado"
-  const getQuickDateShortcuts = () => {
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-
-    const dayOfWeek = today.getDay();
-    const daysUntilSaturday = (6 - dayOfWeek + 7) % 7;
-    const nextSaturday = new Date(today);
-    if (daysUntilSaturday === 0) {
-      nextSaturday.setDate(nextSaturday.getDate() + 7);
-    } else {
-      nextSaturday.setDate(nextSaturday.getDate() + daysUntilSaturday);
-    }
-
-    const isTomorrowSaturday = tomorrow.getTime() === nextSaturday.getTime();
-
-    if (isTomorrowSaturday) {
-      return [
-        { label: 'Hoy', date: today },
-        { label: 'Sábado', date: tomorrow },
-      ];
-    }
-
-    return [
-      { label: 'Hoy', date: today },
-      { label: 'Mañana', date: tomorrow },
-      { label: 'Sábado', date: nextSaturday },
-    ];
-  };
-
-  const quickShortcuts = getQuickDateShortcuts();
-  const isSameDayCheck = (d1: Date, d2: Date) =>
-    d1.getFullYear() === d2.getFullYear() &&
-    d1.getMonth() === d2.getMonth() &&
-    d1.getDate() === d2.getDate();
-
-  const timeToMinutes = (timeStr: string = '00:00') => {
-    const [h, m] = timeStr.split(':').map(Number);
-    return (h || 0) * 60 + (m || 0);
-  };
-
-  const ROW_HEIGHT = 100; // 100px por hora para dar espacio amplio y sin saturación
+  // 7. Generación dinámica de atajos de fecha y cálculo de posición de línea de hora actual
+  const quickShortcuts = obtenerAtajosFechaRapidos();
+  const ROW_HEIGHT = 100; // 100px por hora para espacio amplio sin saturación
   const now = new Date();
-  const currentMinutes = now.getHours() * 60 + now.getMinutes();
-  const startGridMinutes = horaInicioInt * 60;
-  const currentTimeTopPx = ((currentMinutes - startGridMinutes) / 60) * ROW_HEIGHT;
-  const isCurrentDayActive = isSameDayCheck(fecha, now);
+  const currentTimeTopPx = calcularTopPxLineaActual(horaInicioInt, ROW_HEIGHT);
+  const isCurrentDayActive = esMismoDia(fecha, now);
+
+  // Configuración del layout de grilla: Máximo 6 doctores visibles por pantalla sin achicar el ancho
+  const MAX_VISIBLE_DOCTORS = 6;
+  const numDoctores = Math.max(doctores.length, 1);
+  const visibleCols = Math.min(numDoctores, MAX_VISIBLE_DOCTORS);
+  const doctorColWidthCss = `calc(max(180px, (100% - 80px) / ${visibleCols}))`;
+  const gridTemplateColsCss = `80px repeat(${numDoctores}, ${doctorColWidthCss})`;
 
   return (
     <div className="bg-background text-on-surface antialiased overflow-hidden flex h-screen w-full">
@@ -636,7 +580,7 @@ export function Idea1AgendaPage() {
                 {/* Atajos Dinámicos: Hoy, Mañana, Sábado */}
                 <div className="flex items-center bg-surface-container-lowest border border-outline-variant/50 rounded-xl p-1 shadow-sm gap-1">
                   {quickShortcuts.map((sc) => {
-                    const isActive = isSameDayCheck(fecha, sc.date);
+                    const isActive = esMismoDia(fecha, sc.date);
                     return (
                       <button
                         key={sc.label}
@@ -714,13 +658,59 @@ export function Idea1AgendaPage() {
 
           {/* CALENDAR GRID CONTAINER */}
           <div className="bg-surface-container-lowest rounded-3xl border border-outline-variant/40 shadow-sm flex flex-col h-[750px] w-full overflow-hidden">
-            <div className="flex-1 overflow-auto custom-scrollbar relative w-full">
+            {/* BARRA SUPERIOR DE SCROLL E INDICADORES (SI HAY MÁS DE 6 DOCTORES) */}
+            {doctores.length > 6 && (
+              <div className="bg-surface-container-low border-b border-outline-variant/30 px-3 py-1.5 flex items-center justify-between gap-3 sticky top-0 z-40 shadow-sm shrink-0">
+                <div className="flex items-center gap-2 text-xs font-semibold text-on-surface-variant">
+                  <span className="material-symbols-outlined text-sm text-primary">swap_horiz</span>
+                  <span>{doctores.length} doctores listados</span>
+                </div>
+
+                {/* SCROLLBAR SUPERIOR SINCRONIZADO */}
+                <div
+                  ref={topScrollRef}
+                  onScroll={handleTopScroll}
+                  className="flex-1 overflow-x-auto custom-scrollbar h-3 flex items-center"
+                >
+                  <div
+                    style={{
+                      width: scrollContentWidth > 0 ? `${scrollContentWidth}px` : `calc(80px + ${doctores.length} * 180px)`,
+                      height: '4px',
+                    }}
+                  />
+                </div>
+
+                {/* BOTONES DE DESPLAZAMIENTO RÁPIDO */}
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => scrollGrid('left')}
+                    title="Deslizar a la izquierda"
+                    className="p-1 rounded-lg hover:bg-primary/10 text-on-surface-variant hover:text-primary transition-colors border border-outline-variant/30 flex items-center justify-center"
+                  >
+                    <span className="material-symbols-outlined text-sm">chevron_left</span>
+                  </button>
+                  <button
+                    onClick={() => scrollGrid('right')}
+                    title="Deslizar a la derecha"
+                    className="p-1 rounded-lg hover:bg-primary/10 text-on-surface-variant hover:text-primary transition-colors border border-outline-variant/30 flex items-center justify-center"
+                  >
+                    <span className="material-symbols-outlined text-sm">chevron_right</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div
+              ref={mainScrollRef}
+              onScroll={handleMainScroll}
+              className="flex-1 overflow-auto custom-scrollbar relative w-full"
+            >
               <div className="min-w-full inline-block align-top relative">
                 {/* GRID HEADER */}
                 <div
                   className="grid border-b border-outline-variant/30 bg-surface-container-lowest sticky top-0 z-30 shadow-sm min-w-full"
                   style={{
-                    gridTemplateColumns: `80px repeat(${Math.max(doctores.length, 1)}, minmax(180px, 1fr))`,
+                    gridTemplateColumns: gridTemplateColsCss,
                   }}
                 >
                   <div className="flex items-center justify-center border-r border-outline-variant/20 bg-surface-container-lowest sticky left-0 z-50">
@@ -729,9 +719,7 @@ export function Idea1AgendaPage() {
 
                   {doctores.length > 0 ? (
                     doctores.map((doc, idx) => {
-                      const primerNombre = (doc.nombres || '').trim().split(/\s+/)[0] || '';
-                      const primerApellido = (doc.apellidos || '').trim().split(/\s+/)[0] || '';
-                      const nombreCorto = `${primerNombre} ${primerApellido}`.trim();
+                      const nombreCorto = formatearNombreDoctor(doc.nombres, doc.apellidos);
 
                       return (
                         <div
@@ -803,7 +791,7 @@ export function Idea1AgendaPage() {
                       key={slot.hora}
                       className="grid h-[100px] border-b border-outline-variant/15 min-w-full"
                       style={{
-                        gridTemplateColumns: `80px repeat(${Math.max(doctores.length, 1)}, minmax(180px, 1fr))`,
+                        gridTemplateColumns: gridTemplateColsCss,
                       }}
                     >
                       <div className="flex items-center justify-center font-mono-label text-on-surface-variant border-r border-outline-variant/20 text-xs font-bold bg-surface-container-lowest sticky left-0 z-20">
@@ -822,11 +810,14 @@ export function Idea1AgendaPage() {
 
                   {/* OVERLAY DE CITAS Y BLOQUEOS DE VACACIONES */}
                   <div
-                    className="absolute inset-0 left-[80px] grid pointer-events-none z-10 right-0"
+                    className="absolute inset-0 grid pointer-events-none z-10 min-w-full"
                     style={{
-                      gridTemplateColumns: `repeat(${Math.max(doctores.length, 1)}, minmax(180px, 1fr))`,
+                      gridTemplateColumns: gridTemplateColsCss,
                     }}
                   >
+                    {/* Espaciador alineado con el eje de tiempo (80px) */}
+                    <div className="pointer-events-none" />
+
                     {doctores.map((doc) => {
                       if (doc.enVacaciones) {
                         return (
@@ -1021,10 +1012,6 @@ export function Idea1AgendaPage() {
                   NO SHOW
                 </span>
               </div>
-            </div>
-            <div className="flex items-center gap-2 text-on-surface-variant">
-              <span className="material-symbols-outlined text-sm">info</span>
-              <p className="font-body-md text-[11px]">Sistema conectado en vivo a la BD</p>
             </div>
           </footer>
         </div>

@@ -50,7 +50,36 @@ export function formatearFechaAgenda(fecha: Date): string {
 }
 
 /**
- * 1. Genera dinámicamente el rango de horarios para la agenda (por defecto de 9am a 6pm / 18:00)
+ * Formatea el nombre completo del doctor a "Primer Nombre + Primer Apellido"
+ * Ej: "Glenda Milagritos" "Paredes Salinas" -> "Glenda Paredes"
+ */
+export function formatearNombreDoctor(nombres = '', apellidos = ''): string {
+  const primerNombre = nombres.trim().split(/\s+/)[0] || '';
+  const primerApellido = apellidos.trim().split(/\s+/)[0] || '';
+  return `${primerNombre} ${primerApellido}`.trim() || 'Doctor';
+}
+
+/**
+ * Convierte una hora HH:MM a minutos totales desde las 00:00
+ */
+export function timeToMinutes(timeStr = '00:00'): number {
+  const [h, m] = timeStr.split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
+/**
+ * Compara si dos fechas corresponden al mismo día (año, mes y día)
+ */
+export function esMismoDia(d1: Date, d2: Date): boolean {
+  return (
+    d1.getFullYear() === d2.getFullYear() &&
+    d1.getMonth() === d2.getMonth() &&
+    d1.getDate() === d2.getDate()
+  );
+}
+
+/**
+ * Genera dinámicamente el rango de slots horarios para la agenda (por hora)
  */
 export function obtenerHorariosAgenda(inicio = 9, fin = 18): SlotHorario[] {
   const slots: SlotHorario[] = [];
@@ -67,9 +96,214 @@ export function obtenerHorariosAgenda(inicio = 9, fin = 18): SlotHorario[] {
 /**
  * Avatar por defecto limpio (SVG Data URI) si no hay foto de perfil
  */
-export function getDefaultAvatar(nombre: string = 'Doctor'): string {
+export function getDefaultAvatar(nombre = 'Doctor'): string {
   const inicial = nombre.trim().charAt(0).toUpperCase() || 'D';
   return `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><rect width="100" height="100" fill="%234537cd" rx="50"/><text x="50%" y="55%" dominant-baseline="middle" text-anchor="middle" fill="white" font-family="sans-serif" font-size="40" font-weight="bold">${inicial}</text></svg>`;
 }
 
+/**
+ * Transforma el listado de citas provenientes de la BD al modelo `CitaAgenda[]`
+ */
+export function mapearCitasDbACitaAgenda(citasDb: any[] = []): CitaAgenda[] {
+  return citasDb.map((c) => {
+    const hInicio = c.horaInicio || '09:00';
+    const duracion = c.duracionMinutos || 30;
+    const [h, m] = hInicio.split(':').map(Number);
+    const totalMin = (h || 0) * 60 + (m || 0) + duracion;
+    const endH = Math.floor(totalMin / 60);
+    const endM = totalMin % 60;
+    const hFin = `${endH.toString().padStart(2, '0')}:${endM.toString().padStart(2, '0')}`;
 
+    let estadoNormalizado: CitaAgenda['estado'] = 'AGENDADA';
+    const st = (c.estado || '').toLowerCase();
+    if (st === 'en_atencion' || st === 'en atencion' || st === 'en atención') estadoNormalizado = 'EN ATENCIÓN';
+    else if (st === 'confirmada' || st === 'llego' || st === 'llegó') estadoNormalizado = 'CONFIRMADA';
+    else if (st === 'completada') estadoNormalizado = 'COMPLETADA';
+    else if (st === 'no_show' || st === 'no show') estadoNormalizado = 'NO SHOW';
+
+    let etiquetaAsignacion = '';
+    if (c.origenAsignacion === 'elegida_por_paciente' || c.solicitadoProfesional) {
+      const primerNombre =
+        c.solicitadoProfesional?.nombres?.split(' ')[0] ||
+        c.profesional?.nombres?.split(' ')[0] ||
+        '';
+      if (primerNombre) etiquetaAsignacion = `Solo ${primerNombre}`;
+    }
+
+    const pacienteNombre = c.paciente
+      ? `${c.paciente.nombres} ${c.paciente.apellidoPaterno || ''} ${c.paciente.apellidoMaterno || ''}`.trim()
+      : 'Paciente';
+
+    const targetDoctorId = c.profesionalId || (c as any).solicitadoProfesionalId || c.solicitadoProfesional?.id || '';
+
+    return {
+      id: c.id,
+      doctorId: targetDoctorId,
+      horaInicio: hInicio,
+      horaFin: hFin,
+      duracionMinutos: duracion,
+      paciente: pacienteNombre,
+      motivo: c.servicio?.nombre || 'Consulta Médica',
+      servicioNombre: c.servicio?.nombre,
+      subcategoriaNombre: c.subcategoria?.nombre,
+      etiquetaAsignacion,
+      estado: estadoNormalizado,
+    };
+  });
+}
+
+/**
+ * Procesa y ordena el listado de doctores para la grilla de agenda por reglas de negocio:
+ * 1º Doctores con vacaciones pasan al FINAL (derecha) con bloque de horario sombreado
+ * 2º Mayor cantidad de citas activas primero
+ * 3º Orden alfabético secundario por nombre
+ */
+export function procesarYOrdenarDoctores(params: {
+  profesionalesDb?: any[];
+  citasDb?: any[];
+  citasAgenda: CitaAgenda[];
+  seleccionablesDb?: any[];
+  activeUnidadName: string;
+  sedeId?: string | null;
+}): DoctorAgenda[] {
+  const {
+    profesionalesDb = [],
+    citasDb = [],
+    citasAgenda = [],
+    seleccionablesDb = [],
+    activeUnidadName,
+    sedeId = '',
+  } = params;
+
+  const doctoresMap = new Map<string, DoctorAgenda>();
+
+  profesionalesDb.forEach((p) => {
+    doctoresMap.set(p.id, {
+      id: p.id,
+      nombres: p.nombres,
+      apellidos: p.apellidos,
+      especialidad: p.tipo || activeUnidadName,
+      activo: p.activo,
+      sedeId: p.sedeActual?.id || sedeId || '',
+      avatarUrl: undefined,
+    });
+  });
+
+  citasDb.forEach((c) => {
+    const p = c.profesional || c.solicitadoProfesional;
+    const pId = c.profesionalId || (c as any).solicitadoProfesionalId || c.solicitadoProfesional?.id;
+    if (pId && !doctoresMap.has(pId)) {
+      doctoresMap.set(pId, {
+        id: pId,
+        nombres: p?.nombres || 'Doctor',
+        apellidos: p?.apellidos || '',
+        especialidad: activeUnidadName,
+        activo: true,
+        sedeId: sedeId || '',
+      });
+    }
+  });
+
+  return Array.from(doctoresMap.values())
+    .map((doc) => {
+      const sel = seleccionablesDb.find((s) => s.id === doc.id);
+      const tieneVacaciones =
+        sel?.bloqueos?.some((b: any) => {
+          const m = (b.motivo || '').toLowerCase();
+          const t = (b.tipo || '').toLowerCase();
+          return m.includes('vacac') || t.includes('vacac') || m.includes('licencia') || t === 'permiso';
+        }) || false;
+
+      const count = citasAgenda.filter((c) => c.doctorId === doc.id).length;
+
+      return {
+        ...doc,
+        enVacaciones: tieneVacaciones,
+        citasCount: count,
+      };
+    })
+    .sort((a, b) => {
+      // Regla 1: Doctores en vacaciones pasan AL FINAL
+      if (a.enVacaciones && !b.enVacaciones) return 1;
+      if (!a.enVacaciones && b.enVacaciones) return -1;
+
+      // Regla 2: Mayor cantidad de citas primero
+      if ((b.citasCount || 0) !== (a.citasCount || 0)) {
+        return (b.citasCount || 0) - (a.citasCount || 0);
+      }
+
+      // Regla 3: Orden alfabético secundario por nombre
+      return a.nombres.localeCompare(b.nombres);
+    });
+}
+
+/**
+ * Calcula el rango horario dinamico de la grilla si existen citas agendadas fuera del horario comercial regular
+ */
+export function calcularRangoHorarioAgenda(
+  horaInicioBase: number,
+  horaFinBase: number,
+  citas: CitaAgenda[]
+): { horaInicioInt: number; horaFinInt: number } {
+  let hInicio = horaInicioBase;
+  let hFin = horaFinBase;
+
+  if (citas.length > 0) {
+    citas.forEach((c) => {
+      const startH = parseInt(c.horaInicio.split(':')[0], 10);
+      if (!isNaN(startH)) {
+        if (startH < hInicio) hInicio = startH;
+        const [h, m] = c.horaInicio.split(':').map(Number);
+        const endMin = (h || 0) * 60 + (m || 0) + (c.duracionMinutos || 30);
+        const endH = Math.ceil(endMin / 60);
+        if (endH > hFin) hFin = endH;
+      }
+    });
+  }
+
+  return { horaInicioInt: hInicio, horaFinInt: hFin };
+}
+
+/**
+ * Genera dinámicamente los atajos rápidos de fecha ("Hoy", "Mañana", "Sábado")
+ */
+export function obtenerAtajosFechaRapidos(referenciaDate: Date = new Date()): { label: string; date: Date }[] {
+  const today = new Date(referenciaDate.getFullYear(), referenciaDate.getMonth(), referenciaDate.getDate());
+
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  const dayOfWeek = today.getDay();
+  const daysUntilSaturday = (6 - dayOfWeek + 7) % 7;
+  const nextSaturday = new Date(today);
+  if (daysUntilSaturday === 0) {
+    nextSaturday.setDate(nextSaturday.getDate() + 7);
+  } else {
+    nextSaturday.setDate(nextSaturday.getDate() + daysUntilSaturday);
+  }
+
+  const isTomorrowSaturday = tomorrow.getTime() === nextSaturday.getTime();
+
+  if (isTomorrowSaturday) {
+    return [
+      { label: 'Hoy', date: today },
+      { label: 'Sábado', date: tomorrow },
+    ];
+  }
+
+  return [
+    { label: 'Hoy', date: today },
+    { label: 'Mañana', date: tomorrow },
+    { label: 'Sábado', date: nextSaturday },
+  ];
+}
+
+/**
+ * Calcula la posicion top en pixeles de la linea de hora actual en la grilla
+ */
+export function calcularTopPxLineaActual(horaInicioInt: number, rowHeight = 100): number {
+  const now = new Date();
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  const startGridMinutes = horaInicioInt * 60;
+  return ((currentMinutes - startGridMinutes) / 60) * rowHeight;
+}

@@ -46,14 +46,15 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={token ? <Navigate to="/" replace /> : <LoginPage />} />
-      {/* Vista independiente para probar el diseño TSX de la agenda (Idea 1) */}
+      {/* Vista principal de la agenda (Diseño Idea 1) */}
       <Route path="/idea1" element={<Idea1AgendaPage />} />
       {/* Vista de impresión (sin Layout/sidebar) — matriz A4 horizontal para PDF */}
       <Route path="/imprimir/composicion-sede" element={<ComposicionImprimirPage />} />
       {/* Comprobantes del día en una sola hoja (cierre) */}
       <Route path="/imprimir/comprobantes" element={<ComprobantesImprimirPage />} />
+      <Route path="/" element={<Idea1AgendaPage />} />
       <Route element={<Layout />}>
-        <Route path="/" element={<AgendaPage />} />
+        <Route path="/agenda-vieja" element={<AgendaPage />} />
         <Route path="/pacientes" element={<PacientesPage />} />
         <Route path="/pacientes/:id" element={<FichaPacientePage />} />
         <Route path="/herramientas" element={<HerramientasPage />} />
