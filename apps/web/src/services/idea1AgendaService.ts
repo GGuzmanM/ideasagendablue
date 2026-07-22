@@ -17,6 +17,8 @@ export interface DoctorAgenda {
   activo: boolean;
   sedeId: string;
   avatarUrl?: string;
+  enVacaciones?: boolean;
+  citasCount?: number;
 }
 
 export interface CitaAgenda {

@@ -141,7 +141,17 @@ export function Idea1AgendaPage() {
     }
   });
 
-  const doctores: DoctorAgenda[] = Array.from(doctoresMap.values());
+  // 5. Query de seleccionables para detectar bloqueos y vacaciones en tiempo real
+  const { data: seleccionablesDb } = useQuery({
+    queryKey: ['seleccionables', sedeId, unidadNegocioId, fechaStr()],
+    queryFn: () =>
+      profesionalesApi.seleccionables({
+        sedeId: sedeId!,
+        unidadNegocioId: unidadNegocioId!,
+        fecha: fechaStr(),
+      }),
+    enabled: !!sedeId && !!unidadNegocioId,
+  });
 
   const citas: CitaAgenda[] = (citasDb || []).map((c) => {
     const hInicio = c.horaInicio || '09:00';
@@ -188,6 +198,41 @@ export function Idea1AgendaPage() {
       estado: estadoNormalizado,
     };
   });
+
+  // Ordenar los doctores por prioridad:
+  // 1º Doctores con más citas pendientes (Jenny: 2 > Fiorella: 1 > Erika: 0)
+  // 2º Doctores en Vacaciones pasan al FINAL de la lista (derecha)
+  const doctores: DoctorAgenda[] = Array.from(doctoresMap.values())
+    .map((doc) => {
+      const sel = seleccionablesDb?.find((s) => s.id === doc.id);
+      const tieneVacaciones =
+        sel?.bloqueos?.some((b) => {
+          const m = (b.motivo || '').toLowerCase();
+          const t = (b.tipo || '').toLowerCase();
+          return m.includes('vacac') || t.includes('vacac') || m.includes('licencia') || t === 'permiso';
+        }) || false;
+
+      const count = citas.filter((c) => c.doctorId === doc.id).length;
+
+      return {
+        ...doc,
+        enVacaciones: tieneVacaciones,
+        citasCount: count,
+      };
+    })
+    .sort((a, b) => {
+      // Regla 1: Doctores en vacaciones pasan AL FINAL
+      if (a.enVacaciones && !b.enVacaciones) return 1;
+      if (!a.enVacaciones && b.enVacaciones) return -1;
+
+      // Regla 2: Mayor cantidad de citas primero
+      if ((b.citasCount || 0) !== (a.citasCount || 0)) {
+        return (b.citasCount || 0) - (a.citasCount || 0);
+      }
+
+      // Regla 3: Orden alfabético secundario por nombre
+      return a.nombres.localeCompare(b.nombres);
+    });
 
   // Ajustar hora inicio y fin de la grilla si hay citas fuera del horario comercial regular
   if (citas.length > 0) {
@@ -278,10 +323,11 @@ export function Idea1AgendaPage() {
     return (h || 0) * 60 + (m || 0);
   };
 
+  const ROW_HEIGHT = 100; // 100px por hora para dar espacio amplio y sin saturación
   const now = new Date();
   const currentMinutes = now.getHours() * 60 + now.getMinutes();
   const startGridMinutes = horaInicioInt * 60;
-  const currentTimeTopPx = ((currentMinutes - startGridMinutes) / 60) * 80;
+  const currentTimeTopPx = ((currentMinutes - startGridMinutes) / 60) * ROW_HEIGHT;
   const isCurrentDayActive = isSameDayCheck(fecha, now);
 
   return (
@@ -666,45 +712,83 @@ export function Idea1AgendaPage() {
             </div>
           </section>
 
-          {/* CALENDAR GRID CONTAINER CON SCROLL HORIZONTAL Y LÍNEAS VISIBLES */}
-          <div className="bg-surface-container-lowest rounded-3xl border border-outline-variant/40 shadow-sm overflow-hidden flex flex-col h-[750px]">
-            <div className="overflow-x-auto custom-scrollbar flex-1 flex flex-col">
-              <div
-                className="min-w-max flex flex-col flex-1 relative"
-                style={{ width: `${80 + Math.max(doctores.length, 1) * 220}px` }}
-              >
-                {/* GRID HEADER (STICKY Z-30 OPACIDAD 100% PARA OCULTAR CITAS AL SCROLEAR) */}
+          {/* CALENDAR GRID CONTAINER */}
+          <div className="bg-surface-container-lowest rounded-3xl border border-outline-variant/40 shadow-sm flex flex-col h-[750px] w-full overflow-hidden">
+            <div className="flex-1 overflow-auto custom-scrollbar relative w-full">
+              <div className="min-w-full inline-block align-top relative">
+                {/* GRID HEADER */}
                 <div
-                  className="grid border-b border-outline-variant/30 bg-surface-container-lowest sticky top-0 z-30 shadow-sm"
+                  className="grid border-b border-outline-variant/30 bg-surface-container-lowest sticky top-0 z-30 shadow-sm min-w-full"
                   style={{
-                    gridTemplateColumns: `80px repeat(${Math.max(doctores.length, 1)}, minmax(220px, 1fr))`,
+                    gridTemplateColumns: `80px repeat(${Math.max(doctores.length, 1)}, minmax(180px, 1fr))`,
                   }}
                 >
-                  <div className="flex items-center justify-center border-r border-outline-variant/20 bg-surface-container-lowest">
+                  <div className="flex items-center justify-center border-r border-outline-variant/20 bg-surface-container-lowest sticky left-0 z-50">
                     <span className="material-symbols-outlined text-on-surface-variant">schedule</span>
                   </div>
 
                   {doctores.length > 0 ? (
-                    doctores.map((doc, idx) => (
-                      <div
-                        key={doc.id}
-                        className={`py-4 px-3 text-center bg-surface-container-lowest ${
-                          idx < doctores.length - 1 ? 'border-r border-outline-variant/20' : ''
-                        }`}
-                      >
-                        <img
-                          alt={`${doc.nombres} ${doc.apellidos}`}
-                          className="w-12 h-12 rounded-full mx-auto mb-2 border-2 border-primary/10 object-cover"
-                          src={doc.avatarUrl || getDefaultAvatar(doc.nombres)}
-                        />
-                        <p className="font-headline-sm text-headline-sm text-sm font-bold text-on-surface truncate">
-                          {doc.nombres} {doc.apellidos}
-                        </p>
-                        <p className="font-label-caps text-[10px] text-on-surface-variant tracking-wider uppercase truncate">
-                          {doc.especialidad}
-                        </p>
-                      </div>
-                    ))
+                    doctores.map((doc, idx) => {
+                      const primerNombre = (doc.nombres || '').trim().split(/\s+/)[0] || '';
+                      const primerApellido = (doc.apellidos || '').trim().split(/\s+/)[0] || '';
+                      const nombreCorto = `${primerNombre} ${primerApellido}`.trim();
+
+                      return (
+                        <div
+                          key={doc.id}
+                          className={`py-3 px-1.5 text-center min-w-0 transition-all ${
+                            doc.enVacaciones ? 'bg-amber-500/5' : 'bg-surface-container-lowest'
+                          } ${idx < doctores.length - 1 ? 'border-r border-outline-variant/20' : ''}`}
+                        >
+                          <div className="relative inline-block mx-auto mb-1">
+                            <img
+                              alt={`${doc.nombres} ${doc.apellidos}`}
+                              className={`w-10 h-10 md:w-11 md:h-11 rounded-full mx-auto border-2 object-cover ${
+                                doc.enVacaciones
+                                  ? 'border-amber-500/40 opacity-75 grayscale-[20%]'
+                                  : 'border-primary/10'
+                              }`}
+                              src={doc.avatarUrl || getDefaultAvatar(doc.nombres)}
+                            />
+                            {doc.enVacaciones && (
+                              <span className="absolute -bottom-1 -right-1 text-xs" title="En Vacaciones">
+                                🌴
+                              </span>
+                            )}
+                          </div>
+                          <p
+                            className="font-headline-sm text-headline-sm text-xs md:text-sm font-bold text-on-surface truncate px-0.5 leading-tight"
+                            title={`${doc.nombres} ${doc.apellidos}`}
+                          >
+                            {nombreCorto}
+                          </p>
+                          <p className="font-label-caps text-[9px] md:text-[10px] text-on-surface-variant tracking-wider uppercase truncate">
+                            {doc.especialidad}
+                          </p>
+
+                          {/* Insignias de Citas o Vacaciones */}
+                          {doc.enVacaciones ? (
+                            <div className="mt-1 flex items-center justify-center">
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-500/15 text-amber-700 border border-amber-500/30 truncate">
+                                🌴 Vacaciones
+                              </span>
+                            </div>
+                          ) : (doc.citasCount || 0) > 0 ? (
+                            <div className="mt-1 flex items-center justify-center">
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-primary/10 text-primary border border-primary/20">
+                                {doc.citasCount} {doc.citasCount === 1 ? 'cita' : 'citas'}
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="mt-1 flex items-center justify-center">
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-medium text-on-surface-variant/50">
+                                Sin citas
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
                   ) : (
                     <div className="py-8 px-4 text-center text-on-surface-variant text-sm col-span-full font-medium bg-surface-container-lowest">
                       No hay doctores activos asignados a esta especialidad en la fecha seleccionada.
@@ -712,152 +796,173 @@ export function Idea1AgendaPage() {
                   )}
                 </div>
 
-                {/* GRID CONTENT CON LÍNEAS VISIBLES ENTRE HORAS Y MÉDICOS */}
-                <div className="flex-1 overflow-y-auto custom-scrollbar relative">
-                  <div className="relative">
-                    {horarios.map((slot) => (
-                      <div
-                        key={slot.hora}
-                        className="grid h-20 border-b border-outline-variant/15"
-                        style={{
-                          gridTemplateColumns: `80px repeat(${Math.max(doctores.length, 1)}, minmax(220px, 1fr))`,
-                        }}
-                      >
-                        <div className="flex items-center justify-center font-mono-label text-on-surface-variant border-r border-outline-variant/20 text-xs font-bold bg-surface-container-lowest/50">
-                          {slot.hora}
-                        </div>
-                        {doctores.map((doc, idx) => (
-                          <div
-                            key={doc.id}
-                            className={`h-full ${
-                              idx < doctores.length - 1 ? 'border-r border-outline-variant/15' : ''
-                            }`}
-                          />
-                        ))}
-                      </div>
-                    ))}
-
-                    {/* OVERLAY DE CITAS (Z-10 PARA PASAR POR DEBAJO DEL HEADER) */}
+                {/* GRID CONTENT ROWS */}
+                <div className="relative min-w-full">
+                  {horarios.map((slot) => (
                     <div
-                      className="absolute inset-0 left-[80px] grid pointer-events-none z-10"
+                      key={slot.hora}
+                      className="grid h-[100px] border-b border-outline-variant/15 min-w-full"
                       style={{
-                        gridTemplateColumns: `repeat(${Math.max(doctores.length, 1)}, minmax(220px, 1fr))`,
+                        gridTemplateColumns: `80px repeat(${Math.max(doctores.length, 1)}, minmax(180px, 1fr))`,
                       }}
                     >
-                      {doctores.map((doc) => {
-                        const docCitas = citas.filter((c) => c.doctorId === doc.id);
-                        const startMinGrid = horaInicioInt * 60;
+                      <div className="flex items-center justify-center font-mono-label text-on-surface-variant border-r border-outline-variant/20 text-xs font-bold bg-surface-container-lowest sticky left-0 z-20">
+                        {slot.hora}
+                      </div>
+                      {doctores.map((doc, idx) => (
+                        <div
+                          key={doc.id}
+                          className={`h-full min-w-0 ${
+                            doc.enVacaciones ? 'bg-amber-500/5' : ''
+                          } ${idx < doctores.length - 1 ? 'border-r border-outline-variant/15' : ''}`}
+                        />
+                      ))}
+                    </div>
+                  ))}
 
+                  {/* OVERLAY DE CITAS Y BLOQUEOS DE VACACIONES */}
+                  <div
+                    className="absolute inset-0 left-[80px] grid pointer-events-none z-10 right-0"
+                    style={{
+                      gridTemplateColumns: `repeat(${Math.max(doctores.length, 1)}, minmax(180px, 1fr))`,
+                    }}
+                  >
+                    {doctores.map((doc) => {
+                      if (doc.enVacaciones) {
                         return (
                           <div
                             key={`citas-col-${doc.id}`}
-                            className="relative h-full pointer-events-auto"
+                            className="relative h-full pointer-events-auto bg-amber-500/10 border-x border-amber-500/20 flex flex-col items-center justify-start pt-16 p-3 select-none"
+                            style={{
+                              backgroundImage: 'radial-gradient(#f59e0b 1.2px, transparent 1.2px)',
+                              backgroundSize: '16px 16px',
+                            }}
                           >
-                            {docCitas.map((cita) => {
-                              const citaStart = timeToMinutes(cita.horaInicio);
-                              const topPx = ((citaStart - startMinGrid) / 60) * 80;
-                              const duracion = cita.duracionMinutos || 30;
-                              const heightPx = Math.max((duracion / 60) * 80 - 4, 38);
+                            <div className="bg-surface-container-lowest/95 backdrop-blur-md border border-amber-500/40 rounded-2xl p-3 text-center shadow-lg max-w-[95%] sticky top-24 z-20">
+                              <span className="text-2xl mb-1 block animate-bounce">🌴</span>
+                              <p className="font-bold text-xs text-amber-800 uppercase tracking-wider">
+                                En Vacaciones
+                              </p>
+                              <p className="text-[10px] text-amber-700 font-semibold mt-0.5">
+                                Horario Bloqueado
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      }
 
-                              return (
+                      const docCitas = citas.filter((c) => c.doctorId === doc.id);
+                      const startMinGrid = horaInicioInt * 60;
+
+                      return (
+                        <div key={`citas-col-${doc.id}`} className="relative h-full pointer-events-auto">
+                          {docCitas.map((cita) => {
+                            const citaStart = timeToMinutes(cita.horaInicio);
+                            const topPx = ((citaStart - startMinGrid) / 60) * ROW_HEIGHT;
+                            const duracion = cita.duracionMinutos || 30;
+                            const heightPx = Math.max((duracion / 60) * ROW_HEIGHT - 4, 40);
+                            const isCompact = heightPx < 60;
+                            const isMicro = heightPx < 42;
+
+                            return (
+                              <div
+                                key={cita.id}
+                                style={{
+                                  position: 'absolute',
+                                  top: `${topPx}px`,
+                                  height: `${heightPx}px`,
+                                  left: '3px',
+                                  right: '3px',
+                                }}
+                                className={`appointment-card rounded-xl p-2 flex flex-col justify-between cursor-pointer transition-all hover:scale-[1.01] hover:shadow-lg border overflow-hidden ${
+                                  cita.estado === 'EN ATENCIÓN'
+                                    ? 'bg-tertiary-fixed/30 border-tertiary-container/30 text-on-surface'
+                                    : cita.estado === 'CONFIRMADA'
+                                    ? 'bg-primary-container/20 border-primary/30 text-on-surface'
+                                    : cita.estado === 'COMPLETADA'
+                                    ? 'bg-surface-container-high/60 border-outline-variant/40 text-on-surface-variant opacity-75'
+                                    : cita.estado === 'NO SHOW'
+                                    ? 'bg-error-container/30 border-error/30 text-on-surface'
+                                    : 'bg-surface-container-lowest border-outline-variant/30 text-on-surface shadow-sm'
+                                }`}
+                              >
+                                {/* Barra lateral acento según estado */}
                                 <div
-                                  key={cita.id}
-                                  style={{
-                                    position: 'absolute',
-                                    top: `${topPx}px`,
-                                    height: `${heightPx}px`,
-                                    left: '6px',
-                                    right: '6px',
-                                  }}
-                                  className={`appointment-card rounded-xl p-3 flex flex-col justify-between cursor-pointer transition-all hover:scale-[1.01] hover:shadow-lg border ${
+                                  className={`absolute left-0 top-1 bottom-1 w-1 rounded-r-full ${
                                     cita.estado === 'EN ATENCIÓN'
-                                      ? 'bg-tertiary-fixed/30 border-tertiary-container/30 text-on-surface'
+                                      ? 'bg-tertiary-container'
                                       : cita.estado === 'CONFIRMADA'
-                                      ? 'bg-primary-container/20 border-primary/30 text-on-surface'
+                                      ? 'bg-primary'
                                       : cita.estado === 'COMPLETADA'
-                                      ? 'bg-surface-container-high/60 border-outline-variant/40 text-on-surface-variant opacity-75'
+                                      ? 'bg-outline'
                                       : cita.estado === 'NO SHOW'
-                                      ? 'bg-error-container/30 border-error/30 text-on-surface'
-                                      : 'bg-surface-container-lowest border-outline-variant/30 text-on-surface shadow-sm'
+                                      ? 'bg-error'
+                                      : 'bg-primary'
                                   }`}
-                                >
-                                  {/* Barra lateral acento según estado */}
-                                  <div
-                                    className={`absolute left-0 top-2 bottom-2 w-1 rounded-r-full ${
-                                      cita.estado === 'EN ATENCIÓN'
-                                        ? 'bg-tertiary-container'
-                                        : cita.estado === 'CONFIRMADA'
-                                        ? 'bg-primary'
-                                        : cita.estado === 'COMPLETADA'
-                                        ? 'bg-outline'
-                                        : cita.estado === 'NO SHOW'
-                                        ? 'bg-error'
-                                        : 'bg-primary'
-                                    }`}
-                                  />
+                                />
 
-                                  <div className="pl-2 flex flex-col gap-0.5">
-                                    <div className="flex justify-between items-start gap-1">
-                                      <span className="font-headline-sm text-headline-sm text-xs font-bold text-on-surface truncate">
-                                        {cita.paciente}
-                                      </span>
+                                <div className="pl-1.5 flex flex-col gap-0.5 min-w-0">
+                                  <div className="flex justify-between items-center gap-1">
+                                    <span className="font-headline-sm text-headline-sm text-xs font-bold text-on-surface truncate leading-tight">
+                                      {cita.paciente}
+                                    </span>
+                                    <span
+                                      className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold flex items-center gap-1 shrink-0 ${
+                                        cita.estado === 'EN ATENCIÓN'
+                                          ? 'bg-tertiary-fixed text-on-tertiary-fixed-variant'
+                                          : cita.estado === 'CONFIRMADA'
+                                          ? 'bg-primary-fixed text-on-primary-fixed-variant'
+                                          : cita.estado === 'COMPLETADA'
+                                          ? 'bg-surface-variant text-on-surface-variant'
+                                          : cita.estado === 'NO SHOW'
+                                          ? 'bg-error-container text-on-error-container'
+                                          : 'bg-secondary-container text-on-secondary-container'
+                                      }`}
+                                    >
                                       <span
-                                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1 shrink-0 ${
+                                        className={`w-1 h-1 rounded-full ${
                                           cita.estado === 'EN ATENCIÓN'
-                                            ? 'bg-tertiary-fixed text-on-tertiary-fixed-variant'
+                                            ? 'bg-tertiary-container animate-pulse'
                                             : cita.estado === 'CONFIRMADA'
-                                            ? 'bg-primary-fixed text-on-primary-fixed-variant'
-                                            : cita.estado === 'COMPLETADA'
-                                            ? 'bg-surface-variant text-on-surface-variant'
+                                            ? 'bg-primary-container'
                                             : cita.estado === 'NO SHOW'
-                                            ? 'bg-error-container text-on-error-container'
-                                            : 'bg-secondary-container text-on-secondary-container'
+                                            ? 'bg-error'
+                                            : 'bg-secondary-fixed-dim'
                                         }`}
-                                      >
-                                        <span
-                                          className={`w-1.5 h-1.5 rounded-full ${
-                                            cita.estado === 'EN ATENCIÓN'
-                                              ? 'bg-tertiary-container animate-pulse'
-                                              : cita.estado === 'CONFIRMADA'
-                                              ? 'bg-primary-container'
-                                              : cita.estado === 'NO SHOW'
-                                              ? 'bg-error'
-                                              : 'bg-secondary-fixed-dim'
-                                          }`}
-                                        />
-                                        {cita.estado === 'CONFIRMADA' ? 'LLEGÓ' : cita.estado}
-                                      </span>
-                                    </div>
+                                      />
+                                      <span className="truncate">{cita.estado === 'CONFIRMADA' ? 'LLEGÓ' : cita.estado}</span>
+                                    </span>
+                                  </div>
 
-                                    {/* Servicio y Subcategoría */}
-                                    <p className="font-body-md text-xs text-on-surface-variant font-medium truncate">
+                                  {/* Servicio y Subcategoría */}
+                                  {!isCompact && (
+                                    <p className="font-body-md text-xs text-on-surface-variant font-medium truncate leading-tight mt-0.5">
                                       {cita.servicioNombre || cita.motivo}
                                       {cita.subcategoriaNombre ? ` · ${cita.subcategoriaNombre}` : ''}
                                     </p>
+                                  )}
 
-                                    {/* Etiqueta Solo Doctor */}
-                                    {cita.etiquetaAsignacion && (
-                                      <p className="text-[11px] text-primary font-semibold truncate">
-                                        {cita.etiquetaAsignacion}
-                                      </p>
-                                    )}
-                                  </div>
+                                  {!isCompact && cita.etiquetaAsignacion && (
+                                    <p className="text-[11px] text-primary font-semibold truncate leading-tight">
+                                      {cita.etiquetaAsignacion}
+                                    </p>
+                                  )}
+                                </div>
 
-                                  <div className="flex items-center justify-between text-[10px] text-on-surface-variant font-mono pl-2 mt-auto">
-                                    <span>
+                                {/* Hora de la Cita */}
+                                {!isMicro && (
+                                  <div className="flex items-center justify-between text-[9px] md:text-[10px] text-on-surface-variant font-mono pl-1.5 mt-auto pt-0.5 border-t border-outline-variant/10">
+                                    <span className="truncate">
                                       {cita.horaInicio} - {cita.horaFin}
                                     </span>
-                                    <span className="material-symbols-outlined text-sm opacity-60">
-                                      more_vert
-                                    </span>
                                   </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        );
-                      })}
-                    </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
                   </div>
 
                   {/* LÍNEA DE TIEMPO ACTUAL */}
