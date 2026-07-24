@@ -61,13 +61,8 @@ export function Idea1AgendaPage() {
       <aside className="h-screen sticky top-0 left-0 w-sidebar-expanded bg-[#0e4f9f] border-r border-outline-variant/20 flex flex-col py-8 px-4 z-50 shrink-0">
         <div className="mb-10 px-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shadow-lg shadow-primary/20">
-              <span
-                className="material-symbols-outlined text-white"
-                style={{ fontVariationSettings: "'FILL' 1" }}
-              >
-                medical_services
-              </span>
+            <div className="w-9 h-9 bg-white rounded-xl flex items-center justify-center p-1.5" title="Limablue Agenda">
+              <img src="/logo-mark.svg" alt="Limablue" className="w-full h-full object-contain" />
             </div>
             <div>
               <h1 className="font-headline-md text-headline-md font-bold text-surface-container-lowest leading-none">
@@ -227,7 +222,7 @@ export function Idea1AgendaPage() {
               )}
             </div>
 
-            {/* Filtro de Especialidades / Unidades de Negocio (listadas horizontalmente hacia la derecha) */}
+            {/* Filtro de Especialidades / Unidades de Negocio (listadas) */}
             {unidadesDisponibles.length > 0 && (
               <div className="hidden md:flex items-center gap-1.5 bg-surface-container-low border border-outline-variant/40 rounded-xl p-1 shadow-xs">
                 {unidadesDisponibles.map((u) => {
@@ -340,6 +335,40 @@ export function Idea1AgendaPage() {
                       </button>
                     );
                   })}
+                </div>
+              </div>
+
+              {/* Leyenda de Estados de Citas */}
+              <div className="flex flex-wrap items-center gap-5 mt-3 pt-3 border-t border-outline-variant/20">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-secondary-fixed-dim shrink-0"></span>
+                  <span className="font-label-caps text-[11px] font-semibold text-on-surface-variant">
+                    AGENDADA
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-primary-container shrink-0"></span>
+                  <span className="font-label-caps text-[11px] font-semibold text-on-surface-variant">
+                    LLEGÓ / CONFIRMADA
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-tertiary-container shrink-0"></span>
+                  <span className="font-label-caps text-[11px] font-semibold text-on-surface-variant">
+                    EN ATENCIÓN
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-outline-variant shrink-0"></span>
+                  <span className="font-label-caps text-[11px] font-semibold text-on-surface-variant">
+                    COMPLETADA
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-error shrink-0"></span>
+                  <span className="font-label-caps text-[11px] font-semibold text-on-surface-variant">
+                    NO SHOW
+                  </span>
                 </div>
               </div>
             </div>
@@ -700,42 +729,6 @@ export function Idea1AgendaPage() {
               </div>
             </div>
           </div>
-
-          {/* FOOTER LEGEND */}
-          <footer className="flex items-center justify-between pb-8">
-            <div className="flex items-center gap-6">
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-secondary-fixed-dim"></span>
-                <span className="font-label-caps text-[10px] text-on-surface-variant">
-                  AGENDADA
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-primary-container"></span>
-                <span className="font-label-caps text-[10px] text-on-surface-variant">
-                  LLEGÓ / CONFIRMADA
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-tertiary-container"></span>
-                <span className="font-label-caps text-[10px] text-on-surface-variant">
-                  EN ATENCIÓN
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-outline-variant"></span>
-                <span className="font-label-caps text-[10px] text-on-surface-variant">
-                  COMPLETADA
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-error"></span>
-                <span className="font-label-caps text-[10px] text-on-surface-variant">
-                  NO SHOW
-                </span>
-              </div>
-            </div>
-          </footer>
         </div>
       </main>
 
