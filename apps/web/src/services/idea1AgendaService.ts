@@ -1,3 +1,8 @@
+import { useState, useEffect, useRef } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { sedesApi, profesionalesApi, citasApi, horariosApi } from '../api';
+import { useAgendaStore } from '../stores/agendaStore';
+
 export interface SlotHorario {
   hora: string; // "09:00", "10:00", etc.
   label: string;
@@ -35,6 +40,10 @@ export interface CitaAgenda {
   etiquetaAsignacion?: string;
   estado: 'AGENDADA' | 'CONFIRMADA' | 'EN ATENCIÓN' | 'COMPLETADA' | 'NO SHOW';
 }
+
+/* ==========================================================================
+   1. HELPERS DE FECHA, HORA Y FORMATO DE NOMBRES
+   ========================================================================== */
 
 /**
  * Formatea una fecha al formato "D de Mes, YYYY" (ej: "20 de Julio, 2026")
@@ -101,6 +110,10 @@ export function getDefaultAvatar(nombre = 'Doctor'): string {
   const inicial = nombre.trim().charAt(0).toUpperCase() || 'D';
   return `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><rect width="100" height="100" fill="%234537cd" rx="50"/><text x="50%" y="55%" dominant-baseline="middle" text-anchor="middle" fill="white" font-family="sans-serif" font-size="40" font-weight="bold">${inicial}</text></svg>`;
 }
+
+/* ==========================================================================
+   2. TRANSFORMACIÓN Y MAPEO DE DATOS (CITAS Y ESTADÍAS)
+   ========================================================================== */
 
 /**
  * Transforma el listado de citas provenientes de la BD al modelo `CitaAgenda[]`
@@ -189,6 +202,9 @@ export function formatearEstadiaFin(fechaFinInput?: any): string | null {
   return `Hasta el ${day} de ${mes}`;
 }
 
+/**
+ * Extrae la etiqueta de estadía/préstamo a partir del objeto de profesional o sus asignaciones
+ */
 export function extraerEstadiaLabel(p: any): string | undefined {
   if (!p) return undefined;
 
@@ -226,6 +242,10 @@ export function extraerEstadiaLabel(p: any): string | undefined {
 
   return undefined;
 }
+
+/* ==========================================================================
+   3. PROCESAMIENTO Y ORDENAMIENTO DE DOCTORES
+   ========================================================================== */
 
 /**
  * Procesa y ordena el listado de doctores para la grilla de agenda:
@@ -315,8 +335,31 @@ export function procesarYOrdenarDoctores(params: {
     });
 }
 
+/* ==========================================================================
+   4. CÁLCULOS DE CÁLCULO DE LAYOUT Y HORARIOS
+   ========================================================================== */
+
 /**
- * Calcula el rango horario dinamico de la grilla si existen citas agendadas fuera del horario comercial regular
+ * Extrae el horario comercial base de apertura/cierre de la sede
+ */
+export function extraerHorarioBaseEfectivo(horarioData: any): { baseHoraInicioInt: number; baseHoraFinInt: number } {
+  let baseHoraInicioInt = 8;
+  let baseHoraFinInt = 20;
+
+  if (horarioData?.efectivo?.abierto && horarioData.efectivo.apertura && horarioData.efectivo.cierre) {
+    const aperturaH = parseInt(horarioData.efectivo.apertura.split(':')[0], 10);
+    const cierreH = parseInt(horarioData.efectivo.cierre.split(':')[0], 10);
+    if (!isNaN(aperturaH) && !isNaN(cierreH) && aperturaH < cierreH) {
+      baseHoraInicioInt = aperturaH;
+      baseHoraFinInt = cierreH;
+    }
+  }
+
+  return { baseHoraInicioInt, baseHoraFinInt };
+}
+
+/**
+ * Calcula el rango horario dinámico de la grilla si existen citas agendadas fuera del horario comercial regular
  */
 export function calcularRangoHorarioAgenda(
   horaInicioBase: number,
@@ -340,6 +383,36 @@ export function calcularRangoHorarioAgenda(
   }
 
   return { horaInicioInt: hInicio, horaFinInt: hFin };
+}
+
+/**
+ * Genera la propiedad CSS gridTemplateColumns dinámicamente para la grilla de doctores
+ */
+export function calcularGridTemplateColsCss(numDoctores: number, maxVisible = 6): string {
+  const count = Math.max(numDoctores, 1);
+  const visibleCols = Math.min(count, maxVisible);
+  const doctorColWidthCss = `calc(max(180px, (100% - 80px) / ${visibleCols}))`;
+  return `80px repeat(${count}, ${doctorColWidthCss})`;
+}
+
+/**
+ * Extrae y formatea las métricas agregadas del día para las tarjetas superiores
+ */
+export function extraerMetricasCitas(
+  statsDb: any,
+  citas: CitaAgenda[]
+): {
+  totalCitas: number;
+  llegadasCitas: number;
+  completadasCitas: number;
+  noShowCitas: number;
+} {
+  const totalCitas = statsDb?.total ?? citas.length;
+  const llegadasCitas = (statsDb?.llegaron ?? 0) + (statsDb?.confirmadas ?? 0);
+  const completadasCitas = statsDb?.completadas ?? 0;
+  const noShowCitas = statsDb?.noShows ?? 0;
+
+  return { totalCitas, llegadasCitas, completadasCitas, noShowCitas };
 }
 
 /**
@@ -377,11 +450,275 @@ export function obtenerAtajosFechaRapidos(referenciaDate: Date = new Date()): { 
 }
 
 /**
- * Calcula la posicion top en pixeles de la linea de hora actual en la grilla
+ * Calcula la posición top en pixeles de la línea de hora actual en la grilla
  */
 export function calcularTopPxLineaActual(horaInicioInt: number, rowHeight = 100): number {
   const now = new Date();
   const currentMinutes = now.getHours() * 60 + now.getMinutes();
   const startGridMinutes = horaInicioInt * 60;
   return ((currentMinutes - startGridMinutes) / 60) * rowHeight;
+}
+
+/* ==========================================================================
+   5. HOOK PERSONALIZADO DE INTEGRACIÓN CON REACT (DATOS + ESTADO)
+   ========================================================================== */
+
+/**
+ * Custom Hook que encapsula toda la carga de datos, estados de UI, queries y
+ * sincronización de scrollbars para Idea1AgendaPage
+ */
+export function useIdea1AgendaData() {
+  const { sedeId, setSedeId, fecha, setFecha, unidadNegocioId, setUnidadNegocioId, fechaStr } = useAgendaStore();
+
+  // Estado y ref para el desplegable de Sedes y Paleta de Comandos
+  const [isSedeOpen, setIsSedeOpen] = useState(false);
+  const [isPaletteOpen, setIsPaletteOpen] = useState(false);
+  const sedeDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Cerrar desplegable de sede al hacer clic fuera
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (sedeDropdownRef.current && !sedeDropdownRef.current.contains(event.target as Node)) {
+        setIsSedeOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // 1. Cargar sedes desde la Base de Datos
+  const { data: sedesDb } = useQuery({
+    queryKey: ['sedes'],
+    queryFn: sedesApi.listar,
+  });
+
+  // Auto-seleccionar primera sede si no hay seleccionada
+  useEffect(() => {
+    if (sedesDb && sedesDb.length > 0 && !sedeId) {
+      setSedeId(sedesDb[0].id);
+    }
+  }, [sedesDb, sedeId, setSedeId]);
+
+  const activeSedeDb = sedesDb?.find((s) => s.id === sedeId);
+  const unidadesDisponibles = activeSedeDb?.unidadesNegocio || [];
+
+  // Auto-seleccionar por defecto el área de Podología
+  useEffect(() => {
+    if (unidadesDisponibles.length > 0) {
+      if (!unidadNegocioId || !unidadesDisponibles.find((u) => u.id === unidadNegocioId)) {
+        const podologia = unidadesDisponibles.find((u) =>
+          u.nombre.toLowerCase().includes('podolog')
+        );
+        setUnidadNegocioId(podologia ? podologia.id : unidadesDisponibles[0].id);
+      }
+    }
+  }, [unidadesDisponibles, unidadNegocioId, setUnidadNegocioId]);
+
+  const activeSedeName = activeSedeDb?.nombre || 'Seleccionar Sede';
+  const activeUnidad = unidadesDisponibles.find((u) => u.id === unidadNegocioId) || unidadesDisponibles[0];
+  const activeUnidadName = activeUnidad?.nombre || 'Podología';
+
+  // 2. Horario efectivo de la sede en la fecha seleccionada
+  const { data: horarioData } = useQuery({
+    queryKey: ['horario', sedeId, fechaStr()],
+    queryFn: () => horariosApi.efectivo(sedeId!, fechaStr()),
+    enabled: !!sedeId,
+  });
+
+  const { baseHoraInicioInt, baseHoraFinInt } = extraerHorarioBaseEfectivo(horarioData);
+
+  // 3. Citas desde la Base de Datos
+  const { data: citasDb } = useQuery({
+    queryKey: ['citas', 'idea1', sedeId, unidadNegocioId, fechaStr()],
+    queryFn: () =>
+      citasApi.listar({
+        sedeId: sedeId!,
+        unidadNegocioId: unidadNegocioId!,
+        fecha: fechaStr(),
+      }),
+    enabled: !!sedeId && !!unidadNegocioId,
+    refetchInterval: 5_000,
+  });
+
+  // 4. Doctores/Profesionales desde la Base de Datos
+  const { data: profesionalesDb } = useQuery({
+    queryKey: ['profesionales-sede', sedeId, unidadNegocioId, fechaStr()],
+    queryFn: () =>
+      profesionalesApi.listar({
+        sedeId: sedeId!,
+        unidadNegocioId: unidadNegocioId!,
+        fecha: fechaStr(),
+        activo: true,
+      }),
+    enabled: !!sedeId && !!unidadNegocioId,
+  });
+
+  // 5. Query de seleccionables para detectar bloqueos y vacaciones
+  const { data: seleccionablesDb } = useQuery({
+    queryKey: ['seleccionables', sedeId, unidadNegocioId, fechaStr()],
+    queryFn: async () => {
+      try {
+        if (!sedeId || !unidadNegocioId) return [];
+        return await profesionalesApi.seleccionables({
+          sedeId,
+          unidadNegocioId,
+          fecha: fechaStr(),
+        });
+      } catch (err) {
+        console.warn('Error al cargar seleccionables/bloqueos:', err);
+        return [];
+      }
+    },
+    enabled: !!sedeId && !!unidadNegocioId,
+  });
+
+  // 6. Transformación y ordenamiento con el módulo de servicios
+  const citas: CitaAgenda[] = mapearCitasDbACitaAgenda(citasDb || []);
+
+  const doctores: DoctorAgenda[] = procesarYOrdenarDoctores({
+    profesionalesDb,
+    citasDb,
+    citasAgenda: citas,
+    seleccionablesDb,
+    activeUnidadName,
+    sedeId,
+  });
+
+  const { horaInicioInt, horaFinInt } = calcularRangoHorarioAgenda(baseHoraInicioInt, baseHoraFinInt, citas);
+  const horarios: SlotHorario[] = obtenerHorariosAgenda(horaInicioInt, horaFinInt);
+
+  // 7. Estadísticas de citas del día desde la BD
+  const { data: statsDb } = useQuery({
+    queryKey: ['stats', sedeId, fechaStr()],
+    queryFn: () => citasApi.stats(sedeId!, fechaStr()),
+    enabled: !!sedeId,
+  });
+
+  const { totalCitas, llegadasCitas, completadasCitas, noShowCitas } = extraerMetricasCitas(statsDb, citas);
+
+  // Sincronización y manejo del scroll superior/inferior
+  const topScrollRef = useRef<HTMLDivElement>(null);
+  const mainScrollRef = useRef<HTMLDivElement>(null);
+  const isSyncingScroll = useRef(false);
+  const [scrollContentWidth, setScrollContentWidth] = useState(0);
+  const [hasHorizontalScroll, setHasHorizontalScroll] = useState(false);
+
+  useEffect(() => {
+    const el = mainScrollRef.current;
+    if (!el) return;
+
+    const checkOverflow = () => {
+      if (el) {
+        setScrollContentWidth(el.scrollWidth);
+        const hasOverflow = el.scrollWidth > el.clientWidth + 2;
+        setHasHorizontalScroll(hasOverflow);
+      }
+    };
+
+    checkOverflow();
+    const timer = setTimeout(checkOverflow, 300);
+
+    const ro = new ResizeObserver(() => {
+      checkOverflow();
+    });
+    ro.observe(el);
+
+    return () => {
+      clearTimeout(timer);
+      ro.disconnect();
+    };
+  }, [doctores.length, sedeId, unidadNegocioId]);
+
+  const handleTopScroll = () => {
+    if (isSyncingScroll.current) return;
+    isSyncingScroll.current = true;
+    if (topScrollRef.current && mainScrollRef.current) {
+      mainScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft;
+    }
+    requestAnimationFrame(() => {
+      isSyncingScroll.current = false;
+    });
+  };
+
+  const handleMainScroll = () => {
+    if (isSyncingScroll.current) return;
+    isSyncingScroll.current = true;
+    if (topScrollRef.current && mainScrollRef.current) {
+      topScrollRef.current.scrollLeft = mainScrollRef.current.scrollLeft;
+    }
+    requestAnimationFrame(() => {
+      isSyncingScroll.current = false;
+    });
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsPaletteOpen((prev) => !prev);
+      }
+      if (e.key === 'Escape') {
+        setIsPaletteOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // 8. Atajos de fecha y calculadores de renderizado de la grilla
+  const quickShortcuts = obtenerAtajosFechaRapidos();
+  const ROW_HEIGHT = 100;
+  const now = new Date();
+  const currentTimeTopPx = calcularTopPxLineaActual(horaInicioInt, ROW_HEIGHT);
+  const isCurrentDayActive = esMismoDia(fecha, now);
+
+  const gridTemplateColsCss = calcularGridTemplateColsCss(doctores.length, 6);
+
+  return {
+    // Store
+    sedeId,
+    setSedeId,
+    fecha,
+    setFecha,
+    unidadNegocioId,
+    setUnidadNegocioId,
+    fechaStr,
+    // Sedes y Unidades
+    sedesDb,
+    activeSedeDb,
+    unidadesDisponibles,
+    activeSedeName,
+    activeUnidad,
+    activeUnidadName,
+    isSedeOpen,
+    setIsSedeOpen,
+    sedeDropdownRef,
+    isPaletteOpen,
+    setIsPaletteOpen,
+    // Datos transformados
+    citas,
+    doctores,
+    horarios,
+    horaInicioInt,
+    horaFinInt,
+    // Métricas
+    totalCitas,
+    llegadasCitas,
+    completadasCitas,
+    noShowCitas,
+    // Scroll refs & sync
+    topScrollRef,
+    mainScrollRef,
+    handleTopScroll,
+    handleMainScroll,
+    scrollContentWidth,
+    hasHorizontalScroll,
+    ROW_HEIGHT,
+    now,
+    // Render helpers
+    quickShortcuts,
+    currentTimeTopPx,
+    isCurrentDayActive,
+    gridTemplateColsCss,
+  };
 }

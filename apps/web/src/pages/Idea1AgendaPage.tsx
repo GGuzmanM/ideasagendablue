@@ -1,266 +1,59 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import React from 'react';
 import { format, subDays, addDays } from 'date-fns';
-import { sedesApi, profesionalesApi, citasApi, horariosApi } from '../api';
-import { useAgendaStore } from '../stores/agendaStore';
 import {
-  obtenerHorariosAgenda,
+  useIdea1AgendaData,
   getDefaultAvatar,
   formatearFechaAgenda,
   formatearNombreDoctor,
-  mapearCitasDbACitaAgenda,
-  procesarYOrdenarDoctores,
-  calcularRangoHorarioAgenda,
-  obtenerAtajosFechaRapidos,
-  esMismoDia,
   timeToMinutes,
-  calcularTopPxLineaActual,
-  DoctorAgenda,
-  CitaAgenda,
-  SlotHorario,
+  esMismoDia,
 } from '../services/idea1AgendaService';
 
 export function Idea1AgendaPage() {
-  const { sedeId, setSedeId, fecha, setFecha, unidadNegocioId, setUnidadNegocioId, fechaStr } = useAgendaStore();
-
-  // Estado y refs para los desplegables (Combobox) de Sedes y Especialidades
-  const [isSedeOpen, setIsSedeOpen] = useState(false);
-  const [isEspecialidadOpen, setIsEspecialidadOpen] = useState(false);
-  const [isPaletteOpen, setIsPaletteOpen] = useState(false);
-  const sedeDropdownRef = useRef<HTMLDivElement>(null);
-  const especialidadDropdownRef = useRef<HTMLDivElement>(null);
-
-  // Cerrar desplegables al hacer clic fuera de ellos
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (sedeDropdownRef.current && !sedeDropdownRef.current.contains(event.target as Node)) {
-        setIsSedeOpen(false);
-      }
-      if (especialidadDropdownRef.current && !especialidadDropdownRef.current.contains(event.target as Node)) {
-        setIsEspecialidadOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  // 1. Cargar sedes desde la Base de Datos
-  const { data: sedesDb } = useQuery({
-    queryKey: ['sedes'],
-    queryFn: sedesApi.listar,
-  });
-
-  // Auto-seleccionar primera sede si no hay seleccionada
-  useEffect(() => {
-    if (sedesDb && sedesDb.length > 0 && !sedeId) {
-      setSedeId(sedesDb[0].id);
-    }
-  }, [sedesDb, sedeId, setSedeId]);
-
-  const activeSedeDb = sedesDb?.find((s) => s.id === sedeId);
-  const unidadesDisponibles = activeSedeDb?.unidadesNegocio || [];
-
-  // Auto-seleccionar por defecto el área de Podología
-  useEffect(() => {
-    if (unidadesDisponibles.length > 0) {
-      if (!unidadNegocioId || !unidadesDisponibles.find((u) => u.id === unidadNegocioId)) {
-        const podologia = unidadesDisponibles.find((u) =>
-          u.nombre.toLowerCase().includes('podolog')
-        );
-        setUnidadNegocioId(podologia ? podologia.id : unidadesDisponibles[0].id);
-      }
-    }
-  }, [unidadesDisponibles, unidadNegocioId, setUnidadNegocioId]);
-
-  const activeSedeName = activeSedeDb?.nombre || 'Seleccionar Sede';
-  const activeUnidad = unidadesDisponibles.find((u) => u.id === unidadNegocioId) || unidadesDisponibles[0];
-  const activeUnidadName = activeUnidad?.nombre || 'Podología';
-
-  // 2. Horario efectivo de la sede en la fecha seleccionada
-  const { data: horarioData } = useQuery({
-    queryKey: ['horario', sedeId, fechaStr()],
-    queryFn: () => horariosApi.efectivo(sedeId!, fechaStr()),
-    enabled: !!sedeId,
-  });
-
-  let baseHoraInicioInt = 8;
-  let baseHoraFinInt = 20;
-  if (horarioData?.efectivo?.abierto && horarioData.efectivo.apertura && horarioData.efectivo.cierre) {
-    const aperturaH = parseInt(horarioData.efectivo.apertura.split(':')[0], 10);
-    const cierreH = parseInt(horarioData.efectivo.cierre.split(':')[0], 10);
-    if (!isNaN(aperturaH) && !isNaN(cierreH) && aperturaH < cierreH) {
-      baseHoraInicioInt = aperturaH;
-      baseHoraFinInt = cierreH;
-    }
-  }
-
-  // 3. Citas desde la Base de Datos filtradas por Sede y Especialidad / Unidad de Negocio
-  const { data: citasDb } = useQuery({
-    queryKey: ['citas', 'idea1', sedeId, unidadNegocioId, fechaStr()],
-    queryFn: () =>
-      citasApi.listar({
-        sedeId: sedeId!,
-        unidadNegocioId: unidadNegocioId!,
-        fecha: fechaStr(),
-      }),
-    enabled: !!sedeId && !!unidadNegocioId,
-    refetchInterval: 5_000,
-  });
-
-  // 4. Doctores/Profesionales desde la Base de Datos filtrados por Sede y Especialidad
-  const { data: profesionalesDb } = useQuery({
-    queryKey: ['profesionales-sede', sedeId, unidadNegocioId, fechaStr()],
-    queryFn: () =>
-      profesionalesApi.listar({
-        sedeId: sedeId!,
-        unidadNegocioId: unidadNegocioId!,
-        fecha: fechaStr(),
-        activo: true,
-      }),
-    enabled: !!sedeId && !!unidadNegocioId,
-  });
-
-
-
-  // 5. Query de seleccionables para detectar bloqueos y vacaciones en tiempo real
-  const { data: seleccionablesDb } = useQuery({
-    queryKey: ['seleccionables', sedeId, unidadNegocioId, fechaStr()],
-    queryFn: async () => {
-      try {
-        if (!sedeId || !unidadNegocioId) return [];
-        return await profesionalesApi.seleccionables({
-          sedeId,
-          unidadNegocioId,
-          fecha: fechaStr(),
-        });
-      } catch (err) {
-        console.warn('Error al cargar seleccionables/bloqueos:', err);
-        return [];
-      }
-    },
-    enabled: !!sedeId && !!unidadNegocioId,
-  });
-
-  // 6. Transformación y ordenamiento de citas y doctores usando la capa de servicio
-  const citas: CitaAgenda[] = mapearCitasDbACitaAgenda(citasDb || []);
-
-  const doctores: DoctorAgenda[] = procesarYOrdenarDoctores({
-    profesionalesDb,
-    citasDb,
-    citasAgenda: citas,
-    seleccionablesDb,
-    activeUnidadName,
+  const {
+    // Store
     sedeId,
-  });
-
-  const { horaInicioInt, horaFinInt } = calcularRangoHorarioAgenda(baseHoraInicioInt, baseHoraFinInt, citas);
-
-  const horarios: SlotHorario[] = obtenerHorariosAgenda(horaInicioInt, horaFinInt);
-
-  // 5. Estadísticas del día desde la BD
-  const { data: statsDb } = useQuery({
-    queryKey: ['stats', sedeId, fechaStr()],
-    queryFn: () => citasApi.stats(sedeId!, fechaStr()),
-    enabled: !!sedeId,
-  });
-
-  const totalCitas = statsDb?.total ?? citas.length;
-  const llegadasCitas = (statsDb?.llegaron ?? 0) + (statsDb?.confirmadas ?? 0);
-  const completadasCitas = statsDb?.completadas ?? 0;
-  const noShowCitas = statsDb?.noShows ?? 0;
-
-  // Refs para sincronización de scrollbars superior e inferior
-  const topScrollRef = useRef<HTMLDivElement>(null);
-  const mainScrollRef = useRef<HTMLDivElement>(null);
-  const isSyncingScroll = useRef(false);
-  const [scrollContentWidth, setScrollContentWidth] = useState(0);
-  const [hasHorizontalScroll, setHasHorizontalScroll] = useState(false);
-
-  useEffect(() => {
-    const el = mainScrollRef.current;
-    if (!el) return;
-
-    const checkOverflow = () => {
-      if (el) {
-        setScrollContentWidth(el.scrollWidth);
-        const hasOverflow = el.scrollWidth > el.clientWidth + 2;
-        setHasHorizontalScroll(hasOverflow);
-      }
-    };
-
-    checkOverflow();
-    const timer = setTimeout(checkOverflow, 300);
-
-    const ro = new ResizeObserver(() => {
-      checkOverflow();
-    });
-    ro.observe(el);
-
-    return () => {
-      clearTimeout(timer);
-      ro.disconnect();
-    };
-  }, [doctores.length, sedeId, unidadNegocioId]);
-
-  const handleTopScroll = () => {
-    if (isSyncingScroll.current) return;
-    isSyncingScroll.current = true;
-    if (topScrollRef.current && mainScrollRef.current) {
-      mainScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft;
-    }
-    requestAnimationFrame(() => {
-      isSyncingScroll.current = false;
-    });
-  };
-
-  const handleMainScroll = () => {
-    if (isSyncingScroll.current) return;
-    isSyncingScroll.current = true;
-    if (topScrollRef.current && mainScrollRef.current) {
-      topScrollRef.current.scrollLeft = mainScrollRef.current.scrollLeft;
-    }
-    requestAnimationFrame(() => {
-      isSyncingScroll.current = false;
-    });
-  };
-
-  const scrollGrid = (direction: 'left' | 'right') => {
-    if (mainScrollRef.current) {
-      const scrollAmount = 360;
-      mainScrollRef.current.scrollBy({
-        left: direction === 'left' ? -scrollAmount : scrollAmount,
-        behavior: 'smooth',
-      });
-    }
-  };
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        setIsPaletteOpen((prev) => !prev);
-      }
-      if (e.key === 'Escape') {
-        setIsPaletteOpen(false);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
-
-  // 7. Generación dinámica de atajos de fecha y cálculo de posición de línea de hora actual
-  const quickShortcuts = obtenerAtajosFechaRapidos();
-  const ROW_HEIGHT = 100; // 100px por hora para espacio amplio sin saturación
-  const now = new Date();
-  const currentTimeTopPx = calcularTopPxLineaActual(horaInicioInt, ROW_HEIGHT);
-  const isCurrentDayActive = esMismoDia(fecha, now);
-
-  // Configuración del layout de grilla: Máximo 6 doctores visibles por pantalla sin achicar el ancho
-  const MAX_VISIBLE_DOCTORS = 6;
-  const numDoctores = Math.max(doctores.length, 1);
-  const visibleCols = Math.min(numDoctores, MAX_VISIBLE_DOCTORS);
-  const doctorColWidthCss = `calc(max(180px, (100% - 80px) / ${visibleCols}))`;
-  const gridTemplateColsCss = `80px repeat(${numDoctores}, ${doctorColWidthCss})`;
+    setSedeId,
+    fecha,
+    setFecha,
+    unidadNegocioId,
+    setUnidadNegocioId,
+    fechaStr,
+    // Sedes y Unidades
+    sedesDb,
+    unidadesDisponibles,
+    activeSedeName,
+    activeUnidadName,
+    isSedeOpen,
+    setIsSedeOpen,
+    sedeDropdownRef,
+    isPaletteOpen,
+    setIsPaletteOpen,
+    // Datos transformados
+    citas,
+    doctores,
+    horarios,
+    horaInicioInt,
+    // Métricas
+    totalCitas,
+    llegadasCitas,
+    completadasCitas,
+    noShowCitas,
+    // Scroll refs & sync
+    topScrollRef,
+    mainScrollRef,
+    handleTopScroll,
+    handleMainScroll,
+    scrollContentWidth,
+    hasHorizontalScroll,
+    ROW_HEIGHT,
+    now,
+    // Render helpers
+    quickShortcuts,
+    currentTimeTopPx,
+    isCurrentDayActive,
+    gridTemplateColsCss,
+  } = useIdea1AgendaData();
 
   return (
     <div className="bg-background text-on-surface antialiased overflow-hidden flex h-screen w-full">
