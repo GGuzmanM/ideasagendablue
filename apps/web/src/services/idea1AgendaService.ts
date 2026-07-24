@@ -19,6 +19,7 @@ export interface DoctorAgenda {
   avatarUrl?: string;
   enVacaciones?: boolean;
   citasCount?: number;
+  estadiaLabel?: string;
 }
 
 export interface CitaAgenda {
@@ -153,10 +154,83 @@ export function mapearCitasDbACitaAgenda(citasDb: any[] = []): CitaAgenda[] {
 }
 
 /**
- * Procesa y ordena el listado de doctores para la grilla de agenda por reglas de negocio:
- * 1º Doctores con vacaciones pasan al FINAL (derecha) con bloque de horario sombreado
- * 2º Mayor cantidad de citas activas primero
- * 3º Orden alfabético secundario por nombre
+ * Formatea la fecha de fin de asignación/préstamo al formato "Hasta el D de MMM" (ej: "Hasta el 31 de jul")
+ */
+export function formatearEstadiaFin(fechaFinInput?: any): string | null {
+  if (!fechaFinInput) return null;
+  let str = '';
+  if (fechaFinInput instanceof Date) {
+    str = fechaFinInput.toISOString().split('T')[0];
+  } else if (typeof fechaFinInput === 'string') {
+    str = fechaFinInput.split('T')[0].trim();
+  } else {
+    str = String(fechaFinInput).split('T')[0].trim();
+  }
+
+  const parts = str.split(/[-/]/);
+  if (parts.length !== 3) return null;
+
+  let day = 0;
+  let monthIdx = 0;
+
+  if (parts[0].length === 4) {
+    // YYYY-MM-DD
+    day = parseInt(parts[2], 10);
+    monthIdx = parseInt(parts[1], 10) - 1;
+  } else {
+    // DD-MM-YYYY
+    day = parseInt(parts[0], 10);
+    monthIdx = parseInt(parts[1], 10) - 1;
+  }
+
+  const mesesAbrev = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'set', 'oct', 'nov', 'dic'];
+  const mes = mesesAbrev[monthIdx];
+  if (!mes || isNaN(day) || day < 1 || day > 31) return null;
+  return `Hasta el ${day} de ${mes}`;
+}
+
+export function extraerEstadiaLabel(p: any): string | undefined {
+  if (!p) return undefined;
+
+  const asgDirecta = p.asignacionActual || p.asignacion;
+
+  // 1. Si es un préstamo explícito de otra sede solo por un día
+  const esPrestamo = asgDirecta?.esPrestamo ?? p?.esPrestamo;
+  if (esPrestamo) {
+    const origen = asgDirecta?.sedeOrigen || p?.sedeOrigen || '';
+    return `Préstamo ${origen}`.trim();
+  }
+
+  // 2. Buscar fechaFin en asignacionActual, asignacion, o directamente en p
+  const fechaFinDirecta = asgDirecta?.fechaFin ?? asgDirecta?.fecha_fin ?? p?.fechaFin ?? p?.fecha_fin;
+  if (fechaFinDirecta) {
+    const fmt = formatearEstadiaFin(fechaFinDirecta);
+    if (fmt) return fmt;
+  }
+
+  // 3. Buscar cualquier asignación en p.asignaciones que tenga fechaFin
+  if (Array.isArray(p.asignaciones)) {
+    const asgConFecha = p.asignaciones.find((a: any) => a && (a.fechaFin || a.fecha_fin));
+    if (asgConFecha) {
+      const fmt = formatearEstadiaFin(asgConFecha.fechaFin || asgConFecha.fecha_fin);
+      if (fmt) return fmt;
+    }
+  }
+
+  // 4. Movimiento o refuerzo sin fechaFin
+  const esMovimiento = asgDirecta?.esMovimiento ?? p?.esMovimiento;
+  if (esMovimiento) {
+    const motivoLabel = asgDirecta?.motivo || p?.motivo || 'Refuerzo';
+    return motivoLabel;
+  }
+
+  return undefined;
+}
+
+/**
+ * Procesa y ordena el listado de doctores para la grilla de agenda:
+ * 1º Doctores con vacaciones pasan al FINAL (derecha)
+ * 2º Los demás mantienen el orden de llegada en la lista original (sin prioridad por citas)
  */
 export function procesarYOrdenarDoctores(params: {
   profesionalesDb?: any[];
@@ -178,6 +252,8 @@ export function procesarYOrdenarDoctores(params: {
   const doctoresMap = new Map<string, DoctorAgenda>();
 
   profesionalesDb.forEach((p) => {
+    const estadiaLabel = extraerEstadiaLabel(p);
+
     doctoresMap.set(p.id, {
       id: p.id,
       nombres: p.nombres,
@@ -186,21 +262,28 @@ export function procesarYOrdenarDoctores(params: {
       activo: p.activo,
       sedeId: p.sedeActual?.id || sedeId || '',
       avatarUrl: undefined,
+      estadiaLabel,
     });
   });
 
   citasDb.forEach((c) => {
     const p = c.profesional || c.solicitadoProfesional;
     const pId = c.profesionalId || (c as any).solicitadoProfesionalId || c.solicitadoProfesional?.id;
-    if (pId && !doctoresMap.has(pId)) {
-      doctoresMap.set(pId, {
-        id: pId,
-        nombres: p?.nombres || 'Doctor',
-        apellidos: p?.apellidos || '',
-        especialidad: activeUnidadName,
-        activo: true,
-        sedeId: sedeId || '',
-      });
+    if (pId) {
+      const estadia = extraerEstadiaLabel(p);
+      if (!doctoresMap.has(pId)) {
+        doctoresMap.set(pId, {
+          id: pId,
+          nombres: p?.nombres || 'Doctor',
+          apellidos: p?.apellidos || '',
+          especialidad: activeUnidadName,
+          activo: true,
+          sedeId: sedeId || '',
+          estadiaLabel: estadia,
+        });
+      } else if (estadia && !doctoresMap.get(pId)!.estadiaLabel) {
+        doctoresMap.get(pId)!.estadiaLabel = estadia;
+      }
     }
   });
 
@@ -223,17 +306,12 @@ export function procesarYOrdenarDoctores(params: {
       };
     })
     .sort((a, b) => {
-      // Regla 1: Doctores en vacaciones pasan AL FINAL
+      // Regla 1: Doctores en vacaciones pasan AL FINAL (derecha)
       if (a.enVacaciones && !b.enVacaciones) return 1;
       if (!a.enVacaciones && b.enVacaciones) return -1;
 
-      // Regla 2: Mayor cantidad de citas primero
-      if ((b.citasCount || 0) !== (a.citasCount || 0)) {
-        return (b.citasCount || 0) - (a.citasCount || 0);
-      }
-
-      // Regla 3: Orden alfabético secundario por nombre
-      return a.nombres.localeCompare(b.nombres);
+      // Regla 2: Mantener el orden original de llegada de la lista (sin orden por citas)
+      return 0;
     });
 }
 

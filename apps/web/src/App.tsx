@@ -52,8 +52,8 @@ export default function App() {
       <Route path="/imprimir/composicion-sede" element={<ComposicionImprimirPage />} />
       {/* Comprobantes del día en una sola hoja (cierre) */}
       <Route path="/imprimir/comprobantes" element={<ComprobantesImprimirPage />} />
-      <Route path="/" element={<Idea1AgendaPage />} />
       <Route element={<Layout />}>
+        <Route path="/" element={<AgendaPage />} />
         <Route path="/agenda-vieja" element={<AgendaPage />} />
         <Route path="/pacientes" element={<PacientesPage />} />
         <Route path="/pacientes/:id" element={<FichaPacientePage />} />

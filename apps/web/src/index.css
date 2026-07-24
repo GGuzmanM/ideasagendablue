@@ -91,6 +91,25 @@
   ::-webkit-scrollbar-thumb:hover {
     @apply bg-slate-400;
   }
+
+  .top-scrollbar-visible {
+    scrollbar-width: auto;
+    scrollbar-color: #3525cd #e2e8f0;
+  }
+  .top-scrollbar-visible::-webkit-scrollbar {
+    height: 12px !important;
+  }
+  .top-scrollbar-visible::-webkit-scrollbar-track {
+    background: #e2e8f0 !important;
+    border-radius: 6px !important;
+  }
+  .top-scrollbar-visible::-webkit-scrollbar-thumb {
+    background: #3525cd !important;
+    border-radius: 6px !important;
+  }
+  .top-scrollbar-visible::-webkit-scrollbar-thumb:hover {
+    background: #2517a4 !important;
+  }
   .material-symbols-outlined {
     font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
     vertical-align: middle;

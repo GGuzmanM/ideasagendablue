@@ -120,35 +120,7 @@ export function Idea1AgendaPage() {
     enabled: !!sedeId && !!unidadNegocioId,
   });
 
-  // Mapa de doctores para garantizar que cualquier doctor con cita asignada en la unidad tenga su columna
-  const doctoresMap = new Map<string, DoctorAgenda>();
 
-  (profesionalesDb || []).forEach((p) => {
-    doctoresMap.set(p.id, {
-      id: p.id,
-      nombres: p.nombres,
-      apellidos: p.apellidos,
-      especialidad: p.tipo || activeUnidadName,
-      activo: p.activo,
-      sedeId: p.sedeActual?.id || sedeId || '',
-      avatarUrl: undefined,
-    });
-  });
-
-  (citasDb || []).forEach((c) => {
-    const p = c.profesional || c.solicitadoProfesional;
-    const pId = c.profesionalId || (c as any).solicitadoProfesionalId || c.solicitadoProfesional?.id;
-    if (pId && !doctoresMap.has(pId)) {
-      doctoresMap.set(pId, {
-        id: pId,
-        nombres: p?.nombres || 'Doctor',
-        apellidos: p?.apellidos || '',
-        especialidad: activeUnidadName,
-        activo: true,
-        sedeId: sedeId || '',
-      });
-    }
-  });
 
   // 5. Query de seleccionables para detectar bloqueos y vacaciones en tiempo real
   const { data: seleccionablesDb } = useQuery({
@@ -202,16 +174,32 @@ export function Idea1AgendaPage() {
   const mainScrollRef = useRef<HTMLDivElement>(null);
   const isSyncingScroll = useRef(false);
   const [scrollContentWidth, setScrollContentWidth] = useState(0);
+  const [hasHorizontalScroll, setHasHorizontalScroll] = useState(false);
 
   useEffect(() => {
-    const updateWidth = () => {
-      if (mainScrollRef.current) {
-        setScrollContentWidth(mainScrollRef.current.scrollWidth);
+    const el = mainScrollRef.current;
+    if (!el) return;
+
+    const checkOverflow = () => {
+      if (el) {
+        setScrollContentWidth(el.scrollWidth);
+        const hasOverflow = el.scrollWidth > el.clientWidth + 2;
+        setHasHorizontalScroll(hasOverflow);
       }
     };
-    updateWidth();
-    const timer = setTimeout(updateWidth, 300);
-    return () => clearTimeout(timer);
+
+    checkOverflow();
+    const timer = setTimeout(checkOverflow, 300);
+
+    const ro = new ResizeObserver(() => {
+      checkOverflow();
+    });
+    ro.observe(el);
+
+    return () => {
+      clearTimeout(timer);
+      ro.disconnect();
+    };
   }, [doctores.length, sedeId, unidadNegocioId]);
 
   const handleTopScroll = () => {
@@ -360,7 +348,7 @@ export function Idea1AgendaPage() {
       {/* MAIN CANVAS */}
       <main className="flex-1 flex flex-col min-w-0 bg-surface">
         {/* TOP NAVBAR */}
-        <header className="docked full-width top-0 sticky z-40 bg-surface/80 backdrop-blur-md border-b border-outline-variant/30 shadow-sm flex justify-between items-center w-full px-8 h-16 shrink-0">
+        <header className="docked full-width top-0 sticky z-50 bg-surface/80 backdrop-blur-md border-b border-outline-variant/30 shadow-sm flex justify-between items-center w-full px-8 h-16 shrink-0">
           <div className="flex items-center gap-6 flex-1">
             <div className="relative w-full max-w-md group">
               <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-lg">
@@ -402,7 +390,7 @@ export function Idea1AgendaPage() {
               </button>
 
               {isSedeOpen && sedesDb && sedesDb.length > 0 && (
-                <div className="absolute left-0 mt-2 w-64 bg-surface-container-lowest border border-outline-variant/40 rounded-2xl shadow-xl z-50 py-2 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                <div className="absolute left-0 mt-2 w-64 bg-surface-container-lowest border border-outline-variant/40 rounded-2xl shadow-2xl z-[100] py-2 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
                   <div className="px-3 py-2 text-xs font-bold text-on-surface-variant uppercase tracking-wider border-b border-outline-variant/20 flex items-center justify-between">
                     <span>Sedes Disponibles</span>
                     <span className="bg-primary/10 text-primary px-2 py-0.5 rounded-full text-[10px] font-mono font-bold">
@@ -446,69 +434,33 @@ export function Idea1AgendaPage() {
               )}
             </div>
 
-            {/* Combobox Desplegable de Especialidad / Unidad de Negocio */}
-            <div className="relative hidden md:block" ref={especialidadDropdownRef}>
-              <button
-                type="button"
-                onClick={() => setIsEspecialidadOpen((prev) => !prev)}
-                className="flex items-center gap-2.5 px-4 py-2 bg-surface-container-lowest hover:bg-surface-container-low border border-outline-variant/50 rounded-xl text-on-surface font-semibold text-sm transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-              >
-                <span className="material-symbols-outlined text-primary text-xl">stethoscope</span>
-                <span className="truncate max-w-[140px]">{activeUnidadName}</span>
-                <span className="w-2 h-2 rounded-full bg-primary shrink-0"></span>
-                <span
-                  className={`material-symbols-outlined text-on-surface-variant text-lg transition-transform duration-200 ${
-                    isEspecialidadOpen ? 'rotate-180' : ''
-                  }`}
-                >
-                  expand_more
-                </span>
-              </button>
-
-              {isEspecialidadOpen && unidadesDisponibles.length > 0 && (
-                <div className="absolute left-0 mt-2 w-60 bg-surface-container-lowest border border-outline-variant/40 rounded-2xl shadow-xl z-50 py-2 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-                  <div className="px-3 py-2 text-xs font-bold text-on-surface-variant uppercase tracking-wider border-b border-outline-variant/20 flex items-center justify-between">
-                    <span>Especialidad / Área</span>
-                    <span className="bg-primary/10 text-primary px-2 py-0.5 rounded-full text-[10px] font-mono font-bold">
-                      {unidadesDisponibles.length}
-                    </span>
-                  </div>
-                  <div className="max-h-60 overflow-y-auto custom-scrollbar p-1">
-                    {unidadesDisponibles.map((u) => {
-                      const isSelected = u.id === unidadNegocioId;
-                      return (
-                        <button
-                          key={u.id}
-                          onClick={() => {
-                            setUnidadNegocioId(u.id);
-                            setIsEspecialidadOpen(false);
-                          }}
-                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
-                            isSelected
-                              ? 'bg-primary/10 text-primary font-bold'
-                              : 'text-on-surface hover:bg-surface-container'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5 truncate">
-                            <span
-                              className={`w-2 h-2 rounded-full shrink-0 ${
-                                isSelected ? 'bg-primary' : 'bg-outline-variant'
-                              }`}
-                            />
-                            <span className="truncate">{u.nombre}</span>
-                          </div>
-                          {isSelected && (
-                            <span className="material-symbols-outlined text-primary text-base shrink-0">
-                              check
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
+            {/* Filtro de Especialidades / Unidades de Negocio (listadas horizontalmente hacia la derecha) */}
+            {unidadesDisponibles.length > 0 && (
+              <div className="hidden md:flex items-center gap-1.5 bg-surface-container-low border border-outline-variant/40 rounded-xl p-1 shadow-xs">
+                {unidadesDisponibles.map((u) => {
+                  const isSelected = u.id === unidadNegocioId;
+                  return (
+                    <button
+                      key={u.id}
+                      type="button"
+                      onClick={() => setUnidadNegocioId(u.id)}
+                      className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs md:text-sm font-semibold transition-all whitespace-nowrap ${
+                        isSelected
+                          ? 'bg-primary text-white shadow-md shadow-primary/20 font-bold'
+                          : 'text-on-surface-variant hover:bg-surface-container-lowest hover:text-on-surface'
+                      }`}
+                    >
+                      <span
+                        className={`w-2 h-2 rounded-full shrink-0 ${
+                          isSelected ? 'bg-white' : 'bg-primary/50'
+                        }`}
+                      />
+                      <span>{u.nombre}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-4">
@@ -658,44 +610,27 @@ export function Idea1AgendaPage() {
 
           {/* CALENDAR GRID CONTAINER */}
           <div className="bg-surface-container-lowest rounded-3xl border border-outline-variant/40 shadow-sm flex flex-col h-[750px] w-full overflow-hidden">
-            {/* BARRA SUPERIOR DE SCROLL E INDICADORES (SI HAY MÁS DE 6 DOCTORES) */}
-            {doctores.length > 6 && (
-              <div className="bg-surface-container-low border-b border-outline-variant/30 px-3 py-1.5 flex items-center justify-between gap-3 sticky top-0 z-40 shadow-sm shrink-0">
-                <div className="flex items-center gap-2 text-xs font-semibold text-on-surface-variant">
+            {/* BARRA DE SCROLL HORIZONTAL SUPERIOR SINCRONIZADA */}
+            {hasHorizontalScroll && (
+              <div className="bg-surface-container-low border-b border-outline-variant/30 px-3 py-1 flex items-center justify-between gap-3 shrink-0">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-on-surface-variant shrink-0">
                   <span className="material-symbols-outlined text-sm text-primary">swap_horiz</span>
-                  <span>{doctores.length} doctores listados</span>
+                  <span className="text-[11px] font-bold">{doctores.length} doctores</span>
                 </div>
 
-                {/* SCROLLBAR SUPERIOR SINCRONIZADO */}
+                {/* PISTA DE SCROLL SUPERIOR VISIBLE Y SINCRONIZADA */}
                 <div
                   ref={topScrollRef}
                   onScroll={handleTopScroll}
-                  className="flex-1 overflow-x-auto custom-scrollbar h-3 flex items-center"
+                  className="flex-1 overflow-x-scroll top-scrollbar-visible h-[14px]"
                 >
                   <div
                     style={{
-                      width: scrollContentWidth > 0 ? `${scrollContentWidth}px` : `calc(80px + ${doctores.length} * 180px)`,
-                      height: '4px',
+                      width: scrollContentWidth > 0 ? `${scrollContentWidth}px` : `calc(80px + ${doctores.length} * 200px)`,
+                      minWidth: '100%',
+                      height: '1px',
                     }}
                   />
-                </div>
-
-                {/* BOTONES DE DESPLAZAMIENTO RÁPIDO */}
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => scrollGrid('left')}
-                    title="Deslizar a la izquierda"
-                    className="p-1 rounded-lg hover:bg-primary/10 text-on-surface-variant hover:text-primary transition-colors border border-outline-variant/30 flex items-center justify-center"
-                  >
-                    <span className="material-symbols-outlined text-sm">chevron_left</span>
-                  </button>
-                  <button
-                    onClick={() => scrollGrid('right')}
-                    title="Deslizar a la derecha"
-                    className="p-1 rounded-lg hover:bg-primary/10 text-on-surface-variant hover:text-primary transition-colors border border-outline-variant/30 flex items-center justify-center"
-                  >
-                    <span className="material-symbols-outlined text-sm">chevron_right</span>
-                  </button>
                 </div>
               </div>
             )}
@@ -754,26 +689,20 @@ export function Idea1AgendaPage() {
                             {doc.especialidad}
                           </p>
 
-                          {/* Insignias de Citas o Vacaciones */}
+                          {/* Insignias de Estadía o Vacaciones */}
                           {doc.enVacaciones ? (
                             <div className="mt-1 flex items-center justify-center">
-                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-500/15 text-amber-700 border border-amber-500/30 truncate">
+                              <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/15 text-amber-700 border border-amber-500/30 truncate">
                                 🌴 Vacaciones
                               </span>
                             </div>
-                          ) : (doc.citasCount || 0) > 0 ? (
+                          ) : doc.estadiaLabel ? (
                             <div className="mt-1 flex items-center justify-center">
-                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-primary/10 text-primary border border-primary/20">
-                                {doc.citasCount} {doc.citasCount === 1 ? 'cita' : 'citas'}
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-300/80 shadow-xs truncate">
+                                {doc.estadiaLabel}
                               </span>
                             </div>
-                          ) : (
-                            <div className="mt-1 flex items-center justify-center">
-                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-medium text-on-surface-variant/50">
-                                Sin citas
-                              </span>
-                            </div>
-                          )}
+                          ) : null}
                         </div>
                       );
                     })

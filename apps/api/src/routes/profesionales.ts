@@ -157,6 +157,13 @@ router.get('/', requireAuth, async (req, res) => {
           : null,
       };
     })(),
+    asignaciones: p.asignaciones.map((a) => ({
+      id: a.id,
+      sedeId: a.sedeId,
+      fechaInicio: a.fechaInicio?.toISOString().slice(0, 10) ?? null,
+      fechaFin: a.fechaFin?.toISOString().slice(0, 10) ?? null,
+      motivo: a.motivo,
+    })),
     iniciales: `${p.nombres[0] ?? ''}${p.apellidos[0] ?? ''}`.toUpperCase(),
     // Turno del día mostrado, tal cual lo resuelve `turnosDelDia` (la misma verdad
     // que usa el motor de reservas). Sin sede/fecha no hay turno que mostrar.
