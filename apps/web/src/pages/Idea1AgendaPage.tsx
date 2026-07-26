@@ -55,11 +55,15 @@ export function Idea1AgendaPage() {
     currentTimeTopPx,
     isCurrentDayActive,
     gridTemplateColsCss,
+    // Acciones
+    handleMoverCita,
+    isMoving,
   } = useIdea1AgendaData();
 
   // Estado del Modal de Nueva Cita (Estilos Idea 1)
   const [isNuevaCitaOpen, setIsNuevaCitaOpen] = useState(false);
   const [nuevaCitaParams, setNuevaCitaParams] = useState<{ horaInicio?: string; profesionalId?: string } | undefined>(undefined);
+  const [dragOverSlot, setDragOverSlot] = useState<{ doctorId: string; hora: string } | null>(null);
 
   const handleAbrirNuevaCita = (params?: { horaInicio?: string; profesionalId?: string }) => {
     setNuevaCitaParams(params);
@@ -489,29 +493,87 @@ export function Idea1AgendaPage() {
                       <div className="flex items-center justify-center font-mono-label text-on-surface-variant border-r border-outline-variant/20 text-xs font-bold bg-surface-container-lowest sticky left-0 z-20">
                         {slot.hora}
                       </div>
-                      {doctores.map((doc, idx) => (
-                        <div
-                          key={doc.id}
-                          onClick={() => {
-                            if (!doc.enVacaciones) {
-                              handleAbrirNuevaCita({ horaInicio: slot.hora, profesionalId: doc.id });
-                            }
-                          }}
-                          title={doc.enVacaciones ? 'Horario bloqueado por vacaciones' : `Agendar a las ${slot.hora} con ${doc.nombres}`}
-                          className={`h-full min-w-0 ${
-                            doc.enVacaciones
-                              ? 'bg-amber-500/5 cursor-not-allowed'
-                              : 'hover:bg-primary/5 cursor-pointer group transition-all flex items-center justify-center relative'
-                          } ${idx < doctores.length - 1 ? 'border-r border-outline-variant/15' : ''}`}
-                        >
-                          {!doc.enVacaciones && (
-                            <div className="opacity-0 group-hover:opacity-100 transition-all duration-200 scale-90 group-hover:scale-100 flex items-center gap-1.5 bg-[#3525cd] text-white text-[11px] font-bold px-3 py-1.5 rounded-xl shadow-lg shadow-primary/30 z-20 pointer-events-none select-none">
-                              <span className="material-symbols-outlined text-sm font-bold">add</span>
-                              <span>{slot.hora}</span>
-                            </div>
-                          )}
-                        </div>
-                      ))}
+                      {doctores.map((doc, idx) => {
+                        const isHoveredSlot = dragOverSlot?.doctorId === doc.id && dragOverSlot?.hora === slot.hora;
+                        return (
+                          <div
+                            key={doc.id}
+                            onClick={() => {
+                              if (!doc.enVacaciones) {
+                                handleAbrirNuevaCita({ horaInicio: slot.hora, profesionalId: doc.id });
+                              }
+                            }}
+                            onDragOver={(e) => {
+                              if (doc.enVacaciones) return;
+                              e.preventDefault();
+                              e.dataTransfer.dropEffect = 'move';
+                              if (dragOverSlot?.doctorId !== doc.id || dragOverSlot?.hora !== slot.hora) {
+                                setDragOverSlot({ doctorId: doc.id, hora: slot.hora });
+                              }
+                            }}
+                            onDragLeave={() => {
+                              setDragOverSlot((prev) => (prev?.doctorId === doc.id && prev?.hora === slot.hora ? null : prev));
+                            }}
+                            onDrop={async (e) => {
+                              e.preventDefault();
+                              setDragOverSlot(null);
+                              if (doc.enVacaciones) return;
+                              try {
+                                const rawData = e.dataTransfer.getData('text/plain');
+                                if (!rawData) return;
+                                const payload = JSON.parse(rawData);
+                                if (!payload || !payload.citaId) return;
+
+                                // No mover si es el mismo profesional y hora
+                                if (payload.profesionalId === doc.id && payload.horaInicio === slot.hora) return;
+
+                                // Advertencia si el paciente eligió el profesional y se cambia
+                                if (payload.origenAsignacion === 'elegida_por_paciente' && payload.profesionalId !== doc.id) {
+                                  const confirmMove = window.confirm(
+                                    `⚠️ El paciente eligió expresamente atenderse con ${payload.profesionalNombre || 'su profesional original'}.\n\n¿Mover a la columna de ${doc.nombres} a las ${slot.hora}?`
+                                  );
+                                  if (!confirmMove) return;
+                                }
+
+                                await handleMoverCita({
+                                  citaId: payload.citaId,
+                                  slotGrupoId: payload.slotGrupoId,
+                                  profesionalId: doc.id,
+                                  fecha: fechaStr(),
+                                  horaInicio: slot.hora,
+                                  origenAsignacion: payload.origenAsignacion,
+                                });
+                              } catch (err) {
+                                console.error('Error al soltar la cita:', err);
+                              }
+                            }}
+                            title={doc.enVacaciones ? 'Horario bloqueado por vacaciones' : `Agendar a las ${slot.hora} con ${doc.nombres}`}
+                            className={`h-full min-w-0 transition-all flex items-center justify-center relative ${
+                              doc.enVacaciones
+                                ? 'bg-amber-500/5 cursor-not-allowed'
+                                : isHoveredSlot
+                                ? 'bg-primary/20 border-2 border-dashed border-primary z-30'
+                                : 'hover:bg-primary/5 cursor-pointer group'
+                            } ${idx < doctores.length - 1 ? 'border-r border-outline-variant/15' : ''}`}
+                          >
+                            {isHoveredSlot && (
+                              <div className="absolute inset-0 bg-primary/20 border-2 border-dashed border-primary rounded-xl flex items-center justify-center pointer-events-none z-30 animate-pulse">
+                                <div className="bg-primary text-white text-[11px] font-bold px-2.5 py-1 rounded-full shadow-lg flex items-center gap-1">
+                                  <span className="material-symbols-outlined text-sm font-bold">move_item</span>
+                                  <span>Mover a {slot.hora}</span>
+                                </div>
+                              </div>
+                            )}
+
+                            {!doc.enVacaciones && !isHoveredSlot && (
+                              <div className="opacity-0 group-hover:opacity-100 transition-all duration-200 scale-90 group-hover:scale-100 flex items-center gap-1.5 bg-[#3525cd] text-white text-[11px] font-bold px-3 py-1.5 rounded-xl shadow-lg shadow-primary/30 z-20 pointer-events-none select-none">
+                                <span className="material-symbols-outlined text-sm font-bold">add</span>
+                                <span>{slot.hora}</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   ))}
 
@@ -561,10 +623,29 @@ export function Idea1AgendaPage() {
                             const heightPx = Math.max((duracion / 60) * ROW_HEIGHT - 4, 40);
                             const isCompact = heightPx < 60;
                             const isMicro = heightPx < 42;
+                            const esDraggable = cita.estado !== 'COMPLETADA' && cita.estado !== 'NO SHOW';
 
                             return (
                               <div
                                 key={cita.id}
+                                draggable={esDraggable}
+                                onDragStart={(e) => {
+                                  if (!esDraggable) return;
+                                  const payload = {
+                                    citaId: cita.id,
+                                    slotGrupoId: cita.raw?.slotGrupoId,
+                                    profesionalId: doc.id,
+                                    horaInicio: cita.horaInicio,
+                                    duracionMinutos: cita.duracionMinutos || 30,
+                                    origenAsignacion: cita.raw?.origenAsignacion,
+                                    pacienteNombre: cita.paciente,
+                                    profesionalNombre: `${doc.nombres} ${doc.apellidos}`,
+                                  };
+                                  e.dataTransfer.setData('text/plain', JSON.stringify(payload));
+                                  e.dataTransfer.effectAllowed = 'move';
+                                }}
+                                onDragEnd={() => setDragOverSlot(null)}
+                                title={esDraggable ? 'Arrastra para mover esta cita a otro médico u horario' : undefined}
                                 style={{
                                   position: 'absolute',
                                   top: `${topPx}px`,
@@ -572,7 +653,9 @@ export function Idea1AgendaPage() {
                                   left: '3px',
                                   right: '3px',
                                 }}
-                                className={`appointment-card pointer-events-auto rounded-xl p-2 flex flex-col justify-between cursor-pointer transition-all hover:scale-[1.01] hover:shadow-lg border overflow-hidden ${
+                                className={`appointment-card pointer-events-auto rounded-xl p-2 flex flex-col justify-between transition-all hover:scale-[1.01] hover:shadow-lg border overflow-hidden ${
+                                  esDraggable ? 'cursor-grab active:cursor-grabbing hover:border-primary/50' : 'cursor-pointer'
+                                } ${
                                   cita.estado === 'EN ATENCIÓN'
                                     ? 'bg-tertiary-fixed/30 border-tertiary-container/30 text-on-surface'
                                     : cita.estado === 'CONFIRMADA'

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'react-hot-toast';
 import { sedesApi, profesionalesApi, citasApi, horariosApi } from '../api';
 import { useAgendaStore } from '../stores/agendaStore';
 
@@ -39,6 +40,7 @@ export interface CitaAgenda {
   subcategoriaNombre?: string;
   etiquetaAsignacion?: string;
   estado: 'AGENDADA' | 'CONFIRMADA' | 'EN ATENCIÓN' | 'COMPLETADA' | 'NO SHOW';
+  raw?: any;
 }
 
 /* ==========================================================================
@@ -162,6 +164,7 @@ export function mapearCitasDbACitaAgenda(citasDb: any[] = []): CitaAgenda[] {
       subcategoriaNombre: c.subcategoria?.nombre,
       etiquetaAsignacion,
       estado: estadoNormalizado,
+      raw: c,
     };
   });
 }
@@ -671,8 +674,39 @@ export function useIdea1AgendaData() {
   const now = new Date();
   const currentTimeTopPx = calcularTopPxLineaActual(horaInicioInt, ROW_HEIGHT);
   const isCurrentDayActive = esMismoDia(fecha, now);
-
   const gridTemplateColsCss = calcularGridTemplateColsCss(doctores.length, 6);
+
+  const qc = useQueryClient();
+
+  const moverMutation = useMutation({
+    mutationFn: ({
+      citaId,
+      slotGrupoId,
+      profesionalId,
+      fecha,
+      horaInicio,
+      origenAsignacion,
+    }: {
+      citaId: string;
+      slotGrupoId?: string | null;
+      profesionalId: string;
+      fecha: string;
+      horaInicio: string;
+      origenAsignacion?: string;
+    }) =>
+      slotGrupoId
+        ? citasApi.moverGrupo(slotGrupoId, { profesionalId, fecha, horaInicio, origenAsignacion })
+        : citasApi.mover(citaId, { profesionalId, fecha, horaInicio, origenAsignacion }),
+    onSuccess: (citaActualizada) => {
+      qc.invalidateQueries({ queryKey: ['idea1-citas'] });
+      qc.invalidateQueries({ queryKey: ['citas'] });
+      const pNombre = citaActualizada.paciente
+        ? `${citaActualizada.paciente.nombres} ${citaActualizada.paciente.apellidoPaterno || ''}`
+        : 'Cita';
+      toast.success(`Cita de ${pNombre.trim()} movida correctamente a las ${citaActualizada.horaInicio}`, { duration: 3000 });
+    },
+    onError: (e: any) => toast.error(e?.message || 'Error al mover la cita'),
+  });
 
   return {
     // Store
@@ -720,5 +754,8 @@ export function useIdea1AgendaData() {
     currentTimeTopPx,
     isCurrentDayActive,
     gridTemplateColsCss,
+    // Acciones
+    handleMoverCita: moverMutation.mutateAsync,
+    isMoving: moverMutation.isPending,
   };
 }
