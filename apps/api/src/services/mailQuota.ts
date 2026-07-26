@@ -52,15 +52,20 @@ function topePara(tipo: TipoEnvio): number {
  * LIMITE_AUTOMATICO (dejando la reserva libre para los manuales).
  */
 export async function reservarCupoEnvio(tipo: TipoEnvio = 'auto'): Promise<boolean> {
-  const key = claveCuota();
-  const tope = topePara(tipo);
-  const n = await redis.incr(key);
-  if (n === 1) await redis.expire(key, 36 * 3600); // TTL > 1 día
-  if (n > tope) {
-    await redis.decr(key); // devolver el cupo no usado
-    return false;
+  try {
+    const key = claveCuota();
+    const tope = topePara(tipo);
+    const n = await redis.incr(key);
+    if (n === 1) await redis.expire(key, 36 * 3600); // TTL > 1 día
+    if (n > tope) {
+      await redis.decr(key); // devolver el cupo no usado
+      return false;
+    }
+    return true;
+  } catch (e) {
+    // Si Redis no está disponible en dev o falla la conexión, permitir el envío
+    return true;
   }
-  return true;
 }
 
 /** Lanza QuotaExcedidaError si no hay cupo disponible (y reserva uno si lo hay). */
@@ -70,8 +75,12 @@ export async function asegurarCupoEnvio(tipo: TipoEnvio = 'auto'): Promise<void>
 
 /** Envíos consumidos hoy (para el panel / diagnóstico). */
 export async function enviosHoy(): Promise<number> {
-  const v = await redis.get(claveCuota());
-  return v ? parseInt(v, 10) : 0;
+  try {
+    const v = await redis.get(claveCuota());
+    return v ? parseInt(v, 10) : 0;
+  } catch (e) {
+    return 0;
+  }
 }
 
 /**

@@ -24,6 +24,7 @@ import { consumirTokenAccion } from '../services/tokenAccionCita';
 import { sincronizarSesionPaquete } from '../services/paqueteSesionService';
 import { recalcularPaquete } from '../services/consumoService';
 import { getServicioAnclaId, esCombinacionPermitida } from '../services/combinacionService';
+import { enviarCorreoReserva } from '../services/emailService';
 import { verificarTokenConfirmacion } from '../utils/confirmToken';
 import { fechaDb } from '../utils/fechaLima';
 import { horaInicioValidaParaDuracion, timeToMinutes } from '@limablue/shared';
@@ -2245,5 +2246,43 @@ export async function autocompletarCitasPorTiempo(minutos = AUTOCOMPLETAR_MIN): 
   if (completadas) console.log(`[autocompletar] ${completadas} cita(s) completadas por tiempo (${minutos} min)`);
   return completadas;
 }
+
+// ─── POST /citas/:id/confirmar-mail ──────────────────────────────────────────
+// Reenvía el correo de confirmación de reserva al paciente.
+router.post('/:id/confirmar-mail', requireAuth, async (req, res) => {
+  const cita = await prisma.cita.findUnique({
+    where: { id: req.params.id, deletedAt: null },
+    include: { paciente: true },
+  });
+  if (!cita) throw new AppError('Cita no encontrada', 404);
+  if (!cita.paciente.email) throw new AppError('El paciente no tiene correo registrado', 400);
+
+  let resEmail;
+  try {
+    resEmail = await enviarCorreoReserva(cita.id);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new AppError(`No se pudo enviar el correo: ${msg}`, 400, 'ERROR_ENVIO_CORREO');
+  }
+
+  const ahora = new Date();
+  await prisma.cita.update({
+    where: { id: cita.id },
+    data: { confirmacionEnviadaEn: ahora },
+  });
+
+  await registrarAudit({
+    citaId: cita.id,
+    usuarioId: req.user?.userId,
+    accion: 'reenviar_confirmacion_correo',
+    entidad: 'cita',
+    entidadId: cita.id,
+    despues: { to: cita.paciente.email, enviadaEn: ahora },
+    sedeId: cita.sedeId,
+    ip: req.ip,
+  });
+
+  res.json({ ok: true, to: cita.paciente.email });
+});
 
 export default router;

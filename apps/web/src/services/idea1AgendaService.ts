@@ -5,8 +5,9 @@ import { sedesApi, profesionalesApi, citasApi, horariosApi } from '../api';
 import { useAgendaStore } from '../stores/agendaStore';
 
 export interface SlotHorario {
-  hora: string; // "09:00", "10:00", etc.
+  hora: string; // "09:00", "09:30", etc.
   label: string;
+  esMediaHora?: boolean;
 }
 
 export interface SedeAgenda {
@@ -91,15 +92,23 @@ export function esMismoDia(d1: Date, d2: Date): boolean {
 }
 
 /**
- * Genera dinámicamente el rango de slots horarios para la agenda (por hora)
+ * Genera dinámicamente el rango de slots horarios para la agenda (cada 30 minutos)
  */
 export function obtenerHorariosAgenda(inicio = 9, fin = 18): SlotHorario[] {
   const slots: SlotHorario[] = [];
-  for (let h = inicio; h <= fin; h++) {
+  const finEfectivo = Math.max(inicio + 1, fin);
+  for (let h = inicio; h < finEfectivo; h++) {
     const horaStr = `${h.toString().padStart(2, '0')}:00`;
     slots.push({
       hora: horaStr,
       label: horaStr,
+      esMediaHora: false,
+    });
+    const horaMediaStr = `${h.toString().padStart(2, '0')}:30`;
+    slots.push({
+      hora: horaMediaStr,
+      label: horaMediaStr,
+      esMediaHora: true,
     });
   }
   return slots;

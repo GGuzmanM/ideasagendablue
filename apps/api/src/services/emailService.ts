@@ -60,12 +60,18 @@ function cliente(): Resend {
  * Resend (limablue.pe) para que el envío no rebote.
  */
 export async function getRemitente(): Promise<string> {
+  const envEmail = process.env.MAIL_FROM_ADDRESS?.trim();
+  const envName = process.env.MAIL_FROM_NAME?.trim();
+  if (envEmail) {
+    return `${envName || REMITENTE_DEFAULT_NOMBRE} <${envEmail}>`;
+  }
+
   const cfg = await prisma.mailConfig.findFirst({
     where: { isActive: true },
     orderBy: { actualizadoEn: 'desc' },
   });
-  const email = cfg?.fromEmail?.trim() || process.env.MAIL_FROM_ADDRESS?.trim() || REMITENTE_DEFAULT_EMAIL;
-  const nombre = cfg?.fromName?.trim() || process.env.MAIL_FROM_NAME?.trim() || REMITENTE_DEFAULT_NOMBRE;
+  const email = cfg?.fromEmail?.trim() || REMITENTE_DEFAULT_EMAIL;
+  const nombre = cfg?.fromName?.trim() || REMITENTE_DEFAULT_NOMBRE;
   return `${nombre} <${email}>`;
 }
 
