@@ -62,11 +62,12 @@ export function errorHandler(
     return;
   }
 
-  if (err instanceof AppError) {
-    res.status(err.statusCode).json({
-      error: err.code || 'APP_ERROR',
+  if (err instanceof AppError || err.name === 'AppError' || (err as any).statusCode) {
+    const statusCode = (err as any).statusCode || 400;
+    res.status(statusCode).json({
+      error: (err as any).code || 'APP_ERROR',
       message: err.message,
-      statusCode: err.statusCode,
+      statusCode,
     });
     return;
   }
