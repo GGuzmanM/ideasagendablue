@@ -1,5 +1,6 @@
 import React from 'react';
 import { format, subDays, addDays } from 'date-fns';
+import { Idea1Sidebar } from '../components/layout/Idea1Sidebar';
 import {
   useIdea1AgendaData,
   getDefaultAvatar,
@@ -58,80 +59,7 @@ export function Idea1AgendaPage() {
   return (
     <div className="bg-background text-on-surface antialiased overflow-hidden flex h-screen w-full">
       {/* SIDE NAVBAR */}
-      <aside className="h-screen sticky top-0 left-0 w-sidebar-expanded bg-[#0e4f9f] border-r border-outline-variant/20 flex flex-col py-8 px-4 z-50 shrink-0">
-        <div className="mb-10 px-4">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-white rounded-xl flex items-center justify-center p-1.5" title="Limablue Agenda">
-              <img src="/logo-mark.svg" alt="Limablue" className="w-full h-full object-contain" />
-            </div>
-            <div>
-              <h1 className="font-headline-md text-headline-md font-bold text-surface-container-lowest leading-none">
-                Agenda
-              </h1>
-              <p className="font-label-caps text-label-caps text-secondary-fixed-dim mt-1">
-                Gestión Médica
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <nav className="flex-1 space-y-2">
-          <a
-            className="flex items-center gap-3 py-3 text-primary-fixed-dim font-bold border-l-4 border-primary-fixed-dim pl-4 transition-all duration-300 ease-in-out hover:bg-surface-variant/10 group"
-            href="#"
-          >
-            <span
-              className="material-symbols-outlined"
-              style={{ fontVariationSettings: "'FILL' 1" }}
-            >
-              calendar_today
-            </span>
-            <span className="font-headline-sm text-headline-sm">Agenda</span>
-          </a>
-          <a
-            className="flex items-center gap-3 py-3 text-secondary-fixed-dim font-medium pl-5 transition-all duration-300 ease-in-out hover:bg-surface-variant/10 hover:text-surface-bright group"
-            href="#"
-          >
-            <span className="material-symbols-outlined">groups</span>
-            <span className="font-headline-sm text-headline-sm">Pacientes</span>
-          </a>
-          <a
-            className="flex items-center gap-3 py-3 text-secondary-fixed-dim font-medium pl-5 transition-all duration-300 ease-in-out hover:bg-surface-variant/10 hover:text-surface-bright group"
-            href="#"
-          >
-            <span className="material-symbols-outlined">analytics</span>
-            <span className="font-headline-sm text-headline-sm">Analíticas</span>
-          </a>
-        </nav>
-
-        <div className="mt-auto space-y-2 pt-8 border-t border-white/5">
-          <a
-            className="flex items-center gap-3 py-3 text-secondary-fixed-dim font-medium pl-5 transition-all duration-300 ease-in-out hover:bg-surface-variant/10 hover:text-surface-bright"
-            href="#"
-          >
-            <span className="material-symbols-outlined">settings</span>
-            <span className="font-headline-sm text-headline-sm">Configuración</span>
-          </a>
-          <a
-            className="flex items-center gap-3 py-3 text-secondary-fixed-dim font-medium pl-5 transition-all duration-300 ease-in-out hover:bg-surface-variant/10 hover:text-surface-bright"
-            href="#"
-          >
-            <span className="material-symbols-outlined">help</span>
-            <span className="font-headline-sm text-headline-sm">Soporte</span>
-          </a>
-          <div className="mt-6 p-4 bg-white/5 rounded-xl flex items-center gap-3">
-            <img
-              alt="Dr. Julian Vance"
-              className="w-10 h-10 rounded-full border border-white/10 object-cover"
-              src={getDefaultAvatar('Julian Vance')}
-            />
-            <div className="overflow-hidden">
-              <p className="text-white font-semibold text-sm truncate">Dr. Julian Vance</p>
-              <p className="text-secondary-fixed-dim text-xs truncate">Jefe de Cirugía</p>
-            </div>
-          </div>
-        </div>
-      </aside>
+      <Idea1Sidebar />
 
       {/* MAIN CANVAS */}
       <main className="flex-1 flex flex-col min-w-0 bg-surface">
