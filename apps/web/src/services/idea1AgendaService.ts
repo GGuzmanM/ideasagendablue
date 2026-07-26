@@ -40,7 +40,7 @@ export interface CitaAgenda {
   servicioNombre?: string;
   subcategoriaNombre?: string;
   etiquetaAsignacion?: string;
-  estado: 'AGENDADA' | 'CONFIRMADA' | 'EN ATENCIÓN' | 'COMPLETADA' | 'NO SHOW';
+  estado: 'AGENDADA' | 'CONFIRMADA' | 'LLEGÓ' | 'EN ATENCIÓN' | 'COMPLETADA' | 'NO SHOW';
   raw?: any;
 }
 
@@ -142,7 +142,8 @@ export function mapearCitasDbACitaAgenda(citasDb: any[] = []): CitaAgenda[] {
     let estadoNormalizado: CitaAgenda['estado'] = 'AGENDADA';
     const st = (c.estado || '').toLowerCase();
     if (st === 'en_atencion' || st === 'en atencion' || st === 'en atención') estadoNormalizado = 'EN ATENCIÓN';
-    else if (st === 'confirmada' || st === 'llego' || st === 'llegó') estadoNormalizado = 'CONFIRMADA';
+    else if (st === 'llego' || st === 'llegó') estadoNormalizado = 'LLEGÓ';
+    else if (st === 'confirmada') estadoNormalizado = 'CONFIRMADA';
     else if (st === 'completada') estadoNormalizado = 'COMPLETADA';
     else if (st === 'no_show' || st === 'no show') estadoNormalizado = 'NO SHOW';
 

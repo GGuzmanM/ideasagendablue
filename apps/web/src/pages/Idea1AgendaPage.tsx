@@ -672,6 +672,8 @@ export function Idea1AgendaPage() {
                                 } ${
                                   cita.estado === 'EN ATENCIÓN'
                                     ? 'bg-tertiary-fixed/30 border-tertiary-container/30 text-on-surface'
+                                    : cita.estado === 'LLEGÓ'
+                                    ? 'bg-emerald-50/60 border-emerald-300 text-on-surface'
                                     : cita.estado === 'CONFIRMADA'
                                     ? 'bg-primary-container/20 border-primary/30 text-on-surface'
                                     : cita.estado === 'COMPLETADA'
@@ -686,6 +688,8 @@ export function Idea1AgendaPage() {
                                   className={`absolute left-0 top-1 bottom-1 w-1 rounded-r-full ${
                                     cita.estado === 'EN ATENCIÓN'
                                       ? 'bg-tertiary-container'
+                                      : cita.estado === 'LLEGÓ'
+                                      ? 'bg-emerald-500'
                                       : cita.estado === 'CONFIRMADA'
                                       ? 'bg-primary'
                                       : cita.estado === 'COMPLETADA'
@@ -705,6 +709,8 @@ export function Idea1AgendaPage() {
                                       className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold flex items-center gap-1 shrink-0 ${
                                         cita.estado === 'EN ATENCIÓN'
                                           ? 'bg-tertiary-fixed text-on-tertiary-fixed-variant'
+                                          : cita.estado === 'LLEGÓ'
+                                          ? 'bg-emerald-100 text-emerald-800'
                                           : cita.estado === 'CONFIRMADA'
                                           ? 'bg-primary-fixed text-on-primary-fixed-variant'
                                           : cita.estado === 'COMPLETADA'
@@ -718,6 +724,8 @@ export function Idea1AgendaPage() {
                                         className={`w-1 h-1 rounded-full ${
                                           cita.estado === 'EN ATENCIÓN'
                                             ? 'bg-tertiary-container animate-pulse'
+                                            : cita.estado === 'LLEGÓ'
+                                            ? 'bg-emerald-600'
                                             : cita.estado === 'CONFIRMADA'
                                             ? 'bg-primary-container'
                                             : cita.estado === 'NO SHOW'
@@ -725,7 +733,7 @@ export function Idea1AgendaPage() {
                                             : 'bg-secondary-fixed-dim'
                                         }`}
                                       />
-                                      <span className="truncate">{cita.estado === 'CONFIRMADA' ? 'LLEGÓ' : cita.estado}</span>
+                                      <span className="truncate">{cita.estado}</span>
                                     </span>
                                   </div>
 
