@@ -1,73 +1,67 @@
 <!DOCTYPE html>
 
-<html class="light" lang="es">
-
-<head>
-    <meta charset="utf-8" />
-    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
-    <title>Agenda Médica</title>
-    <!-- Google Fonts: Geist for headlines, Inter for body, JetBrains Mono for UI labels -->
-    <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono&amp;family=Geist:wght@400;500;600;700;800;900&amp;display=swap"
-        rel="stylesheet" />
-    <!-- Material Symbols -->
-    <link
-        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
-        rel="stylesheet" />
-    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-    <script id="tailwind-config">
+<html class="light" lang="en" style=""><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>MediFlow Pro - Nueva Cita</title>
+<!-- Fonts & Icons -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono&amp;family=Geist:wght@400;500;600;700;800;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
         tailwind.config = {
             darkMode: "class",
             theme: {
                 extend: {
                     "colors": {
+                        "on-tertiary": "#ffffff",
+                        "on-secondary-container": "#5c647a",
                         "surface-container-low": "#f2f4f6",
-                        "surface-bright": "#f7f9fb",
-                        "error-container": "#ffdad6",
-                        "on-tertiary-fixed-variant": "#7b2f00",
-                        "outline-variant": "#c7c4d8",
-                        "surface-tint": "#4d44e3",
-                        "on-error": "#ffffff",
-                        "tertiary": "#7e3000",
-                        "primary-fixed": "#e2dfff",
-                        "surface": "#f7f9fb",
-                        "secondary-fixed-dim": "#bec6e0",
+                        "on-secondary-fixed-variant": "#3f465c",
+                        "surface-dim": "#d8dadc",
                         "on-primary-fixed": "#0f0069",
                         "on-surface-variant": "#464555",
-                        "surface-dim": "#d8dadc",
-                        "surface-container-lowest": "#ffffff",
-                        "on-tertiary": "#ffffff",
-                        "outline": "#777587",
-                        "inverse-on-surface": "#eff1f3",
-                        "on-secondary-fixed-variant": "#3f465c",
-                        "tertiary-container": "#a44100",
-                        "on-background": "#191c1e",
-                        "on-secondary-fixed": "#131b2e",
-                        "surface-container-high": "#e6e8ea",
-                        "inverse-primary": "#c3c0ff",
-                        "secondary-fixed": "#dae2fd",
-                        "inverse-surface": "#2d3133",
-                        "on-primary": "#ffffff",
-                        "on-error-container": "#93000a",
-                        "on-primary-fixed-variant": "#3323cc",
-                        "on-surface": "#191c1e",
-                        "error": "#ba1a1a",
-                        "on-secondary-container": "#5c647a",
-                        "on-secondary": "#ffffff",
-                        "primary-container": "#4f46e5",
-                        "background": "#f7f9fb",
-                        "secondary": "#565e74",
-                        "tertiary-fixed": "#ffdbcc",
-                        "primary-fixed-dim": "#c3c0ff",
-                        "tertiary-fixed-dim": "#ffb695",
-                        "secondary-container": "#dae2fd",
+                        "on-primary-container": "#dad7ff",
                         "surface-container-highest": "#e0e3e5",
+                        "tertiary-fixed": "#ffdbcc",
+                        "surface-bright": "#f7f9fb",
+                        "on-secondary": "#ffffff",
                         "on-tertiary-container": "#ffd2be",
-                        "on-tertiary-fixed": "#351000",
+                        "primary-fixed": "#e2dfff",
+                        "inverse-surface": "#2d3133",
+                        "on-primary-fixed-variant": "#3323cc",
+                        "primary-container": "#4f46e5",
+                        "error": "#ba1a1a",
+                        "tertiary": "#7e3000",
+                        "secondary-fixed-dim": "#bec6e0",
+                        "outline": "#777587",
+                        "surface-container-high": "#e6e8ea",
+                        "on-error": "#ffffff",
+                        "secondary": "#565e74",
+                        "primary-fixed-dim": "#c3c0ff",
+                        "on-surface": "#191c1e",
+                        "on-error-container": "#93000a",
+                        "inverse-primary": "#c3c0ff",
+                        "surface-container-lowest": "#ffffff",
                         "surface-variant": "#e0e3e5",
-                        "primary": "#3525cd",
+                        "on-tertiary-fixed": "#351000",
+                        "on-background": "#191c1e",
+                        "secondary-fixed": "#dae2fd",
+                        "inverse-on-surface": "#eff1f3",
+                        "background": "#f7f9fb",
+                        "on-tertiary-fixed-variant": "#7b2f00",
+                        "surface-tint": "#4d44e3",
+                        "error-container": "#ffdad6",
+                        "outline-variant": "#c7c4d8",
+                        "on-primary": "#ffffff",
+                        "secondary-container": "#dae2fd",
+                        "surface": "#f7f9fb",
                         "surface-container": "#eceef0",
-                        "on-primary-container": "#dad7ff"
+                        "tertiary-fixed-dim": "#ffb695",
+                        "on-secondary-fixed": "#131b2e",
+                        "tertiary-container": "#a44100",
+                        "primary": "#3525cd"
                     },
                     "borderRadius": {
                         "DEFAULT": "0.25rem",
@@ -76,582 +70,292 @@
                         "full": "9999px"
                     },
                     "spacing": {
-                        "sidebar-expanded": "260px",
-                        "sidebar-collapsed": "72px",
                         "unit": "4px",
-                        "grid-gutter": "24px",
-                        "container-padding": "32px"
+                        "sidebar-collapsed": "72px",
+                        "sidebar-expanded": "260px",
+                        "container-padding": "32px",
+                        "grid-gutter": "24px"
                     },
                     "fontFamily": {
-                        "headline-sm": ["Geist"],
-                        "mono-label": ["JetBrains Mono"],
                         "body-md": ["Inter"],
                         "body-lg": ["Inter"],
                         "label-caps": ["Inter"],
+                        "mono-label": ["JetBrains Mono"],
+                        "headline-sm": ["Geist"],
                         "display-lg": ["Geist"],
                         "headline-md": ["Geist"]
                     },
                     "fontSize": {
-                        "headline-sm": ["18px", { "lineHeight": "28px", "letterSpacing": "0", "fontWeight": "500" }],
-                        "mono-label": ["12px", { "lineHeight": "16px", "letterSpacing": "0", "fontWeight": "400" }],
-                        "body-md": ["14px", { "lineHeight": "20px", "letterSpacing": "0", "fontWeight": "400" }],
-                        "body-lg": ["16px", { "lineHeight": "24px", "letterSpacing": "0", "fontWeight": "400" }],
-                        "label-caps": ["11px", { "lineHeight": "16px", "letterSpacing": "0.08em", "fontWeight": "600" }],
-                        "display-lg": ["48px", { "lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "600" }],
-                        "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }]
+                        "body-md": ["14px", {"lineHeight": "20px", "letterSpacing": "0", "fontWeight": "400"}],
+                        "body-lg": ["16px", {"lineHeight": "24px", "letterSpacing": "0", "fontWeight": "400"}],
+                        "label-caps": ["11px", {"lineHeight": "16px", "letterSpacing": "0.08em", "fontWeight": "600"}],
+                        "mono-label": ["12px", {"lineHeight": "16px", "letterSpacing": "0", "fontWeight": "400"}],
+                        "headline-sm": ["18px", {"lineHeight": "28px", "letterSpacing": "0", "fontWeight": "500"}],
+                        "display-lg": ["48px", {"lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "600"}],
+                        "headline-md": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600"}]
                     }
                 },
             },
         }
     </script>
-    <style>
+<style>
         body {
+            background-color: #f7f9fb;
             font-family: 'Inter', sans-serif;
+            color: #191c1e;
         }
-
         .material-symbols-outlined {
             font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-            vertical-align: middle;
         }
-
-        .custom-scrollbar::-webkit-scrollbar {
+        .glass-header {
+            backdrop-filter: blur(12px);
+            background-color: rgba(53, 37, 205, 0.95);
+        }
+        .custom-shadow {
+            box-shadow: 0px 12px 24px -4px rgba(0,0,0,0.04), 0px 4px 8px -2px rgba(0,0,0,0.02);
+        }
+        .form-input-focus:focus {
+            outline: none;
+            border-color: #3525cd;
+            box-shadow: 0 0 0 1px #3525cd;
+        }
+        ::-webkit-scrollbar {
             width: 6px;
-            height: 6px;
         }
-
-        .custom-scrollbar::-webkit-scrollbar-track {
+        ::-webkit-scrollbar-track {
             background: transparent;
         }
-
-        .custom-scrollbar::-webkit-scrollbar-thumb {
+        ::-webkit-scrollbar-thumb {
             background: #e2e8f0;
             border-radius: 10px;
         }
-
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-            background: #cbd5e1;
-        }
-
-        .appointment-card {
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        .appointment-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0px 12px 24px -4px rgba(0, 0, 0, 0.04), 0px 4px 8px -2px rgba(0, 0, 0, 0.02);
-        }
     </style>
 </head>
-
-<body class="bg-background text-on-surface antialiased overflow-hidden">
-    <div class="flex h-screen w-full">
-        <!-- SIDE NAVBAR -->
-        <aside
-            class="h-screen sticky top-0 left-0 w-sidebar-expanded bg-on-secondary-fixed flex flex-col py-8 px-4 z-50 shrink-0">
-            <div class="mb-10 px-4">
-                <div class="flex items-center gap-3">
-                    <div
-                        class="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shadow-lg shadow-primary/20">
-                        <span class="material-symbols-outlined text-white"
-                            style="font-variation-settings: 'FILL' 1;">medical_services</span>
-                    </div>
-                    <div>
-                        <h1
-                            class="font-headline-md text-headline-md font-bold text-surface-container-lowest leading-none">
-                            Agenda</h1>
-                        <p class="font-label-caps text-label-caps text-secondary-fixed-dim mt-1">Gestión Médica</p>
-                    </div>
-                </div>
-            </div>
-            <nav class="flex-1 space-y-2">
-                <!-- Agenda is Active -->
-                <a class="flex items-center gap-3 py-3 text-primary-fixed-dim font-bold border-l-4 border-primary-fixed-dim pl-4 transition-all duration-300 ease-in-out hover:bg-surface-variant/10 group"
-                    href="#">
-                    <span class="material-symbols-outlined"
-                        style="font-variation-settings: 'FILL' 1;">calendar_today</span>
-                    <span class="font-headline-sm text-headline-sm">Agenda</span>
-                </a>
-                <a class="flex items-center gap-3 py-3 text-secondary-fixed-dim font-medium pl-5 transition-all duration-300 ease-in-out hover:bg-surface-variant/10 hover:text-surface-bright group"
-                    href="#">
-                    <span class="material-symbols-outlined">groups</span>
-                    <span class="font-headline-sm text-headline-sm">Pacientes</span>
-                </a>
-                <a class="flex items-center gap-3 py-3 text-secondary-fixed-dim font-medium pl-5 transition-all duration-300 ease-in-out hover:bg-surface-variant/10 hover:text-surface-bright group"
-                    href="#">
-                    <span class="material-symbols-outlined">analytics</span>
-                    <span class="font-headline-sm text-headline-sm">Analíticas</span>
-                </a>
-            </nav>
-            <div class="mt-auto space-y-2 pt-8 border-t border-white/5">
-                <a class="flex items-center gap-3 py-3 text-secondary-fixed-dim font-medium pl-5 transition-all duration-300 ease-in-out hover:bg-surface-variant/10 hover:text-surface-bright"
-                    href="#">
-                    <span class="material-symbols-outlined">settings</span>
-                    <span class="font-headline-sm text-headline-sm">Configuración</span>
-                </a>
-                <a class="flex items-center gap-3 py-3 text-secondary-fixed-dim font-medium pl-5 transition-all duration-300 ease-in-out hover:bg-surface-variant/10 hover:text-surface-bright"
-                    href="#">
-                    <span class="material-symbols-outlined">help</span>
-                    <span class="font-headline-sm text-headline-sm">Soporte</span>
-                </a>
-                <div class="mt-6 p-4 bg-white/5 rounded-xl flex items-center gap-3">
-                    <img alt="Dr. Julian Vance" class="w-10 h-10 rounded-full border border-white/10 object-cover"
-                        src="https://lh3.googleusercontent.com/aida-public/AB6AXuD9wcJSjqZV5RSEdxRoALyBmpl71aAaXBpmlv9hQk150JNZSjg_FYdp4s4-fWDMhRlmssxkC5NX9c-apXyjve1J_cj8uja3fraEl4hytTqfNlOQFf5Xy4aEsk4cVejIiGy9Gxc9wgBJWzp6B-wCCm8Xfezpor9rfdbPAvGHWvSDf7_qqpcAv55hVBrH-spuUkSM5GNn2pwoL9Qi8OW6DiDRdCTX6WwjWrWKCoYt-5UMb15yaJbj4GuW" />
-                    <div class="overflow-hidden">
-                        <p class="text-white font-semibold text-sm truncate">Dr. Julian Vance</p>
-                        <p class="text-secondary-fixed-dim text-xs truncate">Jefe de Cirugía</p>
-                    </div>
-                </div>
-            </div>
-        </aside>
-        <!-- MAIN CANVAS -->
-        <main class="flex-1 flex flex-col min-w-0 bg-surface">
-            <!-- TOP NAVBAR -->
-            <header
-                class="docked full-width top-0 sticky z-40 bg-surface/80 backdrop-blur-md border-b border-outline-variant/30 shadow-sm flex justify-between items-center w-full px-grid-gutter h-16 shrink-0">
-                <div class="flex items-center gap-8 flex-1">
-                    <div class="relative w-full max-w-md group">
-                        <span
-                            class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-lg">search</span>
-                        <input
-                            class="w-full bg-surface-container-low border border-outline-variant/50 rounded-lg pl-10 pr-16 py-2 text-body-md font-body-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
-                            placeholder="Buscar pacientes, registros, archivos..." type="text" />
-                        <div class="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                            <kbd
-                                class="px-1.5 py-0.5 text-[10px] font-mono-label bg-surface-container-high border border-outline-variant rounded text-on-surface-variant">⌘</kbd>
-                            <kbd
-                                class="px-1.5 py-0.5 text-[10px] font-mono-label bg-surface-container-high border border-outline-variant rounded text-on-surface-variant">K</kbd>
-                        </div>
-                    </div>
-                    <nav class="hidden lg:flex items-center gap-6">
-                        <a class="text-primary font-bold border-b-2 border-primary pb-1 font-body-md" href="#">Sede
-                            Principal</a>
-                        <a class="text-on-surface-variant font-medium hover:text-primary transition-colors font-body-md"
-                            href="#">Centro Centro</a>
-                    </nav>
-                </div>
-                <div class="flex items-center gap-4">
-                    <button
-                        class="bg-primary-container text-on-primary-container px-4 py-2 rounded-lg font-body-md font-semibold hover:opacity-90 active:scale-95 transition-all shadow-md shadow-primary/20 flex items-center gap-2">
-                        <span class="material-symbols-outlined text-lg">add_circle</span>
-                        Nueva Cita
+<body class="flex min-h-screen overflow-hidden">
+<!-- Sidebar Navigation (Shared Component) -->
+<aside class="h-screen sticky top-0 left-0 w-sidebar-expanded bg-on-secondary-fixed dark:bg-on-secondary-fixed flex flex-col py-8 px-4 flex-shrink-0 z-50">
+<div class="mb-10 px-2 flex items-center gap-3">
+<div class="w-8 h-8 rounded bg-primary-container flex items-center justify-center">
+<span class="material-symbols-outlined text-surface-container-lowest text-lg">medical_services</span>
+</div>
+<h1 class="font-headline-md text-headline-md font-bold text-surface-container-lowest">MediFlow Pro</h1>
+</div>
+<nav class="flex-1 space-y-1">
+<a class="flex items-center gap-3 transition-all duration-300 ease-in-out text-primary-fixed-dim font-bold border-l-4 border-primary-fixed-dim pl-4 py-3" href="#">
+<span class="material-symbols-outlined" data-icon="calendar_today">calendar_today</span>
+<span class="font-label-caps text-label-caps">Agenda</span>
+</a>
+<a class="flex items-center gap-3 transition-all duration-300 ease-in-out text-secondary-fixed-dim font-medium pl-5 py-3 hover:bg-surface-variant/10 hover:text-surface-bright" href="#">
+<span class="material-symbols-outlined" data-icon="groups">groups</span>
+<span class="font-label-caps text-label-caps">Patients</span>
+</a>
+<a class="flex items-center gap-3 transition-all duration-300 ease-in-out text-secondary-fixed-dim font-medium pl-5 py-3 hover:bg-surface-variant/10 hover:text-surface-bright" href="#">
+<span class="material-symbols-outlined" data-icon="analytics">analytics</span>
+<span class="font-label-caps text-label-caps">Analytics</span>
+</a>
+</nav>
+<div class="mt-auto space-y-1 pt-6 border-t border-secondary-container/10">
+<a class="flex items-center gap-3 transition-all duration-300 ease-in-out text-secondary-fixed-dim font-medium pl-5 py-3 hover:bg-surface-variant/10 hover:text-surface-bright" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-label-caps text-label-caps">Settings</span>
+</a>
+<a class="flex items-center gap-3 transition-all duration-300 ease-in-out text-secondary-fixed-dim font-medium pl-5 py-3 hover:bg-surface-variant/10 hover:text-surface-bright" href="#">
+<span class="material-symbols-outlined" data-icon="help">help</span>
+<span class="font-label-caps text-label-caps">Support</span>
+</a>
+</div>
+</aside>
+<!-- Main Content Area (Dimmed Background for Modal effect) -->
+<main class="flex-1 relative flex flex-col min-w-0 bg-surface">
+<!-- Top Nav Bar (Shared Component) -->
+<header class="flex justify-between items-center w-full px-grid-gutter h-16 bg-surface/80 dark:bg-surface/80 backdrop-blur-md border-b border-outline-variant/30 sticky top-0 z-40 shadow-sm">
+<div class="flex items-center gap-6">
+<span class="font-headline-md text-headline-md font-black text-primary">MediFlow</span>
+<div class="hidden md:flex gap-4">
+<a class="text-on-surface-variant font-medium hover:text-primary transition-colors" href="#">Main Branch</a>
+<a class="text-primary font-bold border-b-2 border-primary pb-1" href="#">Downtown Center</a>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<div class="relative group">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-lg">search</span>
+<input class="pl-10 pr-12 py-1.5 bg-surface-container-low border border-outline-variant rounded-lg text-body-md font-body-md focus:ring-1 focus:ring-primary focus:border-primary outline-none w-64 transition-all" placeholder="Search Patients..." type="text"/>
+<span class="absolute right-3 top-1/2 -translate-y-1/2 font-mono-label text-mono-label text-outline opacity-60">⌘ K</span>
+</div>
+<button class="material-symbols-outlined text-on-surface-variant hover:text-primary transition-colors">notifications</button>
+<div class="w-8 h-8 rounded-full overflow-hidden border border-outline-variant">
+<img class="w-full h-full object-cover" data-alt="A professional headshot of a senior medical doctor in a bright, modern clinic setting. The doctor, Dr. Julian Vance, is smiling warmly and wearing a clean white lab coat with a stethoscope around his neck. The background is softly blurred, showing high-end medical equipment and minimalist interior design with cool blue and white tones." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCKgtiBk2DhHgRjRAd2aUQoDyLtOZHrF4lRTs_MxvFTO6VfFrZHBLsym5xw1xg1qfHw8Vkq6-73gyyMKmpKWiB0pgzpq4d0nknmriT9qUMejlwHKOAO7o931PLD30ClhANSGM3f_6dwu9TPxvjrOo4Lbft7LTfoSIWF-UU5jkqIvMHR3PYOJZPbhS1DH9pA530hYkS1QXaWvlv4Aj5hvPOXehktiLOchmfT7TKKWAy3l8dlUEYZtR373elIby5CIhCtxUmgSI3tUnM"/>
+</div>
+</div>
+</header>
+<!-- Mock Dashboard Content -->
+<div class="p-container-padding opacity-20 pointer-events-none">
+<div class="grid grid-cols-12 gap-grid-gutter">
+<div class="col-span-12 h-64 bg-surface-container rounded-xl border border-outline-variant"></div>
+<div class="col-span-4 h-96 bg-surface-container rounded-xl border border-outline-variant"></div>
+<div class="col-span-8 h-96 bg-surface-container rounded-xl border border-outline-variant"></div>
+</div>
+</div>
+<!-- Overlay / Modal -->
+<div class="fixed inset-0 bg-inverse-surface/40 backdrop-blur-[2px] z-[60] flex items-center justify-center p-4">
+<div class="bg-surface-container-lowest w-full max-w-[580px] h-[90vh] rounded-2xl flex flex-col overflow-hidden custom-shadow animate-in fade-in zoom-in duration-300">
+<!-- Modal Header -->
+<div class="glass-header text-white p-6 flex justify-between items-start">
+<div>
+<h2 class="font-headline-md text-headline-md font-bold">Nueva Cita</h2>
+<p class="font-body-md text-body-md text-white/80 mt-1 flex items-center gap-2">
+<span class="material-symbols-outlined text-sm">event</span>
+                            25 de Julio · 2026 · 08:30
+                        </p>
+</div>
+<button class="p-1.5 hover:bg-white/10 rounded-lg transition-colors">
+<span class="material-symbols-outlined">close</span>
+</button>
+</div>
+<!-- Modal Body (Scrollable) -->
+<div class="flex-1 overflow-y-auto p-6 space-y-6">
+<!-- Patient Selection -->
+<div class="space-y-3">
+<label class="font-label-caps text-label-caps text-on-surface-variant flex items-center gap-1">
+                            PACIENTE <span class="text-error font-bold">*</span>
+</label>
+<div class="grid grid-cols-2 gap-4">
+<button class="flex flex-col items-center justify-center p-6 border-2 border-primary-container bg-primary-container/5 rounded-xl transition-all duration-200">
+<span class="material-symbols-outlined text-primary mb-3 text-3xl">person</span>
+<span class="font-headline-sm text-headline-sm text-primary">Paciente existente</span>
+<span class="font-body-md text-body-md text-on-surface-variant/70 mt-1">Ya está registrado</span>
+</button>
+<button class="flex flex-col items-center justify-center p-6 border border-outline-variant rounded-xl hover:border-primary-container transition-all group">
+<span class="material-symbols-outlined text-outline group-hover:text-primary mb-3 text-3xl">person_add</span>
+<span class="font-headline-sm text-headline-sm">Paciente nuevo</span>
+<span class="font-body-md text-body-md text-on-surface-variant/70 mt-1">Registrar por primera vez</span>
+</button>
+</div>
+</div>
+<!-- Service Selection -->
+<div class="space-y-3">
+<label class="font-label-caps text-label-caps text-on-surface-variant">SERVICIO <span class="text-error">*</span></label>
+<div class="relative">
+<select class="w-full appearance-none bg-surface-container-low border border-outline-variant rounded-xl px-4 py-3 font-body-md text-body-md form-input-focus transition-all">
+<option>Seleccionar servicio...</option>
+<option>Consulta General</option>
+<option>Cardiología</option>
+<option>Dermatología</option>
+</select>
+<span class="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-outline">expand_more</span>
+</div>
+</div>
+<!-- Grid Layout for 2-col inputs -->
+<div class="grid grid-cols-2 gap-4">
+<div class="space-y-3">
+<label class="font-label-caps text-label-caps text-on-surface-variant">CANAL DE RESERVA</label>
+<div class="relative">
+<select class="w-full appearance-none bg-surface-container-low border border-outline-variant rounded-xl px-4 py-3 font-body-md text-body-md form-input-focus transition-all">
+<option>Recepción</option>
+<option>WhatsApp</option>
+<option>Online Portal</option>
+</select>
+<span class="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-outline">expand_more</span>
+</div>
+</div>
+<div class="space-y-3">
+<label class="font-label-caps text-label-caps text-on-surface-variant">PROMOCIÓN (OPCIONAL)</label>
+<div class="relative">
+<select class="w-full appearance-none bg-surface-container-low border border-outline-variant rounded-xl px-4 py-3 font-body-md text-body-md form-input-focus transition-all opacity-60">
+<option>— Ninguna —</option>
+<option>Descuento Estudiante</option>
+</select>
+<span class="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-outline">expand_more</span>
+</div>
+</div>
+</div>
+<!-- Professional Selection -->
+<div class="space-y-3">
+<label class="font-label-caps text-label-caps text-on-surface-variant">PROFESIONAL</label>
+<div class="relative">
+<div class="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none flex items-center gap-2">
+<span class="material-symbols-outlined text-amber-500" style="font-variation-settings: 'FILL' 1;">star</span>
+</div>
+<select class="w-full appearance-none bg-surface-container-low border border-outline-variant rounded-xl pl-12 pr-4 py-3 font-body-md text-body-md form-input-focus transition-all">
+<option>Sin preferencia (asignación automática)</option>
+<option>Dr. Julian Vance</option>
+<option>Dra. Elena Rossi</option>
+</select>
+<span class="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-outline">expand_more</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant/60 italic text-[13px]">Por defecto se asigna automáticamente. Elige un médico o a Daniel solo si el paciente lo pidió.</p>
+</div>
+<!-- Date & Time -->
+<div class="grid grid-cols-2 gap-4">
+<div class="space-y-3">
+<label class="font-label-caps text-label-caps text-on-surface-variant">FECHA <span class="text-error">*</span></label>
+<div class="relative">
+<input class="w-full bg-surface-container-low border border-outline-variant rounded-xl px-4 py-3 font-body-md text-body-md form-input-focus transition-all" type="text" value="25/07/2026"/>
+<span class="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-outline">calendar_today</span>
+</div>
+</div>
+<div class="space-y-3">
+<label class="font-label-caps text-label-caps text-on-surface-variant">HORA <span class="text-error">*</span></label>
+<div class="relative">
+<select class="w-full appearance-none bg-surface-container-low border border-outline-variant rounded-xl px-4 py-3 font-body-md text-body-md form-input-focus transition-all opacity-50">
+<option>Elige primero un servicio...</option>
+</select>
+<span class="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-outline">schedule</span>
+</div>
+</div>
+</div>
+<!-- Reception Comments -->
+<div class="space-y-3">
+<label class="font-label-caps text-label-caps text-on-surface-variant">COMENTARIO DE RECEPCIÓN</label>
+<textarea class="w-full bg-surface-container-low border border-outline-variant rounded-xl px-4 py-3 font-body-md text-body-md form-input-focus transition-all resize-none" placeholder="Notas internas opcionales..." rows="3"></textarea>
+</div>
+<!-- Advance Payment Section -->
+<div class="bg-[#FFFBEB] border border-[#FEF3C7] rounded-xl p-5 space-y-4">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[#B45309] text-xl">payments</span>
+<span class="font-body-md text-body-md font-semibold text-[#92400E]">Pago anticipado <span class="font-normal opacity-70">(opcional)</span></span>
+</div>
+<p class="font-body-md text-body-md text-[#92400E]/80 -mt-1">Si el paciente pagó por adelantado, adjunta el comprobante.</p>
+<!-- Upload Dropzone -->
+<div class="border-2 border-dashed border-[#F59E0B]/30 bg-white/50 rounded-xl p-6 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-white hover:border-[#F59E0B]/50 transition-all group">
+<span class="material-symbols-outlined text-[#B45309]/40 mb-2 group-hover:scale-110 transition-transform">upload_file</span>
+<p class="font-body-md text-body-md text-[#92400E] font-medium">Arrastra, pega (Ctrl+V) o haz clic</p>
+<p class="font-body-md text-body-md text-[#92400E]/60 text-xs mt-1">JPG · PNG · PDF - máx. 10MB</p>
+</div>
+<p class="font-body-md text-body-md text-[#92400E]/60 text-[12px] italic">Sin comprobante la cita igual se crea con normalidad.</p>
+</div>
+</div>
+<!-- Modal Footer -->
+<div class="p-6 border-t border-outline-variant/30 flex gap-4 bg-surface-container-low/30">
+<button class="flex-1 px-6 py-3 border border-outline-variant rounded-xl font-body-md text-body-md font-semibold text-on-surface hover:bg-surface-container-high transition-colors">
+                        Cancelar
                     </button>
-                    <div class="flex items-center gap-2 px-4 border-l border-outline-variant/30 ml-2">
-                        <button
-                            class="w-10 h-10 flex items-center justify-center text-on-surface-variant hover:bg-surface-container rounded-full transition-colors relative">
-                            <span class="material-symbols-outlined">notifications</span>
-                            <span
-                                class="absolute top-2.5 right-2.5 w-2 h-2 bg-error rounded-full border-2 border-surface"></span>
-                        </button>
-                        <button
-                            class="w-10 h-10 flex items-center justify-center text-on-surface-variant hover:bg-surface-container rounded-full transition-colors">
-                            <span class="material-symbols-outlined">apps</span>
-                        </button>
-                    </div>
-                </div>
-            </header>
-            <!-- AGENDA CONTENT -->
-            <div class="flex-1 overflow-y-auto custom-scrollbar p-grid-gutter space-y-grid-gutter">
-                <!-- HEADER & METRICS -->
-                <section class="flex flex-col lg:flex-row gap-grid-gutter items-start">
-                    <div class="flex-1">
-                        <h2 class="font-headline-md text-headline-md font-bold text-on-surface">Horario Diario</h2>
-                        <div class="flex items-center gap-4 mt-4">
-                            <div
-                                class="flex items-center bg-surface-container-lowest border border-outline-variant/50 rounded-xl p-1 shadow-sm">
-                                <button class="p-2 hover:bg-surface-container rounded-lg transition-colors"><span
-                                        class="material-symbols-outlined">chevron_left</span></button>
-                                <span class="px-4 font-body-lg text-body-lg font-semibold text-on-surface">24 de
-                                    Octubre, 2026</span>
-                                <button class="p-2 hover:bg-surface-container rounded-lg transition-colors"><span
-                                        class="material-symbols-outlined">chevron_right</span></button>
-                            </div>
-                            <button
-                                class="px-4 py-2 bg-surface-container-lowest border border-outline-variant/50 rounded-xl font-body-md font-medium text-on-surface-variant shadow-sm hover:border-primary/30 transition-all">Hoy</button>
-                            <div class="flex items-center bg-surface-container-high rounded-xl p-1">
-                                <button
-                                    class="px-4 py-1.5 bg-surface-container-lowest rounded-lg shadow-sm text-primary font-semibold text-sm">Día</button>
-                                <button
-                                    class="px-4 py-1.5 rounded-lg text-on-surface-variant hover:text-on-surface font-medium text-sm transition-colors">Semana</button>
-                            </div>
-                        </div>
-                    </div>
-                    <!-- KPI PANEL -->
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 w-full lg:w-auto">
-                        <div
-                            class="bg-surface-container-lowest p-4 rounded-2xl border border-outline-variant/30 shadow-sm min-w-[140px]">
-                            <p class="font-label-caps text-label-caps text-on-surface-variant mb-1">Total</p>
-                            <div class="flex items-end justify-between">
-                                <span class="font-headline-md text-headline-md font-bold">42</span>
-                                <span
-                                    class="text-[10px] font-mono-label text-on-surface-variant bg-surface-container p-1 rounded">100%</span>
-                            </div>
-                        </div>
-                        <div
-                            class="bg-surface-container-lowest p-4 rounded-2xl border border-outline-variant/30 shadow-sm min-w-[140px]">
-                            <p class="font-label-caps text-label-caps text-on-surface-variant mb-1">Llegadas</p>
-                            <div class="flex items-end justify-between">
-                                <span class="font-headline-md text-headline-md font-bold">28</span>
-                                <span
-                                    class="text-[10px] font-mono-label text-primary bg-primary/10 p-1 rounded">66%</span>
-                            </div>
-                        </div>
-                        <div
-                            class="bg-surface-container-lowest p-4 rounded-2xl border border-outline-variant/30 shadow-sm min-w-[140px]">
-                            <p class="font-label-caps text-label-caps text-on-surface-variant mb-1">Completadas</p>
-                            <div class="flex items-end justify-between">
-                                <span class="font-headline-md text-headline-md font-bold">15</span>
-                                <span
-                                    class="text-[10px] font-mono-label text-on-tertiary-fixed-variant bg-tertiary-fixed p-1 rounded">35%</span>
-                            </div>
-                        </div>
-                        <div
-                            class="bg-surface-container-lowest p-4 rounded-2xl border border-outline-variant/30 shadow-sm min-w-[140px]">
-                            <p class="font-label-caps text-label-caps text-on-surface-variant mb-1">No Show</p>
-                            <div class="flex items-end justify-between">
-                                <span class="font-headline-md text-headline-md font-bold">3</span>
-                                <span
-                                    class="text-[10px] font-mono-label text-error bg-error-container p-1 rounded">7%</span>
-                            </div>
-                        </div>
-                    </div>
-                </section>
-                <!-- CALENDAR GRID -->
-                <div
-                    class="bg-surface-container-lowest rounded-3xl border border-outline-variant/40 shadow-sm overflow-hidden flex flex-col h-[700px]">
-                    <!-- GRID HEADER (PROFESSIONALS) -->
-                    <div
-                        class="grid grid-cols-[80px_repeat(6,1fr)] border-b border-outline-variant/20 bg-surface-container-lowest sticky top-0 z-10">
-                        <div class="flex items-center justify-center border-r border-outline-variant/10">
-                            <span class="material-symbols-outlined text-on-surface-variant">schedule</span>
-                        </div>
-                        <!-- Professional 1 -->
-                        <div class="py-4 px-2 text-center border-r border-outline-variant/10">
-                            <img alt="Mirtha Chavez"
-                                class="w-12 h-12 rounded-full mx-auto mb-2 border-2 border-primary/10 object-cover"
-                                src="https://lh3.googleusercontent.com/aida-public/AB6AXuCJHU9jWvuasGcFfiUEY6fwwupdRE_fcu5OCSJdb9G9PPE6z6_g31mEqm43yw1dCvQEzB900_rRoCjBq3s6WHJzpaSMw-WCT9xlfcbNVs0BdKVo3jqPBmCvENnVUKcI2gYcXvC0aQB7j4usNG4GOtb-fDAy_XmXpbYjV2BiBDwA6B_grdq8ktENiDbA3FQtT0bARhjmEGeaRcjDhhpbqTebIOdeb7BG0VZ3iRJjYjpmtwjFPB7-kLJt" />
-                            <p class="font-headline-sm text-headline-sm text-sm">Mirtha Chavez</p>
-                            <p class="font-label-caps text-[10px] text-on-surface-variant tracking-wider">Podologa
-                            </p>
-                        </div>
-                        <!-- Professional 2 -->
-                        <div class="py-4 px-2 text-center border-r border-outline-variant/10">
-                            <img alt="Laura Escalante"
-                                class="w-12 h-12 rounded-full mx-auto mb-2 border-2 border-primary/10 object-cover"
-                                src="https://lh3.googleusercontent.com/aida-public/AB6AXuDguRQg-zfhlbDSH84OHxlkQWOfgAQ-t305w-tl-gEhCH_XGuObWF7XMsxJ5JFR1suL_fsjkNtal6G2ooRw_6R0UBwSozd7Eag_cAh0jX16b_lz3TcavOpJKCrENF10iFszlsPlNQrhQrq2es4NzXNYqthQ5ABlyD1MLNBvnMDdhXkjTV_-HDwPTWkjMqrfCAGd-9ou_SD1STGmqT25pc-2wBJUvYkpFpdC9AXAK_rLW2lUiG0cQZ4h" />
-                            <p class="font-headline-sm text-headline-sm text-sm">Laura Escalante</p>
-                            <p class="font-label-caps text-[10px] text-on-surface-variant tracking-wider">Podologa
-                            </p>
-                        </div>
-                        <!-- Professional 3 -->
-                        <div class="py-4 px-2 text-center border-r border-outline-variant/10">
-                            <img alt="Gissela Morote"
-                                class="w-12 h-12 rounded-full mx-auto mb-2 border-2 border-primary/10 object-cover"
-                                src="https://lh3.googleusercontent.com/aida-public/AB6AXuC-R7kvKv4OicAdSVuBFI7tkdDqv3e6TNJldvRLFw01dQKCtGs0miUrIkEf6xDDnpRHEGTS77oG4csIJnot2Np2xhBoqP9ydAhfrcVWevTBwdPFEG_u7lkZJkDulxU9N11ecyFyJ7HD8TEYjOWI5Lp3T8CGi-gZNxYvv-OobqbhqXYcN1kG5ps7aaRkOF2Liz8reJvYo2HiTAkLjJ2YHCvBKp8oA-_LPxVqMY-3RH8iRZvx6Xydrhma" />
-                            <p class="font-headline-sm text-headline-sm text-sm">Gissela Morote</p>
-                            <p class="font-label-caps text-[10px] text-on-surface-variant tracking-wider">Podologa</p>
-                        </div>
-                        <!-- Professional 4 -->
-                        <div class="py-4 px-2 text-center border-r border-outline-variant/10">
-                            <img alt="Erika Saavedra"
-                                class="w-12 h-12 rounded-full mx-auto mb-2 border-2 border-primary/10 object-cover"
-                                src="https://lh3.googleusercontent.com/aida-public/AB6AXuDbi9vFTfTI0ozARhMozWea1aqe-RPtoqZGi1S_JHzYV6NVUHVh8gaFO3-84b6YsNQ5zKUw9HK6VIOCZ02iCTaWTvMYxRREr3AkXNErpaLDD3OG8So0kEUU_ljY93unjJVBUyiGErq64CzEIDPk-qTKDayloqms6QQyNS4KJyQNwo5e_cT5l_Dte6RlAaQdc0mqH89_fu2rw8OXViVJXn7ASO9yi1mc4pW0AN7-UXfvMDDPBALGah9G" />
-                            <p class="font-headline-sm text-headline-sm text-sm">Erika Saavedra</p>
-                            <p class="font-label-caps text-[10px] text-on-surface-variant tracking-wider">MEDICINA
-                                GENERAL</p>
-                        </div>
-                        <!-- Professional 5 -->
-                        <div class="py-4 px-2 text-center border-r border-outline-variant/10">
-                            <img alt="Luz Saldaña"
-                                class="w-12 h-12 rounded-full mx-auto mb-2 border-2 border-primary/10 object-cover"
-                                src="https://lh3.googleusercontent.com/aida-public/AB6AXuDQ0p3sSWdSzIj8e2b-uM8qnjbLXvNb3amJRy-6_fPxo0z0H5ESPSYGruqgi-1Pu6qvFhMVk42LEO3xlNXRLIKNd35d17yaUecbjyFHryW-mL7TfkgWizc32B43fOD4tNb5PqY-p7nJnJlNRTCk01G8hXdjgXIGqSAOzDDpHNfAyTF-NJAJZ_jJlsNvRyxk-Et1OSjAIgXLRfCMspp0wQjNENEwpce-ztvx8r2Y5zh0j1l2vUF7FCrC" />
-                            <p class="font-headline-sm text-headline-sm text-sm">Luz Saldaña</p>
-                            <p class="font-label-caps text-[10px] text-on-surface-variant tracking-wider">Podologa</p>
-                        </div>
-                        <!-- Professional 6 -->
-                        <div class="py-4 px-2 text-center">
-                            <img alt="Sonia Tejada"
-                                class="w-12 h-12 rounded-full mx-auto mb-2 border-2 border-primary/10 object-cover"
-                                src="https://lh3.googleusercontent.com/aida-public/AB6AXuCWpr251aqea3eOmp9uJCgPS58qG-bikJuLXTEboAPy6jyYIHLlrgfd3gisiX2_cMcirkafVmbdcU1zM0LboBeMDR9YND-zoK14cBwgKSFtLAHPYC5gJGlzLxX4pqEtvOjp8fpH5duY4HL2ky96Pms0PdqAsgjR5_UWgZuYt25W42JCiA9pll_c-uFJ1lxNakF0I8o_oH3hl9kTvBWzOFNW7Iiy0yaVk4bbdXiGzijxCRgZu7NaTpVn" />
-                            <p class="font-headline-sm text-headline-sm text-sm">Sonia Tejada</p>
-                            <p class="font-label-caps text-[10px] text-on-surface-variant tracking-wider">Podologa</p>
-                        </div>
-                    </div>
-                    <!-- GRID CONTENT -->
-                    <div class="flex-1 overflow-y-auto custom-scrollbar relative">
-                        <!-- TIME EJE -->
-                        <div class="absolute inset-0 grid grid-cols-[80px_repeat(6,1fr)] pointer-events-none">
-                            <div class="col-start-1 bg-surface-container-lowest"></div>
-                            <div class="col-start-2 border-r border-outline-variant/5"></div>
-                            <div class="col-start-3 border-r border-outline-variant/5"></div>
-                            <div class="col-start-4 border-r border-outline-variant/5"></div>
-                            <div class="col-start-5 border-r border-outline-variant/5"></div>
-                            <div class="col-start-6 border-r border-outline-variant/5"></div>
-                        </div>
-                        <!-- TIME ROWS -->
-                        <div class="relative">
-                            <!-- 09:00 to 17:00 -->
-                            <div class="grid grid-cols-[80px_1fr] h-20 border-b border-outline-variant/5">
-                                <div
-                                    class="flex items-center justify-center font-mono-label text-on-surface-variant border-r border-outline-variant/10">
-                                    09:00</div>
-                                <div class="relative">
-                                    <!-- APPOINTMENT EXAMPLE -->
-                                    <div
-                                        class="appointment-card absolute top-2 left-2 right-2 h-[150px] z-20 bg-surface border border-outline-variant/30 rounded-xl p-3 flex flex-col gap-1 cursor-pointer">
-                                        <div class="absolute left-0 top-3 bottom-3 w-1 bg-primary rounded-r-full"></div>
-                                        <div class="flex justify-between items-start">
-                                            <span
-                                                class="font-headline-sm text-headline-sm text-xs text-on-surface">Mateo
-                                                Ricci</span>
-                                            <span
-                                                class="px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container text-[10px] font-bold flex items-center gap-1">
-                                                <span class="w-1.5 h-1.5 bg-secondary-fixed-dim rounded-full"></span>
-                                                AGENDADA
-                                            </span>
-                                        </div>
-                                        <p class="font-body-md text-xs text-on-surface-variant">Chequeo General</p>
-                                        <div
-                                            class="mt-auto flex items-center justify-between text-[10px] text-on-surface-variant font-medium">
-                                            <span>09:00 - 10:15</span>
-                                            <span class="material-symbols-outlined text-sm">more_vert</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="grid grid-cols-[80px_1fr] h-20 border-b border-outline-variant/5">
-                                <div
-                                    class="flex items-center justify-center font-mono-label text-on-surface-variant border-r border-outline-variant/10">
-                                    10:00</div>
-                                <div class="relative grid grid-cols-6 h-full">
-                                    <div class="col-start-3 p-2">
-                                        <div
-                                            class="appointment-card h-full bg-tertiary-fixed/30 border border-tertiary-container/20 rounded-xl p-3 flex flex-col gap-1 cursor-pointer">
-                                            <div
-                                                class="absolute left-0 top-3 bottom-3 w-1 bg-tertiary-container rounded-r-full">
-                                            </div>
-                                            <div class="flex justify-between items-start">
-                                                <span
-                                                    class="font-headline-sm text-headline-sm text-xs text-on-surface">Lucia
-                                                    V.</span>
-                                                <span
-                                                    class="px-2 py-0.5 rounded-full bg-tertiary-fixed text-on-tertiary-fixed-variant text-[10px] font-bold flex items-center gap-1">
-                                                    <span
-                                                        class="w-1.5 h-1.5 bg-tertiary-container rounded-full animate-pulse"></span>
-                                                    EN ATENCIÓN
-                                                </span>
-                                            </div>
-                                            <p class="font-body-md text-xs text-on-surface-variant">Control Pediatría
-                                            </p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="grid grid-cols-[80px_1fr] h-20 border-b border-outline-variant/5">
-                                <div
-                                    class="flex items-center justify-center font-mono-label text-on-surface-variant border-r border-outline-variant/10">
-                                    11:00</div>
-                                <div class="relative grid grid-cols-6 h-full">
-                                    <div class="col-start-2 p-2">
-                                        <div
-                                            class="appointment-card h-full bg-primary-container/10 border border-primary/20 rounded-xl p-3 flex flex-col gap-1 cursor-pointer">
-                                            <div class="absolute left-0 top-3 bottom-3 w-1 bg-primary rounded-r-full">
-                                            </div>
-                                            <div class="flex justify-between items-start">
-                                                <span
-                                                    class="font-headline-sm text-headline-sm text-xs text-on-surface">S.
-                                                    Rojas</span>
-                                                <span
-                                                    class="px-2 py-0.5 rounded-full bg-primary-fixed text-on-primary-fixed-variant text-[10px] font-bold flex items-center gap-1">
-                                                    <span class="w-1.5 h-1.5 bg-primary-container rounded-full"></span>
-                                                    LLEGÓ
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="col-start-5 p-2">
-                                        <div
-                                            class="appointment-card h-full bg-surface-container-high/50 border border-outline-variant/40 rounded-xl p-3 flex flex-col gap-1 cursor-pointer grayscale opacity-70">
-                                            <div class="absolute left-0 top-3 bottom-3 w-1 bg-outline rounded-r-full">
-                                            </div>
-                                            <div class="flex justify-between items-start">
-                                                <span
-                                                    class="font-headline-sm text-headline-sm text-xs text-on-surface">Carlos
-                                                    D.</span>
-                                                <span
-                                                    class="px-2 py-0.5 rounded-full bg-surface-variant text-on-surface-variant text-[10px] font-bold flex items-center gap-1">
-                                                    <span class="w-1.5 h-1.5 bg-outline rounded-full"></span> COMPLETADA
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="grid grid-cols-[80px_1fr] h-20 border-b border-outline-variant/5">
-                                <div
-                                    class="flex items-center justify-center font-mono-label text-on-surface-variant border-r border-outline-variant/10">
-                                    12:00</div>
-                            </div>
-                            <div class="grid grid-cols-[80px_1fr] h-20 border-b border-outline-variant/5">
-                                <div
-                                    class="flex items-center justify-center font-mono-label text-on-surface-variant border-r border-outline-variant/10">
-                                    13:00</div>
-                            </div>
-                            <div class="grid grid-cols-[80px_1fr] h-20 border-b border-outline-variant/5">
-                                <div
-                                    class="flex items-center justify-center font-mono-label text-on-surface-variant border-r border-outline-variant/10">
-                                    14:00</div>
-                                <div class="relative grid grid-cols-6 h-full">
-                                    <div class="col-start-6 p-2">
-                                        <div
-                                            class="appointment-card h-full bg-error-container/30 border border-error/20 rounded-xl p-3 flex flex-col gap-1 cursor-pointer">
-                                            <div class="absolute left-0 top-3 bottom-3 w-1 bg-error rounded-r-full">
-                                            </div>
-                                            <div class="flex justify-between items-start">
-                                                <span
-                                                    class="font-headline-sm text-headline-sm text-xs text-on-surface">P.
-                                                    Gomez</span>
-                                                <span
-                                                    class="px-2 py-0.5 rounded-full bg-error-container text-on-error-container text-[10px] font-bold flex items-center gap-1">
-                                                    <span class="w-1.5 h-1.5 bg-error rounded-full"></span> NO SHOW
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="grid grid-cols-[80px_1fr] h-20 border-b border-outline-variant/5">
-                                <div
-                                    class="flex items-center justify-center font-mono-label text-on-surface-variant border-r border-outline-variant/10">
-                                    15:00</div>
-                            </div>
-                            <div class="grid grid-cols-[80px_1fr] h-20 border-b border-outline-variant/5">
-                                <div
-                                    class="flex items-center justify-center font-mono-label text-on-surface-variant border-r border-outline-variant/10">
-                                    16:00</div>
-                            </div>
-                            <div class="grid grid-cols-[80px_1fr] h-20 border-b border-outline-variant/5">
-                                <div
-                                    class="flex items-center justify-center font-mono-label text-on-surface-variant border-r border-outline-variant/10">
-                                    17:00</div>
-                            </div>
-                        </div>
-                        <!-- CURRENT TIME INDICATOR -->
-                        <div class="absolute top-[220px] left-0 right-0 pointer-events-none z-30">
-                            <div class="flex items-center gap-2">
-                                <div class="w-20 flex justify-end pr-2">
-                                    <span
-                                        class="bg-primary text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm">11:15</span>
-                                </div>
-                                <div class="flex-1 h-0.5 bg-primary relative">
-                                    <div
-                                        class="absolute -left-1 -top-1 w-2.5 h-2.5 bg-primary rounded-full shadow-[0_0_8px_rgba(53,37,205,0.6)]">
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <!-- FOOTER LEGEND -->
-                <footer class="flex items-center justify-between pb-8">
-                    <div class="flex items-center gap-6">
-                        <div class="flex items-center gap-2">
-                            <span class="w-2 h-2 rounded-full bg-secondary-fixed-dim"></span>
-                            <span class="font-label-caps text-[10px] text-on-surface-variant">AGENDADA</span>
-                        </div>
-                        <div class="flex items-center gap-2">
-                            <span class="w-2 h-2 rounded-full bg-primary-container"></span>
-                            <span class="font-label-caps text-[10px] text-on-surface-variant">LLEGÓ / CONFIRMADA</span>
-                        </div>
-                        <div class="flex items-center gap-2">
-                            <span class="w-2 h-2 rounded-full bg-tertiary-container"></span>
-                            <span class="font-label-caps text-[10px] text-on-surface-variant">EN ATENCIÓN</span>
-                        </div>
-                        <div class="flex items-center gap-2">
-                            <span class="w-2 h-2 rounded-full bg-outline-variant"></span>
-                            <span class="font-label-caps text-[10px] text-on-surface-variant">COMPLETADA</span>
-                        </div>
-                        <div class="flex items-center gap-2">
-                            <span class="w-2 h-2 rounded-full bg-error"></span>
-                            <span class="font-label-caps text-[10px] text-on-surface-variant">NO SHOW</span>
-                        </div>
-                    </div>
-                    <div class="flex items-center gap-2 text-on-surface-variant">
-                        <span class="material-symbols-outlined text-sm">info</span>
-                        <p class="font-body-md text-[11px]">Sistema actualizado hace 2 minutos</p>
-                    </div>
-                </footer>
-            </div>
-        </main>
-    </div>
-    <!-- COMMAND PALETTE OVERLAY (Hidden by default) -->
-    <div class="fixed inset-0 bg-inverse-surface/20 backdrop-blur-sm z-[100] flex items-center justify-center p-4 hidden"
-        id="commandPalette">
-        <div
-            class="w-full max-w-2xl bg-surface-container-lowest rounded-2xl shadow-2xl border border-outline-variant/30 overflow-hidden">
-            <div class="p-4 border-b border-outline-variant/20 flex items-center gap-3">
-                <span class="material-symbols-outlined text-on-surface-variant">search</span>
-                <input
-                    class="flex-1 border-none focus:ring-0 text-headline-sm font-headline-sm bg-transparent outline-none"
-                    placeholder="Escribe un comando o busca..." type="text" />
-                <kbd
-                    class="px-2 py-1 text-xs font-mono-label bg-surface-container-high border border-outline-variant rounded text-on-surface-variant">ESC</kbd>
-            </div>
-            <div class="p-4 space-y-4">
-                <div class="space-y-1">
-                    <p class="px-2 font-label-caps text-[10px] text-on-surface-variant mb-2">ACCIONES</p>
-                    <div
-                        class="flex items-center gap-3 p-2 hover:bg-primary/5 rounded-lg cursor-pointer group transition-colors">
-                        <span
-                            class="material-symbols-outlined text-on-surface-variant group-hover:text-primary">calendar_clock</span>
-                        <span class="flex-1 font-body-md text-on-surface">Crear Nueva Cita</span>
-                        <kbd class="text-[10px] font-mono-label text-on-surface-variant">N</kbd>
-                    </div>
-                    <div
-                        class="flex items-center gap-3 p-2 hover:bg-primary/5 rounded-lg cursor-pointer group transition-colors">
-                        <span
-                            class="material-symbols-outlined text-on-surface-variant group-hover:text-primary">person_add</span>
-                        <span class="flex-1 font-body-md text-on-surface">Registrar Nuevo Paciente</span>
-                        <kbd class="text-[10px] font-mono-label text-on-surface-variant">P</kbd>
-                    </div>
-                </div>
-            </div>
-            <div
-                class="bg-surface-container-low px-4 py-2 flex justify-between items-center text-[10px] text-on-surface-variant">
-                <div class="flex items-center gap-3">
-                    <span>↑↓ para navegar</span>
-                    <span>ENTER para seleccionar</span>
-                </div>
-                <span>Agenda</span>
-            </div>
-        </div>
-    </div>
-    <script>
-        // Simple Interaction logic
-        document.addEventListener('keydown', (e) => {
-            if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-                e.preventDefault();
-                togglePalette();
-            }
-            if (e.key === 'Escape') {
-                document.getElementById('commandPalette').classList.add('hidden');
-            }
+<button class="flex-1 px-6 py-3 bg-primary text-white rounded-xl font-body-md text-body-md font-semibold shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30 active:scale-[0.98] transition-all">
+                        Agendar cita
+                    </button>
+</div>
+</div>
+</div>
+</main>
+<!-- Contextual FAB (Hidden on this transactional screen as per mandate) -->
+<script>
+        // Micro-interactions for the form elements
+        document.querySelectorAll('button, select, input').forEach(el => {
+            el.addEventListener('click', () => {
+                // Potential ripple effect or subtle feedback could go here
+            });
         });
 
-        function togglePalette() {
-            const palette = document.getElementById('commandPalette');
-            palette.classList.toggle('hidden');
-            if (!palette.classList.contains('hidden')) {
-                palette.querySelector('input').focus();
-            }
+        // Close modal logic (visual only for this demo)
+        const closeBtn = document.querySelector('.glass-header button');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => {
+                const modal = document.querySelector('.fixed.inset-0');
+                modal.classList.add('opacity-0', 'scale-95');
+                setTimeout(() => {
+                    modal.style.display = 'none';
+                }, 300);
+            });
         }
-
-        // Close palette on click outside
-        document.getElementById('commandPalette').addEventListener('click', (e) => {
-            if (e.target === document.getElementById('commandPalette')) {
-                togglePalette();
-            }
-        });
     </script>
-</body>
-
-</html>
+</body></html>

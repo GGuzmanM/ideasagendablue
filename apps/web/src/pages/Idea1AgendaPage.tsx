@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { format, subDays, addDays } from 'date-fns';
 import { Idea1Sidebar } from '../components/layout/Idea1Sidebar';
+import { Idea1NuevaCitaModal } from '../components/agenda/Idea1NuevaCitaModal';
 import {
   useIdea1AgendaData,
   getDefaultAvatar,
@@ -55,6 +56,15 @@ export function Idea1AgendaPage() {
     isCurrentDayActive,
     gridTemplateColsCss,
   } = useIdea1AgendaData();
+
+  // Estado del Modal de Nueva Cita (Estilos Idea 1)
+  const [isNuevaCitaOpen, setIsNuevaCitaOpen] = useState(false);
+  const [nuevaCitaParams, setNuevaCitaParams] = useState<{ horaInicio?: string; profesionalId?: string } | undefined>(undefined);
+
+  const handleAbrirNuevaCita = (params?: { horaInicio?: string; profesionalId?: string }) => {
+    setNuevaCitaParams(params);
+    setIsNuevaCitaOpen(true);
+  };
 
   return (
     <div className="bg-background text-on-surface antialiased overflow-hidden flex h-screen w-full">
@@ -180,7 +190,10 @@ export function Idea1AgendaPage() {
           </div>
 
           <div className="flex items-center gap-4">
-            <button className="bg-primary-container text-on-primary-container px-4 py-2 rounded-lg font-body-md font-semibold hover:opacity-90 active:scale-95 transition-all shadow-md shadow-primary/20 flex items-center gap-2">
+            <button
+              onClick={() => handleAbrirNuevaCita()}
+              className="bg-primary-container text-on-primary-container px-4 py-2 rounded-lg font-body-md font-semibold hover:opacity-90 active:scale-95 transition-all shadow-md shadow-primary/20 flex items-center gap-2 cursor-pointer"
+            >
               <span className="material-symbols-outlined text-lg">add_circle</span>
               Nueva Cita
             </button>
@@ -464,7 +477,7 @@ export function Idea1AgendaPage() {
                 </div>
 
                 {/* GRID CONTENT ROWS */}
-                <div className="relative min-w-full">
+                <div className="relative min-w-full z-[5]">
                   {horarios.map((slot) => (
                     <div
                       key={slot.hora}
@@ -479,10 +492,25 @@ export function Idea1AgendaPage() {
                       {doctores.map((doc, idx) => (
                         <div
                           key={doc.id}
+                          onClick={() => {
+                            if (!doc.enVacaciones) {
+                              handleAbrirNuevaCita({ horaInicio: slot.hora, profesionalId: doc.id });
+                            }
+                          }}
+                          title={doc.enVacaciones ? 'Horario bloqueado por vacaciones' : `Agendar a las ${slot.hora} con ${doc.nombres}`}
                           className={`h-full min-w-0 ${
-                            doc.enVacaciones ? 'bg-amber-500/5' : ''
+                            doc.enVacaciones
+                              ? 'bg-amber-500/5 cursor-not-allowed'
+                              : 'hover:bg-primary/5 cursor-pointer group transition-all flex items-center justify-center relative'
                           } ${idx < doctores.length - 1 ? 'border-r border-outline-variant/15' : ''}`}
-                        />
+                        >
+                          {!doc.enVacaciones && (
+                            <div className="opacity-0 group-hover:opacity-100 transition-all duration-200 scale-90 group-hover:scale-100 flex items-center gap-1.5 bg-[#3525cd] text-white text-[11px] font-bold px-3 py-1.5 rounded-xl shadow-lg shadow-primary/30 z-20 pointer-events-none select-none">
+                              <span className="material-symbols-outlined text-sm font-bold">add</span>
+                              <span>{slot.hora}</span>
+                            </div>
+                          )}
+                        </div>
                       ))}
                     </div>
                   ))}
@@ -525,7 +553,7 @@ export function Idea1AgendaPage() {
                       const startMinGrid = horaInicioInt * 60;
 
                       return (
-                        <div key={`citas-col-${doc.id}`} className="relative h-full pointer-events-auto">
+                        <div key={`citas-col-${doc.id}`} className="relative h-full pointer-events-none">
                           {docCitas.map((cita) => {
                             const citaStart = timeToMinutes(cita.horaInicio);
                             const topPx = ((citaStart - startMinGrid) / 60) * ROW_HEIGHT;
@@ -544,7 +572,7 @@ export function Idea1AgendaPage() {
                                   left: '3px',
                                   right: '3px',
                                 }}
-                                className={`appointment-card rounded-xl p-2 flex flex-col justify-between cursor-pointer transition-all hover:scale-[1.01] hover:shadow-lg border overflow-hidden ${
+                                className={`appointment-card pointer-events-auto rounded-xl p-2 flex flex-col justify-between cursor-pointer transition-all hover:scale-[1.01] hover:shadow-lg border overflow-hidden ${
                                   cita.estado === 'EN ATENCIÓN'
                                     ? 'bg-tertiary-fixed/30 border-tertiary-container/30 text-on-surface'
                                     : cita.estado === 'CONFIRMADA'
@@ -714,6 +742,18 @@ export function Idea1AgendaPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal de Nueva Cita (Estilos Idea 1) */}
+      {isNuevaCitaOpen && (
+        <Idea1NuevaCitaModal
+          sedeId={sedeId || ''}
+          unidadNegocioId={unidadNegocioId || ''}
+          fecha={fecha}
+          horaInicio={nuevaCitaParams?.horaInicio}
+          profesionalId={nuevaCitaParams?.profesionalId}
+          onClose={() => setIsNuevaCitaOpen(false)}
+        />
       )}
     </div>
   );
