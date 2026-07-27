@@ -364,9 +364,9 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
                   {/* Membresías activas del paciente */}
                   {membresiasActivas.length > 0 && (
                     <optgroup label="Membresías del paciente">
-                      {membresiasActivas.map((m) => (
+                      {membresiasActivas.map((m: any) => (
                         <option key={m.id} value={`inst:${m.id}`}>
-                          {m.nombre} (Saldo: S/ {m.saldo || 0})
+                          {m.nombre} (Sesiones disponibles: {m.saldo ?? (m.sesionesTotal - m.consumidas)})
                         </option>
                       ))}
                     </optgroup>
@@ -375,7 +375,7 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
                   {/* Plantillas para activar nueva membresía */}
                   {tplsMembresiaActivas.length > 0 && (
                     <optgroup label="Activar nueva membresía">
-                      {tplsMembresiaActivas.map((t) => (
+                      {tplsMembresiaActivas.map((t: any) => (
                         <option key={t.id} value={`tpl:${t.id}`}>
                           + {t.nombre} ({t.duracionMeses} Meses)
                         </option>
@@ -497,7 +497,7 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
                   <option value="">— Ninguno (cita suelta normal) —</option>
                   {paquetesPaciente.map((pp: any) => (
                     <option key={pp.id} value={pp.id}>
-                      {pp.paquete?.nombre || 'Paquete'} ({pp.sesionesUsadas}/{pp.sesionesTotal} consumidas)
+                      {pp.paquete?.nombre || 'Paquete'} ({pp.sesionesUsadas}/{pp.sesionesTotal} consumidas — {pp.saldo ?? (pp.sesionesTotal - pp.sesionesUsadas)} disponibles)
                     </option>
                   ))}
                 </select>

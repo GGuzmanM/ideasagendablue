@@ -301,11 +301,64 @@ export function useIdea1NuevaCitaForm({
     Boolean(pacienteSeleccionado?.id),
   );
 
-  const { data: paquetesPaciente = [] } = useQuery({
+  const { data: paquetesPacienteRaw = [] } = useQuery({
     queryKey: ['paquetes-paciente', pacienteSeleccionado?.id],
     queryFn: () => paquetesApi.porPaciente(pacienteSeleccionado!.id),
     enabled: Boolean(pacienteSeleccionado?.id),
   });
+
+  // Membresías / Paquetes ACTIVOS unificados del paciente
+  const membresiasActivas = useMemo(() => {
+    const map = new Map<string, any>();
+    const fCitaStr = (fechaCita || '').split('T')[0];
+
+    (saldosPaciente ?? []).forEach((s: any) => {
+      const inicioStr = s.vigenciaInicio ? s.vigenciaInicio.split('T')[0] : null;
+      const finStr = s.vigenciaFin ? s.vigenciaFin.split('T')[0] : null;
+      if (inicioStr && fCitaStr < inicioStr) return;
+      if (finStr && fCitaStr > finStr) return;
+      if (s.estado === 'ACTIVO' || (s.saldo && s.saldo > 0) || (s.sesionesTotal && s.sesionesTotal > s.consumidas)) {
+        map.set(s.id, {
+          id: s.id,
+          nombre: s.nombre || s.paquete?.nombre || 'Membresía / Paquete',
+          saldo: s.saldo ?? Math.max((s.sesionesTotal || 0) - (s.consumidas || 0), 0),
+          sesionesTotal: s.sesionesTotal || 1,
+          consumidas: s.consumidas || 0,
+          composicion: s.composicion,
+        });
+      }
+    });
+
+    (paquetesPacienteRaw ?? []).forEach((p: any) => {
+      if (!map.has(p.id)) {
+        const total = p.sesionesTotal || 1;
+        const usadas = p.sesionesUsadas || (p.citas ? p.citas.length : 0);
+        const saldo = Math.max(total - usadas, 0);
+        if (p.activo !== false && (p.estado === 'ACTIVO' || p.estado === undefined || saldo > 0)) {
+          map.set(p.id, {
+            id: p.id,
+            nombre: p.paquete?.nombre || 'Paquete / Membresía',
+            saldo,
+            sesionesTotal: total,
+            consumidas: usadas,
+            composicion: p.composicion,
+          });
+        }
+      }
+    });
+
+    return Array.from(map.values());
+  }, [saldosPaciente, paquetesPacienteRaw, fechaCita]);
+
+  const paquetesPaciente = useMemo(() => {
+    return membresiasActivas.map((m: any) => ({
+      id: m.id,
+      sesionesTotal: m.sesionesTotal,
+      sesionesUsadas: m.consumidas,
+      saldo: m.saldo,
+      paquete: { nombre: m.nombre },
+    }));
+  }, [membresiasActivas]);
 
   // Plantillas de Membresías vendibles
   const { data: membresiasTpl = [] } = useQuery({
@@ -321,22 +374,10 @@ export function useIdea1NuevaCitaForm({
     enabled: Boolean(pacienteSeleccionado?.id),
   });
 
-  // Membresías ACTIVAS del paciente en esta sede
-  const membresiasActivas = useMemo(() => {
-    return (saldosPaciente ?? []).filter(
-      (p) =>
-        p.tipo === 'MEMBRESIA' &&
-        p.estado === 'ACTIVO' &&
-        (!p.sede || p.sede.id === sedeId) &&
-        (!p.vigenciaInicio || fechaCita >= p.vigenciaInicio) &&
-        (!p.vigenciaFin || fechaCita <= p.vigenciaFin),
-    );
-  }, [saldosPaciente, sedeId, fechaCita]);
-
   // Plantillas de Membresía Habilitadas en la Sede (para activar)
   const tplsMembresiaActivas = useMemo(() => {
     return (membresiasTpl ?? []).filter(
-      (t) => t.activo && (!t.sedesHabilitadas?.length || t.sedesHabilitadas.includes(sedeId)),
+      (t: any) => t.activo && (!t.sedesHabilitadas?.length || t.sedesHabilitadas.includes(sedeId)),
     );
   }, [membresiasTpl, sedeId]);
 
@@ -354,7 +395,7 @@ export function useIdea1NuevaCitaForm({
 
     if (membSel.startsWith('inst:')) {
       const pp = membresiasActivas.find((p) => `inst:${p.id}` === membSel);
-      items = (pp?.composicion ?? []).map((i) => ({
+      items = (pp?.composicion ?? []).map((i: any) => ({
         servicioId: i.servicioId,
         etiqueta: i.etiqueta ?? 'Servicio',
         subcategoriaId: i.subcategoriaId ?? null,
@@ -363,8 +404,8 @@ export function useIdea1NuevaCitaForm({
         quedan: Math.max(0, i.cantidad - i.consumidas),
       }));
     } else if (membSel.startsWith('tpl:')) {
-      const t = tplsMembresiaActivas.find((x) => `tpl:${x.id}` === membSel);
-      items = (t?.composicion ?? []).map((i) => ({
+      const t = tplsMembresiaActivas.find((x: any) => `tpl:${x.id}` === membSel);
+      items = (t?.composicion ?? []).map((i: any) => ({
         servicioId: i.servicioId,
         etiqueta: i.etiqueta ?? 'Servicio',
         subcategoriaId: i.subcategoriaId ?? null,
@@ -476,7 +517,7 @@ export function useIdea1NuevaCitaForm({
             : {}),
         });
         finalPaqueteId = resVenta.id;
-      } else if (!finalPaqueteId && membSel.startsWith('inst:') && membItem !== '') {
+      } else if (!finalPaqueteId && membSel.startsWith('inst:')) {
         finalPaqueteId = membSel.slice(5);
       }
 

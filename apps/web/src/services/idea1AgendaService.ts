@@ -44,6 +44,10 @@ export interface CitaAgenda {
   etiquetaAsignacion?: string;
   estado: 'AGENDADA' | 'CONFIRMADA' | 'LLEGÓ' | 'EN ATENCIÓN' | 'COMPLETADA' | 'NO SHOW';
   raw?: any;
+  esCombinada?: boolean;
+  extraServicioNombre?: string;
+  extraSubcategoriaNombre?: string;
+  secundarioRaw?: any;
 }
 
 /* ==========================================================================
@@ -132,7 +136,7 @@ export function getDefaultAvatar(nombre = 'Doctor'): string {
  * Transforma el listado de citas provenientes de la BD al modelo `CitaAgenda[]`
  */
 export function mapearCitasDbACitaAgenda(citasDb: any[] = []): CitaAgenda[] {
-  return citasDb.map((c) => {
+  const mapped = citasDb.map((c) => {
     const hInicio = c.horaInicio || '09:00';
     const duracion = c.duracionMinutos || 30;
     const [h, m] = hInicio.split(':').map(Number);
@@ -179,6 +183,61 @@ export function mapearCitasDbACitaAgenda(citasDb: any[] = []): CitaAgenda[] {
       raw: c,
     };
   });
+
+  // Agrupar citas combinadas (slotGrupoId) por doctor
+  const result: CitaAgenda[] = [];
+  const procesadosGrupo = new Set<string>();
+
+  const grupos = new Map<string, CitaAgenda[]>();
+  mapped.forEach((item) => {
+    if (item.raw?.slotGrupoId) {
+      const arr = grupos.get(item.raw.slotGrupoId) || [];
+      arr.push(item);
+      grupos.set(item.raw.slotGrupoId, arr);
+    }
+  });
+
+  mapped.forEach((item) => {
+    const grupoId = item.raw?.slotGrupoId;
+    if (!grupoId) {
+      result.push(item);
+      return;
+    }
+
+    if (procesadosGrupo.has(grupoId)) return;
+
+    const mitades = grupos.get(grupoId) || [];
+    if (mitades.length >= 2) {
+      const principal = mitades.find((m) => m.raw?.slotRol === 'PRINCIPAL') || mitades[0];
+      const secundario = mitades.find((m) => m.raw?.slotRol === 'SECUNDARIO') || mitades.find((m) => m.id !== principal.id) || mitades[1];
+
+      if (principal.doctorId === secundario.doctorId) {
+        procesadosGrupo.add(grupoId);
+
+        const duracionTotal = principal.duracionMinutos || 60;
+        const [h, m] = principal.horaInicio.split(':').map(Number);
+        const totalMin = (h || 0) * 60 + (m || 0) + duracionTotal;
+        const endH = Math.floor(totalMin / 60);
+        const endM = totalMin % 60;
+        const hFinCombined = `${endH.toString().padStart(2, '0')}:${endM.toString().padStart(2, '0')}`;
+
+        result.push({
+          ...principal,
+          duracionMinutos: duracionTotal,
+          horaFin: hFinCombined,
+          esCombinada: true,
+          extraServicioNombre: secundario.servicioNombre || secundario.motivo,
+          extraSubcategoriaNombre: secundario.subcategoriaNombre,
+          secundarioRaw: secundario.raw,
+        });
+        return;
+      }
+    }
+
+    result.push(item);
+  });
+
+  return result;
 }
 
 /**

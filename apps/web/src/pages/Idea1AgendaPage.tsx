@@ -782,7 +782,7 @@ export function Idea1AgendaPage() {
                                     ? 'bg-emerald-50/60 border-emerald-300 text-on-surface'
                                     : cita.estado === 'CONFIRMADA'
                                     ? 'bg-primary-container/20 border-primary/30 text-on-surface'
-                                    : cita.estado === 'COMPLETADA'
+                                  : cita.estado === 'COMPLETADA'
                                     ? 'bg-surface-container-high/60 border-outline-variant/40 text-on-surface-variant opacity-75'
                                     : cita.estado === 'NO SHOW'
                                     ? 'bg-error-container/30 border-error/30 text-on-surface'
@@ -811,59 +811,108 @@ export function Idea1AgendaPage() {
                                     <span className="font-headline-sm text-headline-sm text-xs font-bold text-on-surface truncate leading-tight">
                                       {cita.paciente}
                                     </span>
-                                    <span
-                                      className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold flex items-center gap-1 shrink-0 ${
-                                        cita.estado === 'EN ATENCIÓN'
-                                          ? 'bg-tertiary-fixed text-on-tertiary-fixed-variant'
-                                          : cita.estado === 'LLEGÓ'
-                                          ? 'bg-emerald-100 text-emerald-800'
-                                          : cita.estado === 'CONFIRMADA'
-                                          ? 'bg-primary-fixed text-on-primary-fixed-variant'
-                                          : cita.estado === 'COMPLETADA'
-                                          ? 'bg-surface-variant text-on-surface-variant'
-                                          : cita.estado === 'NO SHOW'
-                                          ? 'bg-error-container text-on-error-container'
-                                          : 'bg-secondary-container text-on-secondary-container'
-                                      }`}
-                                    >
+                                    <div className="flex items-center gap-1 shrink-0">
+                                      {cita.esCombinada && (
+                                        <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-200 flex items-center gap-0.5" title="Bloque combinado: 2 servicios">
+                                          <span>🔗</span>
+                                          <span className="hidden sm:inline">Combinada</span>
+                                        </span>
+                                      )}
                                       <span
-                                        className={`w-1 h-1 rounded-full ${
+                                        className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold flex items-center gap-1 shrink-0 ${
                                           cita.estado === 'EN ATENCIÓN'
-                                            ? 'bg-tertiary-container animate-pulse'
+                                            ? 'bg-tertiary-fixed text-on-tertiary-fixed-variant'
                                             : cita.estado === 'LLEGÓ'
-                                            ? 'bg-emerald-600'
+                                            ? 'bg-emerald-100 text-emerald-800'
                                             : cita.estado === 'CONFIRMADA'
-                                            ? 'bg-primary-container'
+                                            ? 'bg-primary-fixed text-on-primary-fixed-variant'
+                                            : cita.estado === 'COMPLETADA'
+                                            ? 'bg-surface-variant text-on-surface-variant'
                                             : cita.estado === 'NO SHOW'
-                                            ? 'bg-error'
-                                            : 'bg-secondary-fixed-dim'
+                                            ? 'bg-error-container text-on-error-container'
+                                            : 'bg-secondary-container text-on-secondary-container'
                                         }`}
-                                      />
-                                      <span className="truncate">{cita.estado}</span>
-                                    </span>
+                                      >
+                                        <span
+                                          className={`w-1 h-1 rounded-full ${
+                                            cita.estado === 'EN ATENCIÓN'
+                                              ? 'bg-tertiary-container animate-pulse'
+                                              : cita.estado === 'LLEGÓ'
+                                              ? 'bg-emerald-600'
+                                              : cita.estado === 'CONFIRMADA'
+                                              ? 'bg-primary-container'
+                                              : cita.estado === 'NO SHOW'
+                                              ? 'bg-error'
+                                              : 'bg-secondary-fixed-dim'
+                                          }`}
+                                        />
+                                        <span className="truncate">{cita.estado}</span>
+                                      </span>
+                                    </div>
                                   </div>
 
-                                  {/* Servicio y Subcategoría */}
-                                  {!isCompact && (
-                                    <p className="font-body-md text-xs text-on-surface-variant font-medium truncate leading-tight mt-0.5">
-                                      {cita.servicioNombre || cita.motivo}
-                                      {cita.subcategoriaNombre ? ` · ${cita.subcategoriaNombre}` : ''}
-                                    </p>
-                                  )}
+                                  {/* Servicio(s) y Subcategoría(s) */}
+                                  {cita.esCombinada ? (
+                                    <div className="flex flex-col gap-1 mt-1">
+                                      <div
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setCitaSeleccionada(cita.raw);
+                                        }}
+                                        className="px-2 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 transition-all flex items-center justify-between gap-1 border border-primary/30 text-[11px] font-bold text-primary cursor-pointer shadow-xs"
+                                        title="Clic para ver detalle del Servicio 1 (Ancla)"
+                                      >
+                                        <span className="truncate">
+                                          1. {cita.servicioNombre || cita.motivo}
+                                          {cita.subcategoriaNombre ? ` (${cita.subcategoriaNombre})` : ''}
+                                        </span>
+                                        <span className="text-[9px] bg-primary text-white font-mono px-1 rounded shrink-0">Ancla</span>
+                                      </div>
 
-                                  {!isCompact && cita.etiquetaAsignacion && (
-                                    <p className="text-[11px] text-primary font-semibold truncate leading-tight">
-                                      {cita.etiquetaAsignacion}
-                                    </p>
+                                      <div
+                                        onClick={(e) => {
+                                          if (cita.secundarioRaw) {
+                                            e.stopPropagation();
+                                            setCitaSeleccionada(cita.secundarioRaw);
+                                          }
+                                        }}
+                                        className="px-2 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 transition-all flex items-center justify-between gap-1 border border-amber-500/40 text-[11px] font-bold text-amber-900 cursor-pointer shadow-xs"
+                                        title="Clic para ver detalle del Servicio 2 (Extra)"
+                                      >
+                                        <span className="truncate">
+                                          2. {cita.extraServicioNombre}
+                                          {cita.extraSubcategoriaNombre ? ` (${cita.extraSubcategoriaNombre})` : ''}
+                                        </span>
+                                        <span className="text-[9px] bg-amber-600 text-white font-mono px-1 rounded shrink-0">Extra</span>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      {!isCompact && (
+                                        <p className="font-body-md text-xs text-on-surface-variant font-medium truncate leading-tight mt-0.5">
+                                          {cita.servicioNombre || cita.motivo}
+                                          {cita.subcategoriaNombre ? ` · ${cita.subcategoriaNombre}` : ''}
+                                        </p>
+                                      )}
+
+                                      {!isCompact && cita.etiquetaAsignacion && (
+                                        <p className="text-[11px] text-primary font-semibold truncate leading-tight">
+                                          {cita.etiquetaAsignacion}
+                                        </p>
+                                      )}
+                                    </>
                                   )}
                                 </div>
 
                                 {/* Hora de la Cita */}
                                 {!isMicro && (
                                   <div className="flex items-center justify-between text-[9px] md:text-[10px] text-on-surface-variant font-mono pl-1.5 mt-auto pt-0.5 border-t border-outline-variant/10">
-                                    <span className="truncate">
+                                    <span className="truncate font-bold">
                                       {cita.horaInicio} - {cita.horaFin}
                                     </span>
+                                    {cita.esCombinada && (
+                                      <span className="text-[9px] font-sans font-bold text-indigo-700">2 Servicios</span>
+                                    )}
                                   </div>
                                 )}
                               </div>
