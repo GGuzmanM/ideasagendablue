@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import { sedesApi, profesionalesApi, citasApi, horariosApi } from '../api';
+import { almuerzosApi } from '../api/almuerzos';
+import { permisosApi } from '../api/permisos';
 import { useAgendaStore } from '../stores/agendaStore';
 
 export interface SlotHorario {
@@ -585,6 +587,22 @@ export function useIdea1AgendaData() {
     enabled: !!sedeId && !!unidadNegocioId,
   });
 
+  // 5b. Bloqueos de almuerzo de la sede en la fecha actual
+  const { data: bloqueosAlmuerzo = [] } = useQuery({
+    queryKey: ['bloqueos-almuerzo', sedeId, fechaStr()],
+    queryFn: () => almuerzosApi.listarPorFecha(sedeId!, fechaStr()),
+    enabled: !!sedeId,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // 5c. Permisos / bloqueos manuales de la sede en la fecha actual
+  const { data: permisosAgenda = [] } = useQuery({
+    queryKey: ['permisos-agenda', sedeId, fechaStr()],
+    queryFn: () => permisosApi.listarPorFecha(sedeId!, fechaStr()),
+    enabled: !!sedeId,
+    staleTime: 60 * 1000,
+  });
+
   // 6. Transformación y ordenamiento con el módulo de servicios
   const citas: CitaAgenda[] = mapearCitasDbACitaAgenda(citasDb || []);
 
@@ -742,6 +760,8 @@ export function useIdea1AgendaData() {
     // Datos transformados
     citas,
     doctores,
+    bloqueosAlmuerzo,
+    permisosAgenda,
     horarios,
     horaInicioInt,
     horaFinInt,

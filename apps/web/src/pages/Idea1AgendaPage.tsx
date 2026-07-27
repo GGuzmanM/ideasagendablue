@@ -35,6 +35,8 @@ export function Idea1AgendaPage() {
     // Datos transformados
     citas,
     doctores,
+    bloqueosAlmuerzo = [],
+    permisosAgenda = [],
     horarios,
     horaInicioInt,
     // Métricas
@@ -507,16 +509,35 @@ export function Idea1AgendaPage() {
                         </div>
                         {doctores.map((doc, idx) => {
                           const isHoveredSlot = dragOverSlot?.doctorId === doc.id && dragOverSlot?.hora === slot.hora;
+                          const slotMin = timeToMinutes(slot.hora);
+
+                          // Verificar si el slot cae en un almuerzo o permiso del doctor
+                          const isAlmuerzo = bloqueosAlmuerzo.some((b) => {
+                            if (b.profesionalId !== doc.id || !b.horaInicio || !b.horaFin) return false;
+                            const s = timeToMinutes(b.horaInicio);
+                            const e = timeToMinutes(b.horaFin);
+                            return slotMin >= s && slotMin < e;
+                          });
+
+                          const permisoCoincidente = permisosAgenda.find((p) => {
+                            if (p.profesionalId !== doc.id || !p.horaInicio || !p.horaFin || p.esVacaciones) return false;
+                            const s = timeToMinutes(p.horaInicio);
+                            const e = timeToMinutes(p.horaFin);
+                            return slotMin >= s && slotMin < e;
+                          });
+
+                          const isBloqueado = doc.enVacaciones || isAlmuerzo || !!permisoCoincidente;
+
                           return (
                             <div
                               key={doc.id}
                               onClick={() => {
-                                if (!doc.enVacaciones) {
+                                if (!isBloqueado) {
                                   handleAbrirNuevaCita({ horaInicio: slot.hora, profesionalId: doc.id });
                                 }
                               }}
                               onDragOver={(e) => {
-                                if (doc.enVacaciones) return;
+                                if (isBloqueado) return;
                                 e.preventDefault();
                                 e.dataTransfer.dropEffect = 'move';
                                 if (dragOverSlot?.doctorId !== doc.id || dragOverSlot?.hora !== slot.hora) {
@@ -529,7 +550,7 @@ export function Idea1AgendaPage() {
                               onDrop={async (e) => {
                                 e.preventDefault();
                                 setDragOverSlot(null);
-                                if (doc.enVacaciones) return;
+                                if (isBloqueado) return;
                                 try {
                                   const rawData = e.dataTransfer.getData('text/plain');
                                   if (!rawData) return;
@@ -559,9 +580,17 @@ export function Idea1AgendaPage() {
                                   console.error('Error al soltar la cita:', err);
                                 }
                               }}
-                              title={doc.enVacaciones ? 'Horario bloqueado por vacaciones' : `Agendar a las ${slot.hora} con ${doc.nombres}`}
-                              className={`h-full min-w-0 transition-all flex items-center justify-center relative ${
+                              title={
                                 doc.enVacaciones
+                                  ? 'Horario bloqueado por vacaciones'
+                                  : isAlmuerzo
+                                  ? 'Horario reservado para almuerzo'
+                                  : permisoCoincidente
+                                  ? `Horario bloqueado: ${permisoCoincidente.motivo}`
+                                  : `Agendar a las ${slot.hora} con ${doc.nombres}`
+                              }
+                              className={`h-full min-w-0 transition-all flex items-center justify-center relative ${
+                                isBloqueado
                                   ? 'bg-amber-500/5 cursor-not-allowed'
                                   : isHoveredSlot
                                   ? 'bg-primary/20 border-2 border-dashed border-primary z-30'
@@ -577,7 +606,7 @@ export function Idea1AgendaPage() {
                                 </div>
                               )}
 
-                              {!doc.enVacaciones && !isHoveredSlot && (
+                              {!isBloqueado && !isHoveredSlot && (
                                 <div className="opacity-0 group-hover:opacity-100 transition-all duration-200 scale-90 group-hover:scale-100 flex items-center gap-1 bg-[#3525cd] text-white text-[10px] font-bold px-2 py-1 rounded-lg shadow-md shadow-primary/30 z-20 pointer-events-none select-none">
                                   <span className="material-symbols-outlined text-xs font-bold">add</span>
                                   <span>{slot.hora}</span>
@@ -625,10 +654,87 @@ export function Idea1AgendaPage() {
                       }
 
                       const docCitas = citas.filter((c) => c.doctorId === doc.id);
+                      const docAlmuerzos = bloqueosAlmuerzo.filter((b) => b.profesionalId === doc.id);
+                      const docPermisos = permisosAgenda.filter((p) => p.profesionalId === doc.id && !p.esVacaciones);
                       const startMinGrid = horaInicioInt * 60;
 
                       return (
                         <div key={`citas-col-${doc.id}`} className="relative h-full pointer-events-none">
+                          {/* BLOQUEOS DE ALMUERZO */}
+                          {docAlmuerzos.map((almuerzo) => {
+                            if (!almuerzo.horaInicio || !almuerzo.horaFin) return null;
+                            const startMin = timeToMinutes(almuerzo.horaInicio);
+                            const endMin = timeToMinutes(almuerzo.horaFin);
+                            const topPx = ((startMin - startMinGrid) / 60) * ROW_HEIGHT;
+                            const duracion = Math.max(endMin - startMin, 30);
+                            const heightPx = Math.max((duracion / 60) * ROW_HEIGHT - 4, 36);
+
+                            return (
+                              <div
+                                key={`almuerzo-${almuerzo.id}`}
+                                style={{
+                                  position: 'absolute',
+                                  top: `${topPx}px`,
+                                  height: `${heightPx}px`,
+                                  left: '3px',
+                                  right: '3px',
+                                }}
+                                className="pointer-events-auto rounded-xl p-2 flex flex-col justify-center items-center text-center transition-all bg-amber-500/15 border border-amber-500/40 text-amber-900 shadow-xs overflow-hidden select-none z-15 backdrop-blur-[2px]"
+                                title={`Almuerzo: ${almuerzo.horaInicio} - ${almuerzo.horaFin}`}
+                              >
+                                <div className="flex items-center gap-1 font-bold text-xs text-amber-800 truncate">
+                                  <span>🍽️</span>
+                                  <span className="truncate font-semibold">Almuerzo</span>
+                                </div>
+                                <span className="text-[10px] font-mono font-bold text-amber-800/90 mt-0.5">
+                                  {almuerzo.horaInicio} – {almuerzo.horaFin}
+                                </span>
+                              </div>
+                            );
+                          })}
+
+                          {/* PERMISOS Y REUNIONES */}
+                          {docPermisos.map((permiso) => {
+                            if (!permiso.horaInicio || !permiso.horaFin) return null;
+                            const startMin = timeToMinutes(permiso.horaInicio);
+                            const endMin = timeToMinutes(permiso.horaFin);
+                            const topPx = ((startMin - startMinGrid) / 60) * ROW_HEIGHT;
+                            const duracion = Math.max(endMin - startMin, 30);
+                            const heightPx = Math.max((duracion / 60) * ROW_HEIGHT - 4, 36);
+                            const esReunion = permiso.esReunion;
+
+                            return (
+                              <div
+                                key={`permiso-${permiso.id}`}
+                                style={{
+                                  position: 'absolute',
+                                  top: `${topPx}px`,
+                                  height: `${heightPx}px`,
+                                  left: '3px',
+                                  right: '3px',
+                                }}
+                                className={`pointer-events-auto rounded-xl p-2 flex flex-col justify-center items-center text-center transition-all shadow-xs overflow-hidden select-none z-15 backdrop-blur-[2px] border ${
+                                  esReunion
+                                    ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-900'
+                                    : 'bg-rose-500/15 border-rose-500/40 text-rose-900'
+                                }`}
+                                title={`${esReunion ? 'Reunión' : 'Permiso'}: ${permiso.horaInicio} - ${permiso.horaFin}${permiso.motivo ? ` (${permiso.motivo})` : ''}`}
+                              >
+                                <div className="flex items-center gap-1 font-bold text-xs truncate">
+                                  <span>{esReunion ? '🤝' : '🚫'}</span>
+                                  <span className="truncate font-semibold">{esReunion ? 'Reunión' : 'Permiso'}</span>
+                                </div>
+                                <span className="text-[10px] font-mono font-bold mt-0.5 opacity-90">
+                                  {permiso.horaInicio} – {permiso.horaFin}
+                                </span>
+                                {heightPx >= 55 && permiso.motivo && (
+                                  <span className="text-[10px] truncate max-w-full font-medium mt-0.5 opacity-90 px-1">
+                                    {permiso.motivo}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
                           {docCitas.map((cita) => {
                             const citaStart = timeToMinutes(cita.horaInicio);
                             const topPx = ((citaStart - startMinGrid) / 60) * ROW_HEIGHT;
