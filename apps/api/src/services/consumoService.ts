@@ -112,11 +112,23 @@ export async function paquetesEnOtraSede(pacienteId: string, servicioId: string,
   return activos.filter((pp) => paqueteCorresponde(pp, servicioId, subcategoriaId));
 }
 
-/** Saldo restante de un ÍTEM de la composición (membresías multi-tipo). */
-async function saldoItemComposicion(tx: Tx, paqueteId: string, servicioId: string, comp: ItemComposicion[]): Promise<number> {
-  const item = comp.find((i) => i.servicioId === servicioId);
+/**
+ * Saldo restante de un ÍTEM de la composición (membresías multi-tipo).
+ * Subcategoría-aware: dos ítems pueden compartir servicio (Profilaxis Regular vs Premium),
+ * así que el ítem se resuelve por (servicio + subcategoría) y los consumos se cuentan solo
+ * los de esa subcategoría (leída de la cita del consumo, ya que `tipoSesion` solo guarda el
+ * servicio). Sin subcategoría fijada → cuenta todos los consumos de ese servicio.
+ */
+async function saldoItemComposicion(tx: Tx, paqueteId: string, servicioId: string, subcategoriaId: string | null, comp: ItemComposicion[]): Promise<number> {
+  const item = comp.find((i) => itemCoincide(i, servicioId, subcategoriaId));
   if (!item) return 0;
-  const usados = await tx.consumoSesion.count({ where: { paqueteId, tipoSesion: servicioId, deletedAt: null } });
+  const consumos = await tx.consumoSesion.findMany({
+    where: { paqueteId, tipoSesion: servicioId, deletedAt: null },
+    select: { cita: { select: { subcategoriaId: true } } },
+  });
+  const usados = item.subcategoriaId
+    ? consumos.filter((c) => c.cita?.subcategoriaId === item.subcategoriaId).length
+    : consumos.length;
   return item.cantidad - usados;
 }
 
@@ -170,7 +182,7 @@ export async function consumirDeCita(params: ConsumirCitaParams) {
     const vivos = await tx.consumoSesion.count({ where: { paqueteId: pp.id, deletedAt: null } });
     if (vivos >= pp.sesionesTotal) throw new AppError('Paquete agotado: se cobra como venta normal', 409, 'PAQUETE_AGOTADO');
     if (esItem && comp.length > 0) {
-      const saldoItem = await saldoItemComposicion(tx, pp.id, cita.servicioId, comp);
+      const saldoItem = await saldoItemComposicion(tx, pp.id, cita.servicioId, cita.subcategoriaId, comp);
       if (saldoItem <= 0) throw new AppError('Ese tipo de sesión de la membresía ya se agotó', 409, 'ITEM_AGOTADO');
     }
 

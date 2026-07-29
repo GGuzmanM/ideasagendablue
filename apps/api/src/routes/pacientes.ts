@@ -230,7 +230,7 @@ router.get('/:id/paquetes', requireAuth, requireScope('patients:read'), async (r
           id: true, fecha: true, origen: true, motivo: true, registradoPor: true, tipoSesion: true,
           cita: {
             select: {
-              id: true, fecha: true, horaInicio: true,
+              id: true, fecha: true, horaInicio: true, subcategoriaId: true,
               sede: { select: { nombre: true } },
               profesional: { select: { nombres: true, apellidos: true } },
               servicio: { select: { nombre: true } },
@@ -249,7 +249,22 @@ router.get('/:id/paquetes', requireAuth, requireScope('patients:read'), async (r
 
   const data = paquetes.map((pp) => {
     const consumidas = pp.consumos.length;
-    const comp = (pp.composicion as { servicioId: string; cantidad: number; etiqueta: string; subcategoriaId?: string; subcategoriaEtiqueta?: string }[] | null) ?? null;
+    const comp = (pp.composicion as { servicioId: string; cantidad: number; etiqueta: string; subcategoriaId?: string | null; subcategoriaEtiqueta?: string }[] | null) ?? null;
+    // Atribuye cada consumo a UN SOLO ítem de la composición (subcategoría-aware), para no
+    // doble-contar cuando dos ítems comparten servicio (ej. Profilaxis Regular vs Premium):
+    // prioriza el ítem que fija la MISMA subcategoría del consumo → el ítem "sin subcategoría
+    // fijada" → el primero de ese servicio. La subcategoría del consumo viene de su cita.
+    const consumoPorItem = new Array(comp?.length ?? 0).fill(0) as number[];
+    if (comp) {
+      for (const c of pp.consumos) {
+        if (!c.tipoSesion) continue;
+        const subId = c.cita?.subcategoriaId ?? null;
+        let idx = comp.findIndex((i) => i.servicioId === c.tipoSesion && i.subcategoriaId != null && i.subcategoriaId === subId);
+        if (idx < 0) idx = comp.findIndex((i) => i.servicioId === c.tipoSesion && i.subcategoriaId == null);
+        if (idx < 0) idx = comp.findIndex((i) => i.servicioId === c.tipoSesion);
+        if (idx >= 0) consumoPorItem[idx] += 1;
+      }
+    }
     return {
       id: pp.id,
       nombre: pp.paquete.nombre,
@@ -266,9 +281,9 @@ router.get('/:id/paquetes', requireAuth, requireScope('patients:read'), async (r
       vigenciaFin: pp.vigenciaFin,
       familia: pp.familia?.nombreFamilia ?? null,
       // Composición con consumo por ítem (membresías multi-tipo)
-      composicion: comp?.map((i) => ({
+      composicion: comp?.map((i, idx) => ({
         ...i,
-        consumidas: pp.consumos.filter((c) => c.tipoSesion === i.servicioId).length,
+        consumidas: consumoPorItem[idx],
       })) ?? null,
       consumos: pp.consumos,
       conciliacion: pp.conciliaciones[0] ?? null,

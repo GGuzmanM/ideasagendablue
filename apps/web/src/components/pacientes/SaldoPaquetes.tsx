@@ -117,17 +117,33 @@ export function SaldoPaquetes({ pacienteId, variante, servicioActualId, sedeActu
     );
   }
 
-  // ── detalle: ficha — tarjetas + timeline; agotados/vencidos colapsados al final ──
+  // ── detalle: ficha — banner sin plan activo / tarjetas con composición; agotados colapsados ──
   const historicos = (paquetes ?? []).filter((p) => p.estado !== 'ACTIVO');
-  if ((paquetes ?? []).length === 0) {
-    return <p className="text-sm text-slate-400 italic">Sin paquetes ni membresías</p>;
-  }
   return (
     <div className="space-y-3">
-      {activos.map((p) => <TarjetaPaquete key={p.id} paquete={p} pacienteId={pacienteId} nombrePaciente={nombrePaciente} documento={documento} />)}
+      {activos.length > 0 ? (
+        activos.map((p) => <TarjetaPaquete key={p.id} paquete={p} pacienteId={pacienteId} nombrePaciente={nombrePaciente} documento={documento} />)
+      ) : (
+        // Banner "sin plan activo" (diseño idea1)
+        <div className="bg-gradient-to-r from-primary/5 to-surface-container-lowest rounded-2xl border border-primary/20 p-6 flex flex-col md:flex-row items-center justify-between gap-4 relative overflow-hidden">
+          <div className="absolute -right-16 -top-16 w-64 h-64 bg-primary/5 rounded-full blur-3xl" />
+          <div className="z-10">
+            <h3 className="font-headline-sm text-headline-sm text-on-surface font-bold">Paquetes y membresías</h3>
+            <p className="text-on-surface-variant mt-0.5">Este paciente aún no cuenta con planes de salud activos.</p>
+          </div>
+          {/* Estético por ahora (sin acción): más adelante llevará a vender/asignar membresía */}
+          <button
+            type="button"
+            className="z-10 px-6 py-2 border-2 border-primary text-primary font-bold rounded-xl hover:bg-primary hover:text-on-primary transition-all shrink-0"
+            title="Próximamente"
+          >
+            Explorar Programas
+          </button>
+        </div>
+      )}
       {historicos.length > 0 && (
         <details className="group">
-          <summary className="cursor-pointer text-xs font-semibold text-slate-400 hover:text-slate-600">
+          <summary className="cursor-pointer text-xs font-semibold text-on-surface-variant hover:text-on-surface">
             Agotados / vencidos ({historicos.length}) ▾
           </summary>
           <div className="mt-2 space-y-2 opacity-75">
@@ -149,9 +165,17 @@ function TarjetaPaquete({ paquete: p, pacienteId, nombrePaciente, documento }: {
   const rol = useAuthStore((s) => s.usuario?.rol);
   const invalidar = useInvalidarPaquetes();
   const sem = semaforo(p);
-  const pct = Math.round((p.consumidas / Math.max(p.sesionesTotal, 1)) * 100);
-  const colorAnillo = sem === 'verde' ? '#10B981' : sem === 'ambar' ? '#F59E0B' : '#EF4444';
   const apertura = p.consumos.filter((c) => c.origen === 'APERTURA');
+  const dotSem = sem === 'verde' ? 'bg-emerald-600' : sem === 'ambar' ? 'bg-amber-500' : 'bg-red-500';
+  // Totales de la membresía = SUMA de TODOS los servicios de su composición (por membresía).
+  // El máximo del anillo = suma de sesiones totales (Σ cantidad), y se descuenta con cada uso.
+  // Sin composición (paquete simple) → se usa el saldo agregado del servidor.
+  const comp = p.composicion ?? [];
+  const totalSesiones = comp.length > 0 ? comp.reduce((s, i) => s + i.cantidad, 0) : p.sesionesTotal;
+  const usadasSesiones = comp.length > 0 ? comp.reduce((s, i) => s + i.consumidas, 0) : p.consumidas;
+  const restantes = Math.max(totalSesiones - usadasSesiones, 0);
+  // Anillo azul = proporción de sesiones RESTANTES (se reduce al consumir).
+  const pctRestante = Math.round((restantes / Math.max(totalSesiones, 1)) * 100);
 
   const anularMutation = useMutation({
     mutationFn: ({ consumoId, motivo }: { consumoId: string; motivo: string }) => paquetesSesionesApi.anularConsumo(consumoId, motivo),
@@ -166,49 +190,74 @@ function TarjetaPaquete({ paquete: p, pacienteId, nombrePaciente, documento }: {
   });
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3">
-      <div className="flex items-center gap-3">
-        {/* Anillo de progreso */}
-        <div className="relative w-12 h-12 shrink-0" title={`${p.consumidas} de ${p.sesionesTotal} consumidas`}>
-          <svg viewBox="0 0 36 36" className="w-12 h-12 -rotate-90">
-            <circle cx="18" cy="18" r="15.9" fill="none" stroke="#E2E8F0" strokeWidth="3.5" />
-            <circle cx="18" cy="18" r="15.9" fill="none" stroke={colorAnillo} strokeWidth="3.5"
-              strokeDasharray={`${pct} 100`} strokeLinecap="round" />
-          </svg>
-          <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-slate-700">
-            {p.saldo}
-          </span>
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-slate-800 truncate">{p.nombre}</p>
-          <p className="text-xs text-slate-500">
-            {p.consumidas}/{p.sesionesTotal} consumidas · <span className="font-semibold">{p.saldo} restantes</span>
-            {p.sede && <> · {p.sede.nombre}</>}
-            {p.vigenciaFin && <> · vence {fmtFecha(p.vigenciaFin)}</>}
-          </p>
-          {p.composicion && (
-            <p className="text-[11px] text-slate-400 mt-0.5">
-              {p.composicion.map((i) => `${i.etiqueta}${i.subcategoriaEtiqueta ? ` (${i.subcategoriaEtiqueta})` : ''}: ${i.consumidas}/${i.cantidad}`).join(' · ')}
+    <div className="bg-surface-container-lowest rounded-2xl border border-outline-variant/30 p-6 shadow-sm">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-center gap-4 min-w-0">
+          {/* Anillo de progreso: el arco azul = sesiones restantes; baja al consumir */}
+          <div className="relative w-14 h-14 shrink-0" title={`${restantes} de ${totalSesiones} sesiones disponibles`}>
+            <svg viewBox="0 0 36 36" className="w-14 h-14 -rotate-90">
+              <circle cx="18" cy="18" r="15.9" fill="none" stroke="#E2E8F0" strokeWidth="3.5" />
+              <circle cx="18" cy="18" r="15.9" fill="none" stroke="#3525cd" strokeWidth="3.5"
+                strokeDasharray={`${pctRestante} 100`} strokeLinecap="round" />
+            </svg>
+            <span className="absolute inset-0 flex items-center justify-center text-sm font-bold text-on-surface">
+              {restantes}
+            </span>
+          </div>
+          <div className="space-y-1 min-w-0">
+            <div className="flex items-center gap-3">
+              <h3 className="font-headline-sm text-on-surface font-bold truncate">{p.nombre}</h3>
+              <span className={cn('px-3 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase inline-flex items-center border shrink-0', CLASE_SEMAFORO[sem])}>
+                <span className={cn('w-1.5 h-1.5 rounded-full mr-1 shrink-0', dotSem)} />
+                {p.estado}
+              </span>
+            </div>
+            <p className="text-body-md text-on-surface-variant">
+              <span className="font-semibold text-on-surface">{usadasSesiones}/{totalSesiones} consumidas</span>
+              {' · '}{restantes} restantes
+              {p.sede && <> · {p.sede.nombre}</>}
+              {p.vigenciaFin && <> · vence {fmtFecha(p.vigenciaFin)}</>}
             </p>
-          )}
+          </div>
         </div>
-        <span className={cn('text-[10px] font-bold px-1.5 py-0.5 rounded-full border shrink-0', CLASE_SEMAFORO[sem])}>
-          {p.estado}
-        </span>
-        {/* Corregir tamaño — SOLO admin (recepción no puede cambiarlo) */}
-        {rol === 'admin' && !corrigiendoTamano && (
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Corregir tamaño — SOLO admin (recepción no puede cambiarlo) */}
+          {rol === 'admin' && !corrigiendoTamano && (
+            <button
+              onClick={() => setCorrigiendoTamano(true)}
+              className="px-3 py-2 text-amber-700 bg-amber-50 border border-amber-200 font-semibold rounded-lg text-xs hover:bg-amber-100 transition-all"
+              title="Corregir el tamaño del paquete si se eligió mal (ej. 12 cuando era 4)"
+            >
+              ✎ Tamaño
+            </button>
+          )}
           <button
-            onClick={() => setCorrigiendoTamano(true)}
-            className="text-[10px] font-semibold text-amber-600 hover:text-amber-800 border border-amber-200 bg-amber-50 rounded px-1.5 py-0.5 shrink-0"
-            title="Corregir el tamaño del paquete si se eligió mal (ej. 12 cuando era 4)"
+            onClick={() => setAbierto((v) => !v)}
+            className="px-4 py-2 bg-tertiary-fixed text-on-tertiary-fixed font-bold rounded-lg text-sm hover:opacity-90 transition-all"
           >
-            ✎ tamaño
+            Detalle
           </button>
-        )}
-        <button onClick={() => setAbierto((v) => !v)} className="text-slate-400 hover:text-slate-600 text-xs shrink-0">
-          {abierto ? '▴' : '▾'}
-        </button>
+          <button
+            onClick={() => setAbierto((v) => !v)}
+            className="p-2 text-outline hover:bg-surface-variant/30 rounded-lg transition-all"
+            title={abierto ? 'Contraer' : 'Expandir'}
+          >
+            <span className="material-symbols-outlined">{abierto ? 'expand_less' : 'expand_more'}</span>
+          </button>
+        </div>
       </div>
+
+      {/* Composición de la membresía (tratamientos incluidos) */}
+      {p.composicion && p.composicion.length > 0 && (
+        <div className="pt-6 border-t border-outline-variant/20 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-y-3 gap-x-8 mt-4">
+          {p.composicion.map((i, idx) => (
+            <div key={idx} className="flex justify-between items-center text-xs">
+              <span className="text-on-surface-variant truncate">{i.etiqueta}{i.subcategoriaEtiqueta ? ` (${i.subcategoriaEtiqueta})` : ''}</span>
+              <span className="font-bold text-on-surface shrink-0 ml-2">{i.consumidas}/{i.cantidad}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Panel de corrección de tamaño (admin) — claro, sin window.prompt */}
       {corrigiendoTamano && (

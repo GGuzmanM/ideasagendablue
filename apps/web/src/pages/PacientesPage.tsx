@@ -1,53 +1,69 @@
-import { useEffect, useRef, useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import toast from 'react-hot-toast';
+import { useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { pacientesApi, paquetesApi, reniecApi } from '../api';
-import { BadgeEstado } from '../components/ui/Badge';
+import { Idea1NuevaCitaModal } from '../components/agenda/Idea1NuevaCitaModal';
+import { useAgendaStore } from '../stores/agendaStore';
 import { RomboAlerta } from '../components/pacientes/RomboAlerta';
 import { CuadroFamiliares } from '../components/pacientes/CuadroFamiliares';
 import { ToggleDatosPaciente } from '../components/pacientes/ToggleDatosPaciente';
 import { BotonHistorialGenexis } from '../components/pacientes/HistorialGenexis';
 import { SaldoPaquetes } from '../components/pacientes/SaldoPaquetes';
+import { Idea1NuevoPacienteModal } from '../components/pacientes/Idea1NuevoPacienteModal';
 import { Skeleton } from '../components/ui/Skeleton';
 import { cn } from '../utils/cn';
 import { DistritoAutocomplete, PaisAutocomplete } from '../components/ui/DistritoAutocomplete';
 import { etiquetaDistrito } from '../data/ubigeo';
 import { UBIGEO_EXTRANJERO, nombrePais } from '@limablue/shared';
+import { usePacientesBusqueda, useFichaPaciente } from '../services/pacientesService';
 
 // ─── Lista/búsqueda ───────────────────────────────────────────────────────────
 
 export function PacientesPage() {
-  const [q, setQ] = useState('');
   const navigate = useNavigate();
-
-  const { data: resultados, isLoading } = useQuery({
-    queryKey: ['pacientes-buscar', q],
-    queryFn: () => pacientesApi.buscar(q),
-    enabled: q.length >= 2,
-  });
+  const { q, setQ, resultados, isLoading } = usePacientesBusqueda();
+  const [nuevoOpen, setNuevoOpen] = useState(false);
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <header className="bg-white border-b border-slate-200 px-6 py-4">
-        <h1 className="text-lg font-bold text-slate-900">Pacientes</h1>
-        <div className="mt-3 max-w-lg">
-          <div className="relative">
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            <input
-              className="input pl-9"
-              placeholder="Buscar por nombre, DNI o teléfono..."
-              value={q}
-              onChange={e => setQ(e.target.value)}
-              autoFocus
-            />
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex-1 min-w-0">
+            <h1 className="text-lg font-bold text-slate-900">Pacientes</h1>
+            <div className="mt-3 max-w-lg">
+              <div className="relative">
+                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input
+                  className="input pl-9"
+                  placeholder="Buscar por nombre, DNI o teléfono..."
+                  value={q}
+                  onChange={e => setQ(e.target.value)}
+                  autoFocus
+                />
+              </div>
+            </div>
           </div>
+          <button
+            onClick={() => setNuevoOpen(true)}
+            className="shrink-0 inline-flex items-center gap-1.5 px-4 py-2 bg-limablue-600 text-white text-sm font-semibold rounded-lg shadow-sm hover:bg-limablue-700 active:scale-95 transition-all"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+            </svg>
+            Nuevo paciente
+          </button>
         </div>
       </header>
+
+      {nuevoOpen && (
+        <Idea1NuevoPacienteModal
+          onClose={() => setNuevoOpen(false)}
+          onCreated={(p) => navigate(`/pacientes/${p.id}`)}
+        />
+      )}
 
       <div className="flex-1 overflow-y-auto px-6 py-4">
         {q.length < 2 && (
@@ -85,11 +101,9 @@ export function PacientesPage() {
                     </p>
                     <p className="text-sm text-slate-500 flex items-center gap-2">
                       <span>{p.tipoDocumento} {p.numeroDocumento} · {p.telefono}</span>
-                      {/* Estado de datos (calculado server-side); compacto: el clic de la fila ya lleva a la ficha */}
                       {p.requiereActualizacionDatos !== undefined && (
                         <ToggleDatosPaciente encendido={p.requiereActualizacionDatos} contacto={p} compacto />
                       )}
-                      {/* Saldo total de sesiones activas (misma queryKey compartida) */}
                       <SaldoPaquetes pacienteId={p.id} variante="compact" />
                     </p>
                   </div>
@@ -106,155 +120,76 @@ export function PacientesPage() {
   );
 }
 
-// ─── Ficha de paciente ────────────────────────────────────────────────────────
+// ─── Ficha de paciente (Perfil — diseño idea1) ────────────────────────────────
 
 // `fecha` viene como medianoche UTC ("2026-06-24T00:00:00.000Z"). `new Date()` directo
 // la corre un día hacia atrás en zonas con offset negativo (Lima UTC-5). Anclamos al
 // mediodía local sobre la parte de fecha para mostrar SIEMPRE el día correcto.
 const parseFechaLocal = (f: string) => new Date(f.slice(0, 10) + 'T12:00:00');
 
+// Colores de estado — MISMA paleta que el agenda idea1 (tarjetas de cita).
+const ESTADO_ESTILO: Record<string, { pill: string; dot: string; label: string }> = {
+  agendada:     { pill: 'bg-secondary-container text-on-secondary-container', dot: 'bg-secondary-fixed-dim', label: 'Agendada' },
+  confirmada:   { pill: 'bg-primary-fixed text-on-primary-fixed-variant', dot: 'bg-primary-container', label: 'Confirmada' },
+  llego:        { pill: 'bg-emerald-100 text-emerald-800', dot: 'bg-emerald-600', label: 'Llegó' },
+  en_atencion:  { pill: 'bg-tertiary-fixed text-on-tertiary-fixed-variant', dot: 'bg-tertiary-container', label: 'En atención' },
+  completada:   { pill: 'bg-surface-variant text-on-surface-variant', dot: 'bg-outline', label: 'Completada' },
+  no_show:      { pill: 'bg-error-container text-on-error-container', dot: 'bg-error', label: 'No show' },
+  cancelada:    { pill: 'bg-error-container text-on-error-container', dot: 'bg-error', label: 'Cancelada' },
+  reprogramada: { pill: 'bg-tertiary-fixed text-on-tertiary-fixed-variant', dot: 'bg-tertiary-container', label: 'Reprogramada' },
+};
+
+function EstadoPill({ estado }: { estado: string }) {
+  const key = (estado ?? '').toLowerCase().replace(/[\s-]+/g, '_');
+  const e = ESTADO_ESTILO[key] ?? { pill: 'bg-secondary-container text-on-secondary-container', dot: 'bg-secondary-fixed-dim', label: estado };
+  return (
+    <span className={cn('inline-flex items-center px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider', e.pill)}>
+      <span className={cn('w-1.5 h-1.5 rounded-full mr-1.5 shrink-0', e.dot)} />
+      {e.label}
+    </span>
+  );
+}
+
 export function FichaPacientePage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const [editando, setEditando] = useState(false);
-  const [notas, setNotas] = useState('');
 
-  const { data: paciente, isLoading } = useQuery({
-    queryKey: ['paciente', id],
-    queryFn: () => pacientesApi.obtener(id!),
-    enabled: !!id,
-  });
+  // Sede/Especialidad de arranque para "Agendar cita": si el usuario ya usó la agenda,
+  // reusamos su última selección; si no, el modal elige la primera sede por defecto.
+  const agendaSedeId = useAgendaStore(s => s.sedeId);
+  const agendaUnidadId = useAgendaStore(s => s.unidadNegocioId);
+  const [agendarOpen, setAgendarOpen] = useState(false);
 
-  const { data: paquetes } = useQuery({
-    queryKey: ['paquetes-paciente', id],
-    queryFn: () => paquetesApi.porPaciente(id!),
-    enabled: !!id,
-  });
+  const {
+    paciente,
+    isLoading,
+    historial,
+    proximas,
+    totalAtenciones,
+    faltantes,
+    editando,
+    setEditando,
+    notas,
+    setNotas,
+    actualizarMutation,
+    editandoDatos,
+    setEditandoDatos,
+    form,
+    setForm,
+    dniConsultando,
+    abrirEdicionDatos,
+    guardarDatosMutation,
+  } = useFichaPaciente(id);
 
-  const actualizarMutation = useMutation({
-    mutationFn: (data: { notas: string }) => pacientesApi.actualizar(id!, data as never),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['paciente', id] });
-      toast.success('Notas actualizadas');
-      setEditando(false);
-    },
-  });
-
-  // ── Edición de los DATOS del paciente (fuente única: el registro Paciente; las
-  //    citas lo referencian por FK, así que al guardar se refresca toda la agenda) ──
-  const [editandoDatos, setEditandoDatos] = useState(false);
-  const [form, setForm] = useState<{
-    nombres: string; apellidoPaterno: string; apellidoMaterno: string; tipoDocumento: string;
-    numeroDocumento: string; telefono: string; email: string; fechaNacimiento: string; sexo: string;
-    ubigeoId: string | null; paisResidencia: string | null;
-  }>({
-    nombres: '', apellidoPaterno: '', apellidoMaterno: '', tipoDocumento: 'DNI',
-    numeroDocumento: '', telefono: '', email: '', fechaNacimiento: '', sexo: '',
-    ubigeoId: null, paisResidencia: null,
-  });
-  // Autollenado RENIEC (no destructivo: solo rellena campos de nombre vacíos).
-  const [dniConsultando, setDniConsultando] = useState(false);
-  const dniConsultadoRef = useRef('');
-
-  const abrirEdicionDatos = () => {
-    if (!paciente) return;
-    setForm({
-      nombres: paciente.nombres ?? '', apellidoPaterno: paciente.apellidoPaterno ?? '',
-      apellidoMaterno: paciente.apellidoMaterno ?? '', tipoDocumento: paciente.tipoDocumento ?? 'DNI',
-      numeroDocumento: paciente.numeroDocumento ?? '', telefono: paciente.telefono ?? '',
-      email: paciente.email ?? '', fechaNacimiento: (paciente.fechaNacimiento ?? '').slice(0, 10), sexo: paciente.sexo ?? '',
-      // Paciente legado sin distrito → null (el componente queda vacío, sin crash).
-      ubigeoId: paciente.ubigeoId ?? null, paisResidencia: paciente.paisResidencia ?? null,
-    });
-    // Si el registro ya trae los 3 nombres completos, no re-consultamos RENIEC al
-    // abrir (solo lo hará si el usuario CAMBIA el DNI). Si faltan nombres, dejamos
-    // que el efecto los rellene automáticamente.
-    dniConsultadoRef.current =
-      paciente.nombres && paciente.apellidoPaterno && paciente.apellidoMaterno
-        ? (paciente.numeroDocumento ?? '')
-        : '';
-    setEditandoDatos(true);
-  };
-
-  // Autollenado RENIEC en la edición: al tener un DNI de 8 dígitos (tipo DNI) que no
-  // se haya consultado aún, rellena SOLO los campos de nombre vacíos (no destructivo).
-  useEffect(() => {
-    if (!editandoDatos || form.tipoDocumento !== 'DNI') return;
-    const dni = form.numeroDocumento.trim();
-    if (!/^\d{8}$/.test(dni) || dniConsultadoRef.current === dni) return;
-
-    dniConsultadoRef.current = dni;
-    let cancelado = false;
-    const t = setTimeout(async () => {
-      setDniConsultando(true);
-      try {
-        const d = await reniecApi.consultarDni(dni);
-        if (cancelado) return;
-        const tc = (s: string) => s.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
-        setForm((f) => ({
-          ...f,
-          nombres: f.nombres.trim() ? f.nombres : tc(d.nombres),
-          apellidoPaterno: f.apellidoPaterno.trim() ? f.apellidoPaterno : tc(d.apellidoPaterno),
-          apellidoMaterno: f.apellidoMaterno.trim() ? f.apellidoMaterno : tc(d.apellidoMaterno),
-        }));
-        toast.success('Datos encontrados en RENIEC');
-      } catch (e) {
-        if (cancelado) return;
-        dniConsultadoRef.current = '';
-        toast(e instanceof Error ? e.message : 'No se pudo consultar el DNI', { icon: 'ℹ️' });
-      } finally {
-        if (!cancelado) setDniConsultando(false);
-      }
-    }, 500);
-    return () => { cancelado = true; clearTimeout(t); };
-  }, [form.numeroDocumento, form.tipoDocumento, editandoDatos]);
-
-  // Llegada desde el toggle "Actualizar datos" (popover/otras vistas): ?editar=datos
-  // abre la edición una sola vez, con los campos faltantes resaltados en ámbar.
-  const [searchParams, setSearchParams] = useSearchParams();
-  const autoEdicionAbierta = useRef(false);
-  useEffect(() => {
-    if (paciente && searchParams.get('editar') === 'datos' && !autoEdicionAbierta.current) {
-      autoEdicionAbierta.current = true;
-      abrirEdicionDatos();
-      setSearchParams({}, { replace: true });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paciente, searchParams]);
-
-  // Campos faltantes según el server (resalta inputs y alimenta el tooltip del toggle).
-  const faltantes = paciente?.datosFaltantes ?? [];
+  // Estilo de inputs (diseño idea1) + resaltado ámbar para campos faltantes.
+  const INPUT_CLS = 'w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2.5 text-sm text-on-surface outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all';
   const claseFaltante = (campo: string) =>
-    cn('input text-sm', faltantes.includes(campo) && 'border-amber-400 ring-1 ring-amber-300 bg-amber-50');
-
-  const guardarDatosMutation = useMutation({
-    mutationFn: () => pacientesApi.actualizar(id!, {
-      nombres: form.nombres.trim(), apellidoPaterno: form.apellidoPaterno.trim(),
-      apellidoMaterno: form.apellidoMaterno.trim(), tipoDocumento: form.tipoDocumento,
-      numeroDocumento: form.numeroDocumento.trim(), telefono: form.telefono.trim(),
-      email: form.email.trim() || undefined, fechaNacimiento: form.fechaNacimiento || undefined,
-      sexo: form.sexo || undefined,
-      // Distrito: se envía SIEMPRE el valor del form (string = fijar, null = borrar con la X).
-      // El backend hace la regla de país (A4) y solo audita si realmente cambió.
-      ubigeoId: form.ubigeoId,
-      paisResidencia: form.ubigeoId === UBIGEO_EXTRANJERO ? form.paisResidencia : null,
-    } as never),
-    onSuccess: () => {
-      // Una sola fuente de verdad → refrescar TODO lo que muestra al paciente.
-      qc.invalidateQueries({ queryKey: ['paciente', id] });
-      qc.invalidateQueries({ queryKey: ['citas'] });
-      qc.invalidateQueries({ queryKey: ['paciente-historial', id] });
-      qc.invalidateQueries({ queryKey: ['pacientes-buscar'] });
-      toast.success('Datos del paciente actualizados');
-      setEditandoDatos(false);
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
+    cn(INPUT_CLS, faltantes.includes(campo) && 'border-amber-400 ring-1 ring-amber-300 bg-amber-50');
 
   if (isLoading) {
     return (
-      <div className="p-6 space-y-4">
+      <div className="p-8 space-y-4 bg-background h-full">
         <Skeleton className="h-8 w-64" />
         <Skeleton className="h-32 w-full" />
         <Skeleton className="h-48 w-full" />
@@ -262,71 +197,104 @@ export function FichaPacientePage() {
     );
   }
 
-  if (!paciente) return <div className="p-6 text-slate-500">Paciente no encontrado</div>;
+  if (!paciente) return <div className="p-8 text-on-surface-variant">Paciente no encontrado</div>;
 
-  const historial = (paciente as never as { historial: { id: string; fecha: string; horaInicio: string; estado: string; slotGrupoId: string | null; slotRol: 'PRINCIPAL' | 'SECUNDARIO' | null; consultorioNumero: number | null; sesionNumero: number | null; paquetePaciente?: { sesionesTotal: number; paquete: { nombre: string } } | null; servicio: { nombre: string; color: string }; subcategoria?: { id: string; nombre: string } | null; profesional: { nombres: string; apellidos: string } | null; sede: { nombre: string }; comentarios: { id: string; texto: string }[] }[] }).historial ?? [];
-  const proximas = (paciente as never as { proximas: { id: string; fecha: string; horaInicio: string; estado: string; servicio: { nombre: string }; subcategoria?: { id: string; nombre: string } | null; profesional: { nombres: string; apellidos: string } | null; sede: { nombre: string } }[] }).proximas ?? [];
-  // Total real de atenciones (sobre todas las citas, no acotado a las 200 mostradas).
-  const totalAtenciones = (paciente as never as { totalCitas?: number }).totalCitas ?? historial.length;
+  const nombreCompleto = `${paciente.nombres} ${paciente.apellidoPaterno} ${paciente.apellidoMaterno}`.trim();
+  const iniciales = `${paciente.nombres?.[0] ?? ''}${paciente.apellidoPaterno?.[0] ?? ''}`.toUpperCase();
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
-      {/* Header */}
-      <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center gap-4">
-        <button onClick={() => navigate('/pacientes')} className="btn-ghost btn-sm">
-          ← Volver
-        </button>
-        <div>
-          <h1 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-            <RomboAlerta alerta={paciente.alerta} size={15} />
-            <span>{paciente.nombres} {paciente.apellidoPaterno} {paciente.apellidoMaterno}</span>
-          </h1>
-          {paciente.alerta?.alerta && (
-            <p className="text-xs font-semibold text-amber-700 mt-0.5">
-              {paciente.alerta.frecuenteInasistente && `⚠ No asiste con frecuencia (${paciente.alerta.noShows} inasistencias). `}
-              {paciente.alerta.frecuenteReprogramador && `⚠ Reprograma con frecuencia (${paciente.alerta.reprogramaciones} veces).`}
-            </p>
-          )}
-          <p className="text-sm text-slate-500 flex items-center gap-2 flex-wrap">
-            <span>
-              {paciente.tipoDocumento} {paciente.numeroDocumento} · {paciente.telefono}
-              {paciente.email && ` · ${paciente.email}`}
-            </span>
-            <ToggleDatosPaciente
-              encendido={paciente.requiereActualizacionDatos ?? faltantes.length > 0}
-              faltantes={faltantes}
-              onEditar={abrirEdicionDatos}
-            />
-          </p>
+    <div className="flex flex-col h-full overflow-hidden bg-background text-on-surface">
+      {/* Top App Bar */}
+      <header className="glass-header sticky top-0 z-40 bg-surface/80 border-b border-outline-variant/30 px-grid-gutter h-16 flex justify-between items-center shrink-0">
+        <div className="flex items-center gap-6">
+          <button
+            onClick={() => navigate('/pacientes')}
+            className="flex items-center text-on-surface-variant hover:text-primary transition-colors"
+          >
+            <span className="material-symbols-outlined mr-2">arrow_back</span>
+            <span className="font-body-md font-medium">Volver</span>
+          </button>
+          <div className="h-6 w-px bg-outline-variant/30" />
+          <span className="font-headline-sm text-headline-sm font-semibold text-on-surface truncate max-w-[280px]">
+            Perfil del paciente
+          </span>
         </div>
-        <div className="flex-1" />
-        <BotonHistorialGenexis
-          pacienteId={paciente.id}
-          nombrePaciente={`${paciente.nombres} ${paciente.apellidoPaterno} ${paciente.apellidoMaterno}`}
-          documento={`${paciente.tipoDocumento} ${paciente.numeroDocumento}`}
-        />
-        <button
-          onClick={() => {
-            navigate('/');
-            setTimeout(() => document.dispatchEvent(new CustomEvent('agenda:nueva-cita')), 100);
-          }}
-          className="btn-primary btn-sm"
-        >
-          + Agendar cita
-        </button>
       </header>
 
+      {/* Content Canvas */}
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-7xl mx-auto px-6 py-6 space-y-6">
-          {/* Info + notas */}
-          <div className="grid grid-cols-3 gap-6">
-            <div className="col-span-2 bg-white rounded-xl border border-slate-200 p-5">
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="text-sm font-semibold text-slate-700">Datos del paciente</h2>
+        <div className="p-container-padding space-y-8 max-w-[1440px] mx-auto w-full">
+          {/* Patient Profile Header */}
+          <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-outline-variant/20">
+            <div className="flex items-start gap-5">
+              <div className="w-24 h-24 rounded-2xl bg-primary-fixed flex items-center justify-center text-primary font-bold text-headline-md shrink-0">
+                {iniciales || '—'}
+              </div>
+              <div>
+                <div className="flex items-center gap-3">
+                  <h2 className="font-headline-md text-headline-md text-on-surface font-black flex items-center gap-2">
+                    <RomboAlerta alerta={paciente.alerta} size={16} />
+                    <span>{nombreCompleto}</span>
+                  </h2>
+                </div>
+                {paciente.alerta?.alerta && (
+                  <p className="text-xs font-semibold text-amber-700 mt-1">
+                    {paciente.alerta.frecuenteInasistente && `⚠ No asiste con frecuencia (${paciente.alerta.noShows} inasistencias). `}
+                    {paciente.alerta.frecuenteReprogramador && `⚠ Reprograma con frecuencia (${paciente.alerta.reprogramaciones} veces).`}
+                  </p>
+                )}
+                <div className="flex flex-wrap gap-x-6 gap-y-2 mt-2 text-on-surface-variant font-body-md">
+                  <span className="flex items-center"><span className="material-symbols-outlined text-sm mr-2">id_card</span>{paciente.tipoDocumento} {paciente.numeroDocumento}</span>
+                  <span className="flex items-center"><span className="material-symbols-outlined text-sm mr-2">call</span>{paciente.telefono}</span>
+                  {paciente.email && (
+                    <span className="flex items-center"><span className="material-symbols-outlined text-sm mr-2">mail</span>{paciente.email}</span>
+                  )}
+                </div>
+                <div className="mt-4 flex items-center gap-4">
+                  <ToggleDatosPaciente
+                    encendido={paciente.requiereActualizacionDatos ?? faltantes.length > 0}
+                    faltantes={faltantes}
+                    onEditar={abrirEdicionDatos}
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-3 shrink-0">
+              {/* Estético por ahora (sin acción): más adelante abrirá la ficha técnica */}
+              <button
+                type="button"
+                className="px-6 py-3 bg-surface-container-lowest border border-outline-variant text-on-surface font-semibold rounded-xl hover:bg-surface-container-low transition-all flex items-center"
+                title="Próximamente"
+              >
+                <span className="material-symbols-outlined mr-2">print</span>
+                Ficha técnica
+              </button>
+              <BotonHistorialGenexis
+                pacienteId={paciente.id}
+                nombrePaciente={nombreCompleto}
+                documento={`${paciente.tipoDocumento} ${paciente.numeroDocumento}`}
+              />
+              <button
+                onClick={() => setAgendarOpen(true)}
+                className="px-8 py-3 bg-primary text-on-primary font-bold rounded-xl shadow-lg shadow-primary/20 hover:opacity-90 active:scale-95 transition-all flex items-center"
+              >
+                <span className="material-symbols-outlined mr-2">add_circle</span>
+                Agendar cita
+              </button>
+            </div>
+          </div>
+
+          {/* Bento Grid: Datos + Notas */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-grid-gutter">
+            {/* Datos del paciente (span 2) */}
+            <div className="lg:col-span-2 bg-surface-container-lowest rounded-2xl border border-outline-variant/30 p-8 shadow-sm flex flex-col">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="font-headline-sm text-headline-sm text-on-surface font-semibold flex items-center">
+                  <span className="material-symbols-outlined mr-3 text-primary">person</span>
+                  Datos del paciente
+                </h3>
                 {!editandoDatos && (
-                  <button onClick={abrirEdicionDatos} className="text-xs text-limablue-600 hover:underline">
-                    Editar
-                  </button>
+                  <button onClick={abrirEdicionDatos} className="text-primary font-semibold hover:underline text-body-md">Editar</button>
                 )}
               </div>
 
@@ -334,34 +302,34 @@ export function FichaPacientePage() {
                 <div className="space-y-3">
                   <div className="grid grid-cols-2 gap-3 text-sm">
                     <label className="block">
-                      <span className="text-xs text-slate-400">Nombres *</span>
-                      <input className="input text-sm" value={form.nombres} onChange={e => setForm(f => ({ ...f, nombres: e.target.value }))} />
+                      <span className="text-xs text-on-surface-variant">Nombres *</span>
+                      <input className={INPUT_CLS} value={form.nombres} onChange={e => setForm(f => ({ ...f, nombres: e.target.value }))} />
                     </label>
                     <label className="block">
-                      <span className="text-xs text-slate-400">Apellido paterno *</span>
-                      <input className="input text-sm" value={form.apellidoPaterno} onChange={e => setForm(f => ({ ...f, apellidoPaterno: e.target.value }))} />
+                      <span className="text-xs text-on-surface-variant">Apellido paterno *</span>
+                      <input className={INPUT_CLS} value={form.apellidoPaterno} onChange={e => setForm(f => ({ ...f, apellidoPaterno: e.target.value }))} />
                     </label>
                     <label className="block">
-                      <span className="text-xs text-slate-400">Apellido materno *</span>
-                      <input className="input text-sm" value={form.apellidoMaterno} onChange={e => setForm(f => ({ ...f, apellidoMaterno: e.target.value }))} />
+                      <span className="text-xs text-on-surface-variant">Apellido materno *</span>
+                      <input className={INPUT_CLS} value={form.apellidoMaterno} onChange={e => setForm(f => ({ ...f, apellidoMaterno: e.target.value }))} />
                     </label>
                     <label className="block">
-                      <span className="text-xs text-slate-400">Tipo de documento</span>
-                      <select className="input text-sm" value={form.tipoDocumento} onChange={e => setForm(f => ({ ...f, tipoDocumento: e.target.value }))}>
+                      <span className="text-xs text-on-surface-variant">Tipo de documento</span>
+                      <select className={INPUT_CLS} value={form.tipoDocumento} onChange={e => setForm(f => ({ ...f, tipoDocumento: e.target.value }))}>
                         {['DNI', 'CE', 'PASAPORTE', 'RUC'].map(t => <option key={t} value={t}>{t}</option>)}
                       </select>
                     </label>
                     <label className="block">
-                      <span className="text-xs text-slate-400">N° documento *</span>
+                      <span className="text-xs text-on-surface-variant">N° documento *</span>
                       <input
-                        className="input text-sm"
+                        className={INPUT_CLS}
                         value={form.numeroDocumento}
                         onChange={e => setForm(f => ({ ...f, numeroDocumento: f.tipoDocumento === 'DNI' ? e.target.value.replace(/\D/g, '') : e.target.value }))}
                         maxLength={form.tipoDocumento === 'DNI' ? 8 : 20}
                         inputMode={form.tipoDocumento === 'DNI' ? 'numeric' : 'text'}
                       />
                       {form.tipoDocumento === 'DNI' && dniConsultando && (
-                        <span className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
+                        <span className="text-[10px] text-on-surface-variant flex items-center gap-1 mt-0.5">
                           <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.4 0 0 5.4 0 12h4z" />
@@ -371,20 +339,20 @@ export function FichaPacientePage() {
                       )}
                     </label>
                     <label className="block">
-                      <span className="text-xs text-slate-400">Teléfono *</span>
+                      <span className="text-xs text-on-surface-variant">Teléfono *</span>
                       <input className={claseFaltante('teléfono')} value={form.telefono} onChange={e => setForm(f => ({ ...f, telefono: e.target.value }))} />
                     </label>
                     <label className="block">
-                      <span className="text-xs text-slate-400">Email</span>
+                      <span className="text-xs text-on-surface-variant">Email</span>
                       <input type="email" className={claseFaltante('correo')} value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
                     </label>
                     <label className="block">
-                      <span className="text-xs text-slate-400">Fecha nac.</span>
+                      <span className="text-xs text-on-surface-variant">Fecha nac.</span>
                       <input type="date" className={claseFaltante('fecha de nacimiento')} value={form.fechaNacimiento} onChange={e => setForm(f => ({ ...f, fechaNacimiento: e.target.value }))} />
                     </label>
                     <label className="block">
-                      <span className="text-xs text-slate-400">Sexo</span>
-                      <select className="input text-sm" value={form.sexo} onChange={e => setForm(f => ({ ...f, sexo: e.target.value }))}>
+                      <span className="text-xs text-on-surface-variant">Sexo</span>
+                      <select className={INPUT_CLS} value={form.sexo} onChange={e => setForm(f => ({ ...f, sexo: e.target.value }))}>
                         <option value="">—</option>
                         <option value="masculino">Masculino</option>
                         <option value="femenino">Femenino</option>
@@ -392,7 +360,7 @@ export function FichaPacientePage() {
                       </select>
                     </label>
                     <div className="col-span-2">
-                      <span className="text-xs text-slate-400 block mb-0.5">Distrito de residencia</span>
+                      <span className="text-xs text-on-surface-variant block mb-0.5">Distrito de residencia</span>
                       <DistritoAutocomplete
                         value={form.ubigeoId}
                         onChange={(id) => setForm(f => ({ ...f, ubigeoId: id, paisResidencia: id === UBIGEO_EXTRANJERO ? f.paisResidencia : null }))}
@@ -400,7 +368,7 @@ export function FichaPacientePage() {
                     </div>
                     {form.ubigeoId === UBIGEO_EXTRANJERO && (
                       <div className="col-span-2">
-                        <span className="text-xs text-slate-400 block mb-0.5">País de residencia *</span>
+                        <span className="text-xs text-on-surface-variant block mb-0.5">País de residencia *</span>
                         <PaisAutocomplete value={form.paisResidencia} onChange={(c) => setForm(f => ({ ...f, paisResidencia: c }))} />
                       </div>
                     )}
@@ -409,16 +377,16 @@ export function FichaPacientePage() {
                     <button
                       onClick={() => guardarDatosMutation.mutate()}
                       disabled={guardarDatosMutation.isPending || !form.nombres.trim() || !form.apellidoPaterno.trim() || !form.numeroDocumento.trim() || !form.telefono.trim() || (form.ubigeoId === UBIGEO_EXTRANJERO && !form.paisResidencia)}
-                      className="btn-primary btn-sm disabled:opacity-50"
+                      className="px-5 py-2.5 bg-primary text-on-primary font-bold rounded-xl text-sm shadow-md shadow-primary/20 hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 disabled:pointer-events-none"
                     >
                       {guardarDatosMutation.isPending ? 'Guardando…' : 'Guardar'}
                     </button>
-                    <button onClick={() => setEditandoDatos(false)} className="btn-secondary btn-sm">Cancelar</button>
+                    <button onClick={() => setEditandoDatos(false)} className="px-5 py-2.5 border border-outline-variant text-on-surface font-semibold rounded-xl text-sm hover:bg-surface-container-high transition-all">Cancelar</button>
                   </div>
-                  <p className="text-[11px] text-slate-400">Al guardar, el cambio se refleja en toda la agenda (el paciente se guarda una sola vez).</p>
+                  <p className="text-[11px] text-on-surface-variant">Al guardar, el cambio se refleja en toda la agenda (el paciente se guarda una sola vez).</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="grid grid-cols-2 gap-x-12 gap-y-3">
                   {[
                     ['Nombres', `${paciente.nombres}`],
                     ['Apellido paterno', paciente.apellidoPaterno],
@@ -431,163 +399,228 @@ export function FichaPacientePage() {
                       ? `${etiquetaDistrito(paciente.ubigeoId)}${paciente.ubigeoId === UBIGEO_EXTRANJERO && paciente.paisResidencia ? ` · ${nombrePais(paciente.paisResidencia)}` : ''}`
                       : '—'],
                   ].map(([label, val]) => (
-                    <div key={label}>
-                      <p className="text-xs text-slate-400">{label}</p>
-                      <p className="font-medium text-slate-800">{val}</p>
+                    <div key={label} className="space-y-0">
+                      <p className="font-label-caps text-[10px] uppercase tracking-wider text-on-surface-variant/80">{label}</p>
+                      <p className="font-body-lg text-body-lg text-on-surface font-semibold">{val}</p>
                     </div>
                   ))}
                 </div>
               )}
 
               {paciente.familiares && paciente.familiares.length > 0 && (
-                <div className="mt-4">
+                <div className="mt-6 pt-6 border-t border-outline-variant/20">
                   <CuadroFamiliares familiares={paciente.familiares} />
                 </div>
               )}
             </div>
 
-            <div className="bg-white rounded-xl border border-slate-200 p-5">
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="text-sm font-semibold text-slate-700">Notas generales</h2>
+            {/* Notas generales */}
+            <div className="bg-surface-container-lowest rounded-2xl border border-outline-variant/30 p-8 shadow-sm flex flex-col">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="font-headline-sm text-headline-sm text-on-surface font-semibold flex items-center">
+                  <span className="material-symbols-outlined mr-3 text-primary">description</span>
+                  Notas generales
+                </h3>
                 {!editando && (
                   <button
                     onClick={() => { setNotas(paciente.notas ?? ''); setEditando(true); }}
-                    className="text-xs text-limablue-600 hover:underline"
+                    className="text-primary font-semibold hover:underline text-body-md"
                   >
                     Editar
                   </button>
                 )}
               </div>
               {editando ? (
-                <div className="space-y-2">
+                <div className="space-y-3">
                   <textarea
-                    className="input text-sm resize-none w-full"
-                    rows={4}
+                    className="w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2.5 text-sm text-on-surface outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all resize-none"
+                    rows={6}
                     value={notas}
                     onChange={e => setNotas(e.target.value)}
+                    placeholder="Escribe una nota interna sobre el paciente…"
                   />
                   <div className="flex gap-2">
-                    <button onClick={() => actualizarMutation.mutate({ notas })} className="btn-primary btn-sm">
-                      Guardar
-                    </button>
-                    <button onClick={() => setEditando(false)} className="btn-secondary btn-sm">
-                      Cancelar
-                    </button>
+                    <button onClick={() => actualizarMutation.mutate({ notas })} className="px-5 py-2.5 bg-primary text-on-primary font-bold rounded-xl text-sm shadow-md shadow-primary/20 hover:opacity-90 active:scale-95 transition-all">Guardar</button>
+                    <button onClick={() => setEditando(false)} className="px-5 py-2.5 border border-outline-variant text-on-surface font-semibold rounded-xl text-sm hover:bg-surface-container-high transition-all">Cancelar</button>
+                  </div>
+                </div>
+              ) : paciente.notas ? (
+                <div className="flex-grow rounded-xl bg-surface-container-low/60 border border-outline-variant/40 p-4">
+                  <div className="flex items-start gap-3">
+                    <span className="material-symbols-outlined text-primary text-xl shrink-0">sticky_note_2</span>
+                    <p className="text-body-md text-on-surface whitespace-pre-wrap">{paciente.notas}</p>
                   </div>
                 </div>
               ) : (
-                <p className="text-sm text-slate-600">{paciente.notas || <span className="text-slate-400 italic">Sin notas</span>}</p>
+                <div className="flex-grow flex flex-col items-center justify-center border-2 border-dashed border-outline-variant/50 rounded-xl p-6 text-center space-y-4">
+                  <div className="w-16 h-16 rounded-full bg-surface-container-low flex items-center justify-center">
+                    <span className="material-symbols-outlined text-outline text-3xl">sticky_note_2</span>
+                  </div>
+                  <p className="text-on-surface-variant italic font-body-md">Sin notas registradas para este paciente.</p>
+                  <button
+                    onClick={() => { setNotas(''); setEditando(true); }}
+                    className="text-primary font-bold text-body-md"
+                  >
+                    + Agregar primera nota
+                  </button>
+                </div>
               )}
             </div>
           </div>
 
-          {/* Paquetes y membresías — componente único SaldoPaquetes (variante detalle):
-              anillo de progreso, timeline de consumos, línea de apertura Genexis,
-              consumo manual (válvula de escape) y agotados/vencidos colapsados. */}
-          <div className="bg-white rounded-xl border border-slate-200 p-5">
-            <h2 className="text-sm font-semibold text-slate-700 mb-3">Paquetes y membresías</h2>
-            <SaldoPaquetes pacienteId={paciente.id} variante="detalle" nombrePaciente={`${paciente.nombres} ${paciente.apellidoPaterno} ${paciente.apellidoMaterno}`} documento={`${paciente.tipoDocumento} ${paciente.numeroDocumento}`} />
-          </div>
+          {/* Paquetes y membresías — SaldoPaquetes (variante detalle, rediseñada):
+              banner cuando no hay plan activo; tarjeta con composición cuando sí. */}
+          <SaldoPaquetes
+            pacienteId={paciente.id}
+            variante="detalle"
+            nombrePaciente={nombreCompleto}
+            documento={`${paciente.tipoDocumento} ${paciente.numeroDocumento}`}
+          />
 
-          {/* Próximas citas + Historial — lado a lado (2 columnas) para no scrollear de más */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-            {/* Próximas citas (columna angosta) */}
-            {proximas.length > 0 && (
-              <div className="lg:col-span-1 bg-white rounded-xl border border-slate-200 p-5">
-                <h2 className="text-sm font-semibold text-slate-700 mb-3">Próximas citas ({proximas.length})</h2>
-                <div className="space-y-2 max-h-[28rem] overflow-y-auto pr-1">
-                  {proximas.map(c => (
-                    <div key={c.id} className="flex items-center gap-3 py-2 border-b border-slate-50 last:border-0">
-                      <div className="text-center min-w-[48px]">
-                        <p className="text-xs text-slate-400">{format(parseFechaLocal(c.fecha), 'EEE', { locale: es })}</p>
-                        <p className="text-sm font-bold text-slate-700">{format(parseFechaLocal(c.fecha), 'd MMM', { locale: es })}</p>
-                        <p className="text-xs text-limablue-600 font-medium">{c.horaInicio}</p>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-slate-800 truncate">{c.servicio.nombre}{c.subcategoria ? ` · ${c.subcategoria.nombre}` : ''}</p>
-                        <p className="text-xs text-slate-500 truncate">
-                          {c.profesional ? `${c.profesional.nombres} ${c.profesional.apellidos}` : 'Por asignar'} · {c.sede.nombre}
-                        </p>
-                      </div>
-                      <BadgeEstado estado={c.estado as never} />
-                    </div>
-                  ))}
-                </div>
+          {/* Próximas citas */}
+          {proximas.length > 0 && (
+            <div className="bg-surface-container-lowest rounded-2xl border border-outline-variant/30 shadow-sm overflow-hidden">
+              <div className="px-8 py-6 flex justify-between items-center border-b border-outline-variant/20 bg-surface-container-low/30">
+                <h3 className="font-headline-sm text-headline-sm text-on-surface font-semibold flex items-center">
+                  <span className="material-symbols-outlined mr-3 text-primary">event_upcoming</span>
+                  Próximas citas ({proximas.length})
+                </h3>
               </div>
-            )}
+              <div className="divide-y divide-outline-variant/10">
+                {proximas.map(c => (
+                  <div key={c.id} className="flex items-center gap-4 px-8 py-4 hover:bg-primary/5 transition-colors">
+                    <div className="text-center min-w-[56px]">
+                      <p className="text-[11px] uppercase text-on-surface-variant">{format(parseFechaLocal(c.fecha), 'EEE', { locale: es })}</p>
+                      <p className="font-bold text-on-surface">{format(parseFechaLocal(c.fecha), 'd MMM', { locale: es })}</p>
+                      <p className="text-xs text-primary font-semibold">{c.horaInicio}</p>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-on-surface truncate">{c.servicio.nombre}{c.subcategoria ? ` · ${c.subcategoria.nombre}` : ''}</p>
+                      <p className="text-xs text-on-surface-variant truncate">
+                        {c.profesional ? `${c.profesional.nombres} ${c.profesional.apellidos}` : 'Por asignar'} · {c.sede.nombre}
+                      </p>
+                    </div>
+                    <EstadoPill estado={c.estado} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
-            {/* Historial (columna ancha; ocupa todo si no hay próximas) */}
-            <div className={cn('bg-white rounded-xl border border-slate-200 p-5', proximas.length > 0 ? 'lg:col-span-2' : 'lg:col-span-3')}>
-              <h2 className="text-sm font-semibold text-slate-700 mb-3">
+          {/* Historial de atenciones */}
+          <div className="bg-surface-container-lowest rounded-2xl border border-outline-variant/30 shadow-sm overflow-hidden">
+            <div className="px-8 py-6 flex justify-between items-center border-b border-outline-variant/20 bg-surface-container-low/30">
+              <h3 className="font-headline-sm text-headline-sm text-on-surface font-semibold flex items-center">
+                <span className="material-symbols-outlined mr-3 text-primary">history</span>
                 Historial de atenciones ({totalAtenciones})
                 {totalAtenciones > historial.length && (
-                  <span className="ml-1 font-normal text-slate-400">· mostrando las {historial.length} más recientes</span>
+                  <span className="ml-2 font-normal text-on-surface-variant text-body-md">· mostrando las {historial.length} más recientes</span>
                 )}
-              </h2>
-              {historial.length === 0 ? (
-                <p className="text-sm text-slate-400 text-center py-6">Sin atenciones registradas</p>
-              ) : (
-                <div className="overflow-auto max-h-[28rem]">
-                  <table className="w-full text-sm">
-                    <thead className="sticky top-0 bg-white z-10">
-                      <tr className="text-xs text-slate-500 border-b border-slate-100">
-                        <th className="pb-2 text-left font-semibold">Fecha</th>
-                        <th className="pb-2 text-left font-semibold">Servicio</th>
-                        <th className="pb-2 text-left font-semibold">Profesional</th>
-                        <th className="pb-2 text-left font-semibold">Sede</th>
-                        <th className="pb-2 text-left font-semibold">Consultorio</th>
-                        <th className="pb-2 text-left font-semibold">Estado</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {historial.map(c => (
-                        <tr key={c.id} className="border-b border-slate-50 hover:bg-slate-50">
-                          <td className="py-2 text-slate-600 whitespace-nowrap">
-                            {format(parseFechaLocal(c.fecha), 'd MMM yyyy', { locale: es })}
-                            <span className="text-slate-400 ml-1">{c.horaInicio}</span>
-                          </td>
-                          <td className="py-2">
-                            <span className="font-medium text-slate-800">{c.servicio.nombre}{c.subcategoria ? ` · ${c.subcategoria.nombre}` : ''}</span>
-                            {/* Badge permanente de cita consumidora: Sesión x/total · paquete */}
-                            {c.sesionNumero != null && c.paquetePaciente && (
-                              <span
-                                title={c.paquetePaciente.paquete.nombre}
-                                className="ml-1.5 inline-flex items-center px-1.5 py-0.5 bg-limablue-50 text-limablue-700 border border-limablue-200 rounded-full text-[10px] font-bold align-middle"
-                              >
-                                Sesión {c.sesionNumero}/{c.paquetePaciente.sesionesTotal}
-                              </span>
-                            )}
-                            {c.slotGrupoId && (
-                              <span
-                                title={`Turno combinado · ${c.slotRol === 'PRINCIPAL' ? 'profilaxis (ancla)' : 'servicio extra'} — agendada junto a otra cita en la misma hora`}
-                                className="ml-1.5 inline-flex items-center gap-0.5 px-1 py-0.5 bg-violet-100 text-violet-700 rounded text-[10px] font-semibold align-middle"
-                              >
-                                🔗 {c.slotRol === 'PRINCIPAL' ? 'Combo' : 'Combo·extra'}
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-2 text-slate-600">
-                            {c.profesional ? `${c.profesional.nombres} ${c.profesional.apellidos}` : '—'}
-                          </td>
-                          <td className="py-2 text-slate-600">{c.sede.nombre}</td>
-                          <td className="py-2 text-slate-600">
-                            {c.consultorioNumero != null
-                              ? <span className="inline-flex items-center justify-center min-w-[22px] px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-700 font-semibold text-xs">{c.consultorioNumero}</span>
-                              : <span className="text-slate-300">—</span>}
-                          </td>
-                          <td className="py-2">
-                            <BadgeEstado estado={c.estado as never} />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              </h3>
             </div>
+            {historial.length === 0 ? (
+              <p className="text-on-surface-variant text-center py-10 font-body-md">Sin atenciones registradas</p>
+            ) : (
+              <div className="overflow-x-auto max-h-[36rem] overflow-y-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead className="sticky top-0 z-10">
+                    <tr className="bg-surface-container-low">
+                      <th className="px-8 py-4 font-label-caps text-label-caps text-on-surface-variant border-b border-outline-variant/10">Fecha</th>
+                      <th className="px-8 py-4 font-label-caps text-label-caps text-on-surface-variant border-b border-outline-variant/10">Servicio</th>
+                      <th className="px-8 py-4 font-label-caps text-label-caps text-on-surface-variant border-b border-outline-variant/10">Profesional</th>
+                      <th className="px-8 py-4 font-label-caps text-label-caps text-on-surface-variant border-b border-outline-variant/10">Sede</th>
+                      <th className="px-4 py-4 font-label-caps text-label-caps text-on-surface-variant border-b border-outline-variant/10">Consultorio</th>
+                      <th className="px-4 py-4 font-label-caps text-label-caps text-on-surface-variant border-b border-outline-variant/10">Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-outline-variant/10">
+                    {historial.map(c => (
+                      <tr key={c.id} className="hover:bg-primary/5 transition-colors">
+                        <td className="px-8 py-5">
+                          <div className="flex flex-col">
+                            <span className="font-semibold text-on-surface whitespace-nowrap">{format(parseFechaLocal(c.fecha), 'd MMM yyyy', { locale: es })}</span>
+                            <span className="text-xs text-on-surface-variant">{c.horaInicio}</span>
+                          </div>
+                        </td>
+                        <td className="px-8 py-5">
+                          <div className="flex items-center">
+                            <div className="w-1 h-8 mr-4 rounded-full shrink-0" style={{ backgroundColor: c.servicio.color || '#3525cd' }} />
+                            <div className="min-w-0">
+                              <span className="font-medium text-body-md text-on-surface leading-tight">
+                                {c.servicio.nombre}{c.subcategoria ? ` · ${c.subcategoria.nombre}` : ''}
+                              </span>
+                              <div className="flex flex-wrap items-center gap-1 mt-0.5">
+                                {c.sesionNumero != null && c.paquetePaciente && (
+                                  <span
+                                    title={c.paquetePaciente.paquete.nombre}
+                                    className="inline-flex items-center px-1.5 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded-full text-[10px] font-bold"
+                                  >
+                                    Sesión {c.sesionNumero}/{c.paquetePaciente.sesionesTotal}
+                                  </span>
+                                )}
+                                {c.slotGrupoId && (
+                                  <span
+                                    title={`Turno combinado · ${c.slotRol === 'PRINCIPAL' ? 'profilaxis (ancla)' : 'servicio extra'}`}
+                                    className="inline-flex items-center gap-0.5 px-1 py-0.5 bg-violet-100 text-violet-700 rounded text-[10px] font-semibold"
+                                  >
+                                    🔗 {c.slotRol === 'PRINCIPAL' ? 'Combo' : 'Combo·extra'}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-8 py-5">
+                          {c.profesional ? (
+                            <div className="flex items-center gap-3 overflow-hidden">
+                              <div className="w-8 h-8 rounded-full bg-primary-fixed text-primary flex items-center justify-center text-[11px] font-bold shrink-0">
+                                {`${c.profesional.nombres?.[0] ?? ''}${c.profesional.apellidos?.[0] ?? ''}`.toUpperCase()}
+                              </div>
+                              <span className="text-on-surface truncate">{c.profesional.nombres} {c.profesional.apellidos}</span>
+                            </div>
+                          ) : (
+                            <span className="text-on-surface-variant">—</span>
+                          )}
+                        </td>
+                        <td className="px-8 py-5"><span className="text-on-surface">{c.sede.nombre}</span></td>
+                        <td className="px-4 py-5">
+                          {c.consultorioNumero != null
+                            ? <span className="inline-flex items-center justify-center min-w-[22px] px-1.5 py-0.5 rounded-md bg-surface-container-high text-on-surface font-semibold text-xs">{c.consultorioNumero}</span>
+                            : <span className="text-on-surface-variant/50">—</span>}
+                        </td>
+                        <td className="px-4 py-5"><EstadoPill estado={c.estado} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       </div>
+
+      {/* Nueva cita con el paciente ya cargado (mismo modal de la agenda idea1) */}
+      {agendarOpen && (
+        <Idea1NuevaCitaModal
+          sedeId={agendaSedeId ?? ''}
+          unidadNegocioId={agendaUnidadId ?? ''}
+          fecha={new Date()}
+          permitirCambiarSede
+          pacienteInicial={{
+            id: paciente.id,
+            nombres: paciente.nombres,
+            apellidoPaterno: paciente.apellidoPaterno,
+            apellidoMaterno: paciente.apellidoMaterno,
+            nombreCompleto,
+            telefono: paciente.telefono,
+            numeroDocumento: paciente.numeroDocumento,
+            alerta: paciente.alerta ?? undefined,
+            familiares: paciente.familiares ?? undefined,
+          }}
+          onClose={() => setAgendarOpen(false)}
+          onSuccess={() => qc.invalidateQueries({ queryKey: ['paciente', id] })}
+        />
+      )}
     </div>
   );
 }

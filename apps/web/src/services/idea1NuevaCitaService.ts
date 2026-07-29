@@ -14,6 +14,7 @@ import {
   disponibilidadApi,
   horariosApi,
   competenciasApi,
+  sedesApi,
   api,
 } from '../api';
 import { citasApi, type CrearCitaInput, type CrearCitaCombinadaInput } from '../api/citas';
@@ -50,6 +51,12 @@ export interface UseIdea1NuevaCitaFormProps {
   profesionalId?: string;
   onClose: () => void;
   onSuccess?: () => void;
+  // Paciente ya seleccionado (ej. abierto desde la ficha del paciente): se carga
+  // automáticamente y NO hace falta buscar/registrar sus datos.
+  pacienteInicial?: PacienteSeleccionado;
+  // Muestra un selector de Sede + Especialidad dentro del modal. Se usa cuando no hay
+  // contexto de agenda (ej. desde la ficha del paciente). En la agenda queda en false.
+  permitirCambiarSede?: boolean;
 }
 
 export interface ComprobanteInfo {
@@ -71,13 +78,15 @@ export interface PacienteSeleccionado {
 }
 
 export function useIdea1NuevaCitaForm({
-  sedeId,
-  unidadNegocioId,
+  sedeId: sedeIdProp,
+  unidadNegocioId: unidadNegocioIdProp,
   fecha,
   horaInicio: horaInicial = '08:30',
   profesionalId: profInicial = '',
   onClose,
   onSuccess,
+  pacienteInicial,
+  permitirCambiarSede = false,
 }: UseIdea1NuevaCitaFormProps) {
   const qc = useQueryClient();
   const token = useAuthStore((s) => s.token);
@@ -86,12 +95,20 @@ export function useIdea1NuevaCitaForm({
 
   const idempotencyKeyRef = useRef(uuidv4());
 
+  // Sede / Unidad de negocio: estado interno (inicializado desde props). Cuando se abre
+  // desde la ficha del paciente (permitirCambiarSede), se pueden cambiar con un selector.
+  const [sedeId, setSedeId] = useState(sedeIdProp);
+  const [unidadNegocioId, setUnidadNegocioId] = useState(unidadNegocioIdProp);
+
   // Modo de paciente: 'existente' | 'nuevo'
   const [modoPaciente, setModoPaciente] = useState<'existente' | 'nuevo'>('existente');
 
   // Búsqueda de paciente existente
   const [pacienteQuery, setPacienteQuery] = useState('');
-  const [pacienteSeleccionado, setPacienteSeleccionado] = useState<PacienteSeleccionado | null>(null);
+  // Si viene un paciente preseleccionado (desde la ficha), se carga automáticamente.
+  const [pacienteSeleccionado, setPacienteSeleccionado] = useState<PacienteSeleccionado | null>(
+    pacienteInicial ?? null,
+  );
 
   // Formulario nuevo paciente
   const [npNombres, setNpNombres] = useState('');
@@ -142,6 +159,35 @@ export function useIdea1NuevaCitaForm({
     setHoraCita(horaInicial);
     setFechaCita(format(fecha, 'yyyy-MM-dd'));
   }, [profInicial, horaInicial, fecha]);
+
+  // ── Selector de Sede / Especialidad (solo cuando se abre desde la ficha) ──
+  const { data: sedesDisponibles = [] } = useQuery({
+    queryKey: ['sedes'],
+    queryFn: () => sedesApi.listar(),
+    enabled: permitirCambiarSede,
+  });
+
+  // Auto-seleccionar la primera sede si no hay ninguna (mismo criterio que la agenda).
+  useEffect(() => {
+    if (!permitirCambiarSede) return;
+    if (sedesDisponibles.length > 0 && !sedeId) {
+      setSedeId(sedesDisponibles[0].id);
+    }
+  }, [permitirCambiarSede, sedesDisponibles, sedeId]);
+
+  const sedeActualSel = sedesDisponibles.find((s) => s.id === sedeId);
+  const unidadesDeSede = sedeActualSel?.unidadesNegocio ?? [];
+
+  // Al cambiar de sede, seleccionar Podología (o la primera unidad) por defecto.
+  useEffect(() => {
+    if (!permitirCambiarSede) return;
+    if (unidadesDeSede.length > 0) {
+      if (!unidadNegocioId || !unidadesDeSede.find((u) => u.id === unidadNegocioId)) {
+        const podologia = unidadesDeSede.find((u) => u.nombre.toLowerCase().includes('podolog'));
+        setUnidadNegocioId(podologia ? podologia.id : unidadesDeSede[0].id);
+      }
+    }
+  }, [permitirCambiarSede, unidadesDeSede, unidadNegocioId]);
 
   // AUTO-CONSULTA RENIEC y VERIFICACIÓN DE PACIENTE EXISTENTE por DNI
   useEffect(() => {
@@ -642,6 +688,15 @@ export function useIdea1NuevaCitaForm({
   } catch (e) {}
 
   return {
+    // Sede / Especialidad (selector opcional desde la ficha)
+    sedeId,
+    setSedeId,
+    unidadNegocioId,
+    setUnidadNegocioId,
+    sedesDisponibles,
+    unidadesDeSede,
+    permitirCambiarSede,
+
     // Form States
     modoPaciente,
     setModoPaciente,

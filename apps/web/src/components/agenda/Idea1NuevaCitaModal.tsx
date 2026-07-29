@@ -8,6 +8,13 @@ import { VisorHistorialGenexis } from '../pacientes/HistorialGenexis';
 
 export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
   const {
+    sedeId,
+    setSedeId,
+    unidadNegocioId,
+    setUnidadNegocioId,
+    sedesDisponibles,
+    unidadesDeSede,
+    permitirCambiarSede,
     modoPaciente,
     setModoPaciente,
     pacienteQuery,
@@ -93,7 +100,7 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
 
   return (
     <div className="fixed inset-0 bg-inverse-surface/40 backdrop-blur-[2px] z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
-      <div className="bg-surface-container-lowest w-full max-w-[640px] max-h-[90vh] rounded-2xl flex flex-col overflow-hidden custom-shadow animate-in zoom-in-95 duration-200 border border-outline-variant/30">
+      <div className="bg-surface-container-lowest w-full max-w-[640px] max-h-[90vh] rounded-2xl flex flex-col overflow-hidden custom-shadow animate-in zoom-in-95 duration-200">
         
         {/* Header con color PÚRPURA/ÍNDIGO vibrante explícito bg-[#3525cd] */}
         <div className="bg-[#3525cd] text-white p-6 flex justify-between items-start shrink-0 shadow-md">
@@ -122,6 +129,57 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
             <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2 text-red-800 text-xs font-bold">
               <span className="material-symbols-outlined text-red-600 text-lg">warning</span>
               <span>Atención: La sede está configurada como CERRADA en la fecha seleccionada.</span>
+            </div>
+          )}
+
+          {/* Selector de Sede / Especialidad (solo al abrir desde la ficha del paciente) */}
+          {permitirCambiarSede && (
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="font-label-caps text-label-caps text-on-surface-variant text-[11px] font-bold">
+                  SEDE <span className="text-error">*</span>
+                </label>
+                <div className="relative">
+                  <select
+                    value={sedeId}
+                    onChange={(e) => setSedeId(e.target.value)}
+                    className="w-full appearance-none bg-surface-container-low border border-outline-variant rounded-xl px-4 py-3 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all font-medium text-on-surface"
+                  >
+                    <option value="">Seleccionar sede...</option>
+                    {sedesDisponibles.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.nombre}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-outline">
+                    location_on
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="font-label-caps text-label-caps text-on-surface-variant text-[11px] font-bold">
+                  ESPECIALIDAD <span className="text-error">*</span>
+                </label>
+                <div className="relative">
+                  <select
+                    value={unidadNegocioId}
+                    onChange={(e) => setUnidadNegocioId(e.target.value)}
+                    className="w-full appearance-none bg-surface-container-low border border-outline-variant rounded-xl px-4 py-3 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all font-medium text-on-surface"
+                  >
+                    <option value="">Seleccionar especialidad...</option>
+                    {unidadesDeSede.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.nombre}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-outline">
+                    expand_more
+                  </span>
+                </div>
+              </div>
             </div>
           )}
 

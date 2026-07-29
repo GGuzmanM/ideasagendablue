@@ -38,7 +38,7 @@ export function Idea1Sidebar() {
     : idea1NavItems;
 
   return (
-    <aside className="h-screen sticky top-0 left-0 w-sidebar-expanded bg-[#0e4f9f] border-r border-outline-variant/20 flex flex-col py-6 px-4 z-50 shrink-0 select-none">
+    <aside className="h-full sticky top-0 left-0 w-sidebar-expanded bg-[#0e4f9f] border-r border-outline-variant/20 flex flex-col py-6 px-4 z-50 shrink-0 select-none">
       {/* Header / Logo */}
       <div className="mb-6 px-3">
         <Link to="/idea1" className="flex items-center gap-3 group">

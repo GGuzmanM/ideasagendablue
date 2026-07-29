@@ -134,6 +134,10 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
       qc.invalidateQueries({ queryKey: ['citas'] });
       qc.invalidateQueries({ queryKey: ['idea1-citas'] });
       qc.invalidateQueries({ queryKey: ['paciente-historial', cita.paciente.id] });
+      // El cambio de estado (llegó/completada/no-show) puede descontar/devolver la sesión
+      // en el backend → refrescar saldos y ficha al instante (sin esperar el staleTime).
+      qc.invalidateQueries({ queryKey: ['paquetes-sesiones', cita.paciente.id] });
+      qc.invalidateQueries({ queryKey: ['paciente', cita.paciente.id] });
       toast.success('Estado actualizado');
       if (updatedCita) {
         setCitaActiva((prev) => ({ ...prev, estado: updatedCita.estado }));
