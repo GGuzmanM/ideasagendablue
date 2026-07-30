@@ -91,7 +91,7 @@ export function useIdea1NuevaCitaForm({
 }: UseIdea1NuevaCitaFormProps) {
   const qc = useQueryClient();
   const token = useAuthStore((s) => s.token);
-  const { canales } = useCanales();
+  const { canales, canalesPaciente } = useCanales();
   const { promociones } = usePromociones();
 
   const idempotencyKeyRef = useRef(uuidv4());
@@ -768,6 +768,7 @@ export function useIdea1NuevaCitaForm({
     resultadosPacientes,
     buscandoPacientes,
     canales,
+    canalesPaciente,
     promociones,
     paquetesPaciente,
     membresiasActivas,

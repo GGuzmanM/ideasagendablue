@@ -3,534 +3,335 @@
 <html class="light" lang="es"><head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>MediFlow Pro - Permisos / Bloqueos</title>
+<title>Bloques combinados - MediFlow Pro</title>
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
 <script id="tailwind-config">
         tailwind.config = {
-          darkMode: "class",
-          theme: {
-            extend: {
-              "colors": {
-                      "secondary-container": "#dae2fd",
-                      "on-primary-fixed": "#0f0069",
-                      "error-container": "#ffdad6",
-                      "surface-container-lowest": "#ffffff",
-                      "surface-dim": "#d8dadc",
-                      "on-primary-container": "#dad7ff",
-                      "on-secondary": "#ffffff",
-                      "inverse-surface": "#2d3133",
-                      "secondary-fixed": "#dae2fd",
-                      "tertiary-fixed": "#ffdbcc",
-                      "outline": "#777587",
-                      "tertiary": "#7e3000",
-                      "on-secondary-fixed": "#131b2e",
-                      "surface-container-high": "#e6e8ea",
-                      "on-secondary-container": "#5c647a",
-                      "inverse-on-surface": "#eff1f3",
-                      "primary-fixed-dim": "#c3c0ff",
-                      "on-secondary-fixed-variant": "#3f465c",
-                      "on-tertiary-fixed-variant": "#7b2f00",
-                      "on-primary": "#ffffff",
-                      "surface-container-highest": "#e0e3e5",
-                      "error": "#ba1a1a",
-                      "on-surface": "#191c1e",
-                      "background": "#f7f9fb",
-                      "surface": "#f7f9fb",
-                      "on-background": "#191c1e",
-                      "on-surface-variant": "#464555",
-                      "secondary": "#565e74",
-                      "surface-container-low": "#f2f4f6",
-                      "outline-variant": "#c7c4d8",
-                      "on-error": "#ffffff",
-                      "primary-container": "#4f46e5",
-                      "on-tertiary-container": "#ffd2be",
-                      "on-primary-fixed-variant": "#3323cc",
-                      "on-error-container": "#93000a",
-                      "on-tertiary": "#ffffff",
-                      "secondary-fixed-dim": "#bec6e0",
-                      "primary": "#3525cd",
-                      "surface-variant": "#e0e3e5",
-                      "surface-container": "#eceef0",
-                      "surface-tint": "#4d44e3",
-                      "tertiary-fixed-dim": "#ffb695",
-                      "primary-fixed": "#e2dfff",
-                      "inverse-primary": "#c3c0ff",
-                      "on-tertiary-fixed": "#351000",
-                      "tertiary-container": "#a44100",
-                      "surface-bright": "#f7f9fb"
-              },
-              "borderRadius": {
-                      "DEFAULT": "0.25rem",
-                      "lg": "0.5rem",
-                      "xl": "0.75rem",
-                      "full": "9999px"
-              },
-              "spacing": {
-                      "grid-gutter": "24px",
-                      "sidebar-collapsed": "72px",
-                      "container-padding": "32px",
-                      "unit": "4px",
-                      "sidebar-expanded": "260px"
-              },
-              "fontFamily": {
-                      "label-caps": [
-                              "Inter"
-                      ],
-                      "headline-md": [
-                              "Geist"
-                      ],
-                      "display-lg": [
-                              "Geist"
-                      ],
-                      "body-lg": [
-                              "Inter"
-                      ],
-                      "mono-label": [
-                              "JetBrains Mono"
-                      ],
-                      "headline-sm": [
-                              "Geist"
-                      ],
-                      "body-md": [
-                              "Inter"
-                      ]
-              },
-              "fontSize": {
-                      "label-caps": [
-                              "11px",
-                              {
-                                      "lineHeight": "16px",
-                                      "letterSpacing": "0.08em",
-                                      "fontWeight": "600"
-                              }
-                      ],
-                      "headline-md": [
-                              "24px",
-                              {
-                                      "lineHeight": "32px",
-                                      "letterSpacing": "-0.01em",
-                                      "fontWeight": "600"
-                              }
-                      ],
-                      "display-lg": [
-                              "48px",
-                              {
-                                      "lineHeight": "1.1",
-                                      "letterSpacing": "-0.02em",
-                                      "fontWeight": "600"
-                              }
-                      ],
-                      "body-lg": [
-                              "16px",
-                              {
-                                      "lineHeight": "24px",
-                                      "letterSpacing": "0",
-                                      "fontWeight": "400"
-                              }
-                      ],
-                      "mono-label": [
-                              "12px",
-                              {
-                                      "lineHeight": "16px",
-                                      "letterSpacing": "0",
-                                      "fontWeight": "400"
-                              }
-                      ],
-                      "headline-sm": [
-                              "18px",
-                              {
-                                      "lineHeight": "28px",
-                                      "letterSpacing": "0",
-                                      "fontWeight": "500"
-                              }
-                      ],
-                      "body-md": [
-                              "14px",
-                              {
-                                      "lineHeight": "20px",
-                                      "letterSpacing": "0",
-                                      "fontWeight": "400"
-                              }
-                      ]
-              }
-      },
-          },
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "primary-container": "#4f46e5",
+                        "surface-dim": "#d8dadc",
+                        "secondary-fixed": "#dae2fd",
+                        "inverse-surface": "#2d3133",
+                        "surface-tint": "#4d44e3",
+                        "surface-container-high": "#e6e8ea",
+                        "surface-bright": "#f7f9fb",
+                        "secondary-fixed-dim": "#bec6e0",
+                        "primary-fixed-dim": "#c3c0ff",
+                        "tertiary-fixed-dim": "#ffb695",
+                        "outline-variant": "#c7c4d8",
+                        "on-tertiary-container": "#ffd2be",
+                        "inverse-primary": "#c3c0ff",
+                        "on-primary-container": "#dad7ff",
+                        "on-primary": "#ffffff",
+                        "inverse-on-surface": "#eff1f3",
+                        "on-tertiary": "#ffffff",
+                        "on-secondary": "#ffffff",
+                        "tertiary-fixed": "#ffdbcc",
+                        "on-background": "#191c1e",
+                        "surface": "#f7f9fb",
+                        "on-secondary-fixed-variant": "#3f465c",
+                        "background": "#f7f9fb",
+                        "on-tertiary-fixed-variant": "#7b2f00",
+                        "tertiary": "#7e3000",
+                        "surface-variant": "#e0e3e5",
+                        "surface-container-highest": "#e0e3e5",
+                        "on-surface-variant": "#464555",
+                        "error-container": "#ffdad6",
+                        "on-primary-fixed": "#0f0069",
+                        "secondary-container": "#dae2fd",
+                        "on-tertiary-fixed": "#351000",
+                        "primary-fixed": "#e2dfff",
+                        "on-error-container": "#93000a",
+                        "surface-container": "#eceef0",
+                        "secondary": "#565e74",
+                        "on-secondary-container": "#5c647a",
+                        "tertiary-container": "#a44100",
+                        "surface-container-lowest": "#ffffff",
+                        "outline": "#777587",
+                        "on-surface": "#191c1e",
+                        "surface-container-low": "#f2f4f6",
+                        "error": "#ba1a1a",
+                        "on-primary-fixed-variant": "#3323cc",
+                        "on-error": "#ffffff",
+                        "primary": "#3525cd",
+                        "on-secondary-fixed": "#131b2e"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "sidebar-expanded": "260px",
+                        "sidebar-collapsed": "72px",
+                        "unit": "4px",
+                        "grid-gutter": "24px",
+                        "container-padding": "32px"
+                    },
+                    "fontFamily": {
+                        "headline-sm": ["Geist"],
+                        "body-lg": ["Inter"],
+                        "headline-md": ["Geist"],
+                        "mono-label": ["JetBrains Mono"],
+                        "display-lg": ["Geist"],
+                        "body-md": ["Inter"],
+                        "label-caps": ["Inter"]
+                    },
+                    "fontSize": {
+                        "headline-sm": ["18px", { "lineHeight": "28px", "letterSpacing": "0", "fontWeight": "500" }],
+                        "body-lg": ["16px", { "lineHeight": "24px", "letterSpacing": "0", "fontWeight": "400" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "mono-label": ["12px", { "lineHeight": "16px", "letterSpacing": "0", "fontWeight": "400" }],
+                        "display-lg": ["48px", { "lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "letterSpacing": "0", "fontWeight": "400" }],
+                        "label-caps": ["11px", { "lineHeight": "16px", "letterSpacing": "0.08em", "fontWeight": "600" }]
+                    },
+                    "boxShadow": {
+                        "soft-2026": "0px 12px 24px -4px rgba(0,0,0,0.04), 0px 4px 8px -2px rgba(0,0,0,0.02)"
+                    }
+                }
+            }
         }
     </script>
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&amp;family=Inter:wght@100..900&amp;family=JetBrains+Mono:wght@100..800&amp;display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
 <style>
-        body { font-family: 'Inter', sans-serif; background-color: #f7f9fb; }
-        h1, h2, h3, h4, h5, h6 { font-family: 'Geist', sans-serif; }
-        .font-mono-label { font-family: 'JetBrains Mono', monospace; }
-        
-        /* Custom scrollbar for compact lists */
-        ::-webkit-scrollbar {
-            width: 6px;
-            height: 6px;
-        }
-        ::-webkit-scrollbar-track {
-            background: transparent;
-        }
-        ::-webkit-scrollbar-thumb {
-            background: #cbd5e1;
-            border-radius: 4px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: #94a3b8;
+        body { font-family: 'Inter', sans-serif; background-color: #F8FAFC; color: #191c1e; margin: 0; padding: 0; }
+        .geist-font { font-family: 'Geist', sans-serif; }
+        .glass-header { backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+        .sidebar-item-active { position: relative; }
+        .sidebar-item-active::before {
+            content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background-color: #c3c0ff; border-radius: 0 4px 4px 0;
         }
     </style>
 </head>
-<body class="bg-background text-on-surface h-screen overflow-hidden flex">
+<body class="flex h-screen overflow-hidden bg-surface">
 <!-- SideNavBar -->
-<nav class="fixed left-0 top-0 bottom-0 z-50 flex flex-col py-8 bg-on-primary-fixed dark:bg-inverse-surface border-r border-outline/20 h-full w-sidebar-expanded hidden md:flex">
-<div class="px-6 mb-10">
-<div class="flex items-center gap-3">
-<img alt="MediFlow Logo" class="w-8 h-8 rounded-full" data-alt="A clean, minimalist logo icon for MediFlow Pro, featuring a stylized medical cross blending with a dynamic fluid wave shape in electric indigo, set against a dark background, high resolution." src="https://lh3.googleusercontent.com/aida-public/AB6AXuA0N17ybq18dNn1rgJeovd6wj8IagDTjUgiptreZMNqaDYcPl0iH44cQ2BNj_Q-nCJphNB6bhEsZJekEsLHeqYUPpa_nLnYPL05ie0N-KIruQoHJDQy81NOWF_Dp5PNAlo-vy5j42ZixwANtSjvgwMkUjXQ3ZPfDPNx8FVYFvuxiaKZdYFRBiAI5nAv-aDEAj_wBvPq0Iii_l_FKgw2gTR8yuNnaIE-S9v47m-Mwts1OIAXVgkdfiSf"/>
-<div>
-<h2 class="font-headline-md text-headline-md font-bold text-surface dark:text-on-surface leading-tight">MediFlow Pro</h2>
-<p class="font-label-caps text-label-caps text-primary-fixed-dim/80">Clinic Management</p>
-</div>
-</div>
+<aside class="bg-inverse-surface dark:bg-on-background text-primary dark:text-primary-fixed-dim font-body-md text-body-md h-screen w-sidebar-expanded flex-shrink-0 bg-inverse-surface flex flex-col h-full py-6 transition-colors duration-200 ease-in-out hidden md:flex z-40">
+<div class="px-6 mb-8">
+<h1 class="font-headline-sm text-headline-sm font-bold text-surface-container-lowest">MediFlow Pro</h1>
+<p class="text-surface-variant opacity-70 font-mono-label text-mono-label mt-1">Clinical Precision</p>
 </div>
 <div class="px-6 mb-8">
-<button class="w-full flex items-center justify-center gap-2 bg-primary text-on-primary font-body-md text-body-md py-2.5 px-4 rounded-DEFAULT hover:bg-primary/90 transition-colors">
-<span class="material-symbols-outlined text-[18px]">add</span>
+<button class="w-full bg-primary-container text-on-primary-container py-2 px-4 rounded-lg font-semibold hover:bg-surface-tint transition-colors flex items-center justify-center gap-2">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">add</span>
                 New Appointment
             </button>
 </div>
-<div class="flex-1 overflow-y-auto">
-<ul class="flex flex-col space-y-1">
+<nav class="flex-1 overflow-y-auto">
+<ul class="space-y-1">
 <li>
-<a class="flex items-center gap-3 text-primary-fixed border-l-4 border-primary-fixed-dim bg-on-primary-fixed-variant/30 px-6 py-3 cursor-pointer active:translate-x-1 font-label-caps text-label-caps transition-all" href="#">
-<span class="material-symbols-outlined">calendar_today</span>
-<span>Agenda</span>
+<a class="flex items-center gap-3 py-3 px-6 text-surface-variant opacity-70 hover:bg-surface-variant/10 hover:text-surface-bright transition-colors duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">dashboard</span>
+<span>Dashboard</span>
 </a>
 </li>
 <li>
-<a class="flex items-center gap-3 text-secondary-fixed-dim px-6 py-3 hover:bg-on-primary-fixed-variant/50 transition-all cursor-pointer active:translate-x-1 font-label-caps text-label-caps" href="#">
-<span class="material-symbols-outlined">groups</span>
+<a class="flex items-center gap-3 py-3 px-6 text-surface-variant opacity-70 hover:bg-surface-variant/10 hover:text-surface-bright transition-colors duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">group</span>
 <span>Patients</span>
 </a>
 </li>
 <li>
-<a class="flex items-center gap-3 text-secondary-fixed-dim px-6 py-3 hover:bg-on-primary-fixed-variant/50 transition-all cursor-pointer active:translate-x-1 font-label-caps text-label-caps" href="#">
-<span class="material-symbols-outlined">analytics</span>
-<span>Analytics</span>
-</a>
-</li>
-</ul>
-</div>
-<div class="mt-auto pt-6">
-<ul class="flex flex-col space-y-1">
-<li>
-<a class="flex items-center gap-3 text-secondary-fixed-dim px-6 py-3 hover:bg-on-primary-fixed-variant/50 transition-all cursor-pointer font-label-caps text-label-caps" href="#">
-<span class="material-symbols-outlined">help_outline</span>
-<span>Help Center</span>
+<a class="flex items-center gap-3 py-3 px-6 text-surface-variant opacity-70 hover:bg-surface-variant/10 hover:text-surface-bright transition-colors duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">calendar_today</span>
+<span>Appointments</span>
 </a>
 </li>
 <li>
-<a class="flex items-center gap-3 text-secondary-fixed-dim px-6 py-3 hover:bg-on-primary-fixed-variant/50 transition-all cursor-pointer font-label-caps text-label-caps" href="#">
-<span class="material-symbols-outlined">logout</span>
-<span>Logout</span>
+<a class="flex items-center gap-3 py-3 px-6 text-surface-variant opacity-70 hover:bg-surface-variant/10 hover:text-surface-bright transition-colors duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">chat_bubble</span>
+<span>Messages</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 py-3 px-6 text-surface-variant opacity-70 hover:bg-surface-variant/10 hover:text-surface-bright transition-colors duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">inventory_2</span>
+<span>Inventory</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 py-3 px-6 text-primary-fixed font-bold border-l-4 border-primary-fixed pl-4 bg-surface-variant/10 sidebar-item-active transition-colors duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">assessment</span>
+<span>Reports</span>
 </a>
 </li>
 </ul>
-</div>
 </nav>
-<!-- Main Content Wrapper -->
-<div class="flex-1 flex flex-col ml-0 md:ml-sidebar-expanded min-w-0 h-screen overflow-hidden">
+<div class="mt-auto pt-4 border-t border-surface-variant/20">
+<ul class="space-y-1">
+<li>
+<a class="flex items-center gap-3 py-3 px-6 text-surface-variant opacity-70 hover:bg-surface-variant/10 hover:text-surface-bright transition-colors duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">settings</span>
+<span>Settings</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 py-3 px-6 text-surface-variant opacity-70 hover:bg-surface-variant/10 hover:text-surface-bright transition-colors duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">help_outline</span>
+<span>Support</span>
+</a>
+</li>
+</ul>
+</div>
+</aside>
+<!-- Main Content Area -->
+<div class="flex-1 flex flex-col h-screen overflow-hidden bg-background">
 <!-- TopNavBar -->
-<header class="fixed top-0 right-0 left-0 md:left-sidebar-expanded z-40 flex justify-between items-center px-container-padding h-16 backdrop-blur-xl bg-surface/80 border-b border-outline-variant dark:border-outline">
+<header class="bg-surface/80 dark:bg-background/80 text-primary dark:text-primary-fixed-dim font-body-md text-body-md h-16 w-full backdrop-blur-md border-b border-outline-variant dark:border-outline shadow-sm transition-all duration-300 flex justify-between items-center px-grid-gutter sticky top-0 z-50 w-full glass-header">
 <div class="flex items-center gap-4">
-<button class="md:hidden text-on-surface p-2 -ml-2 rounded-DEFAULT hover:bg-surface-container-high transition-colors">
+<button class="md:hidden p-2 text-on-surface-variant hover:bg-surface-container-high rounded-full transition-colors">
 <span class="material-symbols-outlined">menu</span>
 </button>
-<h1 class="font-headline-sm text-headline-sm font-semibold text-on-surface">Permisos / Bloqueos</h1>
+<div class="font-headline-md text-headline-md text-primary dark:text-inverse-primary hidden md:block">
+                    MediFlow Pro
+                </div>
 </div>
-<div class="flex items-center gap-4">
-<div class="relative hidden sm:block">
-<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px]">search</span>
-<input class="pl-10 pr-12 py-1.5 bg-surface-container-lowest border border-outline-variant rounded-DEFAULT font-body-md text-body-md text-on-surface focus:border-primary focus:ring-1 focus:ring-primary w-64 placeholder:text-on-surface-variant/60" placeholder="Search..." type="text"/>
-<span class="absolute right-3 top-1/2 -translate-y-1/2 font-mono-label text-mono-label text-on-surface-variant/60 bg-surface-container px-1.5 rounded-sm">⌘ K</span>
+<div class="flex-1 max-w-md mx-4 hidden md:block">
+<div class="relative group">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline">search</span>
+<input class="w-full bg-surface-container-lowest border border-outline-variant rounded-lg pl-10 pr-12 py-2 text-body-md focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors" placeholder="Search..." type="text"/>
+<span class="absolute right-3 top-1/2 -translate-y-1/2 font-mono-label text-mono-label text-outline bg-surface px-1.5 rounded border border-outline-variant">⌘ K</span>
 </div>
-<div class="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-surface-container-low rounded-DEFAULT border border-outline-variant/50">
-<span class="material-symbols-outlined text-[18px] text-primary">location_city</span>
-<span class="font-label-caps text-label-caps text-on-surface-variant">Branch: Downtown</span>
 </div>
 <div class="flex items-center gap-2">
-<button class="p-2 rounded-full hover:bg-surface-container-high transition-colors text-on-surface-variant relative">
+<button class="p-2 text-on-surface-variant hover:bg-surface-container-high dark:hover:bg-surface-variant rounded-full transition-colors">
 <span class="material-symbols-outlined">notifications</span>
-<span class="absolute top-2 right-2 w-2 h-2 bg-error rounded-full border-2 border-surface"></span>
 </button>
-<button class="p-2 rounded-full hover:bg-surface-container-high transition-colors text-on-surface-variant hidden sm:block">
-<span class="material-symbols-outlined">settings</span>
+<button class="p-2 text-on-surface-variant hover:bg-surface-container-high dark:hover:bg-surface-variant rounded-full transition-colors">
+<span class="material-symbols-outlined">help</span>
 </button>
-<button class="ml-2">
-<img alt="User profile" class="w-8 h-8 rounded-full border border-outline-variant/50 object-cover" data-alt="A professional headshot of a female clinic administrator with a warm smile, well-lit, shallow depth of field, corporate casual attire." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCRGcMzA5tT90sajn6DR1fZ9HTyGo-Jx0yqSxfHzMcenp7IJSXqAUBjAJ3OKAuOzpQE9iQa2Q5oUhB0aadJO3vdynwjJlOLKgctehea-rOSsH2Bh5iqwyjw-C7LaVJDkQETiZZeqXhi3tWJ0qb8l_baob51sHvQ9laiHSPF1TyTSzE1q9uJQYXoK4OFFpU5nZZxWrDAmxe7LMSByqSKCfp25-J5t-sqP06V2H74_0RnZSjDtyapA0wx"/>
-</button>
+<div class="h-8 w-8 rounded-full bg-primary-container ml-2 overflow-hidden border border-outline-variant cursor-pointer flex items-center justify-center text-on-primary-container font-bold">
+<span class="material-symbols-outlined">person</span>
 </div>
 </div>
 </header>
-<!-- Main Workspace -->
-<main class="flex-1 overflow-y-auto mt-16 p-container-padding bg-background">
-<div class="max-w-6xl mx-auto space-y-6">
+<!-- Canvas -->
+<main class="flex-1 overflow-y-auto p-container-padding bg-[#F8FAFC]">
+<div class="max-w-4xl mx-auto space-y-grid-gutter">
 <!-- Page Header -->
-<div>
-<h2 class="font-display-lg text-[32px] font-semibold text-on-surface tracking-tight">Permisos / Bloqueos</h2>
-<p class="font-body-md text-body-md text-on-surface-variant mt-1">Bloquea a una podóloga, fisioterapeuta o baropodometría en un rango horario.</p>
-</div>
-<!-- Main Bento Grid Layout -->
-<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-<!-- Form Area (Left) -->
-<div class="lg:col-span-8 space-y-6">
-<!-- Location Tabs Card -->
-<div class="bg-surface-container-lowest rounded-xl border border-outline-variant p-1 shadow-[0px_4px_8px_-2px_rgba(0,0,0,0.02)] overflow-x-auto">
-<div class="flex items-center min-w-max">
-<button class="px-6 py-2.5 rounded-lg bg-surface-container-high font-label-caps text-label-caps text-on-surface shadow-sm transition-all relative">
-                                    Los Olivos
-                                    <span class="absolute bottom-0 left-1/2 -translate-x-1/2 w-4 h-0.5 bg-primary rounded-t-full"></span>
+<div class="flex items-center gap-4 mb-8">
+<button class="p-2 rounded-full hover:bg-surface-container-high transition-colors text-on-surface-variant flex items-center justify-center">
+<span class="material-symbols-outlined">arrow_back</span>
 </button>
-<button class="px-6 py-2.5 rounded-lg hover:bg-surface-container-low font-label-caps text-label-caps text-on-surface-variant transition-all">One</button>
-<button class="px-6 py-2.5 rounded-lg hover:bg-surface-container-low font-label-caps text-label-caps text-on-surface-variant transition-all">San Miguel</button>
-<button class="px-6 py-2.5 rounded-lg hover:bg-surface-container-low font-label-caps text-label-caps text-on-surface-variant transition-all">Lince</button>
-<button class="px-6 py-2.5 rounded-lg hover:bg-surface-container-low font-label-caps text-label-caps text-on-surface-variant transition-all">Paz Soldán</button>
-</div>
-</div>
-<!-- Main Form Card -->
-<div class="bg-surface-container-lowest rounded-xl border border-outline-variant p-6 shadow-[0px_12px_24px_-4px_rgba(0,0,0,0.04)]">
-<!-- Date Selector -->
-<div class="flex justify-end mb-6">
-<div class="flex items-center gap-3 bg-surface-container-low border border-outline-variant rounded-DEFAULT p-1">
-<button class="p-1 rounded hover:bg-surface-container-high text-on-surface-variant"><span class="material-symbols-outlined text-[20px]">chevron_left</span></button>
-<div class="flex items-center gap-2 px-2 py-1 bg-surface-container-lowest border border-outline-variant rounded shadow-sm cursor-pointer">
-<span class="material-symbols-outlined text-[18px] text-primary">calendar_month</span>
-<span class="font-body-md text-body-md font-medium text-on-surface">30 Jul 2026</span>
-</div>
-<button class="p-1 rounded hover:bg-surface-container-high text-on-surface-variant"><span class="material-symbols-outlined text-[20px]">chevron_right</span></button>
-</div>
-</div>
-<form class="space-y-8">
-<!-- Block Type Chips -->
 <div>
-<label class="block font-label-caps text-label-caps text-on-surface-variant mb-3">TIPO DE BLOQUEO</label>
-<div class="flex flex-wrap gap-3">
-<label class="relative cursor-pointer group">
-<input checked="" class="peer sr-only" name="block_type" type="radio" value="permiso"/>
-<div class="px-4 py-2 rounded-full border border-outline-variant bg-surface-container-lowest font-body-md text-body-md text-on-surface-variant peer-checked:bg-primary-container peer-checked:text-on-primary peer-checked:border-primary-container transition-all flex items-center gap-2">
-<span class="material-symbols-outlined text-[18px] peer-checked:block hidden">check</span>
-                                                Permiso
-                                            </div>
-</label>
-<label class="relative cursor-pointer group">
-<input class="peer sr-only" name="block_type" type="radio" value="enfermedad"/>
-<div class="px-4 py-2 rounded-full border border-outline-variant bg-surface-container-lowest font-body-md text-body-md text-on-surface-variant peer-checked:bg-error-container peer-checked:text-on-error-container peer-checked:border-error-container transition-all">
-                                                Enfermedad
-                                            </div>
-</label>
-<label class="relative cursor-pointer group">
-<input class="peer sr-only" name="block_type" type="radio" value="reunion"/>
-<div class="px-4 py-2 rounded-full border border-outline-variant bg-surface-container-lowest font-body-md text-body-md text-on-surface-variant peer-checked:bg-secondary-container peer-checked:text-on-secondary-container peer-checked:border-secondary-container transition-all">
-                                                Reunión
-                                            </div>
-</label>
-<label class="relative cursor-pointer group">
-<input class="peer sr-only" name="block_type" type="radio" value="vacaciones"/>
-<div class="px-4 py-2 rounded-full border border-outline-variant bg-surface-container-lowest font-body-md text-body-md text-on-surface-variant peer-checked:bg-tertiary-container peer-checked:text-on-tertiary-container peer-checked:border-tertiary-container transition-all">
-                                                Vacaciones
-                                            </div>
-</label>
+<div class="flex items-center gap-3">
+<div class="h-10 w-10 rounded-lg bg-primary-container/10 flex items-center justify-center text-primary">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">link</span>
 </div>
-</div>
-<!-- Professional List -->
 <div>
-<label class="block font-label-caps text-label-caps text-on-surface-variant mb-3 flex justify-between">
-<span>SELECCIONAR PROFESIONALES</span>
-<span class="text-primary cursor-pointer hover:underline">Marcar todos</span>
-</label>
-<div class="bg-surface-container-low border border-outline-variant rounded-lg p-1">
-<div class="max-h-48 overflow-y-auto pr-2 space-y-1">
+<h2 class="font-headline-md text-headline-md text-on-surface">Bloques combinados</h2>
+<p class="text-body-md text-on-surface-variant mt-1">Servicio ancla (profilaxis) + servicios que pueden combinarse en el mismo turno.</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Anchor Service Card -->
+<div class="bg-surface-container-lowest rounded-xl border border-outline-variant p-6 shadow-soft-2026">
+<h3 class="font-headline-sm text-headline-sm text-on-surface mb-1">Servicio ancla para combinaciones</h3>
+<p class="text-body-md text-on-surface-variant mb-4">Es el servicio principal (profilaxis). El toggle "Combinar" solo aparece al agendar este servicio.</p>
+<div class="relative">
+<select class="w-full appearance-none bg-surface-container-lowest border border-outline-variant rounded-lg py-3 px-4 text-body-lg text-on-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors cursor-pointer">
+<option>PROFILAXIS (60 min)</option>
+<option>OTRO SERVICIO (30 min)</option>
+</select>
+<div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-on-surface-variant">
+<span class="material-symbols-outlined">expand_more</span>
+</div>
+</div>
+</div>
+<!-- Combinable Services Card -->
+<div class="bg-surface-container-lowest rounded-xl border border-outline-variant p-6 shadow-soft-2026">
+<div class="mb-6">
+<h3 class="font-headline-sm text-headline-sm text-on-surface mb-1">Servicios combinables con la profilaxis</h3>
+<p class="text-body-md text-on-surface-variant">Estos aparecen como "servicio extra" al combinar. Desactiva para ocultarlos sin perderlos.</p>
+</div>
+<!-- Add Section -->
+<div class="flex gap-4 mb-8">
+<div class="relative flex-1">
+<select class="w-full appearance-none bg-surface-container-lowest border border-outline-variant rounded-lg py-2.5 px-4 text-body-md text-on-surface-variant focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors cursor-pointer">
+<option>-- Agregar servicio combinable --</option>
+</select>
+<div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-on-surface-variant">
+<span class="material-symbols-outlined">expand_more</span>
+</div>
+</div>
+<button class="bg-primary text-on-primary px-6 py-2.5 rounded-lg font-medium hover:bg-surface-tint transition-colors">
+                            Agregar
+                        </button>
+</div>
+<!-- List -->
+<div class="space-y-0 divide-y divide-surface-variant">
 <!-- List Item 1 -->
-<label class="flex items-center gap-3 p-2 hover:bg-surface-container-lowest rounded-md cursor-pointer group transition-colors">
-<input class="w-4 h-4 rounded text-primary border-outline-variant focus:ring-primary focus:ring-offset-surface-container-lowest cursor-pointer" type="checkbox"/>
-<img alt="Mirtha Chavez" class="w-8 h-8 rounded-full object-cover" data-alt="A small circular avatar portrait of a female medical professional, wearing a white coat, neutral background, high resolution." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAgRMSDHc-J1SvfPBO2J8s3puQSFRZ6fm4JeZUT8ZXaTCbsOT62c6olUVnkyoRilmWjaVQyuy0mI9-AN8iITgyyWQH5oaPPgcZ27_IPKgUO7uINE8lHnvftyLzC3Kzn8L-BwS3oeTilGYXtn458wQXeNk9kgBbGpfTO33yvkEBBrhqMQUUGeogkyYCM237oLZnDc15ujUNLZs0XVVC00POXhJnVVxL9tKVzSafLa91ZLfavfDYuPR9y"/>
-<div class="flex-1 min-w-0">
-<p class="font-body-md text-body-md font-medium text-on-surface truncate">Mirtha Chavez</p>
-<p class="font-mono-label text-[10px] text-on-surface-variant truncate">Podóloga</p>
+<div class="py-4 flex items-center justify-between hover:bg-surface-container-low/50 transition-colors px-2 -mx-2 rounded-lg">
+<div class="flex items-center gap-3">
+<div class="w-2 h-2 rounded-full bg-amber-500"></div>
+<span class="text-body-md text-on-surface font-medium uppercase tracking-wide">CURACION BLEO</span>
 </div>
-</label>
+<div class="flex items-center gap-4">
+<span class="bg-emerald-100 text-emerald-800 text-xs font-semibold px-2.5 py-1 rounded-full flex items-center gap-1.5 border border-emerald-200">
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
+                                    Activo
+                                </span>
+<button class="text-error hover:text-on-error-container text-body-md font-medium transition-colors px-2 py-1 rounded hover:bg-error-container/50">
+                                    Quitar
+                                </button>
+</div>
+</div>
 <!-- List Item 2 -->
-<label class="flex items-center gap-3 p-2 hover:bg-surface-container-lowest rounded-md cursor-pointer group transition-colors">
-<input checked="" class="w-4 h-4 rounded text-primary border-outline-variant focus:ring-primary focus:ring-offset-surface-container-lowest cursor-pointer" type="checkbox"/>
-<img alt="Carlos Mendoza" class="w-8 h-8 rounded-full object-cover" data-alt="A small circular avatar portrait of a male physiotherapist in dark blue scrubs, smiling subtly, professional studio lighting." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBIh2wVTWbYq_B4oz6PqV6bYNYXsgiFPKQjcyvrh-xv48_3W7-QMdLpZV981ZNPbdZWZ_Zke2BOHQti1ZHzWvF4V6DbGoS0WwVI-70nDJJwmuejPwOzfmQpoaxs2pG2qY1itJvL4Rcg1BWXcJO4H7duTh1KYAo1g7YD5T4AeRUv9Ay-YTV5JiRXmyVnI15TDDbcwgiabKv6JxM95-_j-zvEuTK7rycpGVLJinsLmdws0KllXEpo68CC"/>
-<div class="flex-1 min-w-0">
-<p class="font-body-md text-body-md font-medium text-on-surface truncate">Carlos Mendoza</p>
-<p class="font-mono-label text-[10px] text-on-surface-variant truncate">Fisioterapeuta</p>
+<div class="py-4 flex items-center justify-between hover:bg-surface-container-low/50 transition-colors px-2 -mx-2 rounded-lg">
+<div class="flex items-center gap-3">
+<div class="w-2 h-2 rounded-full bg-amber-500"></div>
+<span class="text-body-md text-on-surface font-medium uppercase tracking-wide">CURACION: DE EXTRACCION DE UÑA</span>
 </div>
-</label>
+<div class="flex items-center gap-4">
+<span class="bg-emerald-100 text-emerald-800 text-xs font-semibold px-2.5 py-1 rounded-full flex items-center gap-1.5 border border-emerald-200">
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
+                                    Activo
+                                </span>
+<button class="text-error hover:text-on-error-container text-body-md font-medium transition-colors px-2 py-1 rounded hover:bg-error-container/50">
+                                    Quitar
+                                </button>
+</div>
+</div>
 <!-- List Item 3 -->
-<label class="flex items-center gap-3 p-2 hover:bg-surface-container-lowest rounded-md cursor-pointer group transition-colors">
-<input class="w-4 h-4 rounded text-primary border-outline-variant focus:ring-primary focus:ring-offset-surface-container-lowest cursor-pointer" type="checkbox"/>
-<div class="w-8 h-8 rounded-full bg-secondary-container text-on-secondary-container flex items-center justify-center font-headline-sm text-sm font-semibold">AR</div>
-<div class="flex-1 min-w-0">
-<p class="font-body-md text-body-md font-medium text-on-surface truncate">Ana Rodriguez</p>
-<p class="font-mono-label text-[10px] text-on-surface-variant truncate">Baropodometría</p>
+<div class="py-4 flex items-center justify-between hover:bg-surface-container-low/50 transition-colors px-2 -mx-2 rounded-lg">
+<div class="flex items-center gap-3">
+<div class="w-2 h-2 rounded-full bg-emerald-500"></div>
+<span class="text-body-md text-on-surface font-medium uppercase tracking-wide">LASER DE ALTA: HONGOS</span>
 </div>
-</label>
+<div class="flex items-center gap-4">
+<span class="bg-emerald-100 text-emerald-800 text-xs font-semibold px-2.5 py-1 rounded-full flex items-center gap-1.5 border border-emerald-200">
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
+                                    Activo
+                                </span>
+<button class="text-error hover:text-on-error-container text-body-md font-medium transition-colors px-2 py-1 rounded hover:bg-error-container/50">
+                                    Quitar
+                                </button>
+</div>
+</div>
 <!-- List Item 4 -->
-<label class="flex items-center gap-3 p-2 hover:bg-surface-container-lowest rounded-md cursor-pointer group transition-colors">
-<input class="w-4 h-4 rounded text-primary border-outline-variant focus:ring-primary focus:ring-offset-surface-container-lowest cursor-pointer" type="checkbox"/>
-<img alt="Lucia Fernandez" class="w-8 h-8 rounded-full object-cover" data-alt="A small circular avatar portrait of a young female clinic assistant, casual professional attire, warm lighting." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAkuCyXgzrq939Vk91hZRwEQygrkaFQXvTtUHSFv1fF4nZr2yIkBAwGYFLE18elxM6hADEORahfwL4OOLvHcSeHjbxGl7oVPoJ9OY4IyccOSyH_t23BrsK0JVsaFiVRbHeSzAYICmm_rVuvBy3khGrEeVa0IXouqSXrToAjSBE7lc_5JRTzZiFslgJDE-ryVuIYKNM84K4WrK7v-37xL7gxg_ypNVQEPj6AT9S-Ndx92-PwI36R3tgX"/>
-<div class="flex-1 min-w-0">
-<p class="font-body-md text-body-md font-medium text-on-surface truncate">Lucia Fernandez</p>
-<p class="font-mono-label text-[10px] text-on-surface-variant truncate">Podóloga</p>
-</div>
-</label>
-</div>
-</div>
-</div>
-<!-- Time Selectors -->
-<div class="grid grid-cols-2 gap-4">
-<div>
-<label class="block font-label-caps text-label-caps text-on-surface-variant mb-2">DESDE</label>
-<div class="relative">
-<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px]">schedule</span>
-<select class="w-full pl-10 pr-4 py-2.5 bg-surface-container-lowest border border-outline-variant rounded-DEFAULT font-body-md text-body-md text-on-surface focus:border-primary focus:ring-1 focus:ring-primary appearance-none cursor-pointer">
-<option>09:00 AM</option>
-<option selected="">10:00 AM</option>
-<option>11:00 AM</option>
-<option>12:00 PM</option>
-</select>
-<span class="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none">expand_more</span>
-</div>
-</div>
-<div>
-<label class="block font-label-caps text-label-caps text-on-surface-variant mb-2">HASTA</label>
-<div class="relative">
-<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px]">schedule</span>
-<select class="w-full pl-10 pr-4 py-2.5 bg-surface-container-lowest border border-outline-variant rounded-DEFAULT font-body-md text-body-md text-on-surface focus:border-primary focus:ring-1 focus:ring-primary appearance-none cursor-pointer">
-<option>10:00 AM</option>
-<option>11:00 AM</option>
-<option selected="">12:00 PM</option>
-<option>01:00 PM</option>
-</select>
-<span class="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none">expand_more</span>
-</div>
-</div>
-</div>
-<!-- Reason Textarea -->
-<div>
-<label class="block font-label-caps text-label-caps text-on-surface-variant mb-2">MOTIVO</label>
-<textarea class="w-full p-3 bg-surface-container-lowest border border-outline-variant rounded-DEFAULT font-body-md text-body-md text-on-surface focus:border-primary focus:ring-1 focus:ring-primary resize-none placeholder:text-on-surface-variant/60" placeholder="Permiso médico, trámite personal..." rows="3"></textarea>
-</div>
-<!-- Action Buttons -->
-<div class="flex items-center justify-end gap-3 pt-2">
-<button class="px-6 py-2.5 rounded-DEFAULT border border-outline text-on-surface font-body-md font-medium hover:bg-surface-container-low transition-colors" type="button">Cancelar</button>
-<button class="px-6 py-2.5 rounded-DEFAULT bg-primary text-on-primary font-body-md font-medium hover:bg-primary/90 shadow-sm transition-colors flex items-center gap-2" type="submit">
-<span class="material-symbols-outlined text-[20px]">block</span>
-                                        Bloquear horario
-                                    </button>
-</div>
-</form>
-</div>
-</div>
-<!-- Side Panel (Right) - Active Permissions -->
-<div class="lg:col-span-4 space-y-6">
-<div class="bg-surface-container-lowest rounded-xl border border-outline-variant p-5 h-full flex flex-col shadow-[0px_4px_8px_-2px_rgba(0,0,0,0.02)]">
-<div class="flex items-center justify-between mb-4 pb-4 border-b border-outline-variant/50">
-<h3 class="font-headline-sm text-headline-sm font-semibold text-on-surface flex items-center gap-2">
-<span class="material-symbols-outlined text-primary text-[20px]">view_agenda</span>
-                                    Permisos del Día
-                                </h3>
-<span class="bg-surface-container-high text-on-surface-variant font-mono-label px-2 py-0.5 rounded-sm">30 Jul</span>
-</div>
-<div class="flex-1 overflow-y-auto space-y-3 pr-1">
-<!-- Permission Card 1 -->
-<div class="p-3 bg-surface-container-low border border-outline-variant/50 rounded-lg group relative hover:border-outline-variant transition-colors">
-<div class="flex items-start justify-between">
+<div class="py-4 flex items-center justify-between hover:bg-surface-container-low/50 transition-colors px-2 -mx-2 rounded-lg">
 <div class="flex items-center gap-3">
-<img alt="Carlos Mendoza" class="w-10 h-10 rounded-full object-cover border border-surface" data-alt="A small circular avatar portrait of a male physiotherapist in dark blue scrubs, smiling subtly, professional studio lighting." src="https://lh3.googleusercontent.com/aida-public/AB6AXuD0qK10hZKS4UXhhoVh550cd2VfSlxAdNKbd3nhJ7HFNWGTBvN2NnJZgGmlEsvs6MpAkLYd3Q4Ui2k3laawsG50-xGiwKLxwc17S_fNaSeimUN6dH1lgx9_rWR1epqb3DwmCi8NiLjej3uqXEMU0PKj3Ci9BxpxS9cD0JMSDXaGCcNHkahQ-O_fJ_yj9hnuZkU-M4iB-JKFbafejzbwkKMfkxATLWl3nWPZ_tMwGEo-QkorYrLXRqGk"/>
-<div>
-<p class="font-body-md text-body-md font-medium text-on-surface leading-tight">Carlos Mendoza</p>
-<p class="font-mono-label text-[10px] text-on-surface-variant">Fisioterapeuta</p>
+<div class="w-2 h-2 rounded-full bg-emerald-500"></div>
+<span class="text-body-md text-on-surface font-medium uppercase tracking-wide">INFILTRACION: CALLOS</span>
 </div>
-</div>
-<button class="text-on-surface-variant/50 hover:text-error transition-colors p-1 rounded hover:bg-surface-container-high opacity-0 group-hover:opacity-100 focus:opacity-100">
-<span class="material-symbols-outlined text-[18px]">delete</span>
-</button>
-</div>
-<div class="mt-3 flex items-center justify-between">
-<span class="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-error-container/50 text-on-error-container font-label-caps text-[10px] leading-none">
-<span class="w-1.5 h-1.5 rounded-full bg-error"></span>
-                                            Enfermedad
-                                        </span>
-<span class="font-mono-label text-[11px] text-on-surface-variant flex items-center gap-1">
-<span class="material-symbols-outlined text-[14px]">schedule</span>
-                                            10:00 AM - 12:00 PM
-                                        </span>
-</div>
-</div>
-<!-- Permission Card 2 -->
-<div class="p-3 bg-surface-container-low border border-outline-variant/50 rounded-lg group relative hover:border-outline-variant transition-colors">
-<div class="flex items-start justify-between">
-<div class="flex items-center gap-3">
-<div class="w-10 h-10 rounded-full bg-tertiary-container text-on-tertiary-container flex items-center justify-center font-headline-sm font-semibold border border-surface">MR</div>
-<div>
-<p class="font-body-md text-body-md font-medium text-on-surface leading-tight">Maria Rojas</p>
-<p class="font-mono-label text-[10px] text-on-surface-variant">Podóloga</p>
-</div>
-</div>
-<button class="text-on-surface-variant/50 hover:text-error transition-colors p-1 rounded hover:bg-surface-container-high opacity-0 group-hover:opacity-100 focus:opacity-100">
-<span class="material-symbols-outlined text-[18px]">delete</span>
-</button>
-</div>
-<div class="mt-3 flex items-center justify-between">
-<span class="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-tertiary-container/50 text-on-tertiary-container font-label-caps text-[10px] leading-none">
-<span class="w-1.5 h-1.5 rounded-full bg-tertiary"></span>
-                                            Vacaciones
-                                        </span>
-<span class="font-mono-label text-[11px] text-on-surface-variant flex items-center gap-1">
-<span class="material-symbols-outlined text-[14px]">schedule</span>
-                                            Todo el día
-                                        </span>
-</div>
-</div>
-<!-- Permission Card 3 -->
-<div class="p-3 bg-surface-container-low border border-outline-variant/50 rounded-lg group relative hover:border-outline-variant transition-colors">
-<div class="flex items-start justify-between">
-<div class="flex items-center gap-3">
-<img alt="Lucia Fernandez" class="w-10 h-10 rounded-full object-cover border border-surface" data-alt="A small circular avatar portrait of a female clinic assistant, casual professional attire, warm lighting." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCTDowPEue6R9kBOGPvMdBA2xmD7IqwVT_DH0ZVvsqBE5YYx0JcWFkWm6JsauN3Qc_SdjQw05sYorwbhBG_WOuMa-52vVKhsy8i1SIqZux42LPjPeCfm6YldLpktfBq7sPEMf3dOzXZLIILugjYwZHI1v_HTgAhB8zm6PShxDpFtMGBL9QjVzkluJ-q8S6WWD31DTWgToybu5J5vRM8YRlv2GmoGKWsfKDCx7z3UZG_sNa2xk5akfmp"/>
-<div>
-<p class="font-body-md text-body-md font-medium text-on-surface leading-tight">Lucia Fernandez</p>
-<p class="font-mono-label text-[10px] text-on-surface-variant">Podóloga</p>
-</div>
-</div>
-<button class="text-on-surface-variant/50 hover:text-error transition-colors p-1 rounded hover:bg-surface-container-high opacity-0 group-hover:opacity-100 focus:opacity-100">
-<span class="material-symbols-outlined text-[18px]">delete</span>
-</button>
-</div>
-<div class="mt-3 flex items-center justify-between">
-<span class="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-primary-container/20 text-primary font-label-caps text-[10px] leading-none">
-<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
-                                            Permiso
-                                        </span>
-<span class="font-mono-label text-[11px] text-on-surface-variant flex items-center gap-1">
-<span class="material-symbols-outlined text-[14px]">schedule</span>
-                                            15:00 PM - 17:00 PM
-                                        </span>
-</div>
-<div class="mt-2 pt-2 border-t border-outline-variant/30">
-<p class="font-body-md text-[12px] text-on-surface-variant italic truncate">Trámite notarial</p>
+<div class="flex items-center gap-4">
+<span class="bg-emerald-100 text-emerald-800 text-xs font-semibold px-2.5 py-1 rounded-full flex items-center gap-1.5 border border-emerald-200">
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
+                                    Activo
+                                </span>
+<button class="text-error hover:text-on-error-container text-body-md font-medium transition-colors px-2 py-1 rounded hover:bg-error-container/50">
+                                    Quitar
+                                </button>
 </div>
 </div>
 </div>
-</div>
-</div>
-</div>
-<!-- Reference Image Inclusion (Hidden or decorative context) -->
-<div class="hidden">
-<img class="w-0 h-0" data-alt="Original screenshot of the Permisos / Bloqueos screen for reference" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCkJ2QD459qdele7gsc32NHWsbIj0KDtx1XO90rExWCHWWLu4USuGmzuhbeMWHSmfP8BI0WtQIDKn9s9k_I1GFcQeKdeWk8tCv9ZGWMTAuSSZvY9iB3u91bTfx5hMblhDUtIaG7KS1dd5-S-D4h8WGj2yVNOYZd4iJ915pskHeBXKjlQQX1xBFXwDX7-fV4pQCicmux9Y2EqwabEozSq-Bcv7bx0uv_MOa9eKq1A8FVnG2ZD6E5wrYO-N1pI1gpLucupg"/>
 </div>
 </div>
 </main>

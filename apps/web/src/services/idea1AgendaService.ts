@@ -462,13 +462,19 @@ export function calcularRangoHorarioAgenda(
 }
 
 /**
- * Genera la propiedad CSS gridTemplateColumns dinámicamente para la grilla de doctores
+ * Genera la propiedad CSS gridTemplateColumns dinámicamente para la grilla de doctores.
+ * Los pixeles de columna de hora y ancho mínimo del doctor son parametrizables para
+ * poder compactarlos en pantallas chicas (móvil/tablet).
  */
-export function calcularGridTemplateColsCss(numDoctores: number, maxVisible = 6): string {
+export function calcularGridTemplateColsCss(
+  numDoctores: number,
+  opts: { maxVisible?: number; timeColPx?: number; minDoctorColPx?: number } = {},
+): string {
+  const { maxVisible = 6, timeColPx = 80, minDoctorColPx = 180 } = opts;
   const count = Math.max(numDoctores, 1);
   const visibleCols = Math.min(count, maxVisible);
-  const doctorColWidthCss = `calc(max(180px, (100% - 80px) / ${visibleCols}))`;
-  return `80px repeat(${count}, ${doctorColWidthCss})`;
+  const doctorColWidthCss = `calc(max(${minDoctorColPx}px, (100% - ${timeColPx}px) / ${visibleCols}))`;
+  return `${timeColPx}px repeat(${count}, ${doctorColWidthCss})`;
 }
 
 /**
@@ -715,6 +721,9 @@ export function useIdea1AgendaData() {
   const isSyncingScroll = useRef(false);
   const [scrollContentWidth, setScrollContentWidth] = useState(0);
   const [hasHorizontalScroll, setHasHorizontalScroll] = useState(false);
+  const [containerWidth, setContainerWidth] = useState<number>(
+    typeof window !== 'undefined' ? window.innerWidth : 1280,
+  );
 
   useEffect(() => {
     const el = mainScrollRef.current;
@@ -723,6 +732,7 @@ export function useIdea1AgendaData() {
     const checkOverflow = () => {
       if (el) {
         setScrollContentWidth(el.scrollWidth);
+        setContainerWidth(el.clientWidth);
         const hasOverflow = el.scrollWidth > el.clientWidth + 2;
         setHasHorizontalScroll(hasOverflow);
       }
@@ -735,10 +745,14 @@ export function useIdea1AgendaData() {
       checkOverflow();
     });
     ro.observe(el);
+    // Respaldo: algunos entornos no propagan cambios de viewport al RO del hijo
+    // hasta el próximo layout. Escuchar `resize` garantiza el ajuste inmediato.
+    window.addEventListener('resize', checkOverflow);
 
     return () => {
       clearTimeout(timer);
       ro.disconnect();
+      window.removeEventListener('resize', checkOverflow);
     };
   }, [doctores.length, sedeId, unidadNegocioId]);
 
@@ -784,7 +798,15 @@ export function useIdea1AgendaData() {
   const now = new Date();
   const currentTimeTopPx = calcularTopPxLineaActual(horaInicioInt, ROW_HEIGHT);
   const isCurrentDayActive = esMismoDia(fecha, now);
-  const gridTemplateColsCss = calcularGridTemplateColsCss(doctores.length, 6);
+  // Adapta el ancho de la columna de hora y el mínimo de cada doctor al ancho real
+  // del contenedor. En pantallas chicas: hora más angosta (56px) y doctor más compacto
+  // (140px), de modo que quepan más columnas sin apilarse y con menos scroll horizontal.
+  const isMobileGrid = containerWidth < 768;
+  const gridTemplateColsCss = calcularGridTemplateColsCss(doctores.length, {
+    maxVisible: 6,
+    timeColPx: isMobileGrid ? 56 : 80,
+    minDoctorColPx: isMobileGrid ? 140 : 180,
+  });
 
   const qc = useQueryClient();
 

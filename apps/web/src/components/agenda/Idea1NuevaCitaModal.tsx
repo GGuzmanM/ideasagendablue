@@ -90,6 +90,7 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
     resultadosPacientes,
     buscandoPacientes,
     canales,
+    canalesPaciente,
     promociones,
     paquetesPaciente,
     membresiasActivas,
@@ -473,7 +474,7 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
                     className="w-full bg-white border border-outline-variant rounded-lg px-3 py-2 text-sm outline-none focus:border-primary font-medium"
                   >
                     <option value="">— Sin especificar —</option>
-                    {canales.map((c) => (
+                    {canalesPaciente.map((c) => (
                       <option key={c.value} value={c.value}>{c.label}</option>
                     ))}
                   </select>

@@ -30,7 +30,7 @@ export function Idea1NuevoPacienteModal(props: UseNuevoPacienteFormProps) {
     puedeGuardar,
   } = useNuevoPacienteForm(props);
 
-  const { canales } = useCanales();
+  const { canalesPaciente } = useCanales();
 
   return (
     <div className="fixed inset-0 bg-inverse-surface/40 backdrop-blur-[2px] z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
@@ -213,7 +213,7 @@ export function Idea1NuevoPacienteModal(props: UseNuevoPacienteFormProps) {
               className={INP + ' font-medium'}
             >
               <option value="">— Sin especificar —</option>
-              {canales.map((c) => (
+              {canalesPaciente.map((c) => (
                 <option key={c.value} value={c.value}>
                   {c.label}
                 </option>

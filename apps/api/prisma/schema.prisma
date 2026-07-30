@@ -483,7 +483,8 @@ model Servicio {
   citas         Cita[]
   paquetes      Paquete[]
   agregados     AgregadoDiario[]
-  combinaciones CombinacionPermitida[]
+  combinaciones     CombinacionPermitida[]  @relation("CombinacionExtra")
+  combinacionesComoAncla CombinacionPermitida[] @relation("CombinacionAncla")
   anclaDe       ConfiguracionSistema[]
   subcategorias SubcategoriaServicio[]
   paquetesComoServicioNuevo PaquetePaciente[] @relation("PaqueteServicioNuevo")
@@ -527,23 +528,24 @@ model SubcategoriaServicio {
 }
 
 // ─── CombinacionPermitida ─────────────────────────────────────────────────────
-// Servicios que pueden combinarse como EXTRA de una profilaxis (el ancla es siempre
-// la profilaxis, así que basta una lista unidireccional de "extras permitidos").
-// Configurable desde Herramientas (NO hardcodear cruces). Soft-delete + AuditLog.
+// Servicios que pueden combinarse como EXTRA de un servicio ANCLA. Un ancla puede
+// tener muchos extras. Cada bloque ancla→extras es independiente. Soft-delete + Audit.
 model CombinacionPermitida {
   id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  servicioAnclaId String?   @db.Uuid   // FK al servicio ancla (opcional para compat. legada)
   servicioExtraId String    @db.Uuid
   activo          Boolean   @default(true)
   deletedAt       DateTime?
 
-  servicio Servicio @relation(fields: [servicioExtraId], references: [id])
+  servicioAncla Servicio? @relation("CombinacionAncla", fields: [servicioAnclaId], references: [id])
+  servicio      Servicio  @relation("CombinacionExtra", fields: [servicioExtraId], references: [id])
 
   creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
-  // Único por servicio mientras no esté borrado: refuerzo vía índice único PARCIAL
-  // (WHERE deletedAt IS NULL) creado en la migración — `combinaciones_servicio_unico`.
+  // Índice compuesto por ancla + extra para búsquedas rápidas
+  @@index([servicioAnclaId, servicioExtraId])
   @@index([servicioExtraId])
   @@map("combinaciones_permitidas")
 }

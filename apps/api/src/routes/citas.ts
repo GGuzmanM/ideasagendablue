@@ -2029,10 +2029,50 @@ router.delete('/:id', requireAuth, async (req, res) => {
 });
 
 // ─── PATCH /citas/:id/consultorio ────────────────────────────────────────────
+// Estados que "ocupan" un consultorio en el tiempo (a efectos de conflicto).
+// cancelada/reprogramada no ocupan (el paciente no llegó / la cita se movió).
+const ESTADOS_OCUPAN_CONSULTORIO: Prisma.EnumEstadoCitaFilter = {
+  notIn: ['cancelada', 'reprogramada'],
+};
+
 router.patch('/:id/consultorio', requireAuth, async (req, res) => {
   const { consultorioNumero } = req.body as { consultorioNumero: number | null };
   const cita = await prisma.cita.findUnique({ where: { id: req.params.id, deletedAt: null } });
   if (!cita) throw new AppError('Cita no encontrada', 404);
+
+  // Un consultorio físico solo puede tener 1 cita a la vez. Se considera "ocupado" en
+  // sede + unidad de negocio + fecha + número; el conflicto es solapamiento horario.
+  // Excepción: bloque combinado (mismo slotGrupoId) — profilaxis + extra son del mismo
+  // paciente en el mismo consultorio, así que sí pueden coincidir.
+  if (consultorioNumero != null) {
+    const inicioA = timeToMinutes(cita.horaInicio);
+    const finA = inicioA + cita.duracionMinutos;
+    const otras = await prisma.cita.findMany({
+      where: {
+        deletedAt: null,
+        id: { not: cita.id },
+        sedeId: cita.sedeId,
+        unidadNegocioId: cita.unidadNegocioId,
+        fecha: cita.fecha,
+        consultorioNumero,
+        estado: ESTADOS_OCUPAN_CONSULTORIO,
+        ...(cita.slotGrupoId ? { slotGrupoId: { not: cita.slotGrupoId } } : {}),
+      },
+      select: { id: true, horaInicio: true, duracionMinutos: true },
+    });
+    const conflicto = otras.find((o) => {
+      const inicioB = timeToMinutes(o.horaInicio);
+      const finB = inicioB + o.duracionMinutos;
+      return inicioA < finB && inicioB < finA;
+    });
+    if (conflicto) {
+      throw new AppError(
+        `El consultorio ${consultorioNumero} ya está ocupado por otra cita en ese horario`,
+        409,
+        'CONSULTORIO_OCUPADO',
+      );
+    }
+  }
 
   await prisma.$transaction(async (tx) => {
     await tx.cita.update({

@@ -33,21 +33,76 @@ router.get('/config', requireAuth, async (_req, res) => {
   });
 });
 
+// ─── GET /combinaciones/anclas ─────────────────────────────────────────────────
+// Lista de servicios que tienen al menos una combinación configurada (como ancla).
+// Incluye la ancla de ConfiguracionSistema aunque no tenga combinables.
+router.get('/anclas', requireAuth, requireAdmin, async (_req, res) => {
+  // Ancla global configurada
+  const cfgAnclaId = await prisma.configuracionSistema
+    .findFirst({ orderBy: { actualizadoEn: 'desc' }, select: { servicioAnclaId: true } })
+    .then((c) => c?.servicioAnclaId ?? null);
+
+  // IDs de anclas que tienen combinaciones registradas
+  const grupos = await prisma.combinacionPermitida.groupBy({
+    by: ['servicioAnclaId'],
+    where: { deletedAt: null, servicioAnclaId: { not: null } },
+  });
+
+  const anclaIds = new Set<string>(grupos.map((g) => g.servicioAnclaId!).filter(Boolean));
+  if (cfgAnclaId) anclaIds.add(cfgAnclaId);
+
+  if (anclaIds.size === 0) { res.json([]); return; }
+
+  const servicios = await prisma.servicio.findMany({
+    where: { id: { in: Array.from(anclaIds) }, deletedAt: null },
+    select: servicioSelect,
+    orderBy: { nombre: 'asc' },
+  });
+
+  res.json(servicios);
+});
+
 // ─── GET /combinaciones/admin ─────────────────────────────────────────────────
-// Gestión (admin): incluye inactivos. Para la sección de Herramientas.
-router.get('/admin', requireAuth, requireAdmin, async (_req, res) => {
+// Gestión (admin): incluye inactivos. Acepta ?anclaId= para filtrar por ancla.
+// Compatibilidad legada: también incluye registros con servicioAnclaId=null cuando
+// el anclaId solicitado coincide con la ancla global (ConfiguracionSistema).
+router.get('/admin', requireAuth, requireAdmin, async (req, res) => {
+  const { anclaId } = req.query as { anclaId?: string };
+
+  // Determinar si hay registros legados (servicioAnclaId=null) para la ancla global
+  let incluirNulos = false;
+  if (anclaId) {
+    const globalAncla = await prisma.configuracionSistema
+      .findFirst({ orderBy: { actualizadoEn: 'desc' }, select: { servicioAnclaId: true } })
+      .then((c) => c?.servicioAnclaId ?? null);
+    incluirNulos = globalAncla === anclaId;
+  }
+
+  const whereClause = anclaId
+    ? incluirNulos
+      // Para la ancla global: registros de esa ancla + registros legacy null
+      ? { deletedAt: null, OR: [{ servicioAnclaId: anclaId }, { servicioAnclaId: null }] }
+      // Para otras anclas: solo los de esa ancla
+      : { deletedAt: null, servicioAnclaId: anclaId }
+    // Sin filtro: todos
+    : { deletedAt: null };
+
   const combinaciones = await prisma.combinacionPermitida.findMany({
-    where: { deletedAt: null },
+    where: whereClause as any,
     include: { servicio: { select: servicioSelect } },
     orderBy: { creadoEn: 'asc' },
   });
   res.json(combinaciones.map((c) => ({
-    id: c.id, servicioExtraId: c.servicioExtraId, activo: c.activo, servicio: c.servicio,
+    id: c.id,
+    servicioAnclaId: c.servicioAnclaId,
+    servicioExtraId: c.servicioExtraId,
+    activo: c.activo,
+    servicio: c.servicio,
   })));
 });
 
 // ─── PUT /combinaciones/ancla ─────────────────────────────────────────────────
-// Define (o limpia) el servicio ancla. Fila única en ConfiguracionSistema.
+// Define (o limpia) el servicio ancla "por defecto" para el popover de la agenda.
 router.put('/ancla', requireAuth, requireAdmin, async (req, res) => {
   const { servicioAnclaId } = z
     .object({ servicioAnclaId: z.string().uuid().nullable() })
@@ -80,31 +135,48 @@ router.put('/ancla', requireAuth, requireAdmin, async (req, res) => {
 });
 
 // ─── POST /combinaciones ──────────────────────────────────────────────────────
-// Agrega un servicio extra combinable (o reactiva uno previamente quitado).
+// Agrega un servicio extra combinable asociado a un ancla específica.
+// Si ya existe con soft-delete, lo reactiva.
 router.post('/', requireAuth, requireAdmin, async (req, res) => {
-  const { servicioExtraId } = z.object({ servicioExtraId: z.string().uuid() }).parse(req.body);
+  const { servicioExtraId, servicioAnclaId } = z.object({
+    servicioExtraId: z.string().uuid(),
+    servicioAnclaId: z.string().uuid().optional().nullable(),
+  }).parse(req.body);
 
   const srv = await prisma.servicio.findUnique({ where: { id: servicioExtraId } });
   if (!srv || srv.deletedAt) throw new AppError('Servicio no encontrado', 404);
 
-  const ancla = await prisma.configuracionSistema.findFirst({ orderBy: { actualizadoEn: 'desc' } });
-  if (ancla?.servicioAnclaId === servicioExtraId) {
+  // Validar que el extra no sea el mismo que el ancla
+  if (servicioAnclaId && servicioAnclaId === servicioExtraId) {
     throw new AppError('El servicio ancla no puede ser su propio extra combinable', 400, 'ANCLA_NO_ES_EXTRA');
   }
 
-  const existente = await prisma.combinacionPermitida.findFirst({ where: { servicioExtraId, deletedAt: null } });
-  if (existente?.activo) throw new AppError('Ese servicio ya está en la lista de combinables', 409, 'COMBINACION_DUPLICADA');
+  // Verificar si ya existe un combinable activo para el mismo par ancla+extra
+  const existente = await prisma.combinacionPermitida.findFirst({
+    where: {
+      servicioExtraId,
+      servicioAnclaId: servicioAnclaId ?? null,
+      deletedAt: null,
+    },
+  });
+  if (existente?.activo) throw new AppError('Ese servicio ya está en la lista de combinables para esta ancla', 409, 'COMBINACION_DUPLICADA');
 
   const guardado = await prisma.$transaction(async (tx) => {
     const c = existente
       ? await tx.combinacionPermitida.update({ where: { id: existente.id }, data: { activo: true, deletedAt: null } })
-      : await tx.combinacionPermitida.create({ data: { servicioExtraId, creadoPor: req.user?.userId } });
+      : await tx.combinacionPermitida.create({
+          data: {
+            servicioExtraId,
+            servicioAnclaId: servicioAnclaId ?? null,
+            creadoPor: req.user?.userId,
+          },
+        });
     await auditEnTx(tx, {
       usuarioId: req.user?.userId,
       accion: existente ? 'reactivar_combinacion' : 'crear_combinacion',
       entidad: 'combinacion_permitida',
       entidadId: c.id,
-      despues: { servicioExtraId, activo: true },
+      despues: { servicioAnclaId, servicioExtraId, activo: true },
       ip: req.ip,
     });
     return c;

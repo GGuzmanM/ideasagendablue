@@ -45,7 +45,7 @@ export default function App() {
 
   return (
     <Routes>
-      <Route path="/login" element={token ? <Navigate to="/" replace /> : <LoginPage />} />
+      <Route path="/login" element={token ? <Navigate to="/idea1" replace /> : <LoginPage />} />
       {/* Vista principal de la agenda (Diseño Idea 1) */}
       <Route path="/idea1" element={<Idea1AgendaPage />} />
       {/* Vista de impresión (sin Layout/sidebar) — matriz A4 horizontal para PDF */}
@@ -53,7 +53,7 @@ export default function App() {
       {/* Comprobantes del día en una sola hoja (cierre) */}
       <Route path="/imprimir/comprobantes" element={<ComprobantesImprimirPage />} />
       <Route element={<Layout />}>
-        <Route path="/" element={<AgendaPage />} />
+        <Route path="/" element={<Navigate to="/idea1" replace />} />
         <Route path="/agenda-vieja" element={<AgendaPage />} />
         <Route path="/pacientes" element={<PacientesPage />} />
         <Route path="/pacientes/:id" element={<FichaPacientePage />} />
@@ -88,7 +88,7 @@ export default function App() {
         <Route path="/analytics/agentes/:agenteId" element={<AgenteDetallePage />} />
         <Route path="/analytics/:kpi" element={<AnalyticsDetallePage />} />
       </Route>
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="*" element={<Navigate to="/idea1" replace />} />
     </Routes>
   );
 }

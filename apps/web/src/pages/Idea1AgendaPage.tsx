@@ -181,13 +181,13 @@ export function Idea1AgendaPage() {
                       onClick={() => setUnidadNegocioId(u.id)}
                       className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs md:text-sm font-semibold transition-all whitespace-nowrap ${
                         isSelected
-                          ? 'bg-primary text-white shadow-md shadow-primary/20 font-bold'
+                          ? 'bg-[#0044ab] text-white shadow-md shadow-[#0044ab]/20 font-bold'
                           : 'text-on-surface-variant hover:bg-surface-container-lowest hover:text-on-surface'
                       }`}
                     >
                       <span
                         className={`w-2 h-2 rounded-full shrink-0 ${
-                          isSelected ? 'bg-white' : 'bg-primary/50'
+                          isSelected ? 'bg-white' : 'bg-[#0044ab]/50'
                         }`}
                       />
                       <span>{u.nombre}</span>
@@ -201,7 +201,7 @@ export function Idea1AgendaPage() {
           <div className="flex items-center gap-4">
             <button
               onClick={() => handleAbrirNuevaCita()}
-              className="bg-primary-container text-on-primary-container px-4 py-2 rounded-lg font-body-md font-semibold hover:opacity-90 active:scale-95 transition-all shadow-md shadow-primary/20 flex items-center gap-2 cursor-pointer"
+              className="bg-[#0044ab] text-white px-4 py-2 rounded-lg font-body-md font-semibold hover:opacity-90 active:scale-95 transition-all shadow-md shadow-[#0044ab]/20 flex items-center gap-2 cursor-pointer"
             >
               <span className="material-symbols-outlined text-lg">add_circle</span>
               Nueva Cita
@@ -277,7 +277,7 @@ export function Idea1AgendaPage() {
                         onClick={() => setFecha(sc.date)}
                         className={`px-4 py-2 rounded-lg font-body-md font-semibold text-sm transition-all ${
                           isActive
-                            ? 'bg-primary text-white shadow-md shadow-primary/20'
+                            ? 'bg-[#0044ab] text-white shadow-md shadow-[#0044ab]/20'
                             : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
                         }`}
                       >
@@ -431,14 +431,14 @@ export function Idea1AgendaPage() {
                       return (
                         <div
                           key={doc.id}
-                          className={`py-3 px-1.5 text-center min-w-0 transition-all ${
+                          className={`py-2 px-1 md:py-3 md:px-1.5 text-center min-w-0 transition-all ${
                             doc.enVacaciones ? 'bg-amber-500/5' : 'bg-surface-container-lowest'
                           } ${idx < doctores.length - 1 ? 'border-r border-outline-variant/20' : ''}`}
                         >
                           <div className="relative inline-block mx-auto mb-1">
                             <img
                               alt={`${doc.nombres} ${doc.apellidos}`}
-                              className={`w-10 h-10 md:w-11 md:h-11 rounded-full mx-auto border-2 object-cover ${
+                              className={`w-8 h-8 md:w-11 md:h-11 rounded-full mx-auto border-2 object-cover ${
                                 doc.enVacaciones
                                   ? 'border-amber-500/40 opacity-75 grayscale-[20%]'
                                   : 'border-primary/10'
@@ -452,25 +452,25 @@ export function Idea1AgendaPage() {
                             )}
                           </div>
                           <p
-                            className="font-headline-sm text-headline-sm text-xs md:text-sm font-bold text-on-surface truncate px-0.5 leading-tight"
+                            className="font-headline-sm text-headline-sm text-[11px] md:text-sm font-bold text-on-surface truncate px-0.5 leading-tight"
                             title={`${doc.nombres} ${doc.apellidos}`}
                           >
                             {nombreCorto}
                           </p>
-                          <p className="font-label-caps text-[9px] md:text-[10px] text-on-surface-variant tracking-wider uppercase truncate">
+                          <p className="hidden md:block font-label-caps text-[9px] md:text-[10px] text-on-surface-variant tracking-wider uppercase truncate">
                             {doc.especialidad}
                           </p>
 
                           {/* Insignias de Estadía o Vacaciones */}
                           {doc.enVacaciones ? (
-                            <div className="mt-1 flex items-center justify-center">
-                              <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/15 text-amber-700 border border-amber-500/30 truncate">
+                            <div className="mt-1 flex items-center justify-center max-w-full">
+                              <span className="inline-flex items-center gap-0.5 px-1.5 md:px-2 py-0.5 rounded-md text-[9px] md:text-[10px] font-bold bg-amber-500/15 text-amber-700 border border-amber-500/30 truncate max-w-full">
                                 🌴 Vacaciones
                               </span>
                             </div>
                           ) : doc.estadiaLabel ? (
-                            <div className="mt-1 flex items-center justify-center">
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-300/80 shadow-xs truncate">
+                            <div className="mt-1 flex items-center justify-center max-w-full">
+                              <span className="inline-flex items-center gap-1 px-1.5 md:px-2 py-0.5 rounded-md text-[9px] md:text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-300/80 shadow-xs truncate max-w-full">
                                 {doc.estadiaLabel}
                               </span>
                             </div>

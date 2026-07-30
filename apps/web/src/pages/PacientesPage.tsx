@@ -49,7 +49,7 @@ export function PacientesPage() {
           </div>
           <button
             onClick={() => setNuevoOpen(true)}
-            className="shrink-0 inline-flex items-center gap-1.5 px-4 py-2 bg-limablue-600 text-white text-sm font-semibold rounded-lg shadow-sm hover:bg-limablue-700 active:scale-95 transition-all"
+            className="shrink-0 inline-flex items-center gap-1.5 px-4 py-2 bg-[#0044ab] text-white text-sm font-semibold rounded-lg shadow-sm hover:bg-[#003a8f] active:scale-95 transition-all"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
@@ -183,7 +183,7 @@ export function FichaPacientePage() {
     guardarDatosMutation,
   } = useFichaPaciente(id);
 
-  const { canales, labelCanal } = useCanales();
+  const { canalesPaciente, labelCanalPorId } = useCanales();
 
   // Estilo de inputs (diseño idea1) + resaltado ámbar para campos faltantes.
   const INPUT_CLS = 'w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2.5 text-sm text-on-surface outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all';
@@ -383,7 +383,7 @@ export function FichaPacientePage() {
                         onChange={e => setForm(f => ({ ...f, canalId: e.target.value || null }))}
                       >
                         <option value="">— Sin especificar —</option>
-                        {canales.map(c => (
+                        {canalesPaciente.map(c => (
                           <option key={c.value} value={c.value}>{c.label}</option>
                         ))}
                       </select>
@@ -414,7 +414,7 @@ export function FichaPacientePage() {
                     ['Distrito', paciente.ubigeoId
                       ? `${etiquetaDistrito(paciente.ubigeoId)}${paciente.ubigeoId === UBIGEO_EXTRANJERO && paciente.paisResidencia ? ` · ${nombrePais(paciente.paisResidencia)}` : ''}`
                       : '—'],
-                    ['Canal de captación', paciente.canalId ? labelCanal(paciente.canalId) : '—'],
+                    ['Canal de captación', paciente.canalId ? labelCanalPorId(paciente.canalId) : '—'],
                   ].map(([label, val]) => (
                     <div key={label} className="space-y-0">
                       <p className="font-label-caps text-[10px] uppercase tracking-wider text-on-surface-variant/80">{label}</p>
