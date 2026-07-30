@@ -54,6 +54,7 @@ model Canal {
   orden         Int       @default(0)
   activo        Boolean   @default(true)
   deletedAt     DateTime?
+  creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime  @default(now())
   actualizadoEn DateTime  @updatedAt
 
@@ -72,6 +73,7 @@ model Promocion {
   activo        Boolean       @default(true)
   orden         Int           @default(0)
   deletedAt     DateTime?
+  creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime      @default(now())
   actualizadoEn DateTime      @updatedAt
 
@@ -176,6 +178,7 @@ model Sede {
   bloqueos        BloqueoAgenda[]
   paquetesPaciente PaquetePaciente[]
 
+  creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
@@ -193,6 +196,7 @@ model ExcepcionHorario {
   horaApertura String?
   horaCierre   String?
   nota         String?
+  creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn     DateTime @default(now())
 
   @@unique([sedeId, fecha])
@@ -215,6 +219,7 @@ model UnidadNegocio {
   citas         Cita[]
   agregados     AgregadoDiario[]
 
+  creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
@@ -273,6 +278,7 @@ model Profesional {
   agregados        AgregadoDiario[]
   entradas         EntradaPodologa[]
 
+  creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
@@ -329,6 +335,7 @@ model Recepcionista {
 
   asignaciones AsignacionAdministrativa[]
 
+  creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
@@ -478,6 +485,7 @@ model Servicio {
   paquetesComoServicioNuevo PaquetePaciente[] @relation("PaqueteServicioNuevo")
   videos        ServicioVideo[]
 
+  creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
@@ -503,6 +511,7 @@ model SubcategoriaServicio {
   servicio Servicio @relation(fields: [servicioId], references: [id])
   citas    Cita[]
 
+  creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
@@ -525,6 +534,7 @@ model CombinacionPermitida {
 
   servicio Servicio @relation(fields: [servicioExtraId], references: [id])
 
+  creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
@@ -544,6 +554,7 @@ model ConfiguracionSistema {
 
   servicioAncla Servicio? @relation(fields: [servicioAnclaId], references: [id])
 
+  creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
@@ -567,6 +578,7 @@ model CompetenciaProfesional {
   profesional Profesional @relation(fields: [profesionalId], references: [id])
   servicio    Servicio    @relation(fields: [servicioId], references: [id])
 
+  creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
@@ -632,6 +644,7 @@ model Paciente {
   paquetes       PaquetePaciente[]
   conciliaciones ConciliacionApertura[]
 
+  creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
@@ -811,6 +824,7 @@ model Paquete {
   promocion  Promocion?        @relation(fields: [promocionId], references: [id])
   instancias PaquetePaciente[]
 
+  creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
@@ -863,6 +877,7 @@ model PaquetePaciente {
   consumos       ConsumoSesion[]
   conciliaciones ConciliacionApertura[]
 
+  creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
@@ -1008,6 +1023,7 @@ model Usuario {
   citasCreadas          Cita[]              @relation("CitasCreadas")
   comentariosCita       ComentarioCita[]
 
+  creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
@@ -1023,6 +1039,7 @@ model Rol {
   descripcion   String?
   permisos      String[]
   esSistema     Boolean  @default(false)
+  creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
@@ -1056,6 +1073,7 @@ model ApiKey {
 
   usuario Usuario? @relation(fields: [usuarioId], references: [id])
 
+  creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
@@ -1103,6 +1121,7 @@ model WebhookSubscription {
 
   sede Sede? @relation(fields: [sedeId], references: [id])
 
+  creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
@@ -1230,6 +1249,7 @@ model MailConfig {
   provider      String   @default("resend") // Resend (transporte actual). Gmail quedó DEPRECADO.
   refreshToken  String? // DEPRECADO (token OAuth Gmail) — se conserva, no se usa con Resend
   isActive      Boolean  @default(true)
+  creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 

@@ -1,27 +1,88 @@
 import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { sedesApi } from '../../api';
-import { almuerzosApi, type BloqueoAlmuerzo } from '../../api/almuerzos';
-import { profesionalesApi } from '../../api';
-import { TURNOS_ALMUERZO } from '@limablue/shared';
+import { TURNOS_ALMUERZO, horasEnMinutos } from '@limablue/shared';
 import { cn } from '../../utils/cn';
+import type { BloqueoAlmuerzo } from '../../api/almuerzos';
+import {
+  useAlmuerzosData,
+  useAsignarAlmuerzo,
+  type ProfesionalConAlmuerzo,
+  type BloqueDia,
+} from '../../services/almuerzosService';
 
-const NOMBRE_PAZ_SOLDAN = 'Paz Soldán';
+// ─── Mini-horario del día del especialista (visual: citas + zona de almuerzo) ─
+function MiniHorarioDia({
+  rango,
+  bloques,
+  turnoSel,
+}: {
+  rango: { iniMin: number; finMin: number };
+  bloques: BloqueDia[];
+  turnoSel: string;
+}) {
+  const total = rango.finMin - rango.iniMin;
+  const pct = (min: number) => ((min - rango.iniMin) / total) * 100;
+  const fmt = (min: number) => `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
 
-// ── Tipos internos ────────────────────────────────────────────────────────────
-interface ProfesionalConAlmuerzo {
-  id: string;
-  nombres: string;
-  apellidos: string;
-  tipo: string;
-  colorAvatar: string;
-  almuerzo: BloqueoAlmuerzo | null;
+  // Marcas de hora: inicio y fin del turno + las horas de la zona de almuerzo (12–15).
+  const marcas = [...new Set([rango.iniMin, 12 * 60, 13 * 60, 14 * 60, 15 * 60, rango.finMin])]
+    .filter((m) => m >= rango.iniMin && m <= rango.finMin)
+    .sort((a, b) => a - b);
+
+  const selIni = turnoSel ? horasEnMinutos(turnoSel) : null;
+
+  return (
+    <div className="mb-3">
+      <p className="font-label-caps text-[10px] text-on-surface-variant uppercase tracking-wider mb-1.5">
+        Franja de almuerzo hoy ({fmt(rango.iniMin)} – {fmt(rango.finMin)})
+      </p>
+      <div className="relative h-9 bg-tertiary-fixed/25 rounded-lg border border-outline-variant/40 overflow-hidden">
+        {/* Divisores por hora (los 3 turnos de la franja) */}
+        {marcas.slice(1, -1).map((m) => (
+          <div key={m} className="absolute top-0 bottom-0 w-px bg-outline-variant/50" style={{ left: `${pct(m)}%` }} />
+        ))}
+        {/* Turno seleccionado resaltado */}
+        {selIni != null && (
+          <div
+            className="absolute top-0 bottom-0 border-2 border-primary bg-primary/10 rounded-md z-10"
+            style={{ left: `${pct(selIni)}%`, width: `${pct(selIni + 60) - pct(selIni)}%` }}
+          />
+        )}
+        {/* Citas del día (ocupado) */}
+        {bloques.map((b, i) => (
+          <div
+            key={i}
+            title={b.label}
+            className="absolute top-1 bottom-1 bg-primary/70 rounded-sm"
+            style={{
+              left: `${pct(Math.max(b.iniMin, rango.iniMin))}%`,
+              width: `${Math.max(pct(Math.min(b.finMin, rango.finMin)) - pct(Math.max(b.iniMin, rango.iniMin)), 1)}%`,
+            }}
+          />
+        ))}
+      </div>
+      {/* Marcas de hora */}
+      <div className="relative h-4 mt-0.5">
+        {marcas.map((m) => (
+          <span
+            key={m}
+            className="absolute -translate-x-1/2 font-mono-label text-[9px] text-on-surface-variant"
+            style={{ left: `${pct(m)}%` }}
+          >
+            {fmt(m)}
+          </span>
+        ))}
+      </div>
+      <div className="flex items-center gap-3 text-[10px] text-on-surface-variant">
+        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-primary/70 inline-block" /> Citas agendadas</span>
+        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm border-2 border-primary bg-primary/10 inline-block" /> Turno elegido</span>
+      </div>
+    </div>
+  );
 }
 
-// ── Popover de asignación ─────────────────────────────────────────────────────
+// ─── Popover de asignación (turno + ocupación de HOY por franja) ──────────────
 function PopoverAsignar({
   profesional,
   sedeId,
@@ -31,60 +92,94 @@ function PopoverAsignar({
   sedeId: string;
   onClose: () => void;
 }) {
-  const qc = useQueryClient();
-  const [turnoSel, setTurnoSel] = useState<string>('');
-
-  const crearMutation = useMutation({
-    mutationFn: () =>
-      almuerzosApi.crear({ profesionalId: profesional.id, sedeId, horaInicio: turnoSel }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['almuerzos', sedeId] });
-      const turno = TURNOS_ALMUERZO.find(t => t.horaInicio === turnoSel);
-      toast.success(
-        `Almuerzo de ${profesional.nombres.split(' ')[0]} ${profesional.apellidos.split(' ')[0]} registrado: ${turno?.label}`,
-      );
-      onClose();
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
+  const {
+    turnoSel, setTurnoSel, ocupacion, cargandoOcupacion, crearMutation,
+    rangoDia, bloquesDia, conflicto, citasEnTurnoSel, confirmar,
+  } = useAsignarAlmuerzo(profesional, sedeId, onClose);
 
   return (
-    <div className="absolute right-0 top-full mt-1 z-50 w-56 bg-white border border-slate-200 rounded-xl shadow-xl p-3">
-      <p className="text-xs font-semibold text-slate-700 mb-2">Turno de almuerzo</p>
-      <div className="space-y-1.5 mb-3">
-        {TURNOS_ALMUERZO.map(t => (
-          <button
-            key={t.id}
-            onClick={() => setTurnoSel(t.horaInicio)}
-            className={cn(
-              'w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm border transition-all',
-              turnoSel === t.horaInicio
-                ? 'bg-amber-50 border-amber-400 text-amber-800 font-semibold'
-                : 'border-slate-200 text-slate-600 hover:border-amber-300 hover:bg-amber-50/50',
-            )}
-          >
-            <span
+    <div className="absolute right-0 top-full mt-2 z-50 w-80 bg-surface-container-lowest border border-outline-variant/50 rounded-xl shadow-xl p-4">
+      <p className="font-headline-sm text-sm font-semibold text-on-surface mb-2">Turno de almuerzo</p>
+
+      {/* Mini-visualización del calendario del día del especialista */}
+      {cargandoOcupacion ? (
+        <div className="h-14 mb-3 rounded-lg bg-surface-container-low animate-pulse" />
+      ) : (
+        <MiniHorarioDia rango={rangoDia} bloques={bloquesDia} turnoSel={turnoSel} />
+      )}
+
+      <p className="font-body-md text-xs text-on-surface-variant mb-2">
+        Elige la franja (se marca en el horario de arriba):
+      </p>
+      <div className="space-y-1.5 mb-4">
+        {ocupacion.map((t) => {
+          const activo = turnoSel === t.horaInicio;
+          const libre = t.citas === 0;
+          return (
+            <button
+              key={t.id}
+              onClick={() => setTurnoSel(t.horaInicio)}
               className={cn(
-                'w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0',
-                turnoSel === t.horaInicio ? 'border-amber-500' : 'border-slate-300',
+                'w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm border transition-all',
+                activo
+                  ? 'bg-primary/5 border-primary text-on-surface font-semibold'
+                  : 'border-outline-variant/60 text-on-surface-variant hover:border-primary/50 hover:bg-primary/5',
               )}
             >
-              {turnoSel === t.horaInicio && (
-                <span className="w-2 h-2 rounded-full bg-amber-500" />
-              )}
-            </span>
-            {t.label}
-          </button>
-        ))}
+              {/* Radio clásico */}
+              <span
+                className={cn(
+                  'w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0',
+                  activo ? 'border-primary' : 'border-outline-variant',
+                )}
+              >
+                <span className={cn('w-2 h-2 rounded-full bg-primary transition-transform', activo ? 'scale-100' : 'scale-0')} />
+              </span>
+              <span className="font-mono-label text-xs">{t.label}</span>
+              {/* Semáforo de ocupación de HOY */}
+              <span
+                className={cn(
+                  'ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0',
+                  cargandoOcupacion
+                    ? 'bg-surface-container-high text-on-surface-variant'
+                    : libre
+                    ? 'bg-emerald-100 text-emerald-700'
+                    : 'bg-amber-100 text-amber-800',
+                )}
+              >
+                {cargandoOcupacion ? '…' : libre ? 'Libre hoy' : `${t.citas} cita${t.citas === 1 ? '' : 's'} hoy`}
+              </span>
+            </button>
+          );
+        })}
       </div>
+      {/* Mini-banner: el turno elegido CHOCA con citas ya agendadas hoy → no se registra */}
+      {conflicto && (
+        <div className="mb-3 p-2.5 bg-error-container/60 border border-error/30 rounded-lg flex items-start gap-2">
+          <span className="material-symbols-outlined text-error text-[18px] shrink-0">warning</span>
+          <div className="min-w-0">
+            <p className="text-xs font-bold text-on-error-container">
+              Tiene cita para la hora seleccionada
+            </p>
+            <p className="text-[11px] text-on-error-container/90 truncate">
+              {citasEnTurnoSel.map((c) => c.label).join(' · ')} — elige otro turno.
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="flex gap-2">
-        <button onClick={onClose} className="flex-1 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
+        <button
+          onClick={onClose}
+          className="flex-1 py-2 text-xs font-semibold text-on-surface border border-outline-variant rounded-lg hover:bg-surface-container-high transition-colors"
+        >
           Cancelar
         </button>
         <button
-          onClick={() => crearMutation.mutate()}
-          disabled={!turnoSel || crearMutation.isPending}
-          className="flex-1 py-1.5 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 disabled:opacity-40 rounded-lg transition-colors"
+          onClick={confirmar}
+          disabled={!turnoSel || conflicto || crearMutation.isPending}
+          className="flex-1 py-2 text-xs font-bold text-on-primary bg-primary hover:opacity-90 disabled:opacity-40 rounded-lg transition-all shadow-sm shadow-primary/20"
+          title={conflicto ? 'Tiene cita en esa franja hoy — elige otro turno' : undefined}
         >
           {crearMutation.isPending ? '…' : 'Confirmar'}
         </button>
@@ -93,7 +188,7 @@ function PopoverAsignar({
   );
 }
 
-// ── Modal de confirmación de eliminación ──────────────────────────────────────
+// ─── Modal de confirmación de eliminación ─────────────────────────────────────
 function ModalEliminar({
   bloqueo,
   sedeName,
@@ -107,28 +202,31 @@ function ModalEliminar({
   onClose: () => void;
   pending: boolean;
 }) {
-  const turno = TURNOS_ALMUERZO.find(t => t.horaInicio === bloqueo.horaInicio);
+  const turno = TURNOS_ALMUERZO.find((t) => t.horaInicio === bloqueo.horaInicio);
   const nombre = `${bloqueo.profesional.nombres.split(' ')[0]} ${bloqueo.profesional.apellidos.split(' ')[0]}`;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4">
-        <h3 className="text-base font-bold text-slate-900 mb-1">Eliminar horario de almuerzo</h3>
-        <div className="mt-3 p-3 bg-slate-50 rounded-xl border border-slate-200 mb-4">
-          <p className="font-semibold text-slate-800 text-sm">{nombre}</p>
-          <p className="text-xs text-slate-500 mt-0.5">{turno?.label} · {sedeName}</p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse-surface/40 backdrop-blur-[2px]">
+      <div className="bg-surface-container-lowest rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4">
+        <h3 className="font-headline-sm text-headline-sm font-bold text-on-surface mb-1">Eliminar horario de almuerzo</h3>
+        <div className="mt-3 p-3 bg-surface-container-low rounded-xl border border-outline-variant/40 mb-4">
+          <p className="font-semibold text-on-surface text-sm">{nombre}</p>
+          <p className="text-xs text-on-surface-variant mt-0.5">{turno?.label}{sedeName ? ` · ${sedeName}` : ''}</p>
         </div>
-        <p className="text-sm text-slate-600 mb-5">
+        <p className="text-sm text-on-surface-variant mb-5">
           Se eliminará de todos los días restantes de su estancia en esta sede. Podrás volver a crearlo en cualquier momento.
         </p>
         <div className="flex gap-3">
-          <button onClick={onClose} className="flex-1 py-2 text-sm font-medium text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors">
+          <button
+            onClick={onClose}
+            className="flex-1 py-2 text-sm font-semibold text-on-surface border border-outline-variant rounded-xl hover:bg-surface-container-high transition-colors"
+          >
             Cancelar
           </button>
           <button
             onClick={onConfirm}
             disabled={pending}
-            className="flex-1 py-2 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-40 rounded-xl transition-colors"
+            className="flex-1 py-2 text-sm font-bold text-on-error bg-error hover:opacity-90 disabled:opacity-40 rounded-xl transition-all"
           >
             {pending ? 'Eliminando…' : 'Sí, eliminar'}
           </button>
@@ -138,245 +236,219 @@ function ModalEliminar({
   );
 }
 
-// ── Fila de profesional ───────────────────────────────────────────────────────
+// ─── Fila de profesional (diseño mockup: avatar · nombre · estado · acción) ───
 function FilaProfesional({
   prof,
   sedeId,
+  onEliminar,
 }: {
   prof: ProfesionalConAlmuerzo;
   sedeId: string;
+  onEliminar: (b: BloqueoAlmuerzo) => void;
 }) {
-  const qc = useQueryClient();
   const [mostrando, setMostrando] = useState(false);
-  const [confirmando, setConfirmando] = useState<BloqueoAlmuerzo | null>(null);
-  const iniciales = `${prof.nombres[0] ?? ''}${prof.apellidos[0] ?? ''}`;
-
-  const eliminarMutation = useMutation({
-    mutationFn: (id: string) => almuerzosApi.eliminar(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['almuerzos', sedeId] });
-      toast.success('Horario de almuerzo eliminado.');
-      setConfirmando(null);
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-
-  const turno = prof.almuerzo ? TURNOS_ALMUERZO.find(t => t.horaInicio === prof.almuerzo!.horaInicio) : null;
+  const iniciales = `${prof.nombres[0] ?? ''}${prof.apellidos[0] ?? ''}`.toUpperCase();
+  const turno = prof.almuerzo ? TURNOS_ALMUERZO.find((t) => t.horaInicio === prof.almuerzo!.horaInicio) : null;
   const tipoLabel = prof.tipo === 'podologa' ? 'Podóloga' : 'Fisioterapeuta';
+  const noDisponible = prof.noDisponibleMotivo !== null;
 
   return (
-    <>
-      <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center gap-3">
-        {/* Avatar */}
+    <div
+      className={cn(
+        'flex items-center justify-between p-4 bg-surface-container-lowest hover:bg-surface-container-low transition-colors',
+        noDisponible && 'opacity-75',
+      )}
+    >
+      <div className="flex items-center gap-4 min-w-0">
         <div
-          className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0"
+          className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm text-white shrink-0"
           style={{ backgroundColor: prof.colorAvatar }}
         >
           {iniciales}
         </div>
-
-        {/* Info */}
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-slate-900">
-            {prof.nombres.split(' ')[0]} {prof.apellidos.split(' ')[0]} · <span className="font-normal text-slate-500">{tipoLabel}</span>
-          </p>
-          {prof.almuerzo ? (
-            <div className="mt-0.5 space-y-0.5">
-              <p className="text-xs text-amber-700 font-medium flex items-center gap-1">
-                🍽 Almuerzo&nbsp;
-                <span className="font-semibold">{turno?.label}</span>
-              </p>
-              <p className="text-xs text-slate-400">
-                Registrado por {prof.almuerzo.creadoPorUsuario?.nombre ?? '—'} el{' '}
-                {format(new Date(prof.almuerzo.creadoEn), "d 'de' MMM yyyy", { locale: es })}
-              </p>
-            </div>
-          ) : (
-            <p className="text-xs text-slate-400 mt-0.5">Sin horario de almuerzo</p>
-          )}
-        </div>
-
-        {/* Acción */}
-        {prof.almuerzo ? (
-          <button
-            onClick={() => setConfirmando(prof.almuerzo)}
-            className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
-            title="Eliminar almuerzo"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
-          </button>
-        ) : (
-          <div className="relative">
-            <button
-              onClick={() => setMostrando(v => !v)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors"
-            >
-              + Asignar
-            </button>
-            {mostrando && (
-              <PopoverAsignar
-                profesional={prof}
-                sedeId={sedeId}
-                onClose={() => setMostrando(false)}
-              />
+        <div className="min-w-0">
+          <div className="font-headline-sm text-sm text-on-background flex items-center gap-1 flex-wrap">
+            {prof.nombres.split(' ')[0]} {prof.apellidos.split(' ')[0]}
+            <span className="text-outline">·</span>
+            <span className="text-on-surface-variant font-normal">{tipoLabel}</span>
+            {prof.noDisponibleMotivo === 'vacaciones' && (
+              <span className="ml-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300/70">
+                🌴 Vacaciones
+              </span>
+            )}
+            {prof.noDisponibleMotivo === 'no_trabaja' && (
+              <span className="ml-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant border border-outline-variant/50">
+                No trabaja hoy
+              </span>
             )}
           </div>
+          {prof.almuerzo ? (
+            <div className="font-body-md text-sm mt-0.5">
+              <span className="text-tertiary font-semibold">🍽 Almuerzo {turno?.label}</span>
+              <span className="text-on-surface-variant text-xs ml-2">
+                Registrado por {prof.almuerzo.creadoPorUsuario?.nombre ?? '—'} el{' '}
+                {format(new Date(prof.almuerzo.creadoEn), "d 'de' MMM yyyy", { locale: es })}
+              </span>
+            </div>
+          ) : (
+            <div className="font-body-md text-sm text-on-surface-variant mt-0.5">Sin horario de almuerzo</div>
+          )}
+        </div>
+      </div>
+
+      {/* Acción */}
+      {prof.almuerzo ? (
+        <button
+          onClick={() => onEliminar(prof.almuerzo!)}
+          className="p-2 text-on-surface-variant hover:text-error hover:bg-error-container/40 rounded-lg transition-all shrink-0"
+          title="Eliminar almuerzo"
+        >
+          <span className="material-symbols-outlined text-[20px]">delete</span>
+        </button>
+      ) : noDisponible ? null : (
+        <div className="relative shrink-0">
+          <button
+            onClick={() => setMostrando((v) => !v)}
+            className="px-4 py-2 rounded-lg border border-outline-variant text-primary font-headline-sm text-sm hover:bg-primary/5 transition-colors flex items-center gap-2"
+          >
+            <span className="material-symbols-outlined text-[18px]">add</span> Asignar
+          </button>
+          {mostrando && (
+            <PopoverAsignar profesional={prof} sedeId={sedeId} onClose={() => setMostrando(false)} />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Página (front — todo el back vive en almuerzosService) ──────────────────
+export function AlmuerzosPage() {
+  const {
+    sedes,
+    sedeId,
+    setSedeSelId,
+    sedeActual,
+    loading,
+    disponibles,
+    noDisponibles,
+    conteos,
+    maxConteo,
+    confirmando,
+    setConfirmando,
+    eliminarMutation,
+  } = useAlmuerzosData();
+
+  return (
+    <div className="flex-1 overflow-y-auto bg-background text-on-background">
+      <div className="max-w-4xl mx-auto p-container-padding">
+        {/* Page Header */}
+        <div className="mb-8 flex items-start gap-4">
+          <div className="w-12 h-12 rounded-xl bg-tertiary-fixed-dim/20 flex items-center justify-center text-tertiary shrink-0">
+            <span className="material-symbols-outlined text-2xl" style={{ fontVariationSettings: "'FILL' 1" }}>
+              restaurant
+            </span>
+          </div>
+          <div>
+            <h2 className="font-headline-md text-headline-md text-on-background">Horarios de almuerzo</h2>
+            <p className="font-body-md text-body-md text-on-surface-variant mt-1">
+              Bloqueo de 1 hora fija en la agenda de cada profesional
+            </p>
+          </div>
+        </div>
+
+        {/* Location Tabs */}
+        <div className="border-b border-outline-variant/30 mb-6 flex overflow-x-auto">
+          {sedes.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => setSedeSelId(s.id)}
+              className={cn(
+                'px-6 py-3 border-b-2 font-headline-sm text-sm whitespace-nowrap transition-colors',
+                sedeId === s.id
+                  ? 'border-primary text-primary bg-surface-variant/10'
+                  : 'border-transparent text-on-surface-variant font-medium hover:text-primary',
+              )}
+            >
+              {s.nombre}
+            </button>
+          ))}
+        </div>
+
+        {loading ? (
+          <div className="flex justify-center py-12">
+            <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : disponibles.length === 0 && noDisponibles.length === 0 ? (
+          <div className="text-center py-12 text-on-surface-variant">
+            <p className="text-2xl mb-2">🍽</p>
+            <p className="text-sm">No hay profesionales elegibles en esta sede</p>
+          </div>
+        ) : (
+          <>
+            {/* Staff List (disponibles hoy) */}
+            <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/50 shadow-sm overflow-visible flex flex-col gap-[1px] bg-outline-variant/20">
+              {disponibles.map((prof) => (
+                <FilaProfesional key={prof.id} prof={prof} sedeId={sedeId} onEliminar={setConfirmando} />
+              ))}
+              {disponibles.length === 0 && (
+                <div className="p-6 bg-surface-container-lowest text-center text-sm text-on-surface-variant">
+                  Ningún profesional disponible hoy en esta sede.
+                </div>
+              )}
+            </div>
+
+            {/* No disponibles hoy (bug fix: vacaciones / sin turno hoy — colapsados) */}
+            {noDisponibles.length > 0 && (
+              <details className="mt-4 group">
+                <summary className="cursor-pointer text-xs font-semibold text-on-surface-variant hover:text-on-surface select-none">
+                  No disponibles hoy ({noDisponibles.length}) — vacaciones o sin turno ▾
+                </summary>
+                <div className="mt-2 bg-surface-container-lowest rounded-xl border border-outline-variant/50 shadow-sm overflow-visible flex flex-col gap-[1px] bg-outline-variant/20">
+                  {noDisponibles.map((prof) => (
+                    <FilaProfesional key={prof.id} prof={prof} sedeId={sedeId} onEliminar={setConfirmando} />
+                  ))}
+                </div>
+              </details>
+            )}
+
+            {/* Distribución de almuerzos (siempre visible, según el mockup) */}
+            <div className="mt-8 bg-surface-container-lowest rounded-xl border border-outline-variant/50 shadow-sm p-6">
+              <h3 className="font-label-caps text-label-caps text-on-surface-variant mb-6 uppercase">
+                Distribución de almuerzos — {sedeActual?.nombre ?? ''}
+              </h3>
+              <div className="space-y-4">
+                {conteos.map((c) => (
+                  <div key={c.id} className="flex items-center gap-4">
+                    <div className="w-20 font-mono-label text-mono-label text-on-surface-variant shrink-0">
+                      {c.horaInicio} -<br />{c.horaFin}
+                    </div>
+                    <div className="flex-1 h-2 bg-surface-container-high rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-tertiary-fixed-dim/80 rounded-full transition-all duration-300"
+                        style={{ width: `${(c.count / maxConteo) * 100}%` }}
+                      />
+                    </div>
+                    <div className="w-28 text-right font-body-md text-sm text-on-surface-variant shrink-0">
+                      {c.count} {c.count === 1 ? 'profesional' : 'profesionales'}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
         )}
       </div>
 
       {confirmando && (
         <ModalEliminar
           bloqueo={confirmando}
-          sedeName=""
+          sedeName={sedeActual?.nombre ?? ''}
           onConfirm={() => eliminarMutation.mutate(confirmando.id)}
           onClose={() => setConfirmando(null)}
           pending={eliminarMutation.isPending}
         />
       )}
-    </>
-  );
-}
-
-// ── Panel de resumen de distribución ─────────────────────────────────────────
-function PanelDistribucion({ bloqueos, sedeName }: { bloqueos: BloqueoAlmuerzo[]; sedeName: string }) {
-  const conteos = TURNOS_ALMUERZO.map(t => ({
-    ...t,
-    count: bloqueos.filter(b => b.horaInicio === t.horaInicio).length,
-  }));
-  const max = Math.max(...conteos.map(c => c.count), 1);
-
-  return (
-    <div className="bg-white border border-slate-200 rounded-xl p-4">
-      <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">
-        Distribución de almuerzos — {sedeName}
-      </p>
-      <div className="space-y-2.5">
-        {conteos.map(c => (
-          <div key={c.id} className="flex items-center gap-3">
-            <span className="text-xs font-mono text-slate-500 w-20 shrink-0">{c.label}</span>
-            <div className="flex-1 bg-slate-100 rounded-full h-3 overflow-hidden">
-              <div
-                className="h-full bg-amber-400 rounded-full transition-all duration-300"
-                style={{ width: `${(c.count / max) * 100}%` }}
-              />
-            </div>
-            <span className="text-xs font-semibold text-slate-700 w-20 text-right shrink-0">
-              {c.count} {c.count === 1 ? 'profesional' : 'profesionales'}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ── Página principal ──────────────────────────────────────────────────────────
-export function AlmuerzosPage() {
-  const [sedeSelId, setSedeSelId] = useState<string>('');
-
-  const { data: sedes = [] } = useQuery({
-    queryKey: ['sedes'],
-    queryFn: sedesApi.listar,
-  });
-
-  // Auto-seleccionar primera sede
-  const sedeId = sedeSelId || sedes[0]?.id || '';
-  const sedeActual = sedes.find(s => s.id === sedeId);
-  const esPazSoldan = sedeActual?.nombre === NOMBRE_PAZ_SOLDAN;
-
-  // Almuerzos de la sede
-  const { data: bloqueos = [], isLoading: loadingBloqueos } = useQuery({
-    queryKey: ['almuerzos', sedeId],
-    queryFn: () => almuerzosApi.listar(sedeId),
-    enabled: !!sedeId,
-  });
-
-  // Profesionales de la sede (filtramos al renderizar según el tipo/sede)
-  const { data: profesionales = [], isLoading: loadingProfs } = useQuery({
-    queryKey: ['profesionales-sede', sedeId],
-    queryFn: () => profesionalesApi.listar({ sedeId, activo: true }),
-    enabled: !!sedeId,
-  });
-
-  // Filtrar: podólogas en todas las sedes; fisioterapeutas solo en Paz Soldán
-  const profesionalesFiltrados = profesionales.filter(
-    p => p.tipo === 'podologa' || (p.tipo === 'fisioterapeuta' && esPazSoldan),
-  );
-
-  // Cruzar profesionales con sus almuerzos
-  const profesionalesConAlmuerzo: ProfesionalConAlmuerzo[] = profesionalesFiltrados.map(p => ({
-    id: p.id,
-    nombres: p.nombres,
-    apellidos: p.apellidos,
-    tipo: p.tipo,
-    colorAvatar: p.colorAvatar,
-    almuerzo: bloqueos.find(b => b.profesionalId === p.id) ?? null,
-  }));
-
-  const loading = loadingBloqueos || loadingProfs;
-
-  return (
-    <div className="flex-1 overflow-y-auto bg-slate-50">
-      {/* Header */}
-      <div className="bg-white border-b border-slate-200 px-6 py-4 flex items-center gap-3 sticky top-0 z-10">
-        <div className="w-9 h-9 rounded-xl bg-amber-500 flex items-center justify-center shrink-0">
-          <span className="text-white text-lg">🍽</span>
-        </div>
-        <div>
-          <h1 className="text-base font-bold text-slate-900">Horarios de almuerzo</h1>
-          <p className="text-xs text-slate-500">
-            Bloqueo de 1 hora fija en la agenda de cada profesional
-          </p>
-        </div>
-      </div>
-
-      {/* Tabs de sede */}
-      <div className="bg-white border-b border-slate-200 px-6 flex gap-0 overflow-x-auto">
-        {sedes.map(s => (
-          <button
-            key={s.id}
-            onClick={() => setSedeSelId(s.id)}
-            className={cn(
-              'px-4 py-2.5 text-sm font-medium border-b-2 transition-all whitespace-nowrap',
-              sedeId === s.id
-                ? 'border-amber-500 text-amber-700'
-                : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300',
-            )}
-          >
-            {s.nombre}
-          </button>
-        ))}
-      </div>
-
-      <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
-        {loading ? (
-          <div className="flex justify-center py-12">
-            <div className="w-8 h-8 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
-          </div>
-        ) : profesionalesFiltrados.length === 0 ? (
-          <div className="text-center py-12 text-slate-400">
-            <p className="text-2xl mb-2">🍽</p>
-            <p className="text-sm">No hay profesionales elegibles en esta sede</p>
-          </div>
-        ) : (
-          <>
-            {/* Lista de profesionales */}
-            <div className="space-y-2">
-              {profesionalesConAlmuerzo.map(prof => (
-                <FilaProfesional key={prof.id} prof={prof} sedeId={sedeId} />
-              ))}
-            </div>
-
-            {/* Panel de distribución */}
-            {bloqueos.length > 0 && (
-              <PanelDistribucion bloqueos={bloqueos} sedeName={sedeActual?.nombre ?? ''} />
-            )}
-          </>
-        )}
-      </div>
     </div>
   );
 }

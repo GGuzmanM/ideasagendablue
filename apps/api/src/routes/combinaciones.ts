@@ -98,7 +98,7 @@ router.post('/', requireAuth, requireAdmin, async (req, res) => {
   const guardado = await prisma.$transaction(async (tx) => {
     const c = existente
       ? await tx.combinacionPermitida.update({ where: { id: existente.id }, data: { activo: true, deletedAt: null } })
-      : await tx.combinacionPermitida.create({ data: { servicioExtraId } });
+      : await tx.combinacionPermitida.create({ data: { servicioExtraId, creadoPor: req.user?.userId } });
     await auditEnTx(tx, {
       usuarioId: req.user?.userId,
       accion: existente ? 'reactivar_combinacion' : 'crear_combinacion',

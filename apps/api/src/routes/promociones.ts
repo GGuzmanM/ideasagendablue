@@ -58,7 +58,7 @@ router.post('/', requireAuth, requireGestor, async (req, res) => {
   const promo = await prisma.$transaction(async (tx) => {
     const p = existente
       ? await tx.promocion.update({ where: { id: existente.id }, data: { activo: true, deletedAt: null, descripcion: data.descripcion ?? null, tipo: data.tipo, valor } })
-      : await tx.promocion.create({ data: { nombre, descripcion: data.descripcion ?? null, tipo: data.tipo, valor, orden: (max._max.orden ?? 0) + 1 } });
+      : await tx.promocion.create({ data: { nombre, descripcion: data.descripcion ?? null, tipo: data.tipo, valor, orden: (max._max.orden ?? 0) + 1, creadoPor: req.user?.userId } });
     await auditEnTx(tx, {
       usuarioId: req.user?.userId, accion: existente ? 'reactivar_promocion' : 'crear_promocion',
       entidad: 'promocion', entidadId: p.id, despues: { nombre, tipo: data.tipo, valor }, ip: req.ip,

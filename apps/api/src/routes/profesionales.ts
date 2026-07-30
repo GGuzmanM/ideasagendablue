@@ -281,7 +281,7 @@ const profesionalSchema = z.object({
 router.post('/', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (req, res) => {
   const data = profesionalSchema.parse(req.body);
   const profesional = await prisma.profesional.create({
-    data,
+    data: { ...data, creadoPor: req.user?.userId },
     include: { unidadNegocio: { select: { id: true, nombre: true, color: true, modoReserva: true } } },
   });
   res.status(201).json(profesional);

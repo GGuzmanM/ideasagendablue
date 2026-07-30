@@ -307,6 +307,9 @@ export interface DatosReniec {
   apellidoPaterno: string;
   apellidoMaterno: string;
   nombreCompleto: string;
+  // Extras de PeruDevs (pueden faltar → null):
+  sexo?: 'masculino' | 'femenino' | 'otro' | null;
+  fechaNacimiento?: string | null; // ISO "YYYY-MM-DD"
 }
 
 export const reniecApi = {

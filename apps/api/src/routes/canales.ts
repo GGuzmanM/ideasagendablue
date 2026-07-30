@@ -42,7 +42,7 @@ router.post('/', requireAuth, requireGestor, async (req, res) => {
     return res.status(201).json(reactivado);
   }
   const max = await prisma.canal.aggregate({ _max: { orden: true } });
-  const canal = await prisma.canal.create({ data: { valor, etiqueta: etiqueta.trim(), orden: (max._max.orden ?? 0) + 1, activo: true } });
+  const canal = await prisma.canal.create({ data: { valor, etiqueta: etiqueta.trim(), orden: (max._max.orden ?? 0) + 1, activo: true, creadoPor: req.user?.userId } });
   res.status(201).json(canal);
 });
 

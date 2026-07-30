@@ -80,7 +80,7 @@ router.post('/:profesionalId', requireAuth, requireRol('admin', 'coordinadora_se
     await prisma.competenciaProfesional.upsert({
       where: { profesionalId_servicioId: { profesionalId, servicioId } },
       update: { activa: true, soloPorSolicitud: true },
-      create: { profesionalId, servicioId, habilitadoDesde: new Date(), activa: true, soloPorSolicitud: true },
+      create: { profesionalId, servicioId, habilitadoDesde: new Date(), activa: true, soloPorSolicitud: true, creadoPor: req.user?.userId },
     });
   }
   await registrarAudit({

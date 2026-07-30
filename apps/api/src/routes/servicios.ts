@@ -79,7 +79,7 @@ router.post('/', requireAuth, requireRol('admin'), async (req, res) => {
   const data = servicioSchema.parse(req.body);
   // El código se asigna automáticamente para mantener el formato consistente por unidad.
   const codigo = await generarCodigo(data.unidadNegocioId);
-  const servicio = await prisma.servicio.create({ data: { ...data, codigo, precioReferencial: data.precioReferencial as never } });
+  const servicio = await prisma.servicio.create({ data: { ...data, codigo, precioReferencial: data.precioReferencial as never, creadoPor: req.user?.userId } });
   res.status(201).json(servicio);
 });
 
@@ -122,7 +122,7 @@ router.post('/:id/subcategorias', requireAuth, requireRol('admin'), async (req, 
   if (existe) throw new AppError('Ya existe una subcategoría con ese nombre', 409, 'SUBCATEGORIA_DUPLICADA');
   const sub = await prisma.$transaction(async (tx) => {
     const creada = await tx.subcategoriaServicio.create({
-      data: { servicioId: servicio.id, nombre: data.nombre, precioReferencial: data.precioReferencial as never, orden: data.orden ?? 0 },
+      data: { servicioId: servicio.id, nombre: data.nombre, precioReferencial: data.precioReferencial as never, orden: data.orden ?? 0, creadoPor: req.user?.userId },
     });
     await auditEnTx(tx, {
       usuarioId: req.user?.userId,

@@ -1,13 +1,12 @@
 import { AppError } from '../middleware/errorHandler';
 
-// ── Consulta de DNI vía apiperu.dev (basado en giansalex/peru-consult) ─────────
-// El token vive SOLO en el servidor (env RENIEC_API_TOKEN) y nunca se expone al
-// navegador. El endpoint público `/api/dni` de apiperu.dev devuelve únicamente
-// nombres + apellidos (RENIEC básico); fecha de nacimiento / sexo NO vienen en
-// ese plan, así que solo normalizamos lo que llega.
+// ── Consulta de DNI vía PeruDevs (api.perudevs.com/api/v1/dni/complete) ────────
+// El token vive SOLO en el servidor (env PERUDEVS_DNI_TOKEN) y nunca se expone al
+// navegador. Este plan SÍ devuelve nombres, apellidos, género y fecha de nacimiento.
+// Se mantiene compat: el token viejo RENIEC_API_TOKEN sirve de respaldo.
 
-const API_URL = process.env.RENIEC_API_URL || 'https://apiperu.dev/api/dni';
-const API_TOKEN = process.env.RENIEC_API_TOKEN || '';
+const API_URL = process.env.PERUDEVS_DNI_URL || 'https://api.perudevs.com/api/v1/dni/complete';
+const API_TOKEN = process.env.PERUDEVS_DNI_TOKEN || process.env.RENIEC_API_TOKEN || '';
 
 export interface DatosReniec {
   numeroDocumento: string;
@@ -15,19 +14,41 @@ export interface DatosReniec {
   apellidoPaterno: string;
   apellidoMaterno: string;
   nombreCompleto: string;
+  // Extras que trae PeruDevs (pueden faltar → null):
+  sexo: 'masculino' | 'femenino' | 'otro' | null;
+  fechaNacimiento: string | null; // ISO "YYYY-MM-DD"
 }
 
-// Respuesta cruda de apiperu.dev
-interface ApiPeruResp {
-  success: boolean;
-  message?: string;
-  data?: {
-    numero: string;
-    nombre_completo: string;
+// Respuesta cruda de PeruDevs
+interface PeruDevsResp {
+  estado: boolean;
+  mensaje?: string;
+  resultado?: {
+    id: string;
     nombres: string;
     apellido_paterno: string;
     apellido_materno: string;
+    nombre_completo: string;
+    genero?: string;
+    fecha_nacimiento?: string; // "DD/MM/YYYY"
+    codigo_verificacion?: string | number;
   };
+}
+
+// "M" → masculino · "F" → femenino · cualquier otro término → otro.
+function mapSexo(genero?: string): 'masculino' | 'femenino' | 'otro' | null {
+  if (!genero) return null;
+  const g = genero.trim().toUpperCase();
+  if (g === 'M' || g.startsWith('MASC')) return 'masculino';
+  if (g === 'F' || g.startsWith('FEM')) return 'femenino';
+  return 'otro';
+}
+
+// "DD/MM/YYYY" → "YYYY-MM-DD" (formato del <input type="date">). null si no parsea.
+function mapFecha(fecha?: string): string | null {
+  if (!fecha) return null;
+  const m = fecha.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : null;
 }
 
 export async function consultarDni(dni: string): Promise<DatosReniec> {
@@ -35,23 +56,16 @@ export async function consultarDni(dni: string): Promise<DatosReniec> {
     throw new AppError('DNI inválido: debe tener 8 dígitos', 400, 'DNI_INVALIDO');
   }
   if (!API_TOKEN) {
-    throw new AppError('Consulta de DNI no configurada (falta RENIEC_API_TOKEN)', 503, 'RENIEC_NO_CONFIG');
+    throw new AppError('Consulta de DNI no configurada (falta PERUDEVS_DNI_TOKEN)', 503, 'RENIEC_NO_CONFIG');
   }
+
+  const url = `${API_URL}?document=${encodeURIComponent(dni)}&key=${encodeURIComponent(API_TOKEN)}`;
 
   let resp: Awaited<ReturnType<typeof fetch>>;
   try {
     const ctrl = new AbortController();
     const timeout = setTimeout(() => ctrl.abort(), 12_000);
-    resp = await fetch(API_URL, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${API_TOKEN}`,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      body: JSON.stringify({ dni }),
-      signal: ctrl.signal,
-    });
+    resp = await fetch(url, { method: 'GET', headers: { Accept: 'application/json' }, signal: ctrl.signal });
     clearTimeout(timeout);
   } catch {
     throw new AppError('No se pudo contactar el servicio de consulta de DNI', 502, 'RENIEC_UNREACHABLE');
@@ -61,24 +75,25 @@ export async function consultarDni(dni: string): Promise<DatosReniec> {
     throw new AppError('Token de consulta de DNI inválido o sin saldo', 502, 'RENIEC_AUTH');
   }
 
-  let json: ApiPeruResp;
+  let json: PeruDevsResp;
   try {
-    json = (await resp.json()) as ApiPeruResp;
+    json = (await resp.json()) as PeruDevsResp;
   } catch {
     throw new AppError('Respuesta inválida del servicio de consulta de DNI', 502, 'RENIEC_BAD_RESPONSE');
   }
 
-  if (!json.success || !json.data) {
-    // DNI no encontrado en RENIEC (o mensaje del proveedor)
-    throw new AppError(json.message || 'DNI no encontrado en RENIEC', 404, 'DNI_NO_ENCONTRADO');
+  if (!json.estado || !json.resultado) {
+    throw new AppError(json.mensaje || 'DNI no encontrado', 404, 'DNI_NO_ENCONTRADO');
   }
 
-  const d = json.data;
+  const r = json.resultado;
   return {
-    numeroDocumento: d.numero,
-    nombres: d.nombres,
-    apellidoPaterno: d.apellido_paterno,
-    apellidoMaterno: d.apellido_materno,
-    nombreCompleto: d.nombre_completo,
+    numeroDocumento: r.id || dni,
+    nombres: r.nombres,
+    apellidoPaterno: r.apellido_paterno,
+    apellidoMaterno: r.apellido_materno,
+    nombreCompleto: r.nombre_completo,
+    sexo: mapSexo(r.genero),
+    fechaNacimiento: mapFecha(r.fecha_nacimiento),
   };
 }

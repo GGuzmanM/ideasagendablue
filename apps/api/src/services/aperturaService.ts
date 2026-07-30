@@ -105,6 +105,7 @@ export async function aprobarApertura(params: AprobarParams) {
         vigenciaFin,
         origen: 'GENEXIS_APERTURA',
         familiaId: familia.id,
+        creadoPor: params.usuarioId ?? null,
         estado,
         activo: estado === 'ACTIVO',
       },

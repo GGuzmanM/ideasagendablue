@@ -92,8 +92,7 @@ export function Idea1NuevoPacienteModal(props: UseNuevoPacienteFormProps) {
               </button>
             </div>
             <p className="text-[11px] text-on-surface-variant/70 mt-1.5">
-              La búsqueda por DNI autocompleta nombres, apellidos {/* y fecha de nacimiento cuando la API esté activa */}
-              (y fecha de nacimiento, próximamente).
+              La búsqueda por DNI autocompleta nombres, apellidos, fecha de nacimiento y sexo.
             </p>
           </div>
 
@@ -111,14 +110,43 @@ export function Idea1NuevoPacienteModal(props: UseNuevoPacienteFormProps) {
               <label className={LBL}>Apellido materno *</label>
               <input value={apellidoMaterno} onChange={(e) => setApellidoMaterno(e.target.value)} className={INP} placeholder="Ej. García" />
             </div>
+
+            {/* Sexo — radios clásicos, al costado del apellido materno (misma celda del grid).
+                Se marca según la API PeruDevs: M→Masculino, F→Femenino. */}
             <div>
               <label className={LBL}>Sexo</label>
-              <select value={sexo} onChange={(e) => setSexo(e.target.value)} className={INP + ' font-medium'}>
-                <option value="">—</option>
-                <option value="masculino">Masculino</option>
-                <option value="femenino">Femenino</option>
-                <option value="otro">Otro</option>
-              </select>
+              <div className="flex items-center gap-8 h-[38px] px-1">
+                {(['masculino', 'femenino'] as const).map((val) => {
+                  const activo = sexo === val;
+                  const label = val === 'masculino' ? 'Masculino' : 'Femenino';
+                  return (
+                    <label key={val} className="flex items-center gap-2.5 cursor-pointer group select-none">
+                      <input
+                        type="radio"
+                        name="sexo-paciente"
+                        checked={activo}
+                        onChange={() => setSexo(val)}
+                        className="sr-only"
+                      />
+                      {/* Círculo del radio: borde + punto interior que se rellena al marcar */}
+                      <span
+                        className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
+                          activo ? 'border-primary' : 'border-outline-variant group-hover:border-primary/60'
+                        }`}
+                      >
+                        <span
+                          className={`w-2.5 h-2.5 rounded-full bg-primary transition-transform duration-150 ${
+                            activo ? 'scale-100' : 'scale-0'
+                          }`}
+                        />
+                      </span>
+                      <span className={`text-sm transition-colors ${activo ? 'font-bold text-on-surface' : 'font-medium text-on-surface-variant group-hover:text-on-surface'}`}>
+                        {label}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
             </div>
           </div>
 

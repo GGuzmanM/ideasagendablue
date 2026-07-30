@@ -23,7 +23,7 @@ router.get('/', requireAuth, requireRol('admin'), async (_req, res) => {
 
 router.post('/', requireAuth, requireRol('admin'), async (req, res) => {
   const data = subSchema.parse(req.body);
-  const sub = await prisma.webhookSubscription.create({ data });
+  const sub = await prisma.webhookSubscription.create({ data: { ...data, creadoPor: req.user?.userId } });
   res.status(201).json(sub);
 });
 

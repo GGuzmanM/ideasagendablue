@@ -450,6 +450,7 @@ router.post('/', requireAuth, async (req, res) => {
           telefono: data.telefono,
           fechaNacimiento: data.fechaNacimiento ? new Date(data.fechaNacimiento) : null,
         }),
+        creadoPor: req.user?.userId,
         ...residencia,
       },
     });

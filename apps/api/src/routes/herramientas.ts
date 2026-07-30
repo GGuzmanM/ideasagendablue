@@ -49,7 +49,7 @@ router.put('/mail-config', requireAuth, requireRol('admin'), async (req, res) =>
   if (existente) {
     await prisma.mailConfig.update({ where: { id: existente.id }, data: { fromEmail, fromName } });
   } else {
-    await prisma.mailConfig.create({ data: { fromEmail, fromName, isActive: true } });
+    await prisma.mailConfig.create({ data: { fromEmail, fromName, isActive: true, creadoPor: req.user?.userId } });
   }
 
   res.json(await configPublica());

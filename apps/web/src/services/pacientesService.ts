@@ -261,8 +261,8 @@ export function useNuevoPacienteForm({ onClose, onCreated }: UseNuevoPacienteFor
   // Edad autocalculada desde la fecha de nacimiento.
   const edad = useMemo(() => calcularEdad(fechaNacimiento), [fechaNacimiento]);
 
-  // El botón "Buscar" solo aplica a DNI (8 dígitos). La API definitiva (en compra) traerá
-  // nombres, apellidos y fecha de nacimiento; por ahora se usa RENIEC (nombres/apellidos).
+  // El botón "Buscar" solo aplica a DNI (8 dígitos). Consulta PeruDevs vía el backend
+  // (GET /reniec/dni/:dni) y trae nombres, apellidos, fecha de nacimiento y sexo.
   const puedeBuscar = tipoDocumento === 'DNI' && /^\d{8}$/.test(numeroDocumento.trim());
 
   const buscarPorDocumento = async () => {
@@ -270,9 +270,12 @@ export function useNuevoPacienteForm({ onClose, onCreated }: UseNuevoPacienteFor
     setBuscando(true);
     try {
       const d = await reniecApi.consultarDni(numeroDocumento.trim());
-      setNombres((v) => (v.trim() ? v : toTitleCase(d.nombres)));
-      setApellidoPaterno((v) => (v.trim() ? v : toTitleCase(d.apellidoPaterno)));
-      setApellidoMaterno((v) => (v.trim() ? v : toTitleCase(d.apellidoMaterno)));
+      // "Buscar" explícito → setea los datos oficiales del documento.
+      setNombres(toTitleCase(d.nombres));
+      setApellidoPaterno(toTitleCase(d.apellidoPaterno));
+      setApellidoMaterno(toTitleCase(d.apellidoMaterno));
+      if (d.fechaNacimiento) setFechaNacimiento(d.fechaNacimiento);
+      if (d.sexo) setSexo(d.sexo);
       toast.success('Datos encontrados');
     } catch (e) {
       toast(e instanceof Error ? e.message : 'No se pudieron obtener los datos del documento', { icon: 'ℹ️' });

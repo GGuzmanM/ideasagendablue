@@ -59,6 +59,7 @@ router.post('/', ...editarAdmins, async (req, res) => {
       passwordHash,
       rol: data.rol,
       activo: data.activo,
+      creadoPor: req.user?.userId,
     },
     select: { id: true, nombre: true, email: true, rol: true, activo: true, creadoEn: true },
   });

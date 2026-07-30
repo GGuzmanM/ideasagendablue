@@ -97,7 +97,7 @@ router.post('/:sedeId/excepciones', requireAuth, async (req, res) => {
 
   const exc = await prisma.excepcionHorario.upsert({
     where: { sedeId_fecha: { sedeId, fecha } },
-    create: { sedeId, fecha, abierto: body.abierto, horaApertura: body.horaApertura ?? null, horaCierre: body.horaCierre ?? null, nota: body.nota ?? null },
+    create: { sedeId, fecha, abierto: body.abierto, horaApertura: body.horaApertura ?? null, horaCierre: body.horaCierre ?? null, nota: body.nota ?? null, creadoPor: req.user?.userId },
     update: { abierto: body.abierto, horaApertura: body.horaApertura ?? null, horaCierre: body.horaCierre ?? null, nota: body.nota ?? null },
   });
 

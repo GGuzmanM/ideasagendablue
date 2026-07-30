@@ -74,7 +74,7 @@ router.post('/toggle', requireAuth, requireRol('admin', 'coordinadora_sedes'), a
     res.json(updated);
   } else {
     const created = await prisma.competenciaProfesional.create({
-      data: { profesionalId, servicioId, habilitadoDesde: new Date(), activa },
+      data: { profesionalId, servicioId, habilitadoDesde: new Date(), activa, creadoPor: req.user?.userId },
     });
     await registrarAudit({
       usuarioId: req.user?.userId,

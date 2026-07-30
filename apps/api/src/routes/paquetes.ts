@@ -154,6 +154,7 @@ router.post('/paciente/:pacienteId', requireAuth, async (req, res) => {
         // Genexis: nace GENEXIS_APERTURA sin anclar; recepción adjudica la sesión al agendar.
         origen: data.origenGenexis ? 'GENEXIS_APERTURA' : 'AGENDA',
         estado: 'ACTIVO',
+        creadoPor: req.user?.userId,
       },
       include: { paquete: { include: { servicio: true } } },
     });
@@ -205,7 +206,7 @@ const plantillaSchema = z.object({
 router.post('/', requireAuth, requireRol('admin'), async (req, res) => {
   const data = plantillaSchema.parse(req.body);
   const paquete = await prisma.paquete.create({
-    data: { ...data, precio: data.precio as never },
+    data: { ...data, precio: data.precio as never, creadoPor: req.user?.userId },
     include: { servicio: { select: { id: true, nombre: true, color: true } } },
   });
   res.status(201).json(paquete);

@@ -201,7 +201,7 @@ router.get('/recepcionistas', ...gestion, async (_req, res) => {
 
 router.post('/recepcionistas', ...gestion, async (req, res) => {
   const { nombre } = z.object({ nombre: z.string().min(2).max(120) }).parse(req.body);
-  const r = await prisma.recepcionista.create({ data: { nombre: nombre.trim() } });
+  const r = await prisma.recepcionista.create({ data: { nombre: nombre.trim(), creadoPor: req.user?.userId } });
   res.status(201).json(r);
 });
 

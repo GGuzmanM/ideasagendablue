@@ -72,7 +72,7 @@ router.post('/', requireAuth, requirePermiso('roles.editar'), async (req, res) =
   const data = crearSchema.parse(req.body);
   const existe = await prisma.rol.findUnique({ where: { nombre: data.nombre } });
   if (existe) throw new AppError('Ya existe un rol con ese nombre interno', 409);
-  const rol = await prisma.rol.create({ data: { ...data, esSistema: false } });
+  const rol = await prisma.rol.create({ data: { ...data, esSistema: false, creadoPor: req.user?.userId } });
   res.status(201).json(rol);
 });
 

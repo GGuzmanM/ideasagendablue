@@ -104,7 +104,7 @@ router.post('/', requireAuth, requireGestor, async (req, res) => {
 
   const creada = await prisma.$transaction(async (tx) => {
     const promo = await tx.promocion.create({
-      data: { nombre: data.nombre, descripcion: data.descripcion, tipo: 'MEMBRESIA', valor: data.precio ?? null },
+      data: { nombre: data.nombre, descripcion: data.descripcion, tipo: 'MEMBRESIA', valor: data.precio ?? null, creadoPor: req.user?.userId },
     });
     const plantilla = await tx.paquete.create({
       data: {
@@ -117,6 +117,7 @@ router.post('/', requireAuth, requireGestor, async (req, res) => {
         sedesHabilitadas: data.sedesHabilitadas ?? undefined,
         promocionId: promo.id,
         precio: data.precio ?? null,
+        creadoPor: req.user?.userId,
       },
     });
     await auditEnTx(tx, {
@@ -305,6 +306,7 @@ router.post('/:id/vender', requireAuth, async (req, res) => {
         origen: 'AGENDA',
         promocionId: promo.id,
         estado: 'ACTIVO',
+        creadoPor: req.user?.userId,
       },
     });
     await auditEnTx(tx, {
