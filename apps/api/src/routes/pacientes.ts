@@ -33,6 +33,8 @@ const crearPacienteSchema = z.object({
   ubigeoId: z.union([z.string().regex(/^\d{6}$/, 'ubigeoId debe ser un código UBIGEO de 6 dígitos'), z.null()]).optional(),
   // País ISO 3166-1 alpha-2, SOLO válido junto a ubigeoId=999999 (Extranjero).
   paisResidencia: z.union([z.string().trim().toUpperCase().regex(/^[A-Z]{2}$/, 'paisResidencia debe ser código ISO de 2 letras'), z.null()]).optional(),
+  // Canal de captación / origen del paciente (FK a Canal)
+  canalId: z.union([z.string().uuid(), z.null()]).optional(),
 });
 
 // ─── Búsqueda con trigram ─────────────────────────────────────────────────────
@@ -114,6 +116,7 @@ router.get('/:id', requireAuth, requireScope('patients:read'), async (req, res) 
   const paciente = await prisma.paciente.findUnique({
     where: { id: req.params.id, deletedAt: null },
     include: {
+      canal: { select: { id: true, valor: true, etiqueta: true } },
       paquetes: {
         where: { deletedAt: null },
         include: { paquete: { include: { servicio: true } } },
@@ -443,6 +446,7 @@ router.post('/', requireAuth, async (req, res) => {
         fechaNacimiento: data.fechaNacimiento ? new Date(data.fechaNacimiento) : undefined,
         sexo: data.sexo as never,
         notas: data.notas,
+        canalId: data.canalId,
         // Bandera "actualizar datos": SIEMPRE calculada server-side (el schema zod
         // no la acepta del cliente).
         requiereActualizacionDatos: faltanDatosPaciente({
@@ -459,7 +463,7 @@ router.post('/', requireAuth, async (req, res) => {
       accion: 'crear_paciente',
       entidad: 'paciente',
       entidadId: p.id,
-      despues: { nombres: p.nombres, apellidoPaterno: p.apellidoPaterno, apellidoMaterno: p.apellidoMaterno, tipoDocumento: p.tipoDocumento, numeroDocumento: p.numeroDocumento, telefono: p.telefono, email: p.email, ubigeoId: p.ubigeoId, paisResidencia: p.paisResidencia },
+      despues: { nombres: p.nombres, apellidoPaterno: p.apellidoPaterno, apellidoMaterno: p.apellidoMaterno, tipoDocumento: p.tipoDocumento, numeroDocumento: p.numeroDocumento, telefono: p.telefono, email: p.email, ubigeoId: p.ubigeoId, paisResidencia: p.paisResidencia, canalId: p.canalId },
       ip: req.ip,
     });
     return p;
@@ -510,6 +514,7 @@ router.patch('/:id', requireAuth, async (req, res) => {
         tipoDocumento: data.tipoDocumento as never,
         sexo: data.sexo as never,
         fechaNacimiento: data.fechaNacimiento ? new Date(data.fechaNacimiento) : undefined,
+        canalId: data.canalId !== undefined ? data.canalId : undefined,
         requiereActualizacionDatos,
       },
     });
@@ -518,8 +523,8 @@ router.patch('/:id', requireAuth, async (req, res) => {
       accion: 'editar_paciente',
       entidad: 'paciente',
       entidadId: p.id,
-      antes: { nombres: antes.nombres, apellidoPaterno: antes.apellidoPaterno, apellidoMaterno: antes.apellidoMaterno, numeroDocumento: antes.numeroDocumento, telefono: antes.telefono, email: antes.email, ubigeoId: antes.ubigeoId, paisResidencia: antes.paisResidencia },
-      despues: { nombres: p.nombres, apellidoPaterno: p.apellidoPaterno, apellidoMaterno: p.apellidoMaterno, numeroDocumento: p.numeroDocumento, telefono: p.telefono, email: p.email, ubigeoId: p.ubigeoId, paisResidencia: p.paisResidencia },
+      antes: { nombres: antes.nombres, apellidoPaterno: antes.apellidoPaterno, apellidoMaterno: antes.apellidoMaterno, numeroDocumento: antes.numeroDocumento, telefono: antes.telefono, email: antes.email, ubigeoId: antes.ubigeoId, paisResidencia: antes.paisResidencia, canalId: antes.canalId },
+      despues: { nombres: p.nombres, apellidoPaterno: p.apellidoPaterno, apellidoMaterno: p.apellidoMaterno, numeroDocumento: p.numeroDocumento, telefono: p.telefono, email: p.email, ubigeoId: p.ubigeoId, paisResidencia: p.paisResidencia, canalId: p.canalId },
       ip: req.ip,
     });
     return p;

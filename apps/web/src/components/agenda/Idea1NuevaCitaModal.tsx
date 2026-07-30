@@ -39,6 +39,8 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
     setNpFechaNacimiento,
     npSexo,
     setNpSexo,
+    npCanalId,
+    setNpCanalId,
     npEdad,
     puedeBuscarDni,
     buscarPorDocumento,
@@ -461,6 +463,20 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
                       className="w-full bg-white border border-outline-variant rounded-lg px-3 py-2 text-sm outline-none focus:border-primary"
                     />
                   </div>
+                </div>
+                {/* Canal de captación del paciente nuevo */}
+                <div>
+                  <label className="text-xs font-bold text-on-surface-variant block mb-1">Canal de captación</label>
+                  <select
+                    value={npCanalId ?? ''}
+                    onChange={(e) => setNpCanalId(e.target.value || null)}
+                    className="w-full bg-white border border-outline-variant rounded-lg px-3 py-2 text-sm outline-none focus:border-primary font-medium"
+                  >
+                    <option value="">— Sin especificar —</option>
+                    {canales.map((c) => (
+                      <option key={c.value} value={c.value}>{c.label}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
             )}

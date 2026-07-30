@@ -8,8 +8,8 @@ export function useCanales() {
     queryFn: canalesApi.activos,
     staleTime: 5 * 60_000,
   });
-  const canales = (data ?? []).map(c => ({ value: c.valor, label: c.etiqueta }));
-  const map = new Map((data ?? []).map(c => [c.valor, c.etiqueta]));
+  const canales = (data ?? []).map(c => ({ value: c.id, label: c.etiqueta }));
+  const map = new Map((data ?? []).map(c => [c.id, c.etiqueta]));
   const labelCanal = (v: string | null | undefined) => (v ? map.get(v) ?? v : '—');
-  return { canales, labelCanal };
+  return { canales, labelCanal, rawCanales: data ?? [] };
 }

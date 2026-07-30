@@ -48,6 +48,7 @@ export interface DatosPacienteForm {
   sexo: string;
   ubigeoId: string | null;
   paisResidencia: string | null;
+  canalId: string | null;
 }
 
 export function useFichaPaciente(id: string | undefined) {
@@ -83,7 +84,7 @@ export function useFichaPaciente(id: string | undefined) {
   const [form, setForm] = useState<DatosPacienteForm>({
     nombres: '', apellidoPaterno: '', apellidoMaterno: '', tipoDocumento: 'DNI',
     numeroDocumento: '', telefono: '', email: '', fechaNacimiento: '', sexo: '',
-    ubigeoId: null, paisResidencia: null,
+    ubigeoId: null, paisResidencia: null, canalId: null,
   });
   // Autollenado RENIEC (no destructivo: solo rellena campos de nombre vacíos).
   const [dniConsultando, setDniConsultando] = useState(false);
@@ -98,6 +99,7 @@ export function useFichaPaciente(id: string | undefined) {
       email: paciente.email ?? '', fechaNacimiento: (paciente.fechaNacimiento ?? '').slice(0, 10), sexo: paciente.sexo ?? '',
       // Paciente legado sin distrito → null (el componente queda vacío, sin crash).
       ubigeoId: paciente.ubigeoId ?? null, paisResidencia: paciente.paisResidencia ?? null,
+      canalId: paciente.canalId ?? null,
     });
     // Si el registro ya trae los 3 nombres completos, no re-consultamos RENIEC al
     // abrir (solo lo hará si el usuario CAMBIA el DNI). Si faltan nombres, dejamos
@@ -169,6 +171,7 @@ export function useFichaPaciente(id: string | undefined) {
       // El backend hace la regla de país (A4) y solo audita si realmente cambió.
       ubigeoId: form.ubigeoId,
       paisResidencia: form.ubigeoId === UBIGEO_EXTRANJERO ? form.paisResidencia : null,
+      canalId: form.canalId,
     } as never),
     onSuccess: () => {
       // Una sola fuente de verdad → refrescar TODO lo que muestra al paciente.
@@ -252,8 +255,8 @@ export function useNuevoPacienteForm({ onClose, onCreated }: UseNuevoPacienteFor
   const [email, setEmail] = useState('');
   const [ubigeoId, setUbigeoId] = useState<string | null>(null);
   const [paisResidencia, setPaisResidencia] = useState<string | null>(null);
-  // Categoría: NO existe columna en la BD todavía (será para el futuro historial médico).
-  // Se mantiene en el estado pero NO se envía al backend hasta agregar la columna/lista.
+  const [canalId, setCanalId] = useState<string | null>(null);
+  // Categoría: reservada para futuro uso adicional
   const [categoria, setCategoria] = useState('');
 
   const [buscando, setBuscando] = useState(false);
@@ -357,6 +360,7 @@ export function useNuevoPacienteForm({ onClose, onCreated }: UseNuevoPacienteFor
         sexo: sexo || undefined,
         ubigeoId,
         paisResidencia: ubigeoId === UBIGEO_EXTRANJERO ? paisResidencia : null,
+        canalId: canalId || undefined,
       } as never),
     onSuccess: (paciente) => {
       qc.invalidateQueries({ queryKey: ['pacientes-buscar'] });
@@ -401,6 +405,8 @@ export function useNuevoPacienteForm({ onClose, onCreated }: UseNuevoPacienteFor
     setUbigeoId,
     paisResidencia,
     setPaisResidencia,
+    canalId,
+    setCanalId,
     categoria,
     setCategoria,
 

@@ -121,6 +121,7 @@ export function useIdea1NuevaCitaForm({
   const [npEmail, setNpEmail] = useState('');
   const [npFechaNacimiento, setNpFechaNacimiento] = useState('');
   const [npSexo, setNpSexo] = useState('');
+  const [npCanalId, setNpCanalId] = useState<string | null>(null);
 
   // Estado RENIEC
   const [dniConsultando, setDniConsultando] = useState(false);
@@ -634,6 +635,7 @@ export function useIdea1NuevaCitaForm({
         email: npEmail.trim() || undefined,
         fechaNacimiento: npFechaNacimiento || undefined,
         sexo: npSexo || undefined,
+        canalId: npCanalId || undefined,
       });
     },
   });
@@ -714,6 +716,8 @@ export function useIdea1NuevaCitaForm({
     setNpFechaNacimiento,
     npSexo,
     setNpSexo,
+    npCanalId,
+    setNpCanalId,
     npEdad,
     puedeBuscarDni,
     buscarPorDocumento,

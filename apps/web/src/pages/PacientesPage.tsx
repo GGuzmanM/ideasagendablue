@@ -17,6 +17,7 @@ import { DistritoAutocomplete, PaisAutocomplete } from '../components/ui/Distrit
 import { etiquetaDistrito } from '../data/ubigeo';
 import { UBIGEO_EXTRANJERO, nombrePais } from '@limablue/shared';
 import { usePacientesBusqueda, useFichaPaciente } from '../services/pacientesService';
+import { useCanales } from '../hooks/useCanales';
 
 // ─── Lista/búsqueda ───────────────────────────────────────────────────────────
 
@@ -181,6 +182,8 @@ export function FichaPacientePage() {
     abrirEdicionDatos,
     guardarDatosMutation,
   } = useFichaPaciente(id);
+
+  const { canales, labelCanal } = useCanales();
 
   // Estilo de inputs (diseño idea1) + resaltado ámbar para campos faltantes.
   const INPUT_CLS = 'w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2.5 text-sm text-on-surface outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all';
@@ -372,6 +375,19 @@ export function FichaPacientePage() {
                         <PaisAutocomplete value={form.paisResidencia} onChange={(c) => setForm(f => ({ ...f, paisResidencia: c }))} />
                       </div>
                     )}
+                    <div className="col-span-2">
+                      <span className="text-xs text-on-surface-variant block mb-0.5">Canal de captación</span>
+                      <select
+                        className={INPUT_CLS}
+                        value={form.canalId ?? ''}
+                        onChange={e => setForm(f => ({ ...f, canalId: e.target.value || null }))}
+                      >
+                        <option value="">— Sin especificar —</option>
+                        {canales.map(c => (
+                          <option key={c.value} value={c.value}>{c.label}</option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                   <div className="flex gap-2">
                     <button
@@ -398,6 +414,7 @@ export function FichaPacientePage() {
                     ['Distrito', paciente.ubigeoId
                       ? `${etiquetaDistrito(paciente.ubigeoId)}${paciente.ubigeoId === UBIGEO_EXTRANJERO && paciente.paisResidencia ? ` · ${nombrePais(paciente.paisResidencia)}` : ''}`
                       : '—'],
+                    ['Canal de captación', paciente.canalId ? labelCanal(paciente.canalId) : '—'],
                   ].map(([label, val]) => (
                     <div key={label} className="space-y-0">
                       <p className="font-label-caps text-[10px] uppercase tracking-wider text-on-surface-variant/80">{label}</p>

@@ -245,6 +245,9 @@ export interface Paciente {
   ubigeoId?: string | null;
   // País ISO-2, solo cuando ubigeoId=999999
   paisResidencia?: string | null;
+  // Canal de captación / origen del paciente
+  canalId?: string | null;
+  canal?: { id: string; valor: string; etiqueta: string } | null;
   creadoEn: string;
   alerta?: AlertaPaciente | null;
   familiares?: FamiliarPaciente[] | null;

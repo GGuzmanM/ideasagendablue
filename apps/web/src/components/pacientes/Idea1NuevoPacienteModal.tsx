@@ -1,6 +1,7 @@
 import { DistritoAutocomplete, PaisAutocomplete } from '../ui/DistritoAutocomplete';
 import { UBIGEO_EXTRANJERO } from '@limablue/shared';
 import { useNuevoPacienteForm, type UseNuevoPacienteFormProps } from '../../services/pacientesService';
+import { useCanales } from '../../hooks/useCanales';
 
 // Estilos base de inputs (mismo lenguaje que el modal de Nueva Cita).
 const INP =
@@ -20,7 +21,7 @@ export function Idea1NuevoPacienteModal(props: UseNuevoPacienteFormProps) {
     email, setEmail,
     ubigeoId, setUbigeoId,
     paisResidencia, setPaisResidencia,
-    categoria, setCategoria,
+    canalId, setCanalId,
     edad,
     puedeBuscar,
     buscando,
@@ -28,6 +29,8 @@ export function Idea1NuevoPacienteModal(props: UseNuevoPacienteFormProps) {
     crearMutation,
     puedeGuardar,
   } = useNuevoPacienteForm(props);
+
+  const { canales } = useCanales();
 
   return (
     <div className="fixed inset-0 bg-inverse-surface/40 backdrop-blur-[2px] z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
@@ -201,21 +204,21 @@ export function Idea1NuevoPacienteModal(props: UseNuevoPacienteFormProps) {
             </div>
           )}
 
-          {/* Categoría (aún no persiste — futura para historial médico) */}
+          {/* Canal de captación */}
           <div>
-            <label className={LBL}>Categoría</label>
+            <label className={LBL}>Canal de captación</label>
             <select
-              value={categoria}
-              onChange={(e) => setCategoria(e.target.value)}
-              disabled
-              className={INP + ' font-medium opacity-60 cursor-not-allowed'}
-              title="Se habilitará con el módulo de historial médico"
+              value={canalId ?? ''}
+              onChange={(e) => setCanalId(e.target.value || null)}
+              className={INP + ' font-medium'}
             >
-              <option value="">— Próximamente —</option>
+              <option value="">— Sin especificar —</option>
+              {canales.map((c) => (
+                <option key={c.value} value={c.value}>
+                  {c.label}
+                </option>
+              ))}
             </select>
-            <p className="text-[11px] text-on-surface-variant/70 mt-1">
-              Aún no se guarda: requiere una columna en la base de datos (será para el historial médico).
-            </p>
           </div>
         </div>
 

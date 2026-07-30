@@ -58,6 +58,8 @@ model Canal {
   creadoEn      DateTime  @default(now())
   actualizadoEn DateTime  @updatedAt
 
+  pacientes     Paciente[]
+
   @@map("canales")
 }
 
@@ -632,6 +634,9 @@ model Paciente {
   // País de residencia ISO 3166-1 alpha-2 ("VE","CO"...). SOLO cuando
   // ubigeoId = 999999 (Extranjero); en cualquier otro caso el backend fuerza null.
   paisResidencia  String?
+  // Canal de captación / origen del paciente (FK a Canal)
+  canalId         String?       @db.Uuid
+  canal           Canal?        @relation(fields: [canalId], references: [id])
   deletedAt       DateTime?
 
   // ─── Import Genexis (migración del sistema antiguo) ──────────────────────────
@@ -654,6 +659,7 @@ model Paciente {
   @@index([numeroDocumento])
   @@index([telefono])
   @@index([ubigeoId])
+  @@index([canalId])
   // GIN trigram indexes are created via raw SQL in migration
   @@map("pacientes")
 }
