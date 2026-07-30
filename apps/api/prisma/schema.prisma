@@ -437,6 +437,8 @@ model BloqueoAgenda {
   // con esta bandera para pintarse como franja 🌴 "Vacaciones" en la agenda (vs rojo del permiso).
   // No cambia la semántica de disponibilidad (esta ya bloquea todo bloqueo no recurrente).
   esVacaciones Boolean     @default(false)
+  // Ausencia por enfermedad: bloquea agenda y se pinta como franja 🤒 "Enfermedad" (naranja).
+  esEnfermedad Boolean     @default(false)
   // Sincronización con el calendario del celular del profesional (reuniones): id del evento
   // Outlook (Daniel) para update/cancel; último error de sync (null = OK) para el reintentador.
   outlookEventId   String?

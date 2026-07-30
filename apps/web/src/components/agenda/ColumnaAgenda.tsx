@@ -80,11 +80,14 @@ function FranjaAlmuerzo({ horaInicio, horaFin, slotHeight }: { horaInicio: strin
 
 // ── Franja visual de permiso / bloqueo (rango horario manual) ─────────────────
 // Teal = vacaciones (día completo); Verde = reunión administrativa (Daniel/Yasica); Rojo = permiso.
-function FranjaPermiso({ horaInicio, horaFin, motivo, alturaSlots, slotHeight, esReunion = false, esVacaciones = false }: { horaInicio: string; horaFin: string; motivo: string; alturaSlots: number; slotHeight: number; esReunion?: boolean; esVacaciones?: boolean }) {
+function FranjaPermiso({ horaInicio, horaFin, motivo, alturaSlots, slotHeight, esReunion = false, esVacaciones = false, esEnfermedad = false }: { horaInicio: string; horaFin: string; motivo: string; alturaSlots: number; slotHeight: number; esReunion?: boolean; esVacaciones?: boolean; esEnfermedad?: boolean }) {
+  const isEnfermedad = esEnfermedad || motivo?.toLowerCase().includes('enfermedad') || motivo?.startsWith('🤒');
   const c = esVacaciones
     ? { bg: 'repeating-linear-gradient(135deg, #CCFBF1 0px, #CCFBF1 8px, #99F6E4 8px, #99F6E4 10px)', borde: '#0D9488', titulo: '#115E59', sub: '#0F766E', icono: '🌴', etiqueta: 'Vacaciones', tip: 'Vacaciones' }
     : esReunion
     ? { bg: 'repeating-linear-gradient(135deg, #DCFCE7 0px, #DCFCE7 8px, #BBF7D0 8px, #BBF7D0 10px)', borde: '#16A34A', titulo: '#166534', sub: '#15803D', icono: '🤝', etiqueta: 'Reunión', tip: 'Reunión' }
+    : isEnfermedad
+    ? { bg: 'repeating-linear-gradient(135deg, #FEF3C7 0px, #FEF3C7 8px, #FDE68A 8px, #FDE68A 10px)', borde: '#D97706', titulo: '#92400E', sub: '#B45309', icono: '🤒', etiqueta: 'Enfermedad', tip: 'Enfermedad' }
     : { bg: 'repeating-linear-gradient(135deg, #FEE2E2 0px, #FEE2E2 8px, #FECACA 8px, #FECACA 10px)', borde: '#E11D48', titulo: '#9F1239', sub: '#BE123C', icono: '🚫', etiqueta: 'Permiso', tip: 'Permiso' };
   return (
     <div
@@ -319,6 +322,7 @@ export function ColumnaAgenda({ profesional, citas, bloqueos = [], permisos = []
                   slotHeight={SLOT_HEIGHT}
                   esReunion={permiso.permiso.esReunion ?? false}
                   esVacaciones={permiso.permiso.esVacaciones ?? false}
+                  esEnfermedad={permiso.permiso.esEnfermedad ?? false}
                 />
               </div>
             );

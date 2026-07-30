@@ -18,6 +18,7 @@ import {
   api,
 } from '../api';
 import { citasApi, type CrearCitaInput, type CrearCitaCombinadaInput } from '../api/citas';
+import { calcularEdad } from './pacientesService';
 import { combinacionesApi } from '../api/combinaciones';
 import { usePaquetesPaciente } from '../api/paquetesSesiones';
 import { useCanales } from '../hooks/useCanales';
@@ -118,6 +119,8 @@ export function useIdea1NuevaCitaForm({
   const [npNumDoc, setNpNumDoc] = useState('');
   const [npTelefono, setNpTelefono] = useState('');
   const [npEmail, setNpEmail] = useState('');
+  const [npFechaNacimiento, setNpFechaNacimiento] = useState('');
+  const [npSexo, setNpSexo] = useState('');
 
   // Estado RENIEC
   const [dniConsultando, setDniConsultando] = useState(false);
@@ -189,67 +192,54 @@ export function useIdea1NuevaCitaForm({
     }
   }, [permitirCambiarSede, unidadesDeSede, unidadNegocioId]);
 
-  // AUTO-CONSULTA RENIEC y VERIFICACIÓN DE PACIENTE EXISTENTE por DNI
-  useEffect(() => {
-    if (modoPaciente !== 'nuevo') return;
+  // Edad autocalculada desde la fecha de nacimiento
+  const npEdad = useMemo(() => calcularEdad(npFechaNacimiento), [npFechaNacimiento]);
+
+  // Consulta MANUAL por botón para evitar consumo innecesario de API PeruDevs
+  const puedeBuscarDni = npTipoDoc === 'DNI' && /^\d{8}$/.test(npNumDoc.trim());
+
+  const buscarPorDocumento = async () => {
+    if (!puedeBuscarDni || dniConsultando) return;
     const doc = npNumDoc.trim();
-    const esDni = npTipoDoc === 'DNI';
-    const docValido = esDni ? /^\d{8}$/.test(doc) : doc.length >= 6;
-    if (!docValido) return;
-
-    const clave = `${npTipoDoc}:${doc}`;
-    if (dniConsultadoRef.current === clave) return;
-
-    dniConsultadoRef.current = clave;
-    let cancelado = false;
-
-    const t = setTimeout(async () => {
-      setDniConsultando(true);
-      try {
-        const encontrados = await pacientesApi.buscar(doc);
-        if (cancelado) return;
-        const yaRegistrado = encontrados.find(
-          (p: any) => p.numeroDocumento === doc && p.tipoDocumento === npTipoDoc,
-        );
-        if (yaRegistrado) {
-          const nombreComp = `${yaRegistrado.nombres} ${yaRegistrado.apellidoPaterno} ${yaRegistrado.apellidoMaterno || ''}`.trim();
-          setPacienteSeleccionado({
-            id: yaRegistrado.id,
-            nombres: yaRegistrado.nombres,
-            apellidoPaterno: yaRegistrado.apellidoPaterno,
-            apellidoMaterno: yaRegistrado.apellidoMaterno,
-            nombreCompleto: nombreComp,
-            telefono: yaRegistrado.telefono,
-            numeroDocumento: yaRegistrado.numeroDocumento,
-            alerta: yaRegistrado.alerta ?? undefined,
-            familiares: yaRegistrado.familiares ?? undefined,
-          });
-          setModoPaciente('existente');
-          toast.success(`Paciente ya registrado: ${nombreComp}. Se cargó automáticamente.`);
-          return;
-        }
-
-        if (!esDni) return;
-        const d = await reniecApi.consultarDni(doc);
-        if (cancelado) return;
-        setNpNombres(toTitleCase(d.nombres));
-        setNpApellidoPaterno(toTitleCase(d.apellidoPaterno));
-        setNpApellidoMaterno(toTitleCase(d.apellidoMaterno));
-        toast.success('Datos autocompletados desde RENIEC');
-      } catch (e: any) {
-        if (cancelado) return;
-        dniConsultadoRef.current = '';
-        toast(e?.message || 'No se pudo consultar RENIEC', { icon: 'ℹ️' });
-      } finally {
-        if (!cancelado) setDniConsultando(false);
+    setDniConsultando(true);
+    try {
+      // 1. Verificar si ya existe en la BD local
+      const encontrados = await pacientesApi.buscar(doc);
+      const yaRegistrado = encontrados.find(
+        (p: any) => p.numeroDocumento === doc && p.tipoDocumento === npTipoDoc,
+      );
+      if (yaRegistrado) {
+        const nombreComp = `${yaRegistrado.nombres} ${yaRegistrado.apellidoPaterno} ${yaRegistrado.apellidoMaterno || ''}`.trim();
+        setPacienteSeleccionado({
+          id: yaRegistrado.id,
+          nombres: yaRegistrado.nombres,
+          apellidoPaterno: yaRegistrado.apellidoPaterno,
+          apellidoMaterno: yaRegistrado.apellidoMaterno,
+          nombreCompleto: nombreComp,
+          telefono: yaRegistrado.telefono,
+          numeroDocumento: yaRegistrado.numeroDocumento,
+          alerta: yaRegistrado.alerta ?? undefined,
+          familiares: yaRegistrado.familiares ?? undefined,
+        });
+        setModoPaciente('existente');
+        toast.success(`Paciente ya registrado: ${nombreComp}. Se cargó automáticamente.`);
+        return;
       }
-    }, 500);
 
-    return () => {
-      cancelado = true;
-      clearTimeout(t);
-    };
-  }, [npNumDoc, npTipoDoc, modoPaciente]);
+      // 2. Si no existe en la BD, consultar PeruDevs / RENIEC
+      const d = await reniecApi.consultarDni(doc);
+      setNpNombres(toTitleCase(d.nombres));
+      setNpApellidoPaterno(toTitleCase(d.apellidoPaterno));
+      setNpApellidoMaterno(toTitleCase(d.apellidoMaterno));
+      if (d.fechaNacimiento) setNpFechaNacimiento(d.fechaNacimiento);
+      if (d.sexo) setNpSexo(d.sexo);
+      toast.success('Datos autocompletados desde RENIEC / PeruDevs');
+    } catch (e: any) {
+      toast(e?.message || 'No se pudo obtener datos del documento', { icon: 'ℹ️' });
+    } finally {
+      setDniConsultando(false);
+    }
+  };
 
   // Subida de Comprobante
   const handleSubirComprobante = useCallback(
@@ -642,6 +632,8 @@ export function useIdea1NuevaCitaForm({
         numeroDocumento: npNumDoc.trim(),
         telefono: npTelefono.trim(),
         email: npEmail.trim() || undefined,
+        fechaNacimiento: npFechaNacimiento || undefined,
+        sexo: npSexo || undefined,
       });
     },
   });
@@ -718,6 +710,13 @@ export function useIdea1NuevaCitaForm({
     setNpTelefono,
     npEmail,
     setNpEmail,
+    npFechaNacimiento,
+    setNpFechaNacimiento,
+    npSexo,
+    setNpSexo,
+    npEdad,
+    puedeBuscarDni,
+    buscarPorDocumento,
     dniConsultando,
     servicioId,
     setServicioId,

@@ -35,6 +35,13 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
     setNpTelefono,
     npEmail,
     setNpEmail,
+    npFechaNacimiento,
+    setNpFechaNacimiento,
+    npSexo,
+    setNpSexo,
+    npEdad,
+    puedeBuscarDni,
+    buscarPorDocumento,
     dniConsultando,
     servicioId,
     setServicioId,
@@ -319,7 +326,7 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
             {/* Formulario de Nuevo Paciente con RENIEC auto-fill */}
             {modoPaciente === 'nuevo' && (
               <div className="mt-3 p-4 bg-surface-container-low/50 border border-outline-variant/40 rounded-xl space-y-3 animate-in fade-in">
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-[120px_1fr_auto] gap-3 items-end">
                   <div>
                     <label className="text-xs font-bold text-on-surface-variant block mb-1">Tipo Documento</label>
                     <select
@@ -328,29 +335,42 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
                       className="w-full bg-white border border-outline-variant rounded-lg px-3 py-2 text-sm outline-none focus:border-primary font-medium"
                     >
                       <option value="DNI">DNI (Perú)</option>
-                      <option value="CE">Carné Extranjería (CE)</option>
+                      <option value="CE">Carné Ext. (CE)</option>
                       <option value="PASAPORTE">Pasaporte</option>
                     </select>
                   </div>
                   <div>
                     <label className="text-xs font-bold text-on-surface-variant block mb-1">
-                      N° Documento {npTipoDoc === 'DNI' && '(autocompleta RENIEC)'}
+                      N° Documento {npTipoDoc === 'DNI' && '(RENIEC)'}
                     </label>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        value={npNumDoc}
-                        onChange={(e) => setNpNumDoc(e.target.value)}
-                        placeholder={npTipoDoc === 'DNI' ? '8 dígitos' : 'Número doc'}
-                        className="w-full bg-white border border-outline-variant rounded-lg px-3 py-2 text-sm outline-none focus:border-primary font-mono"
-                      />
-                      {dniConsultando && (
-                        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-primary font-bold animate-pulse">
-                          RENIEC...
-                        </span>
-                      )}
-                    </div>
+                    <input
+                      type="text"
+                      value={npNumDoc}
+                      onChange={(e) => setNpNumDoc(npTipoDoc === 'DNI' ? e.target.value.replace(/\D/g, '') : e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          buscarPorDocumento();
+                        }
+                      }}
+                      maxLength={npTipoDoc === 'DNI' ? 8 : 20}
+                      inputMode={npTipoDoc === 'DNI' ? 'numeric' : 'text'}
+                      placeholder={npTipoDoc === 'DNI' ? '8 dígitos' : 'Número doc'}
+                      className="w-full bg-white border border-outline-variant rounded-lg px-3 py-2 text-sm outline-none focus:border-primary font-mono"
+                    />
                   </div>
+                  <button
+                    type="button"
+                    onClick={buscarPorDocumento}
+                    disabled={!puedeBuscarDni || dniConsultando}
+                    title={npTipoDoc === 'DNI' ? 'Buscar en RENIEC / PeruDevs' : 'La búsqueda solo aplica a DNI'}
+                    className="px-4 rounded-lg bg-primary text-on-primary font-bold text-sm shadow-md shadow-primary/20 hover:opacity-90 active:scale-95 transition-all disabled:opacity-40 disabled:pointer-events-none flex items-center gap-1.5 whitespace-nowrap h-[38px]"
+                  >
+                    <span className="material-symbols-outlined text-lg">
+                      {dniConsultando ? 'progress_activity' : 'search'}
+                    </span>
+                    {dniConsultando ? 'Buscando…' : 'Buscar'}
+                  </button>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
@@ -395,6 +415,50 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
                       onChange={(e) => setNpTelefono(e.target.value)}
                       placeholder="Ej. 987654321"
                       className="w-full bg-white border border-outline-variant rounded-lg px-3 py-2 text-sm outline-none focus:border-primary font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-4 gap-3">
+                  <div>
+                    <label className="text-xs font-bold text-on-surface-variant block mb-1">Fecha Nacimiento</label>
+                    <input
+                      type="date"
+                      value={npFechaNacimiento}
+                      onChange={(e) => setNpFechaNacimiento(e.target.value)}
+                      className="w-full bg-white border border-outline-variant rounded-lg px-2.5 py-2 text-xs font-medium outline-none focus:border-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-on-surface-variant block mb-1">Edad</label>
+                    <input
+                      type="text"
+                      readOnly
+                      value={npEdad != null ? `${npEdad} años` : '—'}
+                      className="w-full bg-surface-container-low border border-outline-variant/60 rounded-lg px-3 py-2 text-sm text-on-surface-variant font-bold select-none cursor-default"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-on-surface-variant block mb-1">Sexo / Género</label>
+                    <select
+                      value={npSexo}
+                      onChange={(e) => setNpSexo(e.target.value)}
+                      className="w-full bg-white border border-outline-variant rounded-lg px-2.5 py-2 text-sm outline-none focus:border-primary font-medium"
+                    >
+                      <option value="">— Elegir —</option>
+                      <option value="femenino">Femenino</option>
+                      <option value="masculino">Masculino</option>
+                      <option value="otro">Otro</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-on-surface-variant block mb-1">Correo Electrónico</label>
+                    <input
+                      type="email"
+                      value={npEmail}
+                      onChange={(e) => setNpEmail(e.target.value)}
+                      placeholder="correo@ejemplo.com"
+                      className="w-full bg-white border border-outline-variant rounded-lg px-3 py-2 text-sm outline-none focus:border-primary"
                     />
                   </div>
                 </div>

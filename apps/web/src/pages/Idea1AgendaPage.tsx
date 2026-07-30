@@ -37,6 +37,7 @@ export function Idea1AgendaPage() {
     doctores,
     bloqueosAlmuerzo = [],
     permisosAgenda = [],
+    turnosProfesionales = {},
     horarios,
     horaInicioInt,
     // Métricas
@@ -526,7 +527,15 @@ export function Idea1AgendaPage() {
                             return slotMin >= s && slotMin < e;
                           });
 
-                          const isBloqueado = doc.enVacaciones || isAlmuerzo || !!permisoCoincidente;
+                          // Verificar si el doctor trabaja en este slot (según su turno del día)
+                          const turnoDoc = turnosProfesionales[doc.id];
+                          const isFueraDeTurno =
+                            !doc.enVacaciones &&
+                            (!turnoDoc ||
+                              slotMin < timeToMinutes(turnoDoc.horaInicio) ||
+                              slotMin >= timeToMinutes(turnoDoc.horaFin));
+
+                          const isBloqueado = doc.enVacaciones || isFueraDeTurno || isAlmuerzo || !!permisoCoincidente;
 
                           return (
                             <div
@@ -583,6 +592,8 @@ export function Idea1AgendaPage() {
                               title={
                                 doc.enVacaciones
                                   ? 'Horario bloqueado por vacaciones'
+                                  : isFueraDeTurno
+                                  ? 'No labora en este horario'
                                   : isAlmuerzo
                                   ? 'Horario reservado para almuerzo'
                                   : permisoCoincidente
@@ -590,7 +601,9 @@ export function Idea1AgendaPage() {
                                   : `Agendar a las ${slot.hora} con ${doc.nombres}`
                               }
                               className={`h-full min-w-0 transition-all flex items-center justify-center relative ${
-                                isBloqueado
+                                isFueraDeTurno
+                                  ? 'bg-surface-container-high/40 opacity-50 cursor-not-allowed'
+                                  : isBloqueado
                                   ? 'bg-amber-500/5 cursor-not-allowed'
                                   : isHoveredSlot
                                   ? 'bg-primary/20 border-2 border-dashed border-primary z-30'
@@ -604,6 +617,12 @@ export function Idea1AgendaPage() {
                                     <span>Mover a {slot.hora}</span>
                                   </div>
                                 </div>
+                              )}
+
+                              {isFueraDeTurno && !isHoveredSlot && (
+                                <span className="text-[9px] font-semibold text-on-surface-variant/40 select-none pointer-events-none">
+                                  No labora
+                                </span>
                               )}
 
                               {!isBloqueado && !isHoveredSlot && (
@@ -693,7 +712,7 @@ export function Idea1AgendaPage() {
                             );
                           })}
 
-                          {/* PERMISOS Y REUNIONES */}
+                          {/* PERMISOS, REUNIONES Y ENFERMEDAD */}
                           {docPermisos.map((permiso) => {
                             if (!permiso.horaInicio || !permiso.horaFin) return null;
                             const startMin = timeToMinutes(permiso.horaInicio);
@@ -701,7 +720,29 @@ export function Idea1AgendaPage() {
                             const topPx = ((startMin - startMinGrid) / 60) * ROW_HEIGHT;
                             const duracion = Math.max(endMin - startMin, 30);
                             const heightPx = Math.max((duracion / 60) * ROW_HEIGHT - 4, 36);
-                            const esReunion = permiso.esReunion;
+                            const esReunion = !!permiso.esReunion;
+                            const esEnfermedad =
+                              !!permiso.esEnfermedad ||
+                              permiso.motivo?.toLowerCase().includes('enfermedad') ||
+                              permiso.motivo?.startsWith('🤒');
+
+                            const config = esReunion
+                              ? {
+                                  bg: 'bg-emerald-500/15 border-emerald-500/40 text-emerald-950 font-semibold',
+                                  icono: '🤝',
+                                  titulo: 'Reunión',
+                                }
+                              : esEnfermedad
+                              ? {
+                                  bg: 'bg-amber-500/20 border-amber-500/50 text-amber-950 font-semibold',
+                                  icono: '🤒',
+                                  titulo: 'Enfermedad',
+                                }
+                              : {
+                                  bg: 'bg-rose-500/15 border-rose-500/40 text-rose-950 font-semibold',
+                                  icono: '🚫',
+                                  titulo: 'Permiso',
+                                };
 
                             return (
                               <div
@@ -713,16 +754,12 @@ export function Idea1AgendaPage() {
                                   left: '3px',
                                   right: '3px',
                                 }}
-                                className={`pointer-events-auto rounded-xl p-2 flex flex-col justify-center items-center text-center transition-all shadow-xs overflow-hidden select-none z-15 backdrop-blur-[2px] border ${
-                                  esReunion
-                                    ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-900'
-                                    : 'bg-rose-500/15 border-rose-500/40 text-rose-900'
-                                }`}
-                                title={`${esReunion ? 'Reunión' : 'Permiso'}: ${permiso.horaInicio} - ${permiso.horaFin}${permiso.motivo ? ` (${permiso.motivo})` : ''}`}
+                                className={`pointer-events-auto rounded-xl p-2 flex flex-col justify-center items-center text-center transition-all shadow-xs overflow-hidden select-none z-15 backdrop-blur-[2px] border ${config.bg}`}
+                                title={`${config.titulo}: ${permiso.horaInicio} - ${permiso.horaFin}${permiso.motivo ? ` (${permiso.motivo})` : ''}`}
                               >
                                 <div className="flex items-center gap-1 font-bold text-xs truncate">
-                                  <span>{esReunion ? '🤝' : '🚫'}</span>
-                                  <span className="truncate font-semibold">{esReunion ? 'Reunión' : 'Permiso'}</span>
+                                  <span>{config.icono}</span>
+                                  <span className="truncate font-bold">{config.titulo}</span>
                                 </div>
                                 <span className="text-[10px] font-mono font-bold mt-0.5 opacity-90">
                                   {permiso.horaInicio} – {permiso.horaFin}

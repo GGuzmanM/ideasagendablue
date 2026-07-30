@@ -48,6 +48,30 @@ async function citasEnConflicto(profesionalId: string, sedeId: string, fecha: st
     }));
 }
 
+// Permisos/Bloqueos de agenda preexistentes que solapan un rango horario.
+async function permisosEnConflicto(profesionalId: string, fecha: string, horaInicio: string, horaFin: string) {
+  const desdeMin = toMin(horaInicio), hastaMin = toMin(horaFin);
+  const dayStart = new Date(`${fecha}T00:00:00`), dayEnd = new Date(`${fecha}T23:59:59`);
+  const bloqueos = await prisma.bloqueoAgenda.findMany({
+    where: {
+      profesionalId,
+      deletedAt: null,
+      esRecurrente: false,
+      fechaInicio: { lt: dayEnd },
+      fechaFin: { gt: dayStart },
+    },
+    select: {
+      id: true, horaInicio: true, horaFin: true, motivo: true, esReunion: true, esVacaciones: true, esEnfermedad: true,
+    },
+  });
+  return bloqueos.filter(b => {
+    if (!b.horaInicio || !b.horaFin) return true;
+    const bIni = toMin(b.horaInicio);
+    const bFin = toMin(b.horaFin);
+    return bIni < hastaMin && bFin > desdeMin;
+  });
+}
+
 // Lista de días 'YYYY-MM-DD' del rango [inicio, fin] inclusive (TZ-safe: el proceso corre en UTC).
 function diasDelRango(inicio: string, fin: string): string[] {
   const out: string[] = [];
@@ -218,6 +242,12 @@ router.post('/', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (
     return;
   }
 
+  const bloqueosExistentes = await permisosEnConflicto(data.profesionalId, data.fecha, data.horaInicio, data.horaFin);
+  if (bloqueosExistentes.length > 0) {
+    const muestra = bloqueosExistentes.map(b => `${b.horaInicio ?? data.horaInicio}–${b.horaFin ?? data.horaFin} (${b.motivo})`).join(', ');
+    throw new AppError(`El profesional ya tiene un permiso o bloqueo registrado en ese horario (${muestra})`, 409, 'BLOQUEO_EXISTENTE');
+  }
+
   // fechaInicio/fechaFin como DateTime local (misma convención que disponibilidad).
   const fechaInicio = new Date(`${data.fecha}T${data.horaInicio}:00`);
   const fechaFin = new Date(`${data.fecha}T${data.horaFin}:00`);
@@ -282,6 +312,23 @@ router.post('/multiple', requireAuth, requireRol('admin', 'coordinadora_sedes'),
     const nombre = `${prof.nombres.split(' ')[0]} ${prof.apellidos.split(' ')[0]}`.trim();
     const citas = await citasEnConflicto(id, data.sedeId, data.fecha, data.horaInicio, data.horaFin);
     if (citas.length > 0) { conflictos.push({ profesionalId: id, nombre, citas }); continue; }
+
+    const bloqueosExist = await permisosEnConflicto(id, data.fecha, data.horaInicio, data.horaFin);
+    if (bloqueosExist.length > 0) {
+      conflictos.push({
+        profesionalId: id,
+        nombre,
+        citas: bloqueosExist.map(b => ({
+          horaInicio: b.horaInicio || data.horaInicio,
+          estado: 'bloqueado',
+          servicio: b.motivo,
+          paciente: 'Permiso/Bloqueo previo existente',
+          telefono: '—',
+        })),
+      });
+      continue;
+    }
+
     const permiso = await prisma.bloqueoAgenda.create({
       data: {
         profesionalId: id, sedeId: data.sedeId, tipo: 'PERMISO', esRecurrente: false,
@@ -293,10 +340,6 @@ router.post('/multiple', requireAuth, requireRol('admin', 'coordinadora_sedes'),
   }
 
   if (creados.length > 0) await invalidateDisponibilidadCache(data.sedeId, data.fecha);
-  // SIEMPRE 2xx: es una operación por lotes con resultado PARCIAL (algunos bloqueados,
-  // otros con pacientes en el rango). El frontend lee `conflictos` y muestra la lista; si
-  // devolviéramos 409, el cliente lo trataría como error HTTP genérico ("Error desconocido")
-  // y se perdería el detalle de quién tiene pacientes agendados.
   res.status(creados.length > 0 ? 201 : 200).json({ creados, conflictos, invalidos });
 });
 
@@ -326,18 +369,34 @@ router.post('/reunion', requireAuth, requireRol('admin', 'coordinadora_sedes'), 
     throw new AppError(`No se encontró a ${quien} con sede vigente para la reunión`, 404, 'SIN_PROFESIONALES_REUNION');
   }
 
-  // Todo-o-nada: si CUALQUIERA tiene pacientes en el rango, no se crea ninguna y se reporta.
+  // Todo-o-nada: si CUALQUIERA tiene pacientes o permisos en el rango, no se crea ninguna y se reporta.
   const conflictos: { profesional: string; citas: Awaited<ReturnType<typeof citasEnConflicto>> }[] = [];
   for (const p of profs) {
     const citas = await citasEnConflicto(p.id, p.sedeId, data.fecha, data.horaInicio, data.horaFin);
-    if (citas.length) conflictos.push({ profesional: p.nombre, citas });
+    if (citas.length) {
+      conflictos.push({ profesional: p.nombre, citas });
+    } else {
+      const bloqueosExist = await permisosEnConflicto(p.id, data.fecha, data.horaInicio, data.horaFin);
+      if (bloqueosExist.length) {
+        conflictos.push({
+          profesional: p.nombre,
+          citas: bloqueosExist.map(b => ({
+            horaInicio: b.horaInicio || data.horaInicio,
+            estado: 'bloqueado',
+            servicio: b.motivo,
+            paciente: 'Permiso/Bloqueo previo existente',
+            telefono: '—',
+          })),
+        });
+      }
+    }
   }
   if (conflictos.length > 0) {
     const muestra = conflictos.map(c => `${c.profesional} (${c.citas.length})`).join(' · ');
     const citasPlanas = conflictos.flatMap(c => c.citas.map(x => ({ ...x, profesional: c.profesional })));
     res.status(409).json({
       error: 'CITAS_EN_RANGO',
-      message: `No se puede agendar la reunión ${data.horaInicio}–${data.horaFin}: hay pacientes agendados en ese rango (${muestra}). Reprograma o cancela esas citas antes de bloquear el horario.`,
+      message: `No se puede agendar la reunión ${data.horaInicio}–${data.horaFin}: el profesional o la agenda ya tiene pacientes o permisos en ese rango (${muestra}).`,
       statusCode: 409,
       conflictos,
       citas: citasPlanas,

@@ -414,6 +414,10 @@ export const horariosApi = {
     api.get<{ horarioDefault: HorarioSede; efectivo: HorarioEfectivo; diaSemana: number }>(
       `/horarios/${sedeId}`, { fecha }
     ),
+  turnosProfesionales: (sedeId: string, fecha: string) =>
+    api.get<Record<string, { horaInicio: string; horaFin: string } | null>>(
+      `/horarios/${sedeId}/turnos-profesionales`, { fecha }
+    ),
   excepciones: (sedeId: string, desde?: string, hasta?: string) =>
     api.get<Excepcion[]>(`/horarios/${sedeId}/excepciones`, {
       ...(desde ? { desde } : {}),

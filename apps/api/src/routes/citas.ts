@@ -1624,11 +1624,36 @@ router.post('/reportar-enfermedad', requireAuth, requireRol('admin', 'coordinado
         sedeId: c.sedeId, ip: req.ip,
       });
     }
+
+    // Cancela/chanca permisos o bloqueos previos que no sean enfermedad en el rango
+    const bloqueosPrevios = await tx.bloqueoAgenda.findMany({
+      where: {
+        profesionalId: data.profesionalId,
+        esRecurrente: false,
+        deletedAt: null,
+        esEnfermedad: false,
+        fechaInicio: { lt: dayEnd },
+        fechaFin: { gt: dayStart },
+      },
+    });
+    for (const b of bloqueosPrevios) {
+      if (b.horaInicio && b.horaFin) {
+        const bIni = toMin(b.horaInicio);
+        const bFin = toMin(b.horaFin);
+        if (bIni < hastaMin && bFin > desdeMin) {
+          await tx.bloqueoAgenda.update({ where: { id: b.id }, data: { deletedAt: new Date() } });
+        }
+      } else {
+        await tx.bloqueoAgenda.update({ where: { id: b.id }, data: { deletedAt: new Date() } });
+      }
+    }
+
     const b = await tx.bloqueoAgenda.create({
       data: {
         profesionalId: data.profesionalId, sedeId: data.sedeId, tipo: 'PERMISO', esRecurrente: false,
+        esEnfermedad: true,
         fechaInicio, fechaFin, horaInicio: data.horaInicio, horaFin: data.horaFin,
-        motivo: `🤒 ${data.motivo}`, creadoPor: usuarioId,
+        motivo: data.motivo.startsWith('🤒') ? data.motivo : `🤒 ${data.motivo}`, creadoPor: usuarioId,
       },
     });
     await auditEnTx(tx, {

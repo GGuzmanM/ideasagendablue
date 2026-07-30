@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import { sedesApi, profesionalesApi, citasApi, horariosApi } from '../api';
 import { almuerzosApi } from '../api/almuerzos';
 import { permisosApi } from '../api/permisos';
 import { useAgendaStore } from '../stores/agendaStore';
+import { useAuthStore } from '../stores/authStore';
 
 export interface SlotHorario {
   hora: string; // "09:00", "09:30", etc.
@@ -386,9 +387,10 @@ export function procesarYOrdenarDoctores(params: {
       const sel = seleccionablesDb.find((s) => s.id === doc.id);
       const tieneVacaciones =
         sel?.bloqueos?.some((b: any) => {
+          if (b.esVacaciones) return true;
           const m = (b.motivo || '').toLowerCase();
           const t = (b.tipo || '').toLowerCase();
-          return m.includes('vacac') || t.includes('vacac') || m.includes('licencia') || t === 'permiso';
+          return m.includes('vacac') || t.includes('vacac') || m.includes('licencia');
         }) || false;
 
       const count = citasAgenda.filter((c) => c.doctorId === doc.id).length;
@@ -560,16 +562,31 @@ export function useIdea1AgendaData() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const { usuario, puedeAccederSede } = useAuthStore();
+
   // 1. Cargar sedes desde la Base de Datos
-  const { data: sedesDb } = useQuery({
+  const { data: sedesDbRaw } = useQuery({
     queryKey: ['sedes'],
     queryFn: sedesApi.listar,
   });
 
-  // Auto-seleccionar primera sede si no hay seleccionada
+  // Filtrar las sedes según los permisos del usuario (si es recepcionista, solo sus sedes asignadas)
+  const sedesDb = useMemo(() => {
+    if (!sedesDbRaw) return [];
+    if (!usuario) return sedesDbRaw;
+    if (usuario.permisos?.includes('admin.ver') || ['admin', 'coordinadora_sedes'].includes(usuario.rol)) {
+      return sedesDbRaw;
+    }
+    return sedesDbRaw.filter((s) => puedeAccederSede(s.id));
+  }, [sedesDbRaw, usuario, puedeAccederSede]);
+
+  // Auto-seleccionar sede permitida (si no hay seleccionada o la actual no está permitida)
   useEffect(() => {
-    if (sedesDb && sedesDb.length > 0 && !sedeId) {
-      setSedeId(sedesDb[0].id);
+    if (sedesDb && sedesDb.length > 0) {
+      const esValida = sedesDb.some((s) => s.id === sedeId);
+      if (!sedeId || !esValida) {
+        setSedeId(sedesDb[0].id);
+      }
     }
   }, [sedesDb, sedeId, setSedeId]);
 
@@ -651,7 +668,6 @@ export function useIdea1AgendaData() {
     queryKey: ['bloqueos-almuerzo', sedeId, fechaStr()],
     queryFn: () => almuerzosApi.listarPorFecha(sedeId!, fechaStr()),
     enabled: !!sedeId,
-    staleTime: 5 * 60 * 1000,
   });
 
   // 5c. Permisos / bloqueos manuales de la sede en la fecha actual
@@ -660,6 +676,13 @@ export function useIdea1AgendaData() {
     queryFn: () => permisosApi.listarPorFecha(sedeId!, fechaStr()),
     enabled: !!sedeId,
     staleTime: 60 * 1000,
+  });
+
+  // 5d. Turnos efectivos de cada profesional en la fecha
+  const { data: turnosProfesionales = {} } = useQuery<Record<string, { horaInicio: string; horaFin: string } | null>>({
+    queryKey: ['turnos-profesionales', sedeId, fechaStr()],
+    queryFn: () => horariosApi.turnosProfesionales(sedeId!, fechaStr()),
+    enabled: !!sedeId,
   });
 
   // 6. Transformación y ordenamiento con el módulo de servicios
@@ -821,6 +844,7 @@ export function useIdea1AgendaData() {
     doctores,
     bloqueosAlmuerzo,
     permisosAgenda,
+    turnosProfesionales,
     horarios,
     horaInicioInt,
     horaFinInt,

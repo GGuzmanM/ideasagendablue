@@ -9,6 +9,7 @@ export interface Permiso {
   motivo: string;
   esReunion?: boolean; // true = reunión administrativa (Daniel/Yasica) → verde; false = permiso → rojo
   esVacaciones?: boolean; // true = vacaciones planificadas → franja 🌴 (día completo)
+  esEnfermedad?: boolean; // true = ausencia por enfermedad → franja 🤒 (naranja)
   creadoEn: string;
   profesional: { id: string; nombres: string; apellidos: string; tipo: string; colorAvatar: string };
   creadoPorUsuario: { id: string; nombre: string } | null;

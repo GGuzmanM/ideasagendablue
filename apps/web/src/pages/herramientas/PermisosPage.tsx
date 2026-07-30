@@ -1,637 +1,968 @@
-import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import toast from 'react-hot-toast';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { sedesApi, profesionalesApi } from '../../api';
-import { permisosApi, type Permiso } from '../../api/permisos';
-import { citasApi } from '../../api/citas';
-import { useAuthStore } from '../../stores/authStore';
+import {
+  usePermisosData,
+  HORAS_PERMISOS,
+  tipoLabel,
+  hoyISO,
+} from '../../services/permisosService';
+import { type Permiso } from '../../api/permisos';
 import { cn } from '../../utils/cn';
-
-// Opciones de hora 08:00 … 20:00 cada 30 min
-const HORAS: string[] = [];
-for (let m = 8 * 60; m <= 20 * 60; m += 30) {
-  HORAS.push(`${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`);
-}
-
-function hoyISO() { return format(new Date(), 'yyyy-MM-dd'); }
-const tipoLabel = (t: string) => (t === 'podologa' ? 'Podóloga' : t === 'fisioterapeuta' ? 'Fisioterapeuta' : t === 'medico' ? 'Baropodometría' : t);
 
 export function PermisosPage() {
   const navigate = useNavigate();
-  const qc = useQueryClient();
-  const puedeGestionar = useAuthStore(s => s.isCoordinadora()); // admin + coordinadora_sedes
-
-  const [sedeSelId, setSedeSelId] = useState('');
-  const [fecha, setFecha] = useState<string>(hoyISO());
-
-  // Formulario — se puede bloquear a uno o VARIOS profesionales a la vez.
-  const [profesionalIds, setProfesionalIds] = useState<string[]>([]);
-  const [desde, setDesde] = useState('09:00');
-  const [hasta, setHasta] = useState('13:00');
-  const [motivo, setMotivo] = useState('');
-  // Vacaciones: rango de fechas (día completo por cada día del rango).
-  const [vacInicio, setVacInicio] = useState<string>(hoyISO());
-  const [vacFin, setVacFin] = useState<string>(hoyISO());
-  // Edición inline de una vacación del resumen (guarda ids del grupo + campos editables).
-  const [editVac, setEditVac] = useState<{ ids: string[]; sedeId: string } | null>(null);
-  const [editIni, setEditIni] = useState('');
-  const [editFin, setEditFin] = useState('');
-  const [editMotivo, setEditMotivo] = useState('');
-  // Modo del formulario: bloqueo individual, reunión de Daniel y Yasica (ambas agendas),
-  // reportar enfermedad (cancela el día del profesional + lo bloquea en un solo paso),
-  // o vacaciones (bloqueo de día completo por un rango de fechas, sin cancelar citas).
-  const [modo, setModo] = useState<'individual' | 'reunion' | 'enfermedad' | 'vacaciones'>('individual');
-  // En modo enfermedad se elige UN solo profesional (reemplaza); en individual/vacaciones, varios.
-  const toggleProf = (id: string) => setProfesionalIds(prev =>
-    modo === 'enfermedad'
-      ? (prev[0] === id ? [] : [id])
-      : (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]));
-  // Destinatario de la reunión: 3 escenarios (solo Daniel, solo Yasica, o ambos juntos).
-  const [destinatario, setDestinatario] = useState<'daniel' | 'yasica' | 'ambos'>('ambos');
-  // Pacientes en conflicto cuando el bloqueo es rechazado (CITAS_EN_RANGO).
-  const [citasConflicto, setCitasConflicto] = useState<{ horaInicio: string; paciente: string; telefono: string; servicio: string; estado: string }[]>([]);
-  // Pacientes cuyas citas se CANCELARON al reportar enfermedad (para contactarlos y reagendar).
-  const [pacientesAfectados, setPacientesAfectados] = useState<{ horaInicio: string; paciente: string; telefono: string; servicio: string; estado: string }[] | null>(null);
-
-  const { data: sedes = [] } = useQuery({ queryKey: ['sedes'], queryFn: sedesApi.listar });
-  const sedeId = sedeSelId || sedes[0]?.id || '';
-
-  const { data: profesionales = [] } = useQuery({
-    queryKey: ['profesionales-sede', sedeId, fecha],
-    queryFn: () => profesionalesApi.listar({ sedeId, fecha, activo: true }),
-    enabled: !!sedeId && puedeGestionar,
-  });
-  // Bloqueables: podólogas, fisioterapeutas y baro (médico/máquina "Baro N") — para
-  // bloquear baro cuando hay reunión de médicos y no pueden atender.
-  const elegibles = useMemo(
-    () => profesionales.filter(p => p.tipo === 'podologa' || p.tipo === 'fisioterapeuta' || p.tipo === 'medico'),
-    [profesionales],
-  );
-
-  const { data: permisos = [], isLoading } = useQuery({
-    queryKey: ['permisos', sedeId, fecha],
-    queryFn: () => permisosApi.listarPorFecha(sedeId, fecha),
-    enabled: !!sedeId && puedeGestionar,
-  });
-
-  const crearMut = useMutation({
-    mutationFn: () => permisosApi.crearMultiple({ profesionalIds, sedeId, fecha, horaInicio: desde, horaFin: hasta, motivo: motivo.trim() }),
-    onSuccess: (r) => {
-      qc.invalidateQueries({ queryKey: ['permisos', sedeId, fecha] });
-      qc.invalidateQueries({ queryKey: ['permisos-agenda'] });
-      // Bloqueados los libres; los que tienen pacientes se reportan (nunca se bloquean).
-      const conflictos = r.conflictos.flatMap(c => c.citas.map(x => ({ ...x, paciente: `${c.nombre}: ${x.paciente}` })));
-      setCitasConflicto(conflictos);
-      if (r.creados.length > 0) {
-        toast.success(`Bloqueado(s): ${r.creados.map(c => c.nombre).join(', ')}`
-          + (r.conflictos.length > 0 ? ` · No se pudo con ${r.conflictos.map(c => c.nombre).join(', ')} (tienen pacientes)` : ''));
-        // Deseleccionar solo a los que SÍ se bloquearon; los con conflicto quedan marcados para gestionarlos.
-        setProfesionalIds(r.conflictos.map(c => c.profesionalId));
-        if (r.conflictos.length === 0) setMotivo('');
-      } else {
-        toast.error(`Ninguno se bloqueó: ${r.conflictos.map(c => c.nombre).join(', ')} tienen pacientes en ese rango`);
-      }
-    },
-    onError: (e: Error) => { setCitasConflicto([]); toast.error(e.message); },
-  });
-
-  const crearReunionMut = useMutation({
-    mutationFn: () => permisosApi.crearReunion({ fecha, horaInicio: desde, horaFin: hasta, motivo: motivo.trim(), destinatario }),
-    onSuccess: (r) => {
-      qc.invalidateQueries({ queryKey: ['permisos'] });
-      qc.invalidateQueries({ queryKey: ['permisos-agenda'] });
-      toast.success(`Reunión agendada en ${r.profesionales.join(' y ')}`);
-      setMotivo(''); setCitasConflicto([]);
-    },
-    onError: (e: Error & { data?: { citas?: typeof citasConflicto } }) => {
-      if (e.data?.citas?.length) { setCitasConflicto(e.data.citas); toast.error('Hay pacientes agendados en ese rango'); }
-      else { setCitasConflicto([]); toast.error(e.message); }
-    },
-  });
-
-  const enfermedadMut = useMutation({
-    mutationFn: () => citasApi.reportarEnfermedad({ profesionalId: profesionalIds[0]!, sedeId, fecha, horaInicio: desde, horaFin: hasta, motivo: motivo.trim() || 'Enfermedad' }),
-    onSuccess: (r) => {
-      qc.invalidateQueries({ queryKey: ['permisos', sedeId, fecha] });
-      qc.invalidateQueries({ queryKey: ['permisos-agenda'] });
-      qc.invalidateQueries({ queryKey: ['citas'] });
-      setPacientesAfectados(r.pacientes);
-      setCitasConflicto([]);
-      setProfesionalIds([]);
-      setMotivo('');
-      toast.success(r.citasCanceladas > 0
-        ? `${r.profesional} marcado enfermo · ${r.citasCanceladas} cita(s) cancelada(s) — contacta a los pacientes`
-        : `${r.profesional} marcado enfermo · día bloqueado (no tenía citas)`);
-    },
-    onError: (e: Error) => { setPacientesAfectados(null); toast.error(e.message); },
-  });
-
-  // Vacaciones — preview (dry-run) que anticipa rojo/verde mientras se eligen profesionales + rango.
-  const vacRangoOk = !!vacInicio && !!vacFin && vacFin >= vacInicio;
-  const vacPreview = useQuery({
-    queryKey: ['vacaciones-preview', sedeId, [...profesionalIds].sort().join(','), vacInicio, vacFin],
-    queryFn: () => permisosApi.previewVacaciones({ profesionalIds, sedeId, fechaInicio: vacInicio, fechaFin: vacFin }),
-    enabled: puedeGestionar && modo === 'vacaciones' && !!sedeId && profesionalIds.length > 0 && vacRangoOk,
-    staleTime: 20 * 1000,
-  });
-
-  const vacacionesMut = useMutation({
-    mutationFn: () => permisosApi.crearVacaciones({ profesionalIds, sedeId, fechaInicio: vacInicio, fechaFin: vacFin, motivo: motivo.trim() || 'Vacaciones' }),
-    onSuccess: (r) => {
-      qc.invalidateQueries({ queryKey: ['permisos'] });
-      qc.invalidateQueries({ queryKey: ['permisos-agenda'] });
-      qc.invalidateQueries({ queryKey: ['disponibilidad'] });
-      qc.invalidateQueries({ queryKey: ['vacaciones-preview'] });
-      toast.success(`🌴 Vacaciones bloqueadas: ${r.profesionales.join(', ')} · ${r.dias} día(s)`);
-      setProfesionalIds([]);
-      setCitasConflicto([]);
-    },
-    onError: (e: Error) => { toast.error(e.message); qc.invalidateQueries({ queryKey: ['vacaciones-preview'] }); },
-  });
-
-  const eliminarMut = useMutation({
-    mutationFn: (id: string) => permisosApi.eliminar(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['permisos', sedeId, fecha] });
-      qc.invalidateQueries({ queryKey: ['permisos-agenda'] });
-      toast.success('Permiso eliminado');
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-
-  // ── Resumen de vacaciones vigentes (todas, agrupadas por rango) + editar/eliminar ──
-  const vacacionesVigentes = useQuery({
-    queryKey: ['vacaciones-vigentes'],
-    queryFn: () => permisosApi.listarVacaciones(),
-    enabled: puedeGestionar,
-  });
-  const invalidarVacaciones = () => {
-    qc.invalidateQueries({ queryKey: ['vacaciones-vigentes'] });
-    qc.invalidateQueries({ queryKey: ['permisos'] });
-    qc.invalidateQueries({ queryKey: ['permisos-agenda'] });
-    qc.invalidateQueries({ queryKey: ['disponibilidad'] });
-  };
-  const eliminarVacMut = useMutation({
-    mutationFn: (ids: string[]) => permisosApi.eliminarVacacion(ids),
-    onSuccess: (r) => { invalidarVacaciones(); toast.success(`🌴 Vacación eliminada (${r.eliminados} día(s))`); },
-    onError: (e: Error) => toast.error(e.message),
-  });
-  const editarVacMut = useMutation({
-    mutationFn: (data: { ids: string[]; sedeId: string; fechaInicio: string; fechaFin: string; motivo: string }) => permisosApi.editarVacacion(data),
-    onSuccess: (r) => { setEditVac(null); invalidarVacaciones(); toast.success(`🌴 Vacación actualizada · ${r.dias} día(s)`); },
-    onError: (e: Error) => toast.error(e.message),
-  });
+  const {
+    puedeGestionar,
+    sedes,
+    sedeId,
+    setSedeSelId,
+    fecha,
+    setFecha,
+    modo,
+    cambiarModo,
+    profesionalIds,
+    toggleProf,
+    selectAllProfs,
+    clearSelectedProfs,
+    elegibles,
+    desde,
+    setDesde,
+    hasta,
+    setHasta,
+    motivo,
+    setMotivo,
+    vacInicio,
+    setVacInicio,
+    vacFin,
+    setVacFin,
+    destinatario,
+    setDestinatario,
+    citasConflicto,
+    pacientesAfectados,
+    permisos,
+    loadingPermisos,
+    vacacionesVigentes,
+    vacPreview,
+    vacRangoOk,
+    valido,
+    enviando,
+    enviar,
+    eliminarMut,
+    // Edit & delete vacacion
+    editVac,
+    setEditVac,
+    editIni,
+    setEditIni,
+    editFin,
+    setEditFin,
+    editMotivo,
+    setEditMotivo,
+    eliminarVacMut,
+    editarVacMut,
+  } = usePermisosData();
 
   if (!puedeGestionar) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-slate-50 text-slate-400 text-sm">
+      <div className="flex-1 flex items-center justify-center bg-background text-on-surface-variant text-sm h-full">
         Solo la Coordinadora de Sedes (y el admin) pueden gestionar permisos.
       </div>
     );
   }
 
-  const rangoOk = !!desde && !!hasta && hasta > desde;
-  const valido = modo === 'vacaciones'
-    // Vacaciones: solo se habilita si el preview salió VERDE (sin citas en el rango).
-    ? (profesionalIds.length > 0 && vacRangoOk && motivo.trim().length >= 3 && vacPreview.data?.ok === true)
-    : rangoOk && (
-        modo === 'reunion' ? motivo.trim().length >= 3
-        : modo === 'enfermedad' ? profesionalIds.length === 1  // motivo por defecto = "Enfermedad"
-        : (profesionalIds.length > 0 && motivo.trim().length >= 3)
-      );
-  const enviando = crearMut.isPending || crearReunionMut.isPending || enfermedadMut.isPending || vacacionesMut.isPending;
-  const enviar = () => {
-    if (modo === 'vacaciones') return vacacionesMut.mutate();
-    if (modo === 'reunion') return crearReunionMut.mutate();
-    if (modo === 'enfermedad') {
-      const prof = elegibles.find(p => p.id === profesionalIds[0]);
-      const nombre = prof ? `${prof.nombres.split(' ')[0]} ${prof.apellidos.split(' ')[0]}` : 'el profesional';
-      const ok = window.confirm(
-        `Se CANCELARÁN todas las citas activas de ${nombre} entre ${desde} y ${hasta} del ${fecha} y se bloqueará su agenda ese rango.\n\n`
-        + 'Los pacientes afectados quedarán listados para que los contactes y reagendes. ¿Continuar?');
-      if (ok) enfermedadMut.mutate();
-      return;
-    }
-    return crearMut.mutate();
-  };
-
   return (
-    <div className="flex-1 overflow-y-auto bg-slate-50">
-      {/* Header */}
-      <div className="bg-white border-b border-slate-200 px-6 py-4 flex items-center gap-3 sticky top-0 z-10">
-        <button onClick={() => navigate('/herramientas')} className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-all" title="Volver a Herramientas">
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-        </button>
-        <div className="w-9 h-9 rounded-xl bg-rose-500 flex items-center justify-center shrink-0"><span className="text-white text-lg">🚫</span></div>
-        <div>
-          <h1 className="text-base font-bold text-slate-900">Permisos / Bloqueos</h1>
-          <p className="text-xs text-slate-500">Bloquea a una podóloga, fisioterapeuta o baropodometría en un rango horario</p>
-        </div>
-      </div>
-
-      {/* Tabs de sede */}
-      <div className="bg-white border-b border-slate-200 px-6 flex gap-0 overflow-x-auto">
-        {sedes.map(s => (
-          <button key={s.id} onClick={() => setSedeSelId(s.id)}
-            className={cn('px-4 py-2.5 text-sm font-medium border-b-2 transition-all whitespace-nowrap',
-              sedeId === s.id ? 'border-rose-500 text-rose-700' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300')}>
-            {s.nombre}
+    <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-background">
+      {/* Header Bar */}
+      <header className="flex justify-between items-center px-6 py-4 bg-surface-container-lowest border-b border-outline-variant/50 sticky top-0 z-20 shadow-xs">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => navigate('/herramientas')}
+            className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-all"
+            title="Volver a Herramientas"
+          >
+            <span className="material-symbols-outlined text-[20px]">arrow_back</span>
           </button>
-        ))}
-      </div>
-
-      <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
-        {/* Fecha (día único) — en vacaciones se usa un rango de fechas dentro del formulario */}
-        {modo !== 'vacaciones' && (
-          <div className="flex items-center gap-3">
-            <label className="text-xs font-semibold text-slate-600">Día</label>
-            <input type="date" value={fecha} onChange={e => e.target.value && setFecha(e.target.value)} className="input text-sm" />
-            <span className="text-xs text-slate-400 capitalize">{format(parseISO(fecha), "EEEE d 'de' MMMM", { locale: es })}</span>
+          <div className="w-10 h-10 rounded-xl bg-error/10 text-error flex items-center justify-center shrink-0">
+            <span className="material-symbols-outlined text-[22px]">block</span>
           </div>
-        )}
-
-        {/* Formulario nuevo permiso */}
-        <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-3">
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Nuevo bloqueo</p>
-
-          {/* Tipo de bloqueo */}
-          <div className="flex gap-1 bg-slate-100 rounded-lg p-0.5">
-            {([
-              { id: 'individual', label: '🚫 Permiso' },
-              { id: 'enfermedad', label: '🤒 Enfermedad' },
-              { id: 'reunion', label: '🤝 Reunión' },
-              { id: 'vacaciones', label: '🌴 Vacaciones' },
-            ] as { id: 'individual' | 'reunion' | 'enfermedad' | 'vacaciones'; label: string }[]).map(opt => (
-              <button
-                key={opt.id}
-                onClick={() => {
-                  setModo(opt.id);
-                  setCitasConflicto([]);
-                  setPacientesAfectados(null);
-                  // Enfermedad → un solo profesional y, por defecto, el día completo (08:00–20:00).
-                  if (opt.id === 'enfermedad') {
-                    setProfesionalIds(prev => prev.slice(0, 1));
-                    setDesde('08:00'); setHasta('20:00');
-                    if (!motivo.trim()) setMotivo('Enfermedad');
-                  }
-                  // Reunión → la sede de Daniel y Yasica (One) se selecciona sola, para que la
-                  // lista del día muestre su sede y no quede "pegada" en otra (ej. Lince).
-                  if (opt.id === 'reunion') {
-                    const one = sedes.find(s => s.nombre === 'One');
-                    if (one) setSedeSelId(one.id);
-                  }
-                  // Vacaciones → motivo por defecto y rango de fechas arrancando en el día visible.
-                  if (opt.id === 'vacaciones') {
-                    if (!motivo.trim() || motivo.trim() === 'Enfermedad') setMotivo('Vacaciones');
-                    setVacInicio(fecha); setVacFin(fecha);
-                  }
-                }}
-                className={cn('flex-1 py-1.5 px-2 rounded-md text-xs font-semibold transition-all',
-                  modo === opt.id ? 'bg-white text-rose-700 shadow-sm' : 'text-slate-500 hover:text-slate-700')}
-              >
-                {opt.label}
-              </button>
-            ))}
+          <div>
+            <h1 className="font-headline-md text-headline-md font-bold text-on-surface leading-tight">
+              Permisos / Bloqueos
+            </h1>
+            <p className="font-body-md text-body-md text-on-surface-variant/80">
+              Bloquea a una podóloga, fisioterapeuta o baropodometría en un rango horario
+            </p>
           </div>
+        </div>
+      </header>
 
-          {modo !== 'reunion' ? (
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-xs font-semibold text-slate-700">
-                  {modo === 'enfermedad'
-                    ? <>Profesional enfermo <span className="font-normal text-slate-400">— elige uno</span></>
-                    : <>Profesional(es) <span className="font-normal text-slate-400">— marca uno o varios</span></>}
-                </label>
-                {(modo === 'individual' || modo === 'vacaciones') && elegibles.length > 0 && (
-                  <div className="flex gap-2 text-xxs">
-                    <button type="button" onClick={() => { setProfesionalIds(elegibles.map(p => p.id)); setCitasConflicto([]); }} className="text-rose-600 hover:underline font-semibold">Todos</button>
-                    {profesionalIds.length > 0 && <button type="button" onClick={() => { setProfesionalIds([]); setCitasConflicto([]); }} className="text-slate-400 hover:underline">Ninguno</button>}
+      {/* Main Content Workspace */}
+      <main className="flex-1 overflow-y-auto p-6 bg-background">
+        <div className="max-w-6xl mx-auto space-y-6">
+          {/* Bento Grid Layout */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Form Area (Left - 8 cols) */}
+            <div className="lg:col-span-8 space-y-6">
+              {/* Location Tabs Card */}
+              <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/60 p-1.5 shadow-xs overflow-x-auto">
+                <div className="flex items-center min-w-max gap-1">
+                  {sedes.map((s) => {
+                    const act = sedeId === s.id;
+                    return (
+                      <button
+                        key={s.id}
+                        onClick={() => setSedeSelId(s.id)}
+                        className={cn(
+                          'px-5 py-2 rounded-lg font-label-caps text-label-caps transition-all relative cursor-pointer',
+                          act
+                            ? 'bg-surface-container-high text-on-surface font-bold shadow-xs'
+                            : 'hover:bg-surface-container-low text-on-surface-variant',
+                        )}
+                      >
+                        {s.nombre}
+                        {act && (
+                          <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-5 h-0.5 bg-primary rounded-t-full" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Main Form Card */}
+              <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/60 p-6 shadow-xs space-y-6">
+                {/* Date Selector (Día Único) - visible salvo en Vacaciones */}
+                {modo !== 'vacaciones' && (
+                  <div className="flex items-center justify-between pb-4 border-b border-outline-variant/40">
+                    <span className="font-label-caps text-label-caps text-on-surface-variant font-bold uppercase tracking-wider">
+                      FECHA DEL BLOQUEO
+                    </span>
+                    <div className="flex items-center gap-3 bg-surface-container-low border border-outline-variant/60 rounded-xl p-1 shadow-2xs">
+                      <div className="flex items-center gap-2 px-3 py-1 bg-surface-container-lowest border border-outline-variant/40 rounded-lg shadow-2xs">
+                        <span className="material-symbols-outlined text-[18px] text-primary">
+                          calendar_month
+                        </span>
+                        <input
+                          type="date"
+                          value={fecha}
+                          onChange={(e) => e.target.value && setFecha(e.target.value)}
+                          className="bg-transparent border-none text-xs font-semibold text-on-surface focus:ring-0 outline-none cursor-pointer"
+                        />
+                      </div>
+                      <span className="text-xs text-on-surface-variant font-medium pr-2 capitalize">
+                        {format(parseISO(fecha), "EEEE d 'de' MMMM", { locale: es })}
+                      </span>
+                    </div>
                   </div>
                 )}
-              </div>
-              <div className="max-h-52 overflow-y-auto rounded-lg border border-slate-200 divide-y divide-slate-100">
-                {elegibles.map(p => {
-                  const marcado = profesionalIds.includes(p.id);
-                  return (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => { toggleProf(p.id); setCitasConflicto([]); }}
-                      className={cn('w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors', marcado ? 'bg-rose-50' : 'hover:bg-slate-50')}
-                    >
-                      <span className={cn('w-4 h-4 rounded border flex items-center justify-center shrink-0', marcado ? 'bg-rose-500 border-rose-500 text-white' : 'border-slate-300 bg-white')}>
-                        {marcado && <span className="text-[10px] leading-none">✓</span>}
-                      </span>
-                      <span className={cn('flex-1', marcado ? 'font-semibold text-slate-800' : 'text-slate-600')}>
-                        {p.nombres.split(' ')[0]} {p.apellidos.split(' ')[0]}
-                      </span>
-                      <span className={cn('text-xxs', p.tipo === 'medico' ? 'text-teal-600 font-semibold' : 'text-slate-400')}>{tipoLabel(p.tipo)}</span>
-                    </button>
-                  );
-                })}
-              </div>
-              {elegibles.length === 0 && <p className="mt-1 text-xxs text-slate-400">No hay profesionales bloqueables en esta sede.</p>}
-              {modo === 'enfermedad' && profesionalIds.length > 0 && (
-                <p className="mt-1 text-xxs text-amber-600">Se cancelarán sus citas del rango y se bloqueará su agenda.</p>
-              )}
-              {modo === 'individual' && profesionalIds.length > 0 && <p className="mt-1 text-xxs text-slate-500">{profesionalIds.length} seleccionado(s) — se bloquearán en el mismo rango.</p>}
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {/* ¿Para quién? — 3 escenarios: solo Daniel, solo Yasica, o ambos juntos */}
-              <label className="block text-xs font-semibold text-slate-700">¿Para quién es la reunión?</label>
-              <div className="grid grid-cols-3 gap-2">
-                {([
-                  { id: 'daniel', label: 'Solo Daniel' },
-                  { id: 'yasica', label: 'Solo Yasica' },
-                  { id: 'ambos', label: 'Ambos juntos' },
-                ] as { id: 'daniel' | 'yasica' | 'ambos'; label: string }[]).map(opt => (
-                  <button
-                    key={opt.id}
-                    onClick={() => { setDestinatario(opt.id); setCitasConflicto([]); }}
-                    className={cn('py-2 px-2 rounded-lg text-xs font-semibold border transition-all',
-                      destinatario === opt.id ? 'bg-violet-600 text-white border-violet-600 shadow-sm' : 'bg-white text-slate-600 border-slate-200 hover:border-violet-300')}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-              <div className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2.5 text-xs text-violet-800">
-                🤝 Se bloqueará el horario en {destinatario === 'ambos'
-                  ? <>las agendas de <b>Daniel Doy</b> y <b>Yasica Doy</b></>
-                  : <>la agenda de <b>{destinatario === 'daniel' ? 'Daniel Doy' : 'Yasica Doy'}</b></>
-                } (en su sede vigente). El texto del motivo aparecerá en la reserva.
-              </div>
-            </div>
-          )}
 
-          {modo === 'vacaciones' ? (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">Desde (fecha)</label>
-                <input type="date" value={vacInicio} min={hoyISO()}
-                  onChange={e => { const v = e.target.value; if (v) { setVacInicio(v); if (vacFin < v) setVacFin(v); } }}
-                  className="input w-full text-sm" />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">Hasta (fecha)</label>
-                <input type="date" value={vacFin} min={vacInicio}
-                  onChange={e => e.target.value && setVacFin(e.target.value)}
-                  className="input w-full text-sm" />
-              </div>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">Desde</label>
-                <select value={desde} onChange={e => setDesde(e.target.value)} className="input w-full text-sm">
-                  {HORAS.slice(0, -1).map(h => <option key={h} value={h}>{h}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">Hasta</label>
-                <select value={hasta} onChange={e => setHasta(e.target.value)} className="input w-full text-sm">
-                  {HORAS.filter(h => h > desde).map(h => <option key={h} value={h}>{h}</option>)}
-                </select>
-              </div>
-            </div>
-          )}
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-              {modo === 'reunion' ? 'Texto de la reunión' : 'Motivo'}
-            </label>
-            <input type="text" value={motivo} onChange={e => setMotivo(e.target.value)}
-              placeholder={modo === 'reunion' ? 'Ej: Reunión de coordinación mensual' : modo === 'enfermedad' ? 'Enfermedad (por defecto)' : modo === 'vacaciones' ? 'Vacaciones (por defecto)' : 'Permiso médico, trámite personal…'}
-              className="input w-full text-sm" maxLength={200} />
-          </div>
-
-          {modo === 'enfermedad' && (
-            <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
-              🤒 Al reportar la enfermedad se <b>cancelarán</b> automáticamente las citas activas del profesional entre <b>{desde}</b> y <b>{hasta}</b>, y se <b>bloqueará</b> su agenda ese rango. Los pacientes afectados aparecerán listados para que los contactes y reagendes.
-            </div>
-          )}
-
-          {/* Vacaciones — anticipación rojo/verde: si hay citas en el rango NO deja bloquear. */}
-          {modo === 'vacaciones' && (
-            profesionalIds.length === 0 || !vacRangoOk ? (
-              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-500">
-                🌴 Elige profesional(es) y un rango de fechas. Se bloqueará el <b>día completo</b> (08:00–20:00) de cada fecha. El sistema revisa que no haya citas antes de permitir el bloqueo — <b>no se cancela nada</b>.
-              </div>
-            ) : vacPreview.isFetching ? (
-              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-500 flex items-center gap-2">
-                <span className="w-3.5 h-3.5 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" /> Revisando citas en el rango…
-              </div>
-            ) : vacPreview.isError ? (
-              <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs text-rose-700">No se pudo revisar el rango. Reintenta.</div>
-            ) : vacPreview.data ? (
-              <div className={cn('rounded-xl border p-3 space-y-2', vacPreview.data.ok ? 'border-teal-300 bg-teal-50' : 'border-rose-300 bg-rose-50')}>
-                <p className={cn('text-xs font-bold flex items-center justify-between gap-2', vacPreview.data.ok ? 'text-teal-800' : 'text-rose-800')}>
-                  <span>{vacPreview.data.ok ? '✓ Todo libre — se puede bloquear' : '✗ Hay citas en el rango'}</span>
-                  <span className="font-medium tabular-nums text-slate-500">{vacPreview.data.dias} día(s) · {vacPreview.data.profesionales.length} prof.</span>
-                </p>
-                <ul className="space-y-1.5">
-                  {vacPreview.data.profesionales.map(pr => (
-                    <li key={pr.profesionalId} className={cn('rounded-lg border px-2.5 py-1.5 text-xs', pr.bloqueable ? 'bg-white border-teal-100' : 'bg-white border-rose-200')}>
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-semibold text-slate-700">{pr.nombre}</span>
-                        <span className={cn('font-semibold', pr.bloqueable ? 'text-teal-700' : 'text-rose-700')}>
-                          {pr.bloqueable ? 'Libre ✓' : `${pr.conflictos.length} cita(s) ✗`}
-                        </span>
-                      </div>
-                      {pr.conflictos.length > 0 && (
-                        <ul className="mt-1 space-y-0.5 text-slate-500">
-                          {pr.conflictos.slice(0, 6).map((c, i) => (
-                            <li key={i} className="flex items-center gap-2">
-                              <span className="tabular-nums text-slate-600 shrink-0">{c.fecha} {c.horaInicio}</span>
-                              <span className="flex-1 truncate">{c.paciente}</span>
-                              <span className="text-slate-400 hidden sm:inline truncate">{c.servicio}</span>
-                            </li>
-                          ))}
-                          {pr.conflictos.length > 6 && <li className="text-slate-400">…y {pr.conflictos.length - 6} más</li>}
-                        </ul>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-                {!vacPreview.data.ok && (
-                  <p className="text-xxs text-rose-700">Reprograma o cancela esas citas antes de bloquear las vacaciones. No se cancelará nada automáticamente.</p>
-                )}
-              </div>
-            ) : null
-          )}
-
-          <button
-            onClick={enviar}
-            disabled={!valido || enviando}
-            className={cn('w-full py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40 transition-colors',
-              modo === 'reunion' ? 'bg-violet-600 hover:bg-violet-700' : modo === 'enfermedad' ? 'bg-amber-600 hover:bg-amber-700' : modo === 'vacaciones' ? 'bg-teal-600 hover:bg-teal-700' : 'bg-rose-600 hover:bg-rose-700')}
-          >
-            {enviando
-              ? (modo === 'reunion' ? 'Agendando reunión…' : modo === 'enfermedad' ? 'Liberando día…' : modo === 'vacaciones' ? 'Bloqueando vacaciones…' : 'Bloqueando…')
-              : (modo === 'reunion'
-                  ? (destinatario === 'ambos' ? '🤝 Agendar reunión en ambas agendas' : `🤝 Agendar reunión de ${destinatario === 'daniel' ? 'Daniel' : 'Yasica'}`)
-                  : modo === 'enfermedad'
-                    ? '🤒 Reportar enfermedad y liberar el día'
-                    : modo === 'vacaciones'
-                      ? `🌴 Bloquear vacaciones${profesionalIds.length > 1 ? ` (${profesionalIds.length})` : ''}`
-                      : `🚫 Bloquear horario${profesionalIds.length > 1 ? ` (${profesionalIds.length})` : ''}`)}
-          </button>
-
-          {/* Pacientes en el rango: por qué NO se pudo bloquear a esos profesionales */}
-          {citasConflicto.length > 0 && (
-            <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 space-y-2">
-              <p className="text-xs font-bold text-amber-800">
-                No se pudo bloquear a quien tiene pacientes en ese rango ({citasConflicto.length} cita(s)). Reprograma o cancela sus citas primero.
-              </p>
-              <ul className="space-y-1">
-                {citasConflicto.map((c, i) => (
-                  <li key={i} className="flex items-center justify-between gap-2 text-xs bg-white border border-amber-100 rounded-lg px-2.5 py-1.5">
-                    <span className="font-semibold text-slate-700 tabular-nums">{c.horaInicio}</span>
-                    <span className="flex-1 text-slate-700 truncate">{c.paciente}</span>
-                    <span className="text-slate-400 truncate hidden sm:inline">{c.servicio}</span>
-                    <span className="text-slate-400">{c.telefono}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {/* Enfermedad reportada: citas canceladas → contactar a estos pacientes para reagendar */}
-          {pacientesAfectados && (
-            <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-3 space-y-2">
-              <p className="text-xs font-bold text-emerald-800">
-                {pacientesAfectados.length > 0
-                  ? `Día liberado · ${pacientesAfectados.length} cita(s) cancelada(s). Contacta a estos pacientes para reagendar:`
-                  : 'Día liberado. El profesional no tenía citas en el rango — solo se bloqueó su agenda.'}
-              </p>
-              {pacientesAfectados.length > 0 && (
-                <ul className="space-y-1">
-                  {pacientesAfectados.map((c, i) => (
-                    <li key={i} className="flex items-center justify-between gap-2 text-xs bg-white border border-emerald-100 rounded-lg px-2.5 py-1.5">
-                      <span className="font-semibold text-slate-700 tabular-nums">{c.horaInicio}</span>
-                      <span className="flex-1 text-slate-700 truncate">{c.paciente}</span>
-                      <span className="text-slate-400 truncate hidden sm:inline">{c.servicio}</span>
-                      <a href={`tel:${c.telefono}`} className="text-emerald-700 font-semibold hover:underline">{c.telefono}</a>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Resumen de VACACIONES vigentes (todas, por rango) — con editar/eliminar completo.
-            Solo en la pestaña Vacaciones para no saturar las demás. */}
-        {modo === 'vacaciones' && (
-          <div className="space-y-2 mb-6">
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest px-1">🌴 Vacaciones vigentes</p>
-            {vacacionesVigentes.isLoading ? (
-              <div className="flex justify-center py-6"><div className="w-6 h-6 border-2 border-teal-400 border-t-transparent rounded-full animate-spin" /></div>
-            ) : (vacacionesVigentes.data ?? []).length === 0 ? (
-              <p className="text-sm text-slate-400 text-center py-6">No hay vacaciones registradas.</p>
-            ) : (
-              (vacacionesVigentes.data ?? []).map((v) => {
-                const editando = editVac?.ids[0] === v.ids[0];
-                const iniciales = `${v.profesional.nombres[0] ?? ''}${v.profesional.apellidos[0] ?? ''}`.toUpperCase();
-                return (
-                  <div key={v.ids[0]} className="rounded-xl border border-teal-200 bg-teal-50/50 p-3.5">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0" style={{ backgroundColor: v.profesional.colorAvatar ?? '#0e9c88' }}>{iniciales}</div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-slate-900">
-                          {v.profesional.nombres.split(' ')[0]} {v.profesional.apellidos.split(' ')[0]}
-                          <span className="font-normal text-slate-400"> · {v.sede?.nombre ?? '—'}</span>
-                        </p>
-                        <p className="text-xs text-teal-700 font-medium mt-0.5">
-                          🌴 {format(parseISO(v.fechaInicio), 'd MMM', { locale: es })} – {format(parseISO(v.fechaFin), 'd MMM yyyy', { locale: es })} · {v.dias} día{v.dias !== 1 ? 's' : ''}
-                        </p>
-                        <p className="text-xs text-slate-500 truncate">{v.motivo}</p>
-                      </div>
-                      {!editando && (
-                        <div className="flex items-center gap-1 shrink-0">
+                <div className="space-y-6">
+                  {/* Block Type Radio Chips */}
+                  <div>
+                    <label className="block font-label-caps text-label-caps text-on-surface-variant mb-3 font-bold">
+                      TIPO DE BLOQUEO
+                    </label>
+                    <div className="flex flex-wrap gap-2.5">
+                      {[
+                        { id: 'individual', label: '🚫 Permiso', icon: 'block' },
+                        { id: 'enfermedad', label: '🤒 Enfermedad', icon: 'sick' },
+                        { id: 'reunion', label: '🤝 Reunión', icon: 'groups' },
+                        { id: 'vacaciones', label: '🌴 Vacaciones', icon: 'beach_access' },
+                      ].map((opt) => {
+                        const isSelected = modo === opt.id;
+                        return (
                           <button
-                            onClick={() => { setEditVac({ ids: v.ids, sedeId: v.sedeId ?? '' }); setEditIni(v.fechaInicio); setEditFin(v.fechaFin); setEditMotivo(v.motivo); }}
-                            className="px-2.5 py-1.5 text-xs font-semibold text-teal-700 hover:bg-teal-100 rounded-lg transition-colors"
-                          >Editar</button>
-                          <button
-                            onClick={() => { if (window.confirm(`¿Eliminar las vacaciones de ${v.profesional.nombres.split(' ')[0]} (${v.dias} día(s), del ${format(parseISO(v.fechaInicio), 'd MMM', { locale: es })} al ${format(parseISO(v.fechaFin), 'd MMM', { locale: es })})?`)) eliminarVacMut.mutate(v.ids); }}
-                            disabled={eliminarVacMut.isPending}
-                            className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all disabled:opacity-50"
-                            title="Eliminar vacación completa"
+                            key={opt.id}
+                            type="button"
+                            onClick={() => cambiarModo(opt.id as any)}
+                            className={cn(
+                              'px-4 py-2 rounded-full border text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer',
+                              isSelected
+                                ? opt.id === 'enfermedad'
+                                  ? 'bg-[#d97706] text-white border-[#d97706] shadow-xs'
+                                  : opt.id === 'reunion'
+                                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                                  : opt.id === 'vacaciones'
+                                  ? 'bg-teal-600 text-white border-teal-600 shadow-xs'
+                                  : 'bg-rose-600 text-white border-rose-600 shadow-xs'
+                                : 'bg-surface-container-lowest border-outline-variant/60 text-on-surface-variant hover:bg-surface-container-low',
+                            )}
                           >
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                            <span>{opt.label}</span>
                           </button>
-                        </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Professional Selection */}
+                  {modo !== 'reunion' ? (
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <label className="block font-label-caps text-label-caps text-on-surface-variant font-bold">
+                          {modo === 'enfermedad'
+                            ? 'PROFESIONAL ENFERMO (SELECCIONAR UNO)'
+                            : 'SELECCIONAR PROFESIONAL(ES)'}
+                        </label>
+                        {(modo === 'individual' || modo === 'vacaciones') &&
+                          elegibles.length > 0 && (
+                            <div className="flex items-center gap-3 text-xs">
+                              <button
+                                type="button"
+                                onClick={selectAllProfs}
+                                className="text-primary font-bold hover:underline cursor-pointer"
+                              >
+                                Marcar todos
+                              </button>
+                              {profesionalIds.length > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={clearSelectedProfs}
+                                  className="text-on-surface-variant/70 hover:underline cursor-pointer"
+                                >
+                                  Ninguno
+                                </button>
+                              )}
+                            </div>
+                          )}
+                      </div>
+
+                      <div className="bg-surface-container-lowest border border-outline-variant/60 rounded-xl p-1.5 max-h-56 overflow-y-auto space-y-1 custom-scrollbar shadow-2xs">
+                        {elegibles.map((p) => {
+                          const marcado = profesionalIds.includes(p.id);
+                          const iniciales = `${p.nombres[0] ?? ''}${
+                            p.apellidos[0] ?? ''
+                          }`.toUpperCase();
+
+                          return (
+                            <label
+                              key={p.id}
+                              onClick={() => toggleProf(p.id)}
+                              className={cn(
+                                'flex items-center gap-3 p-2.5 rounded-lg cursor-pointer transition-colors border',
+                                marcado
+                                  ? 'bg-primary/5 border-primary/30 shadow-2xs'
+                                  : 'border-transparent hover:bg-surface-container-low/60',
+                              )}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={marcado}
+                                onChange={() => {}} // handled by row onClick
+                                className="w-4 h-4 rounded text-primary border-outline-variant focus:ring-primary/20 cursor-pointer"
+                              />
+                              <div
+                                className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
+                                style={{ backgroundColor: p.colorAvatar || '#3525cd' }}
+                              >
+                                {iniciales}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p
+                                  className={cn(
+                                    'font-body-md text-body-md truncate',
+                                    marcado
+                                      ? 'font-bold text-on-surface'
+                                      : 'font-medium text-on-surface-variant',
+                                  )}
+                                >
+                                  {p.nombres.split(' ')[0]} {p.apellidos.split(' ')[0]}
+                                </p>
+                                <p className="font-mono-label text-[10px] text-on-surface-variant/70 truncate">
+                                  {tipoLabel(p.tipo)}
+                                </p>
+                              </div>
+                            </label>
+                          );
+                        })}
+
+                        {elegibles.length === 0 && (
+                          <p className="text-xs text-on-surface-variant/60 p-3 text-center">
+                            No hay profesionales bloqueables en esta sede.
+                          </p>
+                        )}
+                      </div>
+
+                      {modo === 'enfermedad' && profesionalIds.length > 0 && (
+                        <p className="mt-2 text-xs text-[#d97706] font-semibold flex items-center gap-1">
+                          <span className="material-symbols-outlined text-sm">warning</span>
+                          Se cancelarán sus citas en el rango y se bloqueará su agenda.
+                        </p>
+                      )}
+                      {modo === 'individual' && profesionalIds.length > 0 && (
+                        <p className="mt-2 text-xs text-on-surface-variant font-medium">
+                          {profesionalIds.length} profesional(es) seleccionado(s) — se
+                          bloquearán en el rango elegido.
+                        </p>
                       )}
                     </div>
-                    {editando && (
-                      <div className="mt-3 pt-3 border-t border-teal-200 space-y-2">
-                        <div className="grid grid-cols-2 gap-2">
-                          <div><label className="block text-[10px] font-semibold text-slate-500 mb-1 uppercase tracking-wide">Desde</label><input type="date" value={editIni} onChange={e => setEditIni(e.target.value)} className="input w-full text-sm" /></div>
-                          <div><label className="block text-[10px] font-semibold text-slate-500 mb-1 uppercase tracking-wide">Hasta</label><input type="date" value={editFin} min={editIni} onChange={e => setEditFin(e.target.value)} className="input w-full text-sm" /></div>
-                        </div>
-                        <input type="text" value={editMotivo} onChange={e => setEditMotivo(e.target.value)} placeholder="Motivo" className="input w-full text-sm" />
-                        <div className="flex gap-2">
+                  ) : (
+                    /* Reunión (Daniel/Yasica) */
+                    <div className="space-y-3 bg-emerald-500/5 border border-emerald-500/20 p-4 rounded-xl">
+                      <label className="block font-label-caps text-label-caps text-emerald-900 font-bold">
+                        ¿PARA QUIÉN ES LA REUNIÓN?
+                      </label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          { id: 'daniel', label: 'Solo Daniel' },
+                          { id: 'yasica', label: 'Solo Yasica' },
+                          { id: 'ambos', label: 'Ambos juntos' },
+                        ].map((opt) => (
                           <button
-                            onClick={() => editarVacMut.mutate({ ids: v.ids, sedeId: v.sedeId ?? '', fechaInicio: editIni, fechaFin: editFin, motivo: editMotivo.trim() || 'Vacaciones' })}
-                            disabled={editarVacMut.isPending || !editIni || !editFin || editFin < editIni || !v.sedeId}
-                            className="flex-1 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold py-2 rounded-lg disabled:opacity-50 transition-colors"
-                          >{editarVacMut.isPending ? 'Guardando…' : 'Guardar cambios'}</button>
-                          <button onClick={() => setEditVac(null)} className="px-4 text-sm font-medium text-slate-500 hover:bg-slate-100 rounded-lg transition-colors">Cancelar</button>
-                        </div>
-                        <p className="text-[11px] text-slate-400">Al cambiar el rango se recrean los días. Si hay citas en el nuevo rango, se rechaza.</p>
+                            key={opt.id}
+                            type="button"
+                            onClick={() => setDestinatario(opt.id as any)}
+                            className={cn(
+                              'py-2 px-3 rounded-lg text-xs font-bold border transition-all cursor-pointer',
+                              destinatario === opt.id
+                                ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                                : 'bg-surface-container-lowest text-on-surface-variant border-outline-variant/60 hover:bg-surface-container-low',
+                            )}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
                       </div>
+                      <p className="text-xs text-emerald-800 leading-relaxed font-medium">
+                        🤝 Se bloqueará el horario en{' '}
+                        {destinatario === 'ambos' ? (
+                          <>
+                            las agendas de <b>Daniel Doy</b> y <b>Yasica Doy</b>
+                          </>
+                        ) : (
+                          <>
+                            la agenda de{' '}
+                            <b>{destinatario === 'daniel' ? 'Daniel Doy' : 'Yasica Doy'}</b>
+                          </>
+                        )}{' '}
+                        en su sede correspondiente.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Time Ranges or Date Ranges (Vacaciones) */}
+                  {modo === 'vacaciones' ? (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block font-label-caps text-label-caps text-on-surface-variant mb-2 font-bold">
+                          DESDE (FECHA)
+                        </label>
+                        <input
+                          type="date"
+                          value={vacInicio}
+                          min={hoyISO()}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (v) {
+                              setVacInicio(v);
+                              if (vacFin < v) setVacFin(v);
+                            }
+                          }}
+                          className="w-full p-2.5 bg-surface-container-lowest border border-outline-variant/60 rounded-xl text-xs font-semibold text-on-surface focus:border-primary focus:ring-1 focus:ring-primary outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-label-caps text-label-caps text-on-surface-variant mb-2 font-bold">
+                          HASTA (FECHA)
+                        </label>
+                        <input
+                          type="date"
+                          value={vacFin}
+                          min={vacInicio}
+                          onChange={(e) => e.target.value && setVacFin(e.target.value)}
+                          className="w-full p-2.5 bg-surface-container-lowest border border-outline-variant/60 rounded-xl text-xs font-semibold text-on-surface focus:border-primary focus:ring-1 focus:ring-primary outline-none"
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block font-label-caps text-label-caps text-on-surface-variant mb-2 font-bold">
+                          DESDE (HORA)
+                        </label>
+                        <div className="relative">
+                          <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">
+                            schedule
+                          </span>
+                          <select
+                            value={desde}
+                            onChange={(e) => setDesde(e.target.value)}
+                            className="w-full pl-9 pr-4 py-2.5 bg-surface-container-lowest border border-outline-variant/60 rounded-xl text-xs font-semibold text-on-surface focus:border-primary focus:ring-1 focus:ring-primary outline-none cursor-pointer appearance-none"
+                          >
+                            {HORAS_PERMISOS.slice(0, -1).map((h) => (
+                              <option key={h} value={h}>
+                                {h}
+                              </option>
+                            ))}
+                          </select>
+                          <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none text-sm">
+                            expand_more
+                          </span>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block font-label-caps text-label-caps text-on-surface-variant mb-2 font-bold">
+                          HASTA (HORA)
+                        </label>
+                        <div className="relative">
+                          <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">
+                            schedule
+                          </span>
+                          <select
+                            value={hasta}
+                            onChange={(e) => setHasta(e.target.value)}
+                            className="w-full pl-9 pr-4 py-2.5 bg-surface-container-lowest border border-outline-variant/60 rounded-xl text-xs font-semibold text-on-surface focus:border-primary focus:ring-1 focus:ring-primary outline-none cursor-pointer appearance-none"
+                          >
+                            {HORAS_PERMISOS.filter((h) => h > desde).map((h) => (
+                              <option key={h} value={h}>
+                                {h}
+                              </option>
+                            ))}
+                          </select>
+                          <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none text-sm">
+                            expand_more
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Reason Input */}
+                  <div>
+                    <label className="block font-label-caps text-label-caps text-on-surface-variant mb-2 font-bold">
+                      {modo === 'reunion' ? 'TEXTO DE LA REUNIÓN' : 'MOTIVO'}
+                    </label>
+                    <input
+                      type="text"
+                      value={motivo}
+                      onChange={(e) => setMotivo(e.target.value)}
+                      placeholder={
+                        modo === 'reunion'
+                          ? 'Ej: Reunión de coordinación mensual'
+                          : modo === 'enfermedad'
+                          ? 'Enfermedad (por defecto)'
+                          : modo === 'vacaciones'
+                          ? 'Vacaciones (por defecto)'
+                          : 'Permiso médico, trámite personal...'
+                      }
+                      className="w-full p-3 bg-surface-container-lowest border border-outline-variant/60 rounded-xl text-xs font-medium text-on-surface focus:border-primary focus:ring-1 focus:ring-primary outline-none placeholder:text-on-surface-variant/50"
+                      maxLength={200}
+                    />
+                  </div>
+
+                  {/* Notice Banner - Enfermedad con color #d97706 específico solicitado por el usuario */}
+                  {modo === 'enfermedad' && (
+                    <div className="rounded-xl border border-[#d97706]/40 bg-[#d97706]/10 p-4 text-xs font-semibold text-[#d97706] leading-relaxed shadow-2xs">
+                      🤒 Al reportar la enfermedad se cancelarán automáticamente las citas activas
+                      del profesional entre {desde} y {hasta}, y se bloqueará su agenda ese rango.
+                      Los pacientes afectados aparecerán listados para que los contactes y reagendes.
+                    </div>
+                  )}
+
+                  {/* Vacaciones preview check */}
+                  {modo === 'vacaciones' &&
+                    (profesionalIds.length === 0 || !vacRangoOk ? (
+                      <div className="rounded-xl border border-outline-variant/50 bg-surface-container-low p-3.5 text-xs text-on-surface-variant leading-relaxed">
+                        🌴 Elige profesional(es) y un rango de fechas. Se bloqueará el{' '}
+                        <b>día completo</b> (08:00–20:00) de cada fecha. El sistema verifica que no
+                        haya citas antes de permitir el bloqueo — <b>no se cancela nada</b>.
+                      </div>
+                    ) : vacPreview.isFetching ? (
+                      <div className="rounded-xl border border-outline-variant/50 bg-surface-container-low p-3.5 text-xs text-on-surface-variant flex items-center gap-2">
+                        <span className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                        Revisando disponibilidad en el rango...
+                      </div>
+                    ) : vacPreview.isError ? (
+                      <div className="rounded-xl border border-error/30 bg-error/10 p-3.5 text-xs text-error font-semibold">
+                        No se pudo revisar el rango. Reintenta.
+                      </div>
+                    ) : vacPreview.data ? (
+                      <div
+                        className={cn(
+                          'rounded-xl border p-4 space-y-2.5',
+                          vacPreview.data.ok
+                            ? 'border-teal-500/30 bg-teal-500/10'
+                            : 'border-error/30 bg-error/10',
+                        )}
+                      >
+                        <p
+                          className={cn(
+                            'text-xs font-bold flex items-center justify-between gap-2',
+                            vacPreview.data.ok ? 'text-teal-900' : 'text-error',
+                          )}
+                        >
+                          <span>
+                            {vacPreview.data.ok
+                              ? '✓ Todo libre — se puede bloquear'
+                              : '✗ Hay citas en el rango'}
+                          </span>
+                          <span className="font-semibold text-on-surface-variant">
+                            {vacPreview.data.dias} día(s) · {vacPreview.data.profesionales.length}{' '}
+                            prof.
+                          </span>
+                        </p>
+                        <ul className="space-y-1.5">
+                          {vacPreview.data.profesionales.map((pr) => (
+                            <li
+                              key={pr.profesionalId}
+                              className={cn(
+                                'rounded-lg border px-3 py-2 text-xs bg-surface-container-lowest',
+                                pr.bloqueable ? 'border-teal-500/30' : 'border-error/30',
+                              )}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-bold text-on-surface">{pr.nombre}</span>
+                                <span
+                                  className={cn(
+                                    'font-bold',
+                                    pr.bloqueable ? 'text-teal-700' : 'text-error',
+                                  )}
+                                >
+                                  {pr.bloqueable
+                                    ? 'Libre ✓'
+                                    : `${pr.conflictos.length} cita(s) ✗`}
+                                </span>
+                              </div>
+                              {pr.conflictos.length > 0 && (
+                                <ul className="mt-1.5 space-y-1 text-on-surface-variant/80 text-[11px]">
+                                  {pr.conflictos.slice(0, 5).map((c, i) => (
+                                    <li key={i} className="flex items-center gap-2 font-mono">
+                                      <span>
+                                        {c.fecha} {c.horaInicio}
+                                      </span>
+                                      <span className="font-sans font-medium truncate">
+                                        {c.paciente}
+                                      </span>
+                                      <span className="font-sans text-on-surface-variant/60 truncate">
+                                        {c.servicio}
+                                      </span>
+                                    </li>
+                                  ))}
+                                  {pr.conflictos.length > 5 && (
+                                    <li className="text-on-surface-variant/60 italic font-sans">
+                                      …y {pr.conflictos.length - 5} más
+                                    </li>
+                                  )}
+                                </ul>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null)}
+
+                  {/* Main Action Button */}
+                  <div className="flex items-center justify-end gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => navigate('/herramientas')}
+                      className="px-6 py-2.5 rounded-xl border border-outline-variant/70 text-on-surface font-body-md font-semibold hover:bg-surface-container-low transition-colors cursor-pointer"
+                    >
+                      Cancelar
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={enviar}
+                      disabled={!valido || enviando}
+                      style={
+                        modo === 'enfermedad'
+                          ? { backgroundColor: '#d97706' }
+                          : undefined
+                      }
+                      className={cn(
+                        'px-6 py-2.5 rounded-xl font-body-md font-bold text-white shadow-xs transition-all flex items-center gap-2 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed',
+                        modo === 'reunion'
+                          ? 'bg-emerald-600 hover:bg-emerald-700'
+                          : modo === 'enfermedad'
+                          ? 'hover:opacity-90'
+                          : modo === 'vacaciones'
+                          ? 'bg-teal-600 hover:bg-teal-700'
+                          : 'bg-rose-600 hover:bg-rose-700',
+                      )}
+                    >
+                      <span className="material-symbols-outlined text-[20px]">
+                        {modo === 'reunion'
+                          ? 'groups'
+                          : modo === 'enfermedad'
+                          ? 'sick'
+                          : modo === 'vacaciones'
+                          ? 'beach_access'
+                          : 'block'}
+                      </span>
+                      <span>
+                        {enviando
+                          ? 'Procesando...'
+                          : modo === 'reunion'
+                          ? destinatario === 'ambos'
+                            ? 'Agendar reunión en ambas agendas'
+                            : `Agendar reunión de ${
+                                destinatario === 'daniel' ? 'Daniel' : 'Yasica'
+                              }`
+                          : modo === 'enfermedad'
+                          ? 'Reportar enfermedad y liberar el día'
+                          : modo === 'vacaciones'
+                          ? `Bloquear vacaciones${
+                              profesionalIds.length > 1 ? ` (${profesionalIds.length})` : ''
+                            }`
+                          : `Bloquear horario${
+                              profesionalIds.length > 1 ? ` (${profesionalIds.length})` : ''
+                            }`}
+                      </span>
+                    </button>
+                  </div>
+
+                  {/* Conflict list */}
+                  {citasConflicto.length > 0 && (
+                    <div className="rounded-xl border border-error/30 bg-error/10 p-4 space-y-2">
+                      <p className="text-xs font-bold text-error">
+                        No se pudo bloquear por citas existentes ({citasConflicto.length} cita(s)).
+                        Reprograma o cancela primero:
+                      </p>
+                      <ul className="space-y-1">
+                        {citasConflicto.map((c, i) => (
+                          <li
+                            key={i}
+                            className="flex items-center justify-between gap-2 text-xs bg-surface-container-lowest border border-error/20 rounded-lg p-2 font-medium"
+                          >
+                            <span className="font-bold text-on-surface font-mono">
+                              {c.horaInicio}
+                            </span>
+                            <span className="flex-1 text-on-surface truncate font-semibold">
+                              {c.paciente}
+                            </span>
+                            <span className="text-on-surface-variant/70 truncate">
+                              {c.servicio}
+                            </span>
+                            <span className="text-on-surface-variant font-mono">
+                              {c.telefono}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Affected Patients Banner */}
+                  {pacientesAfectados && (
+                    <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 space-y-2">
+                      <p className="text-xs font-bold text-emerald-900">
+                        {pacientesAfectados.length > 0
+                          ? `Día liberado · ${pacientesAfectados.length} cita(s) cancelada(s). Contacta a estos pacientes para reagendar:`
+                          : 'Día liberado. El profesional no tenía citas en el rango.'}
+                      </p>
+                      {pacientesAfectados.length > 0 && (
+                        <ul className="space-y-1">
+                          {pacientesAfectados.map((c, i) => (
+                            <li
+                              key={i}
+                              className="flex items-center justify-between gap-2 text-xs bg-surface-container-lowest border border-emerald-500/20 rounded-lg p-2"
+                            >
+                              <span className="font-bold text-on-surface font-mono">
+                                {c.horaInicio}
+                              </span>
+                              <span className="flex-1 text-on-surface font-semibold truncate">
+                                {c.paciente}
+                              </span>
+                              <span className="text-on-surface-variant/70 truncate">
+                                {c.servicio}
+                              </span>
+                              <a
+                                href={`tel:${c.telefono}`}
+                                className="text-emerald-700 font-bold hover:underline"
+                              >
+                                {c.telefono}
+                              </a>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Side Panel (Right - 4 cols) - Permisos del Día & Vacaciones Vigentes */}
+            <div className="lg:col-span-4 space-y-6">
+              <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/60 p-5 shadow-xs flex flex-col h-full space-y-5">
+                <div className="flex items-center justify-between pb-3 border-b border-outline-variant/40">
+                  <h3 className="font-headline-sm text-headline-sm font-bold text-on-surface flex items-center gap-2">
+                    <span className="material-symbols-outlined text-primary text-[20px]">
+                      view_agenda
+                    </span>
+                    <span>
+                      {modo === 'vacaciones' ? 'Vacaciones Vigentes' : 'Permisos del Día'}
+                    </span>
+                  </h3>
+                  <span className="bg-surface-container-high text-on-surface-variant font-mono-label text-[11px] font-bold px-2 py-0.5 rounded">
+                    {modo === 'vacaciones' ? 'Total' : format(parseISO(fecha), 'dd MMM')}
+                  </span>
+                </div>
+
+                {/* List of Vacaciones Vigentes when mode === 'vacaciones' */}
+                {modo === 'vacaciones' ? (
+                  <div className="space-y-3 flex-1 overflow-y-auto custom-scrollbar pr-1">
+                    {vacacionesVigentes.isLoading ? (
+                      <div className="flex justify-center py-8">
+                        <div className="w-6 h-6 border-2 border-teal-600 border-t-transparent rounded-full animate-spin" />
+                      </div>
+                    ) : (vacacionesVigentes.data ?? []).length === 0 ? (
+                      <p className="text-xs text-on-surface-variant/60 text-center py-8">
+                        No hay vacaciones registradas.
+                      </p>
+                    ) : (
+                      (vacacionesVigentes.data ?? []).map((v) => {
+                        const editando = editVac?.ids[0] === v.ids[0];
+                        const iniciales = `${v.profesional.nombres[0] ?? ''}${
+                          v.profesional.apellidos[0] ?? ''
+                        }`.toUpperCase();
+
+                        return (
+                          <div
+                            key={v.ids[0]}
+                            className="p-3.5 bg-teal-500/10 border border-teal-500/30 rounded-xl space-y-2"
+                          >
+                            <div className="flex items-center gap-3">
+                              <div
+                                className="w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
+                                style={{
+                                  backgroundColor: v.profesional.colorAvatar ?? '#14b8a6',
+                                }}
+                              >
+                                {iniciales}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-bold text-on-surface truncate">
+                                  {v.profesional.nombres.split(' ')[0]}{' '}
+                                  {v.profesional.apellidos.split(' ')[0]}
+                                </p>
+                                <p className="text-[11px] text-teal-800 font-semibold">
+                                  🌴 {format(parseISO(v.fechaInicio), 'd MMM', { locale: es })} –{' '}
+                                  {format(parseISO(v.fechaFin), 'd MMM yyyy', { locale: es })} ·{' '}
+                                  {v.dias} día(s)
+                                </p>
+                                <p className="text-[11px] text-on-surface-variant/70 truncate">
+                                  {v.motivo}
+                                </p>
+                              </div>
+                              {!editando && (
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <button
+                                    onClick={() => {
+                                      setEditVac({ ids: v.ids, sedeId: v.sedeId ?? '' });
+                                      setEditIni(v.fechaInicio);
+                                      setEditFin(v.fechaFin);
+                                      setEditMotivo(v.motivo);
+                                    }}
+                                    className="p-1.5 text-xs font-bold text-teal-800 hover:bg-teal-500/20 rounded-lg transition-colors cursor-pointer"
+                                    title="Editar vacación"
+                                  >
+                                    <span className="material-symbols-outlined text-[16px]">
+                                      edit
+                                    </span>
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      if (
+                                        window.confirm(
+                                          `¿Eliminar las vacaciones de ${
+                                            v.profesional.nombres.split(' ')[0]
+                                          } (${v.dias} día(s))?`,
+                                        )
+                                      )
+                                        eliminarVacMut.mutate(v.ids);
+                                    }}
+                                    disabled={eliminarVacMut.isPending}
+                                    className="p-1.5 text-on-surface-variant/60 hover:text-error hover:bg-error/10 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                                    title="Eliminar vacación"
+                                  >
+                                    <span className="material-symbols-outlined text-[16px]">
+                                      delete
+                                    </span>
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+
+                            {editando && (
+                              <div className="mt-3 pt-3 border-t border-teal-500/30 space-y-2">
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-on-surface-variant mb-1 uppercase">
+                                      Desde
+                                    </label>
+                                    <input
+                                      type="date"
+                                      value={editIni}
+                                      onChange={(e) => setEditIni(e.target.value)}
+                                      className="w-full p-1.5 bg-surface-container-lowest border border-outline-variant/60 rounded-lg text-xs font-semibold text-on-surface"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-on-surface-variant mb-1 uppercase">
+                                      Hasta
+                                    </label>
+                                    <input
+                                      type="date"
+                                      value={editFin}
+                                      min={editIni}
+                                      onChange={(e) => setEditFin(e.target.value)}
+                                      className="w-full p-1.5 bg-surface-container-lowest border border-outline-variant/60 rounded-lg text-xs font-semibold text-on-surface"
+                                    />
+                                  </div>
+                                </div>
+                                <input
+                                  type="text"
+                                  value={editMotivo}
+                                  onChange={(e) => setEditMotivo(e.target.value)}
+                                  placeholder="Motivo"
+                                  className="w-full p-1.5 bg-surface-container-lowest border border-outline-variant/60 rounded-lg text-xs text-on-surface"
+                                />
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() =>
+                                      editarVacMut.mutate({
+                                        ids: v.ids,
+                                        sedeId: v.sedeId ?? '',
+                                        fechaInicio: editIni,
+                                        fechaFin: editFin,
+                                        motivo: editMotivo.trim() || 'Vacaciones',
+                                      })
+                                    }
+                                    disabled={
+                                      editarVacMut.isPending ||
+                                      !editIni ||
+                                      !editFin ||
+                                      editFin < editIni ||
+                                      !v.sedeId
+                                    }
+                                    className="flex-1 bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold py-1.5 rounded-lg disabled:opacity-50 transition-colors cursor-pointer"
+                                  >
+                                    {editarVacMut.isPending ? 'Guardando...' : 'Guardar'}
+                                  </button>
+                                  <button
+                                    onClick={() => setEditVac(null)}
+                                    className="px-3 text-xs font-medium text-on-surface-variant hover:bg-surface-container-low rounded-lg transition-colors cursor-pointer"
+                                  >
+                                    Cancelar
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })
                     )}
                   </div>
-                );
-              })
-            )}
-          </div>
-        )}
+                ) : (
+                  /* List of Permisos del Día for active fecha */
+                  <div className="space-y-3 flex-1 overflow-y-auto custom-scrollbar pr-1">
+                    {loadingPermisos ? (
+                      <div className="flex justify-center py-8">
+                        <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                      </div>
+                    ) : permisos.length === 0 ? (
+                      <p className="text-xs text-on-surface-variant/60 text-center py-8">
+                        Sin permisos registrados para este día.
+                      </p>
+                    ) : (
+                      permisos.map((p: Permiso) => {
+                        const iniciales = `${p.profesional.nombres[0] ?? ''}${
+                          p.profesional.apellidos[0] ?? ''
+                        }`.toUpperCase();
+                        const reunion = !!p.esReunion;
+                        const vacaciones = !!p.esVacaciones;
+                        const enfermedad =
+                          !!p.esEnfermedad ||
+                          p.motivo?.toLowerCase().includes('enfermedad') ||
+                          p.motivo?.startsWith('🤒');
 
-        {/* Lista de permisos del día */}
-        <div className="space-y-2">
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-widest px-1">Permisos del día</p>
-          {isLoading ? (
-            <div className="flex justify-center py-8"><div className="w-7 h-7 border-2 border-rose-400 border-t-transparent rounded-full animate-spin" /></div>
-          ) : permisos.length === 0 ? (
-            <p className="text-sm text-slate-400 text-center py-8">Sin permisos registrados para este día.</p>
-          ) : (
-            permisos.map((p: Permiso) => {
-              const iniciales = `${p.profesional.nombres[0] ?? ''}${p.profesional.apellidos[0] ?? ''}`.toUpperCase();
-              const reunion = !!p.esReunion;
-              const vacaciones = !!p.esVacaciones;
-              return (
-                <div key={p.id} className={cn('rounded-xl p-4 flex items-center gap-3 border', vacaciones ? 'bg-teal-50/60 border-teal-200' : reunion ? 'bg-emerald-50/60 border-emerald-200' : 'bg-white border-slate-200')}>
-                  <div className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0" style={{ backgroundColor: p.profesional.colorAvatar }}>{iniciales}</div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-slate-900 flex items-center gap-1.5">
-                      {p.profesional.nombres.split(' ')[0]} {p.profesional.apellidos.split(' ')[0]}
-                      <span className="font-normal text-slate-400"> · {tipoLabel(p.profesional.tipo)}</span>
-                      {vacaciones && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-teal-600 text-white">🌴 Vacaciones</span>}
-                      {reunion && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-600 text-white">🤝 Reunión</span>}
-                    </p>
-                    <p className={cn('text-xs font-medium mt-0.5', vacaciones ? 'text-teal-700' : reunion ? 'text-emerald-700' : 'text-rose-700')}>{vacaciones ? '🌴' : reunion ? '🤝' : '🚫'} {p.horaInicio} – {p.horaFin}</p>
-                    <p className="text-xs text-slate-500 truncate">{p.motivo}</p>
+                        return (
+                          <div
+                            key={p.id}
+                            className={cn(
+                              'p-3.5 bg-surface-container-low border border-outline-variant/50 rounded-xl space-y-2 hover:border-outline-variant transition-colors group relative',
+                            )}
+                          >
+                            <div className="flex items-start justify-between">
+                              <div className="flex items-center gap-3">
+                                <div
+                                  className="w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0 shadow-2xs"
+                                  style={{
+                                    backgroundColor: p.profesional.colorAvatar || '#3525cd',
+                                  }}
+                                >
+                                  {iniciales}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-body-md text-xs font-bold text-on-surface leading-tight truncate">
+                                    {p.profesional.nombres.split(' ')[0]}{' '}
+                                    {p.profesional.apellidos.split(' ')[0]}
+                                  </p>
+                                  <p className="font-mono-label text-[10px] text-on-surface-variant/70 truncate">
+                                    {tipoLabel(p.profesional.tipo)}
+                                  </p>
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => eliminarMut.mutate(p.id)}
+                                disabled={eliminarMut.isPending}
+                                className="text-on-surface-variant/50 hover:text-error transition-colors p-1 rounded hover:bg-surface-container-high cursor-pointer disabled:opacity-50"
+                                title="Eliminar bloqueo"
+                              >
+                                <span className="material-symbols-outlined text-[18px]">
+                                  delete
+                                </span>
+                              </button>
+                            </div>
+
+                            <div className="flex items-center justify-between pt-1">
+                              <span
+                                className={cn(
+                                  'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full font-label-caps text-[10px] font-bold leading-none',
+                                  vacaciones
+                                    ? 'bg-teal-500/20 text-teal-800'
+                                    : reunion
+                                    ? 'bg-emerald-500/20 text-emerald-800'
+                                    : enfermedad
+                                    ? 'bg-[#d97706]/20 text-[#b45309]'
+                                    : 'bg-rose-500/20 text-rose-800',
+                                )}
+                              >
+                                {vacaciones
+                                  ? '🌴 Vacaciones'
+                                  : reunion
+                                  ? '🤝 Reunión'
+                                  : enfermedad
+                                  ? '🤒 Enfermedad'
+                                  : '🚫 Permiso'}
+                              </span>
+                              <span className="font-mono-label text-[11px] font-bold text-on-surface-variant flex items-center gap-1">
+                                <span className="material-symbols-outlined text-[14px]">
+                                  schedule
+                                </span>
+                                {p.horaInicio} – {p.horaFin}
+                              </span>
+                            </div>
+
+                            <div className="pt-1.5 border-t border-outline-variant/30">
+                              <p className="text-[11px] text-on-surface-variant font-medium truncate">
+                                {p.motivo}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
                   </div>
-                  <button
-                    onClick={() => eliminarMut.mutate(p.id)}
-                    disabled={eliminarMut.isPending}
-                    className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all disabled:opacity-50"
-                    title="Eliminar permiso"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                  </button>
-                </div>
-              );
-            })
-          )}
+                )}
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
+      </main>
     </div>
   );
 }

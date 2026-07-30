@@ -6,6 +6,7 @@ import { sedesApi, profesionalesApi, citasApi } from '../api';
 import { almuerzosApi, type BloqueoAlmuerzo } from '../api/almuerzos';
 import { permisosApi } from '../api/permisos';
 import { TURNOS_ALMUERZO, horasEnMinutos } from '@limablue/shared';
+import { useAuthStore } from '../stores/authStore';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  SERVICE (BACK) de Horarios de Almuerzo
@@ -35,22 +36,32 @@ export function useAlmuerzosData() {
   const [sedeSelId, setSedeSelId] = useState<string>('');
   const [confirmando, setConfirmando] = useState<BloqueoAlmuerzo | null>(null);
 
+  const { usuario, puedeAccederSede } = useAuthStore();
   const hoy = format(new Date(), 'yyyy-MM-dd');
 
-  const { data: sedes = [] } = useQuery({
+  const { data: sedesRaw = [] } = useQuery({
     queryKey: ['sedes'],
     queryFn: sedesApi.listar,
   });
+
+  const sedes = useMemo(() => {
+    if (!sedesRaw.length) return [];
+    if (!usuario) return sedesRaw;
+    if (usuario.permisos?.includes('admin.ver') || ['admin', 'coordinadora_sedes'].includes(usuario.rol)) {
+      return sedesRaw;
+    }
+    return sedesRaw.filter((s) => puedeAccederSede(s.id));
+  }, [sedesRaw, usuario, puedeAccederSede]);
 
   // Auto-seleccionar primera sede
   const sedeId = sedeSelId || sedes[0]?.id || '';
   const sedeActual = sedes.find((s) => s.id === sedeId);
   const esPazSoldan = sedeActual?.nombre === NOMBRE_PAZ_SOLDAN;
 
-  // Almuerzos vigentes de la sede
+  // Almuerzos vigentes de la sede en la fecha actual (hoy)
   const { data: bloqueos = [], isLoading: loadingBloqueos } = useQuery({
-    queryKey: ['almuerzos', sedeId],
-    queryFn: () => almuerzosApi.listar(sedeId),
+    queryKey: ['almuerzos', sedeId, hoy],
+    queryFn: () => almuerzosApi.listarPorFecha(sedeId, hoy),
     enabled: !!sedeId,
   });
 
@@ -118,7 +129,8 @@ export function useAlmuerzosData() {
   const eliminarMutation = useMutation({
     mutationFn: (id: string) => almuerzosApi.eliminar(id),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['almuerzos', sedeId] });
+      qc.invalidateQueries({ queryKey: ['almuerzos'] });
+      qc.invalidateQueries({ queryKey: ['bloqueos-almuerzo'] });
       toast.success('Horario de almuerzo eliminado.');
       setConfirmando(null);
     },
@@ -224,9 +236,10 @@ export function useAsignarAlmuerzo(
   const conflicto = citasEnTurnoSel.length > 0;
 
   const crearMutation = useMutation({
-    mutationFn: () => almuerzosApi.crear({ profesionalId: profesional.id, sedeId, horaInicio: turnoSel }),
+    mutationFn: () => almuerzosApi.crear({ profesionalId: profesional.id, sedeId, horaInicio: turnoSel, fecha: hoy }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['almuerzos', sedeId] });
+      qc.invalidateQueries({ queryKey: ['almuerzos'] });
+      qc.invalidateQueries({ queryKey: ['bloqueos-almuerzo'] });
       const turno = TURNOS_ALMUERZO.find((t) => t.horaInicio === turnoSel);
       toast.success(
         `Almuerzo de ${profesional.nombres.split(' ')[0]} ${profesional.apellidos.split(' ')[0]} registrado: ${turno?.label}`,

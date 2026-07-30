@@ -71,15 +71,22 @@ export function Idea1NuevoPacienteModal(props: UseNuevoPacienteFormProps) {
                 <option value="PASAPORTE">Pasaporte</option>
                 <option value="RUC">RUC</option>
               </select>
-              <input
-                type="text"
-                value={numeroDocumento}
-                onChange={(e) => setNumeroDocumento(tipoDocumento === 'DNI' ? e.target.value.replace(/\D/g, '') : e.target.value)}
-                maxLength={tipoDocumento === 'DNI' ? 8 : 20}
-                inputMode={tipoDocumento === 'DNI' ? 'numeric' : 'text'}
-                placeholder={tipoDocumento === 'DNI' ? '8 dígitos' : 'N° de documento'}
-                className={INP + ' font-mono'}
-              />
+              <div className="relative">
+                <input
+                  type="text"
+                  value={numeroDocumento}
+                  onChange={(e) => setNumeroDocumento(tipoDocumento === 'DNI' ? e.target.value.replace(/\D/g, '') : e.target.value)}
+                  maxLength={tipoDocumento === 'DNI' ? 8 : 20}
+                  inputMode={tipoDocumento === 'DNI' ? 'numeric' : 'text'}
+                  placeholder={tipoDocumento === 'DNI' ? '8 dígitos' : 'N° de documento'}
+                  className={INP + ' font-mono pr-16'}
+                />
+                {buscando && (
+                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-primary font-bold animate-pulse">
+                    RENIEC...
+                  </span>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={buscarPorDocumento}

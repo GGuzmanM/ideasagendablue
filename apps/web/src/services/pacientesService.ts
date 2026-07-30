@@ -257,9 +257,68 @@ export function useNuevoPacienteForm({ onClose, onCreated }: UseNuevoPacienteFor
   const [categoria, setCategoria] = useState('');
 
   const [buscando, setBuscando] = useState(false);
+  const dniConsultadoRef = useRef('');
 
   // Edad autocalculada desde la fecha de nacimiento.
   const edad = useMemo(() => calcularEdad(fechaNacimiento), [fechaNacimiento]);
+
+  // AUTO-CONSULTA RENIEC / PeruDevs y VERIFICACIÓN DE PACIENTE EXISTENTE por DNI
+  useEffect(() => {
+    const doc = numeroDocumento.trim();
+    const esDni = tipoDocumento === 'DNI';
+    const docValido = esDni ? /^\d{8}$/.test(doc) : doc.length >= 6;
+    if (!docValido) return;
+
+    const clave = `${tipoDocumento}:${doc}`;
+    if (dniConsultadoRef.current === clave) return;
+
+    dniConsultadoRef.current = clave;
+    let cancelado = false;
+
+    const t = setTimeout(async () => {
+      setBuscando(true);
+      try {
+        const encontrados = await pacientesApi.buscar(doc);
+        if (cancelado) return;
+        const yaRegistrado = encontrados.find(
+          (p: any) => p.numeroDocumento === doc && p.tipoDocumento === tipoDocumento,
+        );
+        if (yaRegistrado) {
+          const nombreComp = `${yaRegistrado.nombres} ${yaRegistrado.apellidoPaterno} ${yaRegistrado.apellidoMaterno || ''}`.trim();
+          toast.success(`Paciente ya existe en el sistema: ${nombreComp}`, { duration: 4000 });
+          setNombres(toTitleCase(yaRegistrado.nombres));
+          setApellidoPaterno(toTitleCase(yaRegistrado.apellidoPaterno));
+          setApellidoMaterno(toTitleCase(yaRegistrado.apellidoMaterno || ''));
+          if (yaRegistrado.telefono) setTelefono(yaRegistrado.telefono);
+          if (yaRegistrado.email) setEmail(yaRegistrado.email);
+          if (yaRegistrado.fechaNacimiento) setFechaNacimiento(yaRegistrado.fechaNacimiento.slice(0, 10));
+          if (yaRegistrado.sexo) setSexo(yaRegistrado.sexo);
+          return;
+        }
+
+        if (!esDni) return;
+        const d = await reniecApi.consultarDni(doc);
+        if (cancelado) return;
+        setNombres(toTitleCase(d.nombres));
+        setApellidoPaterno(toTitleCase(d.apellidoPaterno));
+        setApellidoMaterno(toTitleCase(d.apellidoMaterno));
+        if (d.fechaNacimiento) setFechaNacimiento(d.fechaNacimiento);
+        if (d.sexo) setSexo(d.sexo);
+        toast.success('Datos autocompletados desde RENIEC / PeruDevs');
+      } catch (e: any) {
+        if (cancelado) return;
+        dniConsultadoRef.current = '';
+        toast(e?.message || 'No se pudo consultar RENIEC', { icon: 'ℹ️' });
+      } finally {
+        if (!cancelado) setBuscando(false);
+      }
+    }, 500);
+
+    return () => {
+      cancelado = true;
+      clearTimeout(t);
+    };
+  }, [numeroDocumento, tipoDocumento]);
 
   // El botón "Buscar" solo aplica a DNI (8 dígitos). Consulta PeruDevs vía el backend
   // (GET /reniec/dni/:dni) y trae nombres, apellidos, fecha de nacimiento y sexo.

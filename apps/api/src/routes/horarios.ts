@@ -44,6 +44,29 @@ router.get('/:sedeId', requireAuth, async (req, res) => {
   res.json({ horarioDefault, efectivo, diaSemana });
 });
 
+// GET /horarios/:sedeId/turnos-profesionales?fecha=YYYY-MM-DD
+// Devuelve el turno efectivo (horaInicio y horaFin) de cada profesional en la sede y fecha
+router.get('/:sedeId/turnos-profesionales', requireAuth, async (req, res) => {
+  const { sedeId } = req.params;
+  const { fecha } = req.query as { fecha?: string };
+  if (!fecha) throw new AppError('fecha (YYYY-MM-DD) requerida', 400);
+
+  const profs = await prisma.profesional.findMany({
+    where: { activo: true, deletedAt: null },
+    select: { id: true },
+  });
+
+  const { turnosDelDia } = await import('../services/disponibilidad');
+  const turnosMap = await turnosDelDia(sedeId, fecha, profs.map((p) => p.id));
+  const result: Record<string, { horaInicio: string; horaFin: string } | null> = {};
+
+  for (const p of profs) {
+    result[p.id] = turnosMap.get(p.id) ?? null;
+  }
+
+  res.json(result);
+});
+
 // GET /horarios/:sedeId/excepciones?desde=YYYY-MM-DD&hasta=YYYY-MM-DD
 router.get('/:sedeId/excepciones', requireAuth, async (req, res) => {
   const { sedeId } = req.params;

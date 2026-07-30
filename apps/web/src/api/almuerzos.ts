@@ -28,7 +28,7 @@ export const almuerzosApi = {
   getPorProfesional: (profesionalId: string, sedeId: string) =>
     api.get<BloqueoAlmuerzo | null>(`/almuerzos/profesional/${profesionalId}`, { sedeId }),
 
-  crear: (data: { profesionalId: string; sedeId: string; horaInicio: string }) =>
+  crear: (data: { profesionalId: string; sedeId: string; horaInicio: string; fecha?: string; esRecurrente?: boolean }) =>
     api.post<BloqueoAlmuerzo>('/almuerzos', data),
 
   eliminar: (id: string) =>

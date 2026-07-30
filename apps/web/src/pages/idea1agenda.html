@@ -1,333 +1,536 @@
 <!DOCTYPE html>
 
-<html lang="es"><head>
+<html class="light" lang="es"><head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>Horarios de almuerzo - MediFlow Pro</title>
+<title>MediFlow Pro - Permisos / Bloqueos</title>
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Geist:wght@500;600;700;900&amp;family=JetBrains+Mono:wght@400&amp;display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
 <script id="tailwind-config">
         tailwind.config = {
-            darkMode: "class",
-            theme: {
-                extend: {
-                    "colors": {
-                        "error-container": "#ffdad6",
-                        "surface-container-lowest": "#ffffff",
-                        "on-tertiary-fixed": "#351000",
-                        "surface": "#f7f9fb",
-                        "surface-container-low": "#f2f4f6",
-                        "on-error": "#ffffff",
-                        "secondary-container": "#dae2fd",
-                        "on-background": "#191c1e",
-                        "secondary-fixed-dim": "#bec6e0",
-                        "on-primary-fixed": "#0f0069",
-                        "surface-bright": "#f7f9fb",
-                        "inverse-on-surface": "#eff1f3",
-                        "inverse-primary": "#c3c0ff",
-                        "surface-container-highest": "#e0e3e5",
-                        "primary-fixed": "#e2dfff",
-                        "on-error-container": "#93000a",
-                        "on-tertiary-fixed-variant": "#7b2f00",
-                        "on-secondary-fixed-variant": "#3f465c",
-                        "surface-container-high": "#e6e8ea",
-                        "surface-container": "#eceef0",
-                        "primary-fixed-dim": "#c3c0ff",
-                        "on-primary": "#ffffff",
-                        "tertiary-container": "#a44100",
-                        "on-tertiary": "#ffffff",
-                        "on-surface-variant": "#464555",
-                        "background": "#f7f9fb",
-                        "outline-variant": "#c7c4d8",
-                        "secondary": "#565e74",
-                        "on-primary-fixed-variant": "#3323cc",
-                        "tertiary-fixed-dim": "#ffb695",
-                        "primary": "#3525cd",
-                        "outline": "#777587",
-                        "on-surface": "#191c1e",
-                        "surface-variant": "#e0e3e5",
-                        "primary-container": "#4f46e5",
-                        "on-secondary-fixed": "#131b2e",
-                        "on-primary-container": "#dad7ff",
-                        "on-secondary-container": "#5c647a",
-                        "inverse-surface": "#2d3133",
-                        "tertiary": "#7e3000",
-                        "surface-tint": "#4d44e3",
-                        "on-secondary": "#ffffff",
-                        "error": "#ba1a1a",
-                        "tertiary-fixed": "#ffdbcc",
-                        "on-tertiary-container": "#ffd2be",
-                        "surface-dim": "#d8dadc",
-                        "secondary-fixed": "#dae2fd"
-                    },
-                    "borderRadius": {
-                        "DEFAULT": "0.25rem",
-                        "lg": "0.5rem",
-                        "xl": "0.75rem",
-                        "full": "9999px"
-                    },
-                    "spacing": {
-                        "sidebar-expanded": "260px",
-                        "grid-gutter": "24px",
-                        "unit": "4px",
-                        "sidebar-collapsed": "72px",
-                        "container-padding": "32px"
-                    },
-                    "fontFamily": {
-                        "body-md": ["Inter"],
-                        "headline-md": ["Geist"],
-                        "body-lg": ["Inter"],
-                        "mono-label": ["JetBrains Mono"],
-                        "display-lg": ["Geist"],
-                        "label-caps": ["Inter"],
-                        "headline-sm": ["Geist"]
-                    },
-                    "fontSize": {
-                        "body-md": ["14px", { "lineHeight": "20px", "letterSpacing": "0", "fontWeight": "400" }],
-                        "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
-                        "body-lg": ["16px", { "lineHeight": "24px", "letterSpacing": "0", "fontWeight": "400" }],
-                        "mono-label": ["12px", { "lineHeight": "16px", "letterSpacing": "0", "fontWeight": "400" }],
-                        "display-lg": ["48px", { "lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "600" }],
-                        "label-caps": ["11px", { "lineHeight": "16px", "letterSpacing": "0.08em", "fontWeight": "600" }],
-                        "headline-sm": ["18px", { "lineHeight": "28px", "letterSpacing": "0", "fontWeight": "500" }]
-                    }
-                }
-            }
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "secondary-container": "#dae2fd",
+                      "on-primary-fixed": "#0f0069",
+                      "error-container": "#ffdad6",
+                      "surface-container-lowest": "#ffffff",
+                      "surface-dim": "#d8dadc",
+                      "on-primary-container": "#dad7ff",
+                      "on-secondary": "#ffffff",
+                      "inverse-surface": "#2d3133",
+                      "secondary-fixed": "#dae2fd",
+                      "tertiary-fixed": "#ffdbcc",
+                      "outline": "#777587",
+                      "tertiary": "#7e3000",
+                      "on-secondary-fixed": "#131b2e",
+                      "surface-container-high": "#e6e8ea",
+                      "on-secondary-container": "#5c647a",
+                      "inverse-on-surface": "#eff1f3",
+                      "primary-fixed-dim": "#c3c0ff",
+                      "on-secondary-fixed-variant": "#3f465c",
+                      "on-tertiary-fixed-variant": "#7b2f00",
+                      "on-primary": "#ffffff",
+                      "surface-container-highest": "#e0e3e5",
+                      "error": "#ba1a1a",
+                      "on-surface": "#191c1e",
+                      "background": "#f7f9fb",
+                      "surface": "#f7f9fb",
+                      "on-background": "#191c1e",
+                      "on-surface-variant": "#464555",
+                      "secondary": "#565e74",
+                      "surface-container-low": "#f2f4f6",
+                      "outline-variant": "#c7c4d8",
+                      "on-error": "#ffffff",
+                      "primary-container": "#4f46e5",
+                      "on-tertiary-container": "#ffd2be",
+                      "on-primary-fixed-variant": "#3323cc",
+                      "on-error-container": "#93000a",
+                      "on-tertiary": "#ffffff",
+                      "secondary-fixed-dim": "#bec6e0",
+                      "primary": "#3525cd",
+                      "surface-variant": "#e0e3e5",
+                      "surface-container": "#eceef0",
+                      "surface-tint": "#4d44e3",
+                      "tertiary-fixed-dim": "#ffb695",
+                      "primary-fixed": "#e2dfff",
+                      "inverse-primary": "#c3c0ff",
+                      "on-tertiary-fixed": "#351000",
+                      "tertiary-container": "#a44100",
+                      "surface-bright": "#f7f9fb"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "grid-gutter": "24px",
+                      "sidebar-collapsed": "72px",
+                      "container-padding": "32px",
+                      "unit": "4px",
+                      "sidebar-expanded": "260px"
+              },
+              "fontFamily": {
+                      "label-caps": [
+                              "Inter"
+                      ],
+                      "headline-md": [
+                              "Geist"
+                      ],
+                      "display-lg": [
+                              "Geist"
+                      ],
+                      "body-lg": [
+                              "Inter"
+                      ],
+                      "mono-label": [
+                              "JetBrains Mono"
+                      ],
+                      "headline-sm": [
+                              "Geist"
+                      ],
+                      "body-md": [
+                              "Inter"
+                      ]
+              },
+              "fontSize": {
+                      "label-caps": [
+                              "11px",
+                              {
+                                      "lineHeight": "16px",
+                                      "letterSpacing": "0.08em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "headline-md": [
+                              "24px",
+                              {
+                                      "lineHeight": "32px",
+                                      "letterSpacing": "-0.01em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "display-lg": [
+                              "48px",
+                              {
+                                      "lineHeight": "1.1",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "body-lg": [
+                              "16px",
+                              {
+                                      "lineHeight": "24px",
+                                      "letterSpacing": "0",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "mono-label": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "letterSpacing": "0",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "headline-sm": [
+                              "18px",
+                              {
+                                      "lineHeight": "28px",
+                                      "letterSpacing": "0",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "body-md": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "letterSpacing": "0",
+                                      "fontWeight": "400"
+                              }
+                      ]
+              }
+      },
+          },
         }
     </script>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&amp;family=Inter:wght@100..900&amp;family=JetBrains+Mono:wght@100..800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
 <style>
-        body { background-color: theme('colors.background'); color: theme('colors.on-background'); }
+        body { font-family: 'Inter', sans-serif; background-color: #f7f9fb; }
+        h1, h2, h3, h4, h5, h6 { font-family: 'Geist', sans-serif; }
+        .font-mono-label { font-family: 'JetBrains Mono', monospace; }
+        
+        /* Custom scrollbar for compact lists */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
     </style>
 </head>
-<body class="flex h-screen overflow-hidden bg-background font-body-md text-on-background">
+<body class="bg-background text-on-surface h-screen overflow-hidden flex">
 <!-- SideNavBar -->
-<aside class="bg-on-secondary-fixed dark:bg-on-secondary-fixed h-screen sticky top-0 left-0 w-sidebar-expanded hidden md:flex flex-col py-8 px-4 transition-all duration-300 ease-in-out z-50">
-<div class="mb-10 px-4">
+<nav class="fixed left-0 top-0 bottom-0 z-50 flex flex-col py-8 bg-on-primary-fixed dark:bg-inverse-surface border-r border-outline/20 h-full w-sidebar-expanded hidden md:flex">
+<div class="px-6 mb-10">
 <div class="flex items-center gap-3">
-<div class="w-8 h-8 rounded bg-primary flex items-center justify-center text-on-primary font-bold">
-                    M
-                </div>
+<img alt="MediFlow Logo" class="w-8 h-8 rounded-full" data-alt="A clean, minimalist logo icon for MediFlow Pro, featuring a stylized medical cross blending with a dynamic fluid wave shape in electric indigo, set against a dark background, high resolution." src="https://lh3.googleusercontent.com/aida-public/AB6AXuA0N17ybq18dNn1rgJeovd6wj8IagDTjUgiptreZMNqaDYcPl0iH44cQ2BNj_Q-nCJphNB6bhEsZJekEsLHeqYUPpa_nLnYPL05ie0N-KIruQoHJDQy81NOWF_Dp5PNAlo-vy5j42ZixwANtSjvgwMkUjXQ3ZPfDPNx8FVYFvuxiaKZdYFRBiAI5nAv-aDEAj_wBvPq0Iii_l_FKgw2gTR8yuNnaIE-S9v47m-Mwts1OIAXVgkdfiSf"/>
 <div>
-<h1 class="font-headline-md text-headline-md font-bold text-surface-container-lowest">MediFlow Pro</h1>
-<p class="font-label-caps text-label-caps text-secondary-fixed-dim">Medical Management</p>
+<h2 class="font-headline-md text-headline-md font-bold text-surface dark:text-on-surface leading-tight">MediFlow Pro</h2>
+<p class="font-label-caps text-label-caps text-primary-fixed-dim/80">Clinic Management</p>
 </div>
 </div>
 </div>
-<nav class="flex-1 space-y-2">
-<a class="flex items-center gap-3 py-3 rounded-lg text-secondary-fixed-dim font-medium pl-5 hover:bg-surface-variant/10 hover:text-surface-bright transition-all duration-300 ease-in-out group" href="#">
-<span class="material-symbols-outlined group-hover:scale-110 transition-transform">calendar_today</span>
-<span class="font-headline-sm text-headline-sm text-sm">Agenda</span>
+<div class="px-6 mb-8">
+<button class="w-full flex items-center justify-center gap-2 bg-primary text-on-primary font-body-md text-body-md py-2.5 px-4 rounded-DEFAULT hover:bg-primary/90 transition-colors">
+<span class="material-symbols-outlined text-[18px]">add</span>
+                New Appointment
+            </button>
+</div>
+<div class="flex-1 overflow-y-auto">
+<ul class="flex flex-col space-y-1">
+<li>
+<a class="flex items-center gap-3 text-primary-fixed border-l-4 border-primary-fixed-dim bg-on-primary-fixed-variant/30 px-6 py-3 cursor-pointer active:translate-x-1 font-label-caps text-label-caps transition-all" href="#">
+<span class="material-symbols-outlined">calendar_today</span>
+<span>Agenda</span>
 </a>
-<a class="flex items-center gap-3 py-3 rounded-lg text-primary-fixed-dim font-bold border-l-4 border-primary-fixed-dim pl-4 bg-surface-variant/5 transition-all duration-300 ease-in-out" href="#">
-<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">groups</span>
-<span class="font-headline-sm text-headline-sm text-sm">Patients</span>
+</li>
+<li>
+<a class="flex items-center gap-3 text-secondary-fixed-dim px-6 py-3 hover:bg-on-primary-fixed-variant/50 transition-all cursor-pointer active:translate-x-1 font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined">groups</span>
+<span>Patients</span>
 </a>
-<a class="flex items-center gap-3 py-3 rounded-lg text-secondary-fixed-dim font-medium pl-5 hover:bg-surface-variant/10 hover:text-surface-bright transition-all duration-300 ease-in-out group" href="#">
-<span class="material-symbols-outlined group-hover:scale-110 transition-transform">analytics</span>
-<span class="font-headline-sm text-headline-sm text-sm">Analytics</span>
+</li>
+<li>
+<a class="flex items-center gap-3 text-secondary-fixed-dim px-6 py-3 hover:bg-on-primary-fixed-variant/50 transition-all cursor-pointer active:translate-x-1 font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined">analytics</span>
+<span>Analytics</span>
 </a>
+</li>
+</ul>
+</div>
+<div class="mt-auto pt-6">
+<ul class="flex flex-col space-y-1">
+<li>
+<a class="flex items-center gap-3 text-secondary-fixed-dim px-6 py-3 hover:bg-on-primary-fixed-variant/50 transition-all cursor-pointer font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined">help_outline</span>
+<span>Help Center</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 text-secondary-fixed-dim px-6 py-3 hover:bg-on-primary-fixed-variant/50 transition-all cursor-pointer font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined">logout</span>
+<span>Logout</span>
+</a>
+</li>
+</ul>
+</div>
 </nav>
-<div class="mt-auto space-y-2 pt-8 border-t border-secondary-fixed-dim/20">
-<a class="flex items-center gap-3 py-3 rounded-lg text-secondary-fixed-dim font-medium pl-5 hover:bg-surface-variant/10 hover:text-surface-bright transition-all duration-300 ease-in-out group" href="#">
-<span class="material-symbols-outlined group-hover:scale-110 transition-transform">settings</span>
-<span class="font-headline-sm text-headline-sm text-sm">Settings</span>
-</a>
-<a class="flex items-center gap-3 py-3 rounded-lg text-secondary-fixed-dim font-medium pl-5 hover:bg-surface-variant/10 hover:text-surface-bright transition-all duration-300 ease-in-out group" href="#">
-<span class="material-symbols-outlined group-hover:scale-110 transition-transform">help</span>
-<span class="font-headline-sm text-headline-sm text-sm">Support</span>
-</a>
-</div>
-</aside>
-<!-- Main Content Area -->
-<div class="flex-1 flex flex-col h-screen overflow-hidden">
+<!-- Main Content Wrapper -->
+<div class="flex-1 flex flex-col ml-0 md:ml-sidebar-expanded min-w-0 h-screen overflow-hidden">
 <!-- TopNavBar -->
-<header class="bg-surface/80 dark:bg-surface/80 docked full-width top-0 sticky z-40 backdrop-blur-md border-b border-outline-variant/30 shadow-sm flex justify-between items-center w-full px-grid-gutter h-16">
-<div class="flex items-center gap-6">
-<!-- Search -->
-<div class="relative hidden md:block w-64">
-<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-sm">search</span>
-<input class="w-full pl-9 pr-12 py-2 bg-surface-container-low border border-outline-variant rounded-lg text-body-md focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all" placeholder="Search..." type="text"/>
-<div class="absolute right-2 top-1/2 -translate-y-1/2 bg-surface px-1.5 py-0.5 rounded border border-outline-variant/50 flex items-center">
-<span class="font-mono-label text-mono-label text-on-surface-variant text-[10px]">⌘K</span>
+<header class="fixed top-0 right-0 left-0 md:left-sidebar-expanded z-40 flex justify-between items-center px-container-padding h-16 backdrop-blur-xl bg-surface/80 border-b border-outline-variant dark:border-outline">
+<div class="flex items-center gap-4">
+<button class="md:hidden text-on-surface p-2 -ml-2 rounded-DEFAULT hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined">menu</span>
+</button>
+<h1 class="font-headline-sm text-headline-sm font-semibold text-on-surface">Permisos / Bloqueos</h1>
 </div>
+<div class="flex items-center gap-4">
+<div class="relative hidden sm:block">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px]">search</span>
+<input class="pl-10 pr-12 py-1.5 bg-surface-container-lowest border border-outline-variant rounded-DEFAULT font-body-md text-body-md text-on-surface focus:border-primary focus:ring-1 focus:ring-primary w-64 placeholder:text-on-surface-variant/60" placeholder="Search..." type="text"/>
+<span class="absolute right-3 top-1/2 -translate-y-1/2 font-mono-label text-mono-label text-on-surface-variant/60 bg-surface-container px-1.5 rounded-sm">⌘ K</span>
 </div>
+<div class="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-surface-container-low rounded-DEFAULT border border-outline-variant/50">
+<span class="material-symbols-outlined text-[18px] text-primary">location_city</span>
+<span class="font-label-caps text-label-caps text-on-surface-variant">Branch: Downtown</span>
 </div>
-<div class="flex items-center gap-6">
-<nav class="hidden md:flex items-center gap-6">
-<a class="text-primary font-bold border-b-2 border-primary pb-1 font-headline-sm text-headline-sm text-sm" href="#">Main Branch</a>
-<a class="text-on-surface-variant font-medium hover:text-primary transition-colors font-headline-sm text-headline-sm text-sm" href="#">Downtown Center</a>
-</nav>
-<div class="flex items-center gap-4 border-l border-outline-variant/30 pl-6">
-<button class="text-on-surface-variant hover:text-primary transition-colors">
+<div class="flex items-center gap-2">
+<button class="p-2 rounded-full hover:bg-surface-container-high transition-colors text-on-surface-variant relative">
 <span class="material-symbols-outlined">notifications</span>
+<span class="absolute top-2 right-2 w-2 h-2 bg-error rounded-full border-2 border-surface"></span>
 </button>
-<button class="text-on-surface-variant hover:text-primary transition-colors">
-<span class="material-symbols-outlined">apps</span>
+<button class="p-2 rounded-full hover:bg-surface-container-high transition-colors text-on-surface-variant hidden sm:block">
+<span class="material-symbols-outlined">settings</span>
 </button>
-<button class="bg-primary text-on-primary px-4 py-2 rounded-lg font-headline-sm text-headline-sm text-sm hover:bg-primary-container transition-colors shadow-sm">
-                        New Appointment
-                    </button>
-<div class="w-8 h-8 rounded-full bg-surface-variant overflow-hidden border border-outline-variant">
-<img alt="Dr. Julian Vance" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBpjmMdGFfUdJAgsV5kA6-Ci_x6tAx15Ddn-gBSEm8yELOSQtuvT6OVNYjxlED9axhzlhHPEY1rA_Vd9GxzWcgAhq848Cu838FOo7gZFCt0MeuVvB5393E2NJiz5haY-ICCfHOL4z4zu49Tj_OW-M2HNcjrXsvUuld35cX36jo923zQLbPEy0YwiN97n7GSP1MWYEakWD8wVjyvy0xmdQL5jmosrm4bztVlcDY0mvcIet3quW27tGE5"/>
-</div>
+<button class="ml-2">
+<img alt="User profile" class="w-8 h-8 rounded-full border border-outline-variant/50 object-cover" data-alt="A professional headshot of a female clinic administrator with a warm smile, well-lit, shallow depth of field, corporate casual attire." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCRGcMzA5tT90sajn6DR1fZ9HTyGo-Jx0yqSxfHzMcenp7IJSXqAUBjAJ3OKAuOzpQE9iQa2Q5oUhB0aadJO3vdynwjJlOLKgctehea-rOSsH2Bh5iqwyjw-C7LaVJDkQETiZZeqXhi3tWJ0qb8l_baob51sHvQ9laiHSPF1TyTSzE1q9uJQYXoK4OFFpU5nZZxWrDAmxe7LMSByqSKCfp25-J5t-sqP06V2H74_0RnZSjDtyapA0wx"/>
+</button>
 </div>
 </div>
 </header>
-<!-- Canvas -->
-<main class="flex-1 overflow-y-auto p-container-padding">
-<div class="max-w-4xl mx-auto">
+<!-- Main Workspace -->
+<main class="flex-1 overflow-y-auto mt-16 p-container-padding bg-background">
+<div class="max-w-6xl mx-auto space-y-6">
 <!-- Page Header -->
-<div class="mb-8 flex items-start gap-4">
-<div class="w-12 h-12 rounded-xl bg-tertiary-fixed-dim/20 flex items-center justify-center text-tertiary flex-shrink-0">
-<span class="material-symbols-outlined text-2xl" style="font-variation-settings: 'FILL' 1;">restaurant</span>
+<div>
+<h2 class="font-display-lg text-[32px] font-semibold text-on-surface tracking-tight">Permisos / Bloqueos</h2>
+<p class="font-body-md text-body-md text-on-surface-variant mt-1">Bloquea a una podóloga, fisioterapeuta o baropodometría en un rango horario.</p>
+</div>
+<!-- Main Bento Grid Layout -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+<!-- Form Area (Left) -->
+<div class="lg:col-span-8 space-y-6">
+<!-- Location Tabs Card -->
+<div class="bg-surface-container-lowest rounded-xl border border-outline-variant p-1 shadow-[0px_4px_8px_-2px_rgba(0,0,0,0.02)] overflow-x-auto">
+<div class="flex items-center min-w-max">
+<button class="px-6 py-2.5 rounded-lg bg-surface-container-high font-label-caps text-label-caps text-on-surface shadow-sm transition-all relative">
+                                    Los Olivos
+                                    <span class="absolute bottom-0 left-1/2 -translate-x-1/2 w-4 h-0.5 bg-primary rounded-t-full"></span>
+</button>
+<button class="px-6 py-2.5 rounded-lg hover:bg-surface-container-low font-label-caps text-label-caps text-on-surface-variant transition-all">One</button>
+<button class="px-6 py-2.5 rounded-lg hover:bg-surface-container-low font-label-caps text-label-caps text-on-surface-variant transition-all">San Miguel</button>
+<button class="px-6 py-2.5 rounded-lg hover:bg-surface-container-low font-label-caps text-label-caps text-on-surface-variant transition-all">Lince</button>
+<button class="px-6 py-2.5 rounded-lg hover:bg-surface-container-low font-label-caps text-label-caps text-on-surface-variant transition-all">Paz Soldán</button>
+</div>
+</div>
+<!-- Main Form Card -->
+<div class="bg-surface-container-lowest rounded-xl border border-outline-variant p-6 shadow-[0px_12px_24px_-4px_rgba(0,0,0,0.04)]">
+<!-- Date Selector -->
+<div class="flex justify-end mb-6">
+<div class="flex items-center gap-3 bg-surface-container-low border border-outline-variant rounded-DEFAULT p-1">
+<button class="p-1 rounded hover:bg-surface-container-high text-on-surface-variant"><span class="material-symbols-outlined text-[20px]">chevron_left</span></button>
+<div class="flex items-center gap-2 px-2 py-1 bg-surface-container-lowest border border-outline-variant rounded shadow-sm cursor-pointer">
+<span class="material-symbols-outlined text-[18px] text-primary">calendar_month</span>
+<span class="font-body-md text-body-md font-medium text-on-surface">30 Jul 2026</span>
+</div>
+<button class="p-1 rounded hover:bg-surface-container-high text-on-surface-variant"><span class="material-symbols-outlined text-[20px]">chevron_right</span></button>
+</div>
+</div>
+<form class="space-y-8">
+<!-- Block Type Chips -->
+<div>
+<label class="block font-label-caps text-label-caps text-on-surface-variant mb-3">TIPO DE BLOQUEO</label>
+<div class="flex flex-wrap gap-3">
+<label class="relative cursor-pointer group">
+<input checked="" class="peer sr-only" name="block_type" type="radio" value="permiso"/>
+<div class="px-4 py-2 rounded-full border border-outline-variant bg-surface-container-lowest font-body-md text-body-md text-on-surface-variant peer-checked:bg-primary-container peer-checked:text-on-primary peer-checked:border-primary-container transition-all flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px] peer-checked:block hidden">check</span>
+                                                Permiso
+                                            </div>
+</label>
+<label class="relative cursor-pointer group">
+<input class="peer sr-only" name="block_type" type="radio" value="enfermedad"/>
+<div class="px-4 py-2 rounded-full border border-outline-variant bg-surface-container-lowest font-body-md text-body-md text-on-surface-variant peer-checked:bg-error-container peer-checked:text-on-error-container peer-checked:border-error-container transition-all">
+                                                Enfermedad
+                                            </div>
+</label>
+<label class="relative cursor-pointer group">
+<input class="peer sr-only" name="block_type" type="radio" value="reunion"/>
+<div class="px-4 py-2 rounded-full border border-outline-variant bg-surface-container-lowest font-body-md text-body-md text-on-surface-variant peer-checked:bg-secondary-container peer-checked:text-on-secondary-container peer-checked:border-secondary-container transition-all">
+                                                Reunión
+                                            </div>
+</label>
+<label class="relative cursor-pointer group">
+<input class="peer sr-only" name="block_type" type="radio" value="vacaciones"/>
+<div class="px-4 py-2 rounded-full border border-outline-variant bg-surface-container-lowest font-body-md text-body-md text-on-surface-variant peer-checked:bg-tertiary-container peer-checked:text-on-tertiary-container peer-checked:border-tertiary-container transition-all">
+                                                Vacaciones
+                                            </div>
+</label>
+</div>
+</div>
+<!-- Professional List -->
+<div>
+<label class="block font-label-caps text-label-caps text-on-surface-variant mb-3 flex justify-between">
+<span>SELECCIONAR PROFESIONALES</span>
+<span class="text-primary cursor-pointer hover:underline">Marcar todos</span>
+</label>
+<div class="bg-surface-container-low border border-outline-variant rounded-lg p-1">
+<div class="max-h-48 overflow-y-auto pr-2 space-y-1">
+<!-- List Item 1 -->
+<label class="flex items-center gap-3 p-2 hover:bg-surface-container-lowest rounded-md cursor-pointer group transition-colors">
+<input class="w-4 h-4 rounded text-primary border-outline-variant focus:ring-primary focus:ring-offset-surface-container-lowest cursor-pointer" type="checkbox"/>
+<img alt="Mirtha Chavez" class="w-8 h-8 rounded-full object-cover" data-alt="A small circular avatar portrait of a female medical professional, wearing a white coat, neutral background, high resolution." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAgRMSDHc-J1SvfPBO2J8s3puQSFRZ6fm4JeZUT8ZXaTCbsOT62c6olUVnkyoRilmWjaVQyuy0mI9-AN8iITgyyWQH5oaPPgcZ27_IPKgUO7uINE8lHnvftyLzC3Kzn8L-BwS3oeTilGYXtn458wQXeNk9kgBbGpfTO33yvkEBBrhqMQUUGeogkyYCM237oLZnDc15ujUNLZs0XVVC00POXhJnVVxL9tKVzSafLa91ZLfavfDYuPR9y"/>
+<div class="flex-1 min-w-0">
+<p class="font-body-md text-body-md font-medium text-on-surface truncate">Mirtha Chavez</p>
+<p class="font-mono-label text-[10px] text-on-surface-variant truncate">Podóloga</p>
+</div>
+</label>
+<!-- List Item 2 -->
+<label class="flex items-center gap-3 p-2 hover:bg-surface-container-lowest rounded-md cursor-pointer group transition-colors">
+<input checked="" class="w-4 h-4 rounded text-primary border-outline-variant focus:ring-primary focus:ring-offset-surface-container-lowest cursor-pointer" type="checkbox"/>
+<img alt="Carlos Mendoza" class="w-8 h-8 rounded-full object-cover" data-alt="A small circular avatar portrait of a male physiotherapist in dark blue scrubs, smiling subtly, professional studio lighting." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBIh2wVTWbYq_B4oz6PqV6bYNYXsgiFPKQjcyvrh-xv48_3W7-QMdLpZV981ZNPbdZWZ_Zke2BOHQti1ZHzWvF4V6DbGoS0WwVI-70nDJJwmuejPwOzfmQpoaxs2pG2qY1itJvL4Rcg1BWXcJO4H7duTh1KYAo1g7YD5T4AeRUv9Ay-YTV5JiRXmyVnI15TDDbcwgiabKv6JxM95-_j-zvEuTK7rycpGVLJinsLmdws0KllXEpo68CC"/>
+<div class="flex-1 min-w-0">
+<p class="font-body-md text-body-md font-medium text-on-surface truncate">Carlos Mendoza</p>
+<p class="font-mono-label text-[10px] text-on-surface-variant truncate">Fisioterapeuta</p>
+</div>
+</label>
+<!-- List Item 3 -->
+<label class="flex items-center gap-3 p-2 hover:bg-surface-container-lowest rounded-md cursor-pointer group transition-colors">
+<input class="w-4 h-4 rounded text-primary border-outline-variant focus:ring-primary focus:ring-offset-surface-container-lowest cursor-pointer" type="checkbox"/>
+<div class="w-8 h-8 rounded-full bg-secondary-container text-on-secondary-container flex items-center justify-center font-headline-sm text-sm font-semibold">AR</div>
+<div class="flex-1 min-w-0">
+<p class="font-body-md text-body-md font-medium text-on-surface truncate">Ana Rodriguez</p>
+<p class="font-mono-label text-[10px] text-on-surface-variant truncate">Baropodometría</p>
+</div>
+</label>
+<!-- List Item 4 -->
+<label class="flex items-center gap-3 p-2 hover:bg-surface-container-lowest rounded-md cursor-pointer group transition-colors">
+<input class="w-4 h-4 rounded text-primary border-outline-variant focus:ring-primary focus:ring-offset-surface-container-lowest cursor-pointer" type="checkbox"/>
+<img alt="Lucia Fernandez" class="w-8 h-8 rounded-full object-cover" data-alt="A small circular avatar portrait of a young female clinic assistant, casual professional attire, warm lighting." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAkuCyXgzrq939Vk91hZRwEQygrkaFQXvTtUHSFv1fF4nZr2yIkBAwGYFLE18elxM6hADEORahfwL4OOLvHcSeHjbxGl7oVPoJ9OY4IyccOSyH_t23BrsK0JVsaFiVRbHeSzAYICmm_rVuvBy3khGrEeVa0IXouqSXrToAjSBE7lc_5JRTzZiFslgJDE-ryVuIYKNM84K4WrK7v-37xL7gxg_ypNVQEPj6AT9S-Ndx92-PwI36R3tgX"/>
+<div class="flex-1 min-w-0">
+<p class="font-body-md text-body-md font-medium text-on-surface truncate">Lucia Fernandez</p>
+<p class="font-mono-label text-[10px] text-on-surface-variant truncate">Podóloga</p>
+</div>
+</label>
+</div>
+</div>
+</div>
+<!-- Time Selectors -->
+<div class="grid grid-cols-2 gap-4">
+<div>
+<label class="block font-label-caps text-label-caps text-on-surface-variant mb-2">DESDE</label>
+<div class="relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px]">schedule</span>
+<select class="w-full pl-10 pr-4 py-2.5 bg-surface-container-lowest border border-outline-variant rounded-DEFAULT font-body-md text-body-md text-on-surface focus:border-primary focus:ring-1 focus:ring-primary appearance-none cursor-pointer">
+<option>09:00 AM</option>
+<option selected="">10:00 AM</option>
+<option>11:00 AM</option>
+<option>12:00 PM</option>
+</select>
+<span class="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none">expand_more</span>
+</div>
 </div>
 <div>
-<h2 class="font-headline-md text-headline-md text-on-background">Horarios de almuerzo</h2>
-<p class="font-body-md text-body-md text-on-surface-variant mt-1">Bloqueo de 1 hora fija en la agenda de cada profesional</p>
+<label class="block font-label-caps text-label-caps text-on-surface-variant mb-2">HASTA</label>
+<div class="relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px]">schedule</span>
+<select class="w-full pl-10 pr-4 py-2.5 bg-surface-container-lowest border border-outline-variant rounded-DEFAULT font-body-md text-body-md text-on-surface focus:border-primary focus:ring-1 focus:ring-primary appearance-none cursor-pointer">
+<option>10:00 AM</option>
+<option>11:00 AM</option>
+<option selected="">12:00 PM</option>
+<option>01:00 PM</option>
+</select>
+<span class="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none">expand_more</span>
 </div>
 </div>
-<!-- Location Tabs -->
-<div class="border-b border-outline-variant/30 mb-6 flex overflow-x-auto hide-scrollbar">
-<button class="px-6 py-3 border-b-2 border-primary text-primary font-headline-sm text-headline-sm text-sm whitespace-nowrap bg-surface-variant/10">Los Olivos</button>
-<button class="px-6 py-3 border-b-2 border-transparent text-on-surface-variant font-medium hover:text-primary transition-colors font-headline-sm text-headline-sm text-sm whitespace-nowrap">One</button>
-<button class="px-6 py-3 border-b-2 border-transparent text-on-surface-variant font-medium hover:text-primary transition-colors font-headline-sm text-headline-sm text-sm whitespace-nowrap">San Miguel</button>
-<button class="px-6 py-3 border-b-2 border-transparent text-on-surface-variant font-medium hover:text-primary transition-colors font-headline-sm text-headline-sm text-sm whitespace-nowrap">Lince</button>
-<button class="px-6 py-3 border-b-2 border-transparent text-on-surface-variant font-medium hover:text-primary transition-colors font-headline-sm text-headline-sm text-sm whitespace-nowrap">Paz Soldán</button>
 </div>
-<!-- Staff List Container -->
-<div class="bg-surface-container-lowest rounded-xl border border-outline-variant/50 shadow-sm overflow-hidden flex flex-col gap-[1px] bg-outline-variant/20">
-<!-- Staff Row 1 -->
-<div class="flex items-center justify-between p-4 bg-surface-container-lowest hover:bg-surface-container-low transition-colors">
-<div class="flex items-center gap-4">
-<div class="w-10 h-10 rounded-full bg-error-container text-on-error-container flex items-center justify-center font-bold text-sm">MC</div>
+<!-- Reason Textarea -->
 <div>
-<div class="font-headline-sm text-headline-sm text-sm text-on-background flex items-center gap-1">
-                                    Mirtha Chavez <span class="text-outline">·</span> <span class="text-on-surface-variant font-normal">Podóloga</span>
+<label class="block font-label-caps text-label-caps text-on-surface-variant mb-2">MOTIVO</label>
+<textarea class="w-full p-3 bg-surface-container-lowest border border-outline-variant rounded-DEFAULT font-body-md text-body-md text-on-surface focus:border-primary focus:ring-1 focus:ring-primary resize-none placeholder:text-on-surface-variant/60" placeholder="Permiso médico, trámite personal..." rows="3"></textarea>
 </div>
-<div class="font-body-md text-body-md text-sm text-on-surface-variant mt-0.5">Sin horario de almuerzo</div>
+<!-- Action Buttons -->
+<div class="flex items-center justify-end gap-3 pt-2">
+<button class="px-6 py-2.5 rounded-DEFAULT border border-outline text-on-surface font-body-md font-medium hover:bg-surface-container-low transition-colors" type="button">Cancelar</button>
+<button class="px-6 py-2.5 rounded-DEFAULT bg-primary text-on-primary font-body-md font-medium hover:bg-primary/90 shadow-sm transition-colors flex items-center gap-2" type="submit">
+<span class="material-symbols-outlined text-[20px]">block</span>
+                                        Bloquear horario
+                                    </button>
+</div>
+</form>
 </div>
 </div>
-<button class="px-4 py-2 rounded-lg border border-outline-variant text-primary font-headline-sm text-headline-sm text-sm hover:bg-primary/5 transition-colors flex items-center gap-2">
-<span class="material-symbols-outlined text-[18px]">add</span> Asignar
-                        </button>
+<!-- Side Panel (Right) - Active Permissions -->
+<div class="lg:col-span-4 space-y-6">
+<div class="bg-surface-container-lowest rounded-xl border border-outline-variant p-5 h-full flex flex-col shadow-[0px_4px_8px_-2px_rgba(0,0,0,0.02)]">
+<div class="flex items-center justify-between mb-4 pb-4 border-b border-outline-variant/50">
+<h3 class="font-headline-sm text-headline-sm font-semibold text-on-surface flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-[20px]">view_agenda</span>
+                                    Permisos del Día
+                                </h3>
+<span class="bg-surface-container-high text-on-surface-variant font-mono-label px-2 py-0.5 rounded-sm">30 Jul</span>
 </div>
-<!-- Staff Row 2 -->
-<div class="flex items-center justify-between p-4 bg-surface-container-lowest hover:bg-surface-container-low transition-colors">
-<div class="flex items-center gap-4">
-<div class="w-10 h-10 rounded-full bg-primary-fixed text-on-primary-fixed flex items-center justify-center font-bold text-sm">LE</div>
+<div class="flex-1 overflow-y-auto space-y-3 pr-1">
+<!-- Permission Card 1 -->
+<div class="p-3 bg-surface-container-low border border-outline-variant/50 rounded-lg group relative hover:border-outline-variant transition-colors">
+<div class="flex items-start justify-between">
+<div class="flex items-center gap-3">
+<img alt="Carlos Mendoza" class="w-10 h-10 rounded-full object-cover border border-surface" data-alt="A small circular avatar portrait of a male physiotherapist in dark blue scrubs, smiling subtly, professional studio lighting." src="https://lh3.googleusercontent.com/aida-public/AB6AXuD0qK10hZKS4UXhhoVh550cd2VfSlxAdNKbd3nhJ7HFNWGTBvN2NnJZgGmlEsvs6MpAkLYd3Q4Ui2k3laawsG50-xGiwKLxwc17S_fNaSeimUN6dH1lgx9_rWR1epqb3DwmCi8NiLjej3uqXEMU0PKj3Ci9BxpxS9cD0JMSDXaGCcNHkahQ-O_fJ_yj9hnuZkU-M4iB-JKFbafejzbwkKMfkxATLWl3nWPZ_tMwGEo-QkorYrLXRqGk"/>
 <div>
-<div class="font-headline-sm text-headline-sm text-sm text-on-background flex items-center gap-1">
-                                    Laura Escalante <span class="text-outline">·</span> <span class="text-on-surface-variant font-normal">Podóloga</span>
-</div>
-<div class="font-body-md text-body-md text-sm text-on-surface-variant mt-0.5">Sin horario de almuerzo</div>
+<p class="font-body-md text-body-md font-medium text-on-surface leading-tight">Carlos Mendoza</p>
+<p class="font-mono-label text-[10px] text-on-surface-variant">Fisioterapeuta</p>
 </div>
 </div>
-<button class="px-4 py-2 rounded-lg border border-outline-variant text-primary font-headline-sm text-headline-sm text-sm hover:bg-primary/5 transition-colors flex items-center gap-2">
-<span class="material-symbols-outlined text-[18px]">add</span> Asignar
-                        </button>
+<button class="text-on-surface-variant/50 hover:text-error transition-colors p-1 rounded hover:bg-surface-container-high opacity-0 group-hover:opacity-100 focus:opacity-100">
+<span class="material-symbols-outlined text-[18px]">delete</span>
+</button>
 </div>
-<!-- Staff Row 3 -->
-<div class="flex items-center justify-between p-4 bg-surface-container-lowest hover:bg-surface-container-low transition-colors">
-<div class="flex items-center gap-4">
-<div class="w-10 h-10 rounded-full bg-tertiary-fixed text-on-tertiary-fixed flex items-center justify-center font-bold text-sm">MG</div>
+<div class="mt-3 flex items-center justify-between">
+<span class="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-error-container/50 text-on-error-container font-label-caps text-[10px] leading-none">
+<span class="w-1.5 h-1.5 rounded-full bg-error"></span>
+                                            Enfermedad
+                                        </span>
+<span class="font-mono-label text-[11px] text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">schedule</span>
+                                            10:00 AM - 12:00 PM
+                                        </span>
+</div>
+</div>
+<!-- Permission Card 2 -->
+<div class="p-3 bg-surface-container-low border border-outline-variant/50 rounded-lg group relative hover:border-outline-variant transition-colors">
+<div class="flex items-start justify-between">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-tertiary-container text-on-tertiary-container flex items-center justify-center font-headline-sm font-semibold border border-surface">MR</div>
 <div>
-<div class="font-headline-sm text-headline-sm text-sm text-on-background flex items-center gap-1">
-                                    Maximina Gutierrez <span class="text-outline">·</span> <span class="text-on-surface-variant font-normal">Podóloga</span>
-</div>
-<div class="font-body-md text-body-md text-sm text-on-surface-variant mt-0.5">Sin horario de almuerzo</div>
+<p class="font-body-md text-body-md font-medium text-on-surface leading-tight">Maria Rojas</p>
+<p class="font-mono-label text-[10px] text-on-surface-variant">Podóloga</p>
 </div>
 </div>
-<button class="px-4 py-2 rounded-lg border border-outline-variant text-primary font-headline-sm text-headline-sm text-sm hover:bg-primary/5 transition-colors flex items-center gap-2">
-<span class="material-symbols-outlined text-[18px]">add</span> Asignar
-                        </button>
+<button class="text-on-surface-variant/50 hover:text-error transition-colors p-1 rounded hover:bg-surface-container-high opacity-0 group-hover:opacity-100 focus:opacity-100">
+<span class="material-symbols-outlined text-[18px]">delete</span>
+</button>
 </div>
-<!-- Staff Row 4 -->
-<div class="flex items-center justify-between p-4 bg-surface-container-lowest hover:bg-surface-container-low transition-colors">
-<div class="flex items-center gap-4">
-<div class="w-10 h-10 rounded-full bg-error-container text-on-error-container flex items-center justify-center font-bold text-sm">GM</div>
+<div class="mt-3 flex items-center justify-between">
+<span class="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-tertiary-container/50 text-on-tertiary-container font-label-caps text-[10px] leading-none">
+<span class="w-1.5 h-1.5 rounded-full bg-tertiary"></span>
+                                            Vacaciones
+                                        </span>
+<span class="font-mono-label text-[11px] text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">schedule</span>
+                                            Todo el día
+                                        </span>
+</div>
+</div>
+<!-- Permission Card 3 -->
+<div class="p-3 bg-surface-container-low border border-outline-variant/50 rounded-lg group relative hover:border-outline-variant transition-colors">
+<div class="flex items-start justify-between">
+<div class="flex items-center gap-3">
+<img alt="Lucia Fernandez" class="w-10 h-10 rounded-full object-cover border border-surface" data-alt="A small circular avatar portrait of a female clinic assistant, casual professional attire, warm lighting." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCTDowPEue6R9kBOGPvMdBA2xmD7IqwVT_DH0ZVvsqBE5YYx0JcWFkWm6JsauN3Qc_SdjQw05sYorwbhBG_WOuMa-52vVKhsy8i1SIqZux42LPjPeCfm6YldLpktfBq7sPEMf3dOzXZLIILugjYwZHI1v_HTgAhB8zm6PShxDpFtMGBL9QjVzkluJ-q8S6WWD31DTWgToybu5J5vRM8YRlv2GmoGKWsfKDCx7z3UZG_sNa2xk5akfmp"/>
 <div>
-<div class="font-headline-sm text-headline-sm text-sm text-on-background flex items-center gap-1">
-                                    Gissela Morote <span class="text-outline">·</span> <span class="text-on-surface-variant font-normal">Podóloga</span>
-</div>
-<div class="font-body-md text-body-md text-sm text-on-surface-variant mt-0.5">Sin horario de almuerzo</div>
+<p class="font-body-md text-body-md font-medium text-on-surface leading-tight">Lucia Fernandez</p>
+<p class="font-mono-label text-[10px] text-on-surface-variant">Podóloga</p>
 </div>
 </div>
-<button class="px-4 py-2 rounded-lg border border-outline-variant text-primary font-headline-sm text-headline-sm text-sm hover:bg-primary/5 transition-colors flex items-center gap-2">
-<span class="material-symbols-outlined text-[18px]">add</span> Asignar
-                        </button>
+<button class="text-on-surface-variant/50 hover:text-error transition-colors p-1 rounded hover:bg-surface-container-high opacity-0 group-hover:opacity-100 focus:opacity-100">
+<span class="material-symbols-outlined text-[18px]">delete</span>
+</button>
 </div>
-<!-- Staff Row 5 -->
-<div class="flex items-center justify-between p-4 bg-surface-container-lowest hover:bg-surface-container-low transition-colors">
-<div class="flex items-center gap-4">
-<div class="w-10 h-10 rounded-full bg-[#ccfbf1] text-[#115e59] flex items-center justify-center font-bold text-sm">ES</div>
-<div>
-<div class="font-headline-sm text-headline-sm text-sm text-on-background flex items-center gap-1">
-                                    Erika Saavedra <span class="text-outline">·</span> <span class="text-on-surface-variant font-normal">Podóloga</span>
+<div class="mt-3 flex items-center justify-between">
+<span class="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-primary-container/20 text-primary font-label-caps text-[10px] leading-none">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+                                            Permiso
+                                        </span>
+<span class="font-mono-label text-[11px] text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">schedule</span>
+                                            15:00 PM - 17:00 PM
+                                        </span>
 </div>
-<div class="font-body-md text-body-md text-sm text-on-surface-variant mt-0.5">Sin horario de almuerzo</div>
-</div>
-</div>
-<button class="px-4 py-2 rounded-lg border border-outline-variant text-primary font-headline-sm text-headline-sm text-sm hover:bg-primary/5 transition-colors flex items-center gap-2">
-<span class="material-symbols-outlined text-[18px]">add</span> Asignar
-                        </button>
-</div>
-<!-- Staff Row 6 -->
-<div class="flex items-center justify-between p-4 bg-surface-container-lowest hover:bg-surface-container-low transition-colors">
-<div class="flex items-center gap-4">
-<div class="w-10 h-10 rounded-full bg-primary text-on-primary flex items-center justify-center font-bold text-sm">LS</div>
-<div>
-<div class="font-headline-sm text-headline-sm text-sm text-on-background flex items-center gap-1">
-                                    Luz Saldaña <span class="text-outline">·</span> <span class="text-on-surface-variant font-normal">Podóloga</span>
-</div>
-<div class="font-body-md text-body-md text-sm text-on-surface-variant mt-0.5">Sin horario de almuerzo</div>
+<div class="mt-2 pt-2 border-t border-outline-variant/30">
+<p class="font-body-md text-[12px] text-on-surface-variant italic truncate">Trámite notarial</p>
 </div>
 </div>
-<button class="px-4 py-2 rounded-lg border border-outline-variant text-primary font-headline-sm text-headline-sm text-sm hover:bg-primary/5 transition-colors flex items-center gap-2">
-<span class="material-symbols-outlined text-[18px]">add</span> Asignar
-                        </button>
-</div>
-</div><div class="mt-8 bg-surface-container-lowest rounded-xl border border-outline-variant/50 shadow-sm p-6">
-<h3 class="font-label-caps text-label-caps text-on-surface-variant mb-6">DISTRIBUCIÓN DE ALMUERZOS — LOS OLIVOS</h3>
-<div class="space-y-4">
-<!-- Slot 1 -->
-<div class="flex items-center gap-4">
-<div class="w-20 font-mono-label text-mono-label text-on-surface-variant">
-        12:00 -<br/>13:00
-      </div>
-<div class="flex-1 h-2 bg-surface-container-high rounded-full overflow-hidden">
-<div class="h-full w-full bg-tertiary-fixed-dim/80 rounded-full"></div>
-</div>
-<div class="w-24 text-right font-body-md text-sm text-on-surface-variant">
-        1 profesional
-      </div>
-</div>
-<!-- Slot 2 -->
-<div class="flex items-center gap-4">
-<div class="w-20 font-mono-label text-mono-label text-on-surface-variant">
-        13:00 -<br/>14:00
-      </div>
-<div class="flex-1 h-2 bg-surface-container-high rounded-full overflow-hidden">
-<div class="h-full w-0 bg-tertiary-fixed-dim/80 rounded-full"></div>
-</div>
-<div class="w-24 text-right font-body-md text-sm text-on-surface-variant">
-        0 profesionales
-      </div>
-</div>
-<!-- Slot 3 -->
-<div class="flex items-center gap-4">
-<div class="w-20 font-mono-label text-mono-label text-on-surface-variant">
-        14:00 -<br/>15:00
-      </div>
-<div class="flex-1 h-2 bg-surface-container-high rounded-full overflow-hidden">
-<div class="h-full w-0 bg-tertiary-fixed-dim/80 rounded-full"></div>
-</div>
-<div class="w-24 text-right font-body-md text-sm text-on-surface-variant">
-        0 profesionales
-      </div>
 </div>
 </div>
+</div>
+</div>
+<!-- Reference Image Inclusion (Hidden or decorative context) -->
+<div class="hidden">
+<img class="w-0 h-0" data-alt="Original screenshot of the Permisos / Bloqueos screen for reference" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCkJ2QD459qdele7gsc32NHWsbIj0KDtx1XO90rExWCHWWLu4USuGmzuhbeMWHSmfP8BI0WtQIDKn9s9k_I1GFcQeKdeWk8tCv9ZGWMTAuSSZvY9iB3u91bTfx5hMblhDUtIaG7KS1dd5-S-D4h8WGj2yVNOYZd4iJ915pskHeBXKjlQQX1xBFXwDX7-fV4pQCicmux9Y2EqwabEozSq-Bcv7bx0uv_MOa9eKq1A8FVnG2ZD6E5wrYO-N1pI1gpLucupg"/>
 </div>
 </div>
 </main>

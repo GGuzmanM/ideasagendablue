@@ -10,29 +10,27 @@ const router = Router();
 const NOMBRE_PAZ_SOLDAN = 'Paz Soldán';
 
 // ─── GET /almuerzos?sedeId=X[&fecha=YYYY-MM-DD] ──────────────────────────────
-// Devuelve bloqueos de tipo ALMUERZO vigentes en la sede.
-// Si se pasa fecha, filtra que esa fecha caiga dentro de fechaInicio..fechaFin.
+// Devuelve bloqueos de tipo ALMUERZO vigentes en la sede para la fecha especificada (o hoy).
 router.get('/', requireAuth, async (req, res) => {
   const { sedeId, fecha } = req.query as { sedeId?: string; fecha?: string };
   if (!sedeId) throw new AppError('sedeId requerido', 400);
 
-  const where: Record<string, unknown> = {
-    sedeId,
-    tipo: 'ALMUERZO',
-    esRecurrente: true,
-    deletedAt: null,
-  };
-
-  if (fecha) {
-    const fechaDate = new Date(fecha + 'T12:00:00Z');
-    where.fechaInicio = { lte: fechaDate };
-    where.fechaFin = { gte: fechaDate };
-  } else {
-    where.fechaFin = { gte: new Date() };
-  }
+  const fechaIso = fecha && /^\d{4}-\d{2}-\d{2}$/.test(fecha)
+    ? fecha
+    : new Date().toISOString().split('T')[0]!;
+  const fechaStart = new Date(`${fechaIso}T00:00:00.000Z`);
+  const fechaEnd = new Date(`${fechaIso}T23:59:59.999Z`);
 
   const bloqueos = await prisma.bloqueoAgenda.findMany({
-    where: where as never,
+    where: {
+      sedeId,
+      tipo: 'ALMUERZO',
+      deletedAt: null,
+      OR: [
+        { esRecurrente: true, fechaInicio: { lte: fechaEnd }, fechaFin: { gte: fechaStart } },
+        { esRecurrente: false, fechaInicio: { lte: fechaEnd }, fechaFin: { gte: fechaStart } },
+      ],
+    },
     include: {
       profesional: {
         select: { id: true, nombres: true, apellidos: true, tipo: true, colorAvatar: true },
@@ -45,18 +43,27 @@ router.get('/', requireAuth, async (req, res) => {
   res.json(bloqueos);
 });
 
-// ─── GET /almuerzos/profesional/:profesionalId?sedeId=X ──────────────────────
+// ─── GET /almuerzos/profesional/:profesionalId?sedeId=X[&fecha=YYYY-MM-DD] ──────────────────────
 router.get('/profesional/:profesionalId', requireAuth, async (req, res) => {
-  const { sedeId } = req.query as { sedeId?: string };
+  const { sedeId, fecha } = req.query as { sedeId?: string; fecha?: string };
   if (!sedeId) throw new AppError('sedeId requerido', 400);
+
+  const fechaIso = fecha && /^\d{4}-\d{2}-\d{2}$/.test(fecha)
+    ? fecha
+    : new Date().toISOString().split('T')[0]!;
+  const fechaStart = new Date(`${fechaIso}T00:00:00.000Z`);
+  const fechaEnd = new Date(`${fechaIso}T23:59:59.999Z`);
 
   const bloqueo = await prisma.bloqueoAgenda.findFirst({
     where: {
       profesionalId: req.params.profesionalId,
       sedeId,
       tipo: 'ALMUERZO',
-      esRecurrente: true,
       deletedAt: null,
+      OR: [
+        { esRecurrente: true, fechaInicio: { lte: fechaEnd }, fechaFin: { gte: fechaStart } },
+        { esRecurrente: false, fechaInicio: { lte: fechaEnd }, fechaFin: { gte: fechaStart } },
+      ],
     },
     include: {
       creadoPorUsuario: { select: { id: true, nombre: true } },
@@ -68,11 +75,13 @@ router.get('/profesional/:profesionalId', requireAuth, async (req, res) => {
 
 // ─── POST /almuerzos ──────────────────────────────────────────────────────────
 router.post('/', requireAuth, async (req, res) => {
-  const { profesionalId, sedeId, horaInicio } = z
+  const { profesionalId, sedeId, horaInicio, fecha, esRecurrente } = z
     .object({
       profesionalId: z.string().uuid(),
       sedeId: z.string().uuid(),
       horaInicio: z.enum(['12:00', '13:00', '14:00']),
+      fecha: z.string().optional(),
+      esRecurrente: z.boolean().optional(),
     })
     .parse(req.body);
 
@@ -99,7 +108,7 @@ router.post('/', requireAuth, async (req, res) => {
   if (!usuarioId) throw new AppError('No autenticado', 401);
 
   try {
-    await crearAlmuerzo({ profesionalId, sedeId, horaInicio, creadoPor: usuarioId });
+    await crearAlmuerzo({ profesionalId, sedeId, horaInicio, creadoPor: usuarioId, fecha, esRecurrente });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Error al crear almuerzo';
     if (msg.includes('ya tiene un horario')) throw new AppError(msg, 409);
@@ -107,12 +116,28 @@ router.post('/', requireAuth, async (req, res) => {
     throw new AppError(msg, 400);
   }
 
+  const fechaIso = fecha && /^\d{4}-\d{2}-\d{2}$/.test(fecha)
+    ? fecha
+    : new Date().toISOString().split('T')[0]!;
+  const fechaStart = new Date(`${fechaIso}T00:00:00.000Z`);
+  const fechaEnd = new Date(`${fechaIso}T23:59:59.999Z`);
+
   const creado = await prisma.bloqueoAgenda.findFirst({
-    where: { profesionalId, sedeId, tipo: 'ALMUERZO', esRecurrente: true, deletedAt: null },
+    where: {
+      profesionalId,
+      sedeId,
+      tipo: 'ALMUERZO',
+      deletedAt: null,
+      OR: [
+        { esRecurrente: true, fechaInicio: { lte: fechaEnd }, fechaFin: { gte: fechaStart } },
+        { esRecurrente: false, fechaInicio: { lte: fechaEnd }, fechaFin: { gte: fechaStart } },
+      ],
+    },
     include: {
       profesional: { select: { id: true, nombres: true, apellidos: true } },
       creadoPorUsuario: { select: { id: true, nombre: true } },
     },
+    orderBy: { creadoEn: 'desc' },
   });
 
   res.status(201).json(creado);
