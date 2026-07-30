@@ -37,7 +37,7 @@ export function Idea1NuevoPacienteModal(props: UseNuevoPacienteFormProps) {
       <div className="bg-surface-container-lowest w-full max-w-[640px] max-h-[90vh] rounded-2xl flex flex-col overflow-hidden custom-shadow animate-in zoom-in-95 duration-200">
 
         {/* Header */}
-        <div className="bg-[#3525cd] text-white p-6 flex justify-between items-start shrink-0 shadow-md">
+        <div className="bg-[#0044ab] text-white p-6 flex justify-between items-start shrink-0 shadow-md">
           <div>
             <h2 className="font-headline-md text-headline-md font-bold text-white tracking-tight">Nuevo paciente</h2>
             <p className="font-body-md text-body-md text-white/90 mt-1 flex items-center gap-2 text-sm font-medium">

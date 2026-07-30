@@ -3,6 +3,7 @@ import { format, subDays, addDays } from 'date-fns';
 import { Idea1Sidebar } from '../components/layout/Idea1Sidebar';
 import { Idea1NuevaCitaModal } from '../components/agenda/Idea1NuevaCitaModal';
 import { Idea1DetalleCitaModal } from '../components/agenda/Idea1DetalleCitaModal';
+import { Idea1ModalHorarioSemanal } from '../components/agenda/Idea1ModalHorarioSemanal';
 import {
   useIdea1AgendaData,
   getDefaultAvatar,
@@ -38,8 +39,10 @@ export function Idea1AgendaPage() {
     bloqueosAlmuerzo = [],
     permisosAgenda = [],
     turnosProfesionales = {},
+    horarioEfectivo,
     horarios,
     horaInicioInt,
+    horaFinInt,
     // Métricas
     totalCitas,
     llegadasCitas,
@@ -68,6 +71,7 @@ export function Idea1AgendaPage() {
   const [isNuevaCitaOpen, setIsNuevaCitaOpen] = useState(false);
   const [nuevaCitaParams, setNuevaCitaParams] = useState<{ horaInicio?: string; profesionalId?: string } | undefined>(undefined);
   const [citaSeleccionada, setCitaSeleccionada] = useState<any>(null);
+  const [modalHorarioOpen, setModalHorarioOpen] = useState(false);
   const [dragOverSlot, setDragOverSlot] = useState<{ doctorId: string; hora: string } | null>(null);
 
   const handleAbrirNuevaCita = (params?: { horaInicio?: string; profesionalId?: string }) => {
@@ -181,13 +185,13 @@ export function Idea1AgendaPage() {
                       onClick={() => setUnidadNegocioId(u.id)}
                       className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs md:text-sm font-semibold transition-all whitespace-nowrap ${
                         isSelected
-                          ? 'bg-[#0044ab] text-white shadow-md shadow-[#0044ab]/20 font-bold'
+                          ? 'bg-primary text-white shadow-md shadow-primary/20 font-bold'
                           : 'text-on-surface-variant hover:bg-surface-container-lowest hover:text-on-surface'
                       }`}
                     >
                       <span
                         className={`w-2 h-2 rounded-full shrink-0 ${
-                          isSelected ? 'bg-white' : 'bg-[#0044ab]/50'
+                          isSelected ? 'bg-white' : 'bg-primary/50'
                         }`}
                       />
                       <span>{u.nombre}</span>
@@ -201,7 +205,7 @@ export function Idea1AgendaPage() {
           <div className="flex items-center gap-4">
             <button
               onClick={() => handleAbrirNuevaCita()}
-              className="bg-[#0044ab] text-white px-4 py-2 rounded-lg font-body-md font-semibold hover:opacity-90 active:scale-95 transition-all shadow-md shadow-[#0044ab]/20 flex items-center gap-2 cursor-pointer"
+              className="bg-primary text-white px-4 py-2 rounded-lg font-body-md font-semibold hover:opacity-90 active:scale-95 transition-all shadow-md shadow-primary/20 flex items-center gap-2 cursor-pointer"
             >
               <span className="material-symbols-outlined text-lg">add_circle</span>
               Nueva Cita
@@ -277,7 +281,7 @@ export function Idea1AgendaPage() {
                         onClick={() => setFecha(sc.date)}
                         className={`px-4 py-2 rounded-lg font-body-md font-semibold text-sm transition-all ${
                           isActive
-                            ? 'bg-[#0044ab] text-white shadow-md shadow-[#0044ab]/20'
+                            ? 'bg-primary text-white shadow-md shadow-primary/20'
                             : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
                         }`}
                       >
@@ -286,6 +290,37 @@ export function Idea1AgendaPage() {
                     );
                   })}
                 </div>
+
+                {/* Horario efectivo de la sede — clic para ver y gestionar horarios */}
+                {sedeId && horarioEfectivo && (
+                  <button
+                    onClick={() => setModalHorarioOpen(true)}
+                    className="group flex items-center gap-2 bg-surface-container-lowest border border-outline-variant/50 rounded-xl px-3 py-2 shadow-sm hover:bg-surface-container transition-colors"
+                    title="Ver y gestionar horarios de la sede"
+                  >
+                    {horarioEfectivo.abierto ? (
+                      <>
+                        <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
+                        <span className="text-xs font-mono font-semibold text-on-surface">
+                          {horarioEfectivo.apertura} – {horarioEfectivo.cierre}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
+                        <span className="text-xs font-semibold text-red-600">Cerrado hoy</span>
+                      </>
+                    )}
+                    {horarioEfectivo.esExcepcion && (
+                      <span className="text-[9px] px-1.5 py-0.5 bg-amber-100 text-amber-800 rounded-full font-bold">
+                        EXC
+                      </span>
+                    )}
+                    <span className="material-symbols-outlined text-sm text-on-surface-variant group-hover:text-primary transition-colors">
+                      edit
+                    </span>
+                  </button>
+                )}
               </div>
 
               {/* Leyenda de Estados de Citas */}
@@ -626,7 +661,7 @@ export function Idea1AgendaPage() {
                               )}
 
                               {!isBloqueado && !isHoveredSlot && (
-                                <div className="opacity-0 group-hover:opacity-100 transition-all duration-200 scale-90 group-hover:scale-100 flex items-center gap-1 bg-[#3525cd] text-white text-[10px] font-bold px-2 py-1 rounded-lg shadow-md shadow-primary/30 z-20 pointer-events-none select-none">
+                                <div className="opacity-0 group-hover:opacity-100 transition-all duration-200 scale-90 group-hover:scale-100 flex items-center gap-1 bg-[#0044ab] text-white text-[10px] font-bold px-2 py-1 rounded-lg shadow-md shadow-primary/30 z-20 pointer-events-none select-none">
                                   <span className="material-symbols-outlined text-xs font-bold">add</span>
                                   <span>{slot.hora}</span>
                                 </div>
@@ -676,14 +711,18 @@ export function Idea1AgendaPage() {
                       const docAlmuerzos = bloqueosAlmuerzo.filter((b) => b.profesionalId === doc.id);
                       const docPermisos = permisosAgenda.filter((p) => p.profesionalId === doc.id && !p.esVacaciones);
                       const startMinGrid = horaInicioInt * 60;
+                      const endMinGrid = horaFinInt * 60;
 
                       return (
                         <div key={`citas-col-${doc.id}`} className="relative h-full pointer-events-none">
                           {/* BLOQUEOS DE ALMUERZO */}
                           {docAlmuerzos.map((almuerzo) => {
                             if (!almuerzo.horaInicio || !almuerzo.horaFin) return null;
-                            const startMin = timeToMinutes(almuerzo.horaInicio);
-                            const endMin = timeToMinutes(almuerzo.horaFin);
+                            // Se recorta al horario visible de la agenda (apertura → cierre efectivo)
+                            // para no dibujar por debajo del cierre cuando el bloqueo lo excede.
+                            const startMin = Math.max(timeToMinutes(almuerzo.horaInicio), startMinGrid);
+                            const endMin = Math.min(timeToMinutes(almuerzo.horaFin), endMinGrid);
+                            if (endMin <= startMin) return null;
                             const topPx = ((startMin - startMinGrid) / 60) * ROW_HEIGHT;
                             const duracion = Math.max(endMin - startMin, 30);
                             const heightPx = Math.max((duracion / 60) * ROW_HEIGHT - 4, 36);
@@ -715,8 +754,12 @@ export function Idea1AgendaPage() {
                           {/* PERMISOS, REUNIONES Y ENFERMEDAD */}
                           {docPermisos.map((permiso) => {
                             if (!permiso.horaInicio || !permiso.horaFin) return null;
-                            const startMin = timeToMinutes(permiso.horaInicio);
-                            const endMin = timeToMinutes(permiso.horaFin);
+                            // Aunque el permiso/enfermedad se registre hasta las 20:00, si la
+                            // sede cierra antes (ej. 18:00) el bloque visual se recorta al
+                            // horario efectivo. Los datos en BD quedan intactos.
+                            const startMin = Math.max(timeToMinutes(permiso.horaInicio), startMinGrid);
+                            const endMin = Math.min(timeToMinutes(permiso.horaFin), endMinGrid);
+                            if (endMin <= startMin) return null;
                             const topPx = ((startMin - startMinGrid) / 60) * ROW_HEIGHT;
                             const duracion = Math.max(endMin - startMin, 30);
                             const heightPx = Math.max((duracion / 60) * ROW_HEIGHT - 4, 36);
@@ -822,7 +865,7 @@ export function Idea1AgendaPage() {
                                   : cita.estado === 'COMPLETADA'
                                     ? 'bg-surface-container-high/60 border-outline-variant/40 text-on-surface-variant opacity-75'
                                     : cita.estado === 'NO SHOW'
-                                    ? 'bg-error-container/30 border-error/30 text-on-surface'
+                                    ? 'bg-error-container/70 border-error/60 text-on-surface opacity-90'
                                     : 'bg-surface-container-lowest border-outline-variant/30 text-on-surface shadow-sm'
                                 }`}
                               >
@@ -1058,6 +1101,15 @@ export function Idea1AgendaPage() {
         <Idea1DetalleCitaModal
           cita={citaSeleccionada}
           onClose={() => setCitaSeleccionada(null)}
+        />
+      )}
+
+      {/* Modal de gestión de horarios de la sede (semana + excepciones) */}
+      {modalHorarioOpen && sedeId && (
+        <Idea1ModalHorarioSemanal
+          sedeId={sedeId}
+          sedeName={activeSedeName || ''}
+          onClose={() => setModalHorarioOpen(false)}
         />
       )}
     </div>

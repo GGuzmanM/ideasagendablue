@@ -42,8 +42,8 @@ export function Idea1Sidebar() {
       {/* Header / Logo */}
       <div className="mb-6 px-3">
         <Link to="/idea1" className="flex items-center gap-3 group">
-          <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center p-1.5 shadow-md group-hover:scale-105 transition-transform" title="Limablue Agenda">
-            <img src="/logo-mark.svg" alt="Limablue" className="w-full h-full object-contain" />
+          <div className="w-12 h-12 flex items-center justify-center group-hover:scale-105 transition-transform" title="Limablue Agenda">
+            <img src="/logo-login.png" alt="Limablue" className="w-full h-full object-contain" />
           </div>
           <div>
             <h1 className="font-headline-md text-headline-md font-bold text-white leading-none tracking-tight">
@@ -57,7 +57,7 @@ export function Idea1Sidebar() {
       </div>
 
       {/* Navigation items */}
-      <nav className="flex-1 space-y-1 overflow-y-auto custom-scrollbar pr-1">
+      <nav className="idea1-sidebar-nav flex-1 space-y-1 overflow-y-auto custom-scrollbar pr-1">
         {items.map((item) => {
           const isActive = item.to === '/idea1' || item.to === '/'
             ? (location.pathname === '/idea1' || location.pathname === '/')

@@ -8,10 +8,23 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400&family=Inter:wght@400;500;600;700&family=JetBrains+Mono&family=Geist:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
-    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=block" rel="stylesheet" />
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Marca <html> con `fonts-loaded` cuando la fuente "Material Symbols Outlined"
+      // termine de descargarse. Antes de eso el CSS oculta los .material-symbols-outlined
+      // para evitar el flash del nombre literal del icono (ej. "calendar_today").
+      // Fallback: si por lo que sea la promesa no resuelve, la revelamos al 1.5s.
+      (function () {
+        function marcar() { document.documentElement.classList.add('fonts-loaded'); }
+        if (document.fonts && document.fonts.ready) {
+          document.fonts.ready.then(marcar);
+        }
+        setTimeout(marcar, 1500);
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -197,7 +197,7 @@ function TarjetaPaquete({ paquete: p, pacienteId, nombrePaciente, documento }: {
           <div className="relative w-14 h-14 shrink-0" title={`${restantes} de ${totalSesiones} sesiones disponibles`}>
             <svg viewBox="0 0 36 36" className="w-14 h-14 -rotate-90">
               <circle cx="18" cy="18" r="15.9" fill="none" stroke="#E2E8F0" strokeWidth="3.5" />
-              <circle cx="18" cy="18" r="15.9" fill="none" stroke="#3525cd" strokeWidth="3.5"
+              <circle cx="18" cy="18" r="15.9" fill="none" stroke="#0044ab" strokeWidth="3.5"
                 strokeDasharray={`${pctRestante} 100`} strokeLinecap="round" />
             </svg>
             <span className="absolute inset-0 flex items-center justify-center text-sm font-bold text-on-surface">

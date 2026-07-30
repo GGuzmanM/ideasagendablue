@@ -253,7 +253,7 @@ export function PermisosPage() {
                               />
                               <div
                                 className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
-                                style={{ backgroundColor: p.colorAvatar || '#3525cd' }}
+                                style={{ backgroundColor: p.colorAvatar || '#0044ab' }}
                               >
                                 {iniciales}
                               </div>
@@ -891,7 +891,7 @@ export function PermisosPage() {
                                 <div
                                   className="w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0 shadow-2xs"
                                   style={{
-                                    backgroundColor: p.profesional.colorAvatar || '#3525cd',
+                                    backgroundColor: p.profesional.colorAvatar || '#0044ab',
                                   }}
                                 >
                                   {iniciales}

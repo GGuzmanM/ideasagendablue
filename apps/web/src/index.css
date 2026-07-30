@@ -36,7 +36,7 @@
   .text-on-secondary-fixed { color: #131b2e; }
   .text-secondary-fixed-dim { color: #bec6e0; }
   .text-primary-fixed-dim { color: #b3c4e5; }
-  .text-on-primary-fixed { color: #0f0069; }
+  .text-on-primary-fixed { color: #001a45; }
   .text-on-surface-variant { color: #464555; }
   .text-on-surface { color: #191c1e; }
   .text-on-background { color: #191c1e; }
@@ -113,6 +113,21 @@
   .material-symbols-outlined {
     font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
     vertical-align: middle;
+  }
+  /* Evita el flash del sidebar mientras carga la fuente de iconos.
+     - .material-symbols-outlined: oculta el nombre literal ("calendar_today"…)
+       por si el navegador ignora `display=block` en la @font-face.
+     - Los nav items completos: se ocultan hasta que la fuente esté lista, así
+       nunca se ven labels flotando sin iconos.
+     Al agregar .fonts-loaded en <html> (ver index.html), todo aparece a la vez. */
+  html:not(.fonts-loaded) .material-symbols-outlined {
+    visibility: hidden;
+  }
+  html:not(.fonts-loaded) .idea1-sidebar-nav a {
+    opacity: 0;
+  }
+  .idea1-sidebar-nav a {
+    transition: opacity 120ms ease-out;
   }
 
   .appointment-card {

@@ -27,7 +27,7 @@ export function Sidebar() {
       {/* Logo */}
       <div className="mb-4">
         <div className="w-9 h-9 bg-white rounded-xl flex items-center justify-center p-1.5" title="Limablue Agenda">
-          <img src="/logo-mark.svg" alt="Limablue" className="w-full h-full object-contain" />
+          <img src="/logo-login.png" alt="Limablue" className="w-full h-full object-contain" />
         </div>
       </div>
 

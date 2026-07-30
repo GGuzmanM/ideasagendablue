@@ -102,7 +102,7 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                 <div
                   className="w-13 h-13 rounded-full flex items-center justify-center text-white font-bold text-headline-sm shadow-md shrink-0"
                   style={{
-                    backgroundColor: cita.profesional?.colorAvatar || '#3525cd',
+                    backgroundColor: cita.profesional?.colorAvatar || '#0044ab',
                   }}
                 >
                   {iniciales || 'PA'}
@@ -529,7 +529,7 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                             >
                               <span
                                 className="w-5 h-5 rounded-full flex items-center justify-center text-white shrink-0 font-mono text-[9px] font-bold"
-                                style={{ backgroundColor: p.colorAvatar || '#3525cd' }}
+                                style={{ backgroundColor: p.colorAvatar || '#0044ab' }}
                               >
                                 {p.nombres[0]}
                                 {p.apellidos[0]}

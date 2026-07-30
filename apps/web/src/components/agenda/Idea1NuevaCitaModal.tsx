@@ -112,8 +112,8 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
     <div className="fixed inset-0 bg-inverse-surface/40 backdrop-blur-[2px] z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
       <div className="bg-surface-container-lowest w-full max-w-[640px] max-h-[90vh] rounded-2xl flex flex-col overflow-hidden custom-shadow animate-in zoom-in-95 duration-200">
         
-        {/* Header con color PÚRPURA/ÍNDIGO vibrante explícito bg-[#3525cd] */}
-        <div className="bg-[#3525cd] text-white p-6 flex justify-between items-start shrink-0 shadow-md">
+        {/* Header con color PÚRPURA/ÍNDIGO vibrante explícito bg-[#0044ab] */}
+        <div className="bg-[#0044ab] text-white p-6 flex justify-between items-start shrink-0 shadow-md">
           <div>
             <h2 className="font-headline-md text-headline-md font-bold text-white tracking-tight">Nueva Cita</h2>
             <p className="font-body-md text-body-md text-white/90 mt-1 flex items-center gap-2 text-sm font-medium">

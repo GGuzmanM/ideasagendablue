@@ -238,7 +238,32 @@ export function mapearCitasDbACitaAgenda(citasDb: any[] = []): CitaAgenda[] {
     result.push(item);
   });
 
-  return result;
+  // NO SHOW visible salvo que otra cita ACTIVA del mismo profesional se solape
+  // en tiempo con ella. Se usa el estado real de DB (`raw.estado`) para no
+  // depender del mapping visual; cancelada/reprogramada/no_show NO son activas.
+  const inactivos = new Set(['cancelada', 'reprogramada', 'no_show']);
+  const esActivaEnDb = (c: CitaAgenda) => !inactivos.has(String(c.raw?.estado || '').toLowerCase());
+  const toMin = (t: string) => {
+    const [h, m] = t.split(':').map(Number);
+    return (h || 0) * 60 + (m || 0);
+  };
+  const rangosActivosPorDoctor = new Map<string, { ini: number; fin: number }[]>();
+  result.forEach((c) => {
+    if (!esActivaEnDb(c)) return;
+    const ini = toMin(c.horaInicio);
+    const fin = ini + (c.duracionMinutos || 30);
+    const arr = rangosActivosPorDoctor.get(c.doctorId) || [];
+    arr.push({ ini, fin });
+    rangosActivosPorDoctor.set(c.doctorId, arr);
+  });
+  return result.filter((c) => {
+    if (String(c.raw?.estado || '').toLowerCase() !== 'no_show') return true;
+    const ini = toMin(c.horaInicio);
+    const fin = ini + (c.duracionMinutos || 30);
+    const activas = rangosActivosPorDoctor.get(c.doctorId) || [];
+    const seSolapa = activas.some((a) => ini < a.fin && a.ini < fin);
+    return !seSolapa;
+  });
 }
 
 /**
@@ -867,6 +892,7 @@ export function useIdea1AgendaData() {
     bloqueosAlmuerzo,
     permisosAgenda,
     turnosProfesionales,
+    horarioEfectivo: horarioData?.efectivo,
     horarios,
     horaInicioInt,
     horaFinInt,
