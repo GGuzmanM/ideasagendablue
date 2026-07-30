@@ -1,339 +1,453 @@
 <!DOCTYPE html>
 
-<html class="light" lang="es"><head>
+<html lang="es"><head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>Bloques combinados - MediFlow Pro</title>
+<title>Movimientos de personal - MediFlow Pro</title>
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
 <script id="tailwind-config">
         tailwind.config = {
-            darkMode: "class",
-            theme: {
-                extend: {
-                    "colors": {
-                        "primary-container": "#4f46e5",
-                        "surface-dim": "#d8dadc",
-                        "secondary-fixed": "#dae2fd",
-                        "inverse-surface": "#2d3133",
-                        "surface-tint": "#4d44e3",
-                        "surface-container-high": "#e6e8ea",
-                        "surface-bright": "#f7f9fb",
-                        "secondary-fixed-dim": "#bec6e0",
-                        "primary-fixed-dim": "#c3c0ff",
-                        "tertiary-fixed-dim": "#ffb695",
-                        "outline-variant": "#c7c4d8",
-                        "on-tertiary-container": "#ffd2be",
-                        "inverse-primary": "#c3c0ff",
-                        "on-primary-container": "#dad7ff",
-                        "on-primary": "#ffffff",
-                        "inverse-on-surface": "#eff1f3",
-                        "on-tertiary": "#ffffff",
-                        "on-secondary": "#ffffff",
-                        "tertiary-fixed": "#ffdbcc",
-                        "on-background": "#191c1e",
-                        "surface": "#f7f9fb",
-                        "on-secondary-fixed-variant": "#3f465c",
-                        "background": "#f7f9fb",
-                        "on-tertiary-fixed-variant": "#7b2f00",
-                        "tertiary": "#7e3000",
-                        "surface-variant": "#e0e3e5",
-                        "surface-container-highest": "#e0e3e5",
-                        "on-surface-variant": "#464555",
-                        "error-container": "#ffdad6",
-                        "on-primary-fixed": "#0f0069",
-                        "secondary-container": "#dae2fd",
-                        "on-tertiary-fixed": "#351000",
-                        "primary-fixed": "#e2dfff",
-                        "on-error-container": "#93000a",
-                        "surface-container": "#eceef0",
-                        "secondary": "#565e74",
-                        "on-secondary-container": "#5c647a",
-                        "tertiary-container": "#a44100",
-                        "surface-container-lowest": "#ffffff",
-                        "outline": "#777587",
-                        "on-surface": "#191c1e",
-                        "surface-container-low": "#f2f4f6",
-                        "error": "#ba1a1a",
-                        "on-primary-fixed-variant": "#3323cc",
-                        "on-error": "#ffffff",
-                        "primary": "#3525cd",
-                        "on-secondary-fixed": "#131b2e"
-                    },
-                    "borderRadius": {
-                        "DEFAULT": "0.25rem",
-                        "lg": "0.5rem",
-                        "xl": "0.75rem",
-                        "full": "9999px"
-                    },
-                    "spacing": {
-                        "sidebar-expanded": "260px",
-                        "sidebar-collapsed": "72px",
-                        "unit": "4px",
-                        "grid-gutter": "24px",
-                        "container-padding": "32px"
-                    },
-                    "fontFamily": {
-                        "headline-sm": ["Geist"],
-                        "body-lg": ["Inter"],
-                        "headline-md": ["Geist"],
-                        "mono-label": ["JetBrains Mono"],
-                        "display-lg": ["Geist"],
-                        "body-md": ["Inter"],
-                        "label-caps": ["Inter"]
-                    },
-                    "fontSize": {
-                        "headline-sm": ["18px", { "lineHeight": "28px", "letterSpacing": "0", "fontWeight": "500" }],
-                        "body-lg": ["16px", { "lineHeight": "24px", "letterSpacing": "0", "fontWeight": "400" }],
-                        "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
-                        "mono-label": ["12px", { "lineHeight": "16px", "letterSpacing": "0", "fontWeight": "400" }],
-                        "display-lg": ["48px", { "lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "600" }],
-                        "body-md": ["14px", { "lineHeight": "20px", "letterSpacing": "0", "fontWeight": "400" }],
-                        "label-caps": ["11px", { "lineHeight": "16px", "letterSpacing": "0.08em", "fontWeight": "600" }]
-                    },
-                    "boxShadow": {
-                        "soft-2026": "0px 12px 24px -4px rgba(0,0,0,0.04), 0px 4px 8px -2px rgba(0,0,0,0.02)"
-                    }
-                }
-            }
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "surface-container": "#eceef0",
+                      "on-surface-variant": "#464555",
+                      "secondary-fixed-dim": "#bec6e0",
+                      "error-container": "#ffdad6",
+                      "on-tertiary-fixed-variant": "#7b2f00",
+                      "outline": "#777587",
+                      "on-primary-container": "#dad7ff",
+                      "on-primary-fixed": "#0f0069",
+                      "on-background": "#191c1e",
+                      "error": "#ba1a1a",
+                      "inverse-primary": "#c3c0ff",
+                      "primary-fixed": "#e2dfff",
+                      "tertiary-container": "#a44100",
+                      "surface-bright": "#f7f9fb",
+                      "surface-container-lowest": "#ffffff",
+                      "on-secondary-fixed-variant": "#3f465c",
+                      "inverse-on-surface": "#eff1f3",
+                      "on-primary-fixed-variant": "#3323cc",
+                      "on-secondary-fixed": "#131b2e",
+                      "on-secondary": "#ffffff",
+                      "surface": "#f7f9fb",
+                      "on-tertiary": "#ffffff",
+                      "primary-container": "#4f46e5",
+                      "on-surface": "#191c1e",
+                      "surface-variant": "#e0e3e5",
+                      "surface-container-high": "#e6e8ea",
+                      "inverse-surface": "#2d3133",
+                      "secondary": "#565e74",
+                      "surface-container-highest": "#e0e3e5",
+                      "on-tertiary-container": "#ffd2be",
+                      "on-primary": "#ffffff",
+                      "tertiary-fixed-dim": "#ffb695",
+                      "on-error": "#ffffff",
+                      "primary-fixed-dim": "#c3c0ff",
+                      "tertiary": "#7e3000",
+                      "primary": "#3525cd",
+                      "surface-container-low": "#f2f4f6",
+                      "surface-tint": "#4d44e3",
+                      "tertiary-fixed": "#ffdbcc",
+                      "on-secondary-container": "#5c647a",
+                      "secondary-fixed": "#dae2fd",
+                      "outline-variant": "#c7c4d8",
+                      "background": "#f7f9fb",
+                      "on-tertiary-fixed": "#351000",
+                      "secondary-container": "#dae2fd",
+                      "surface-dim": "#d8dadc",
+                      "on-error-container": "#93000a"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "sidebar-expanded": "260px",
+                      "sidebar-collapsed": "72px",
+                      "grid-gutter": "24px",
+                      "unit": "4px",
+                      "container-padding": "32px"
+              },
+              "fontFamily": {
+                      "mono-label": [
+                              "JetBrains Mono"
+                      ],
+                      "label-caps": [
+                              "Inter"
+                      ],
+                      "display-lg": [
+                              "Geist"
+                      ],
+                      "headline-sm": [
+                              "Geist"
+                      ],
+                      "headline-md": [
+                              "Geist"
+                      ],
+                      "body-md": [
+                              "Inter"
+                      ],
+                      "body-lg": [
+                              "Inter"
+                      ]
+              },
+              "fontSize": {
+                      "mono-label": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "letterSpacing": "0",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "label-caps": [
+                              "11px",
+                              {
+                                      "lineHeight": "16px",
+                                      "letterSpacing": "0.08em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "display-lg": [
+                              "48px",
+                              {
+                                      "lineHeight": "1.1",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "headline-sm": [
+                              "18px",
+                              {
+                                      "lineHeight": "28px",
+                                      "letterSpacing": "0",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "headline-md": [
+                              "24px",
+                              {
+                                      "lineHeight": "32px",
+                                      "letterSpacing": "-0.01em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "body-md": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "letterSpacing": "0",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "body-lg": [
+                              "16px",
+                              {
+                                      "lineHeight": "24px",
+                                      "letterSpacing": "0",
+                                      "fontWeight": "400"
+                              }
+                      ]
+              }
+      },
+          },
         }
-    </script>
+      </script>
 <style>
-        body { font-family: 'Inter', sans-serif; background-color: #F8FAFC; color: #191c1e; margin: 0; padding: 0; }
-        .geist-font { font-family: 'Geist', sans-serif; }
-        .glass-header { backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
-        .sidebar-item-active { position: relative; }
-        .sidebar-item-active::before {
-            content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background-color: #c3c0ff; border-radius: 0 4px 4px 0;
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background-color: #cbd5e1;
+            border-radius: 20px;
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .icon-fill {
+            font-variation-settings: 'FILL' 1;
         }
     </style>
 </head>
-<body class="flex h-screen overflow-hidden bg-surface">
-<!-- SideNavBar -->
-<aside class="bg-inverse-surface dark:bg-on-background text-primary dark:text-primary-fixed-dim font-body-md text-body-md h-screen w-sidebar-expanded flex-shrink-0 bg-inverse-surface flex flex-col h-full py-6 transition-colors duration-200 ease-in-out hidden md:flex z-40">
-<div class="px-6 mb-8">
-<h1 class="font-headline-sm text-headline-sm font-bold text-surface-container-lowest">MediFlow Pro</h1>
-<p class="text-surface-variant opacity-70 font-mono-label text-mono-label mt-1">Clinical Precision</p>
+<body class="bg-background text-on-surface font-body-md antialiased overflow-hidden flex h-screen">
+<!-- Side Navigation -->
+<aside class="bg-on-secondary-fixed dark:bg-on-secondary-fixed text-primary dark:text-inverse-primary font-headline-sm text-headline-sm h-screen sticky top-0 left-0 w-sidebar-expanded bg-on-secondary-fixed dark:bg-on-secondary-fixed flex flex-col h-full py-8 px-4 transition-all duration-300 ease-in-out hidden md:flex z-50 shadow-[4px_0_24px_rgba(0,0,0,0.02)]">
+<div class="mb-10 px-4">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded bg-primary flex items-center justify-center text-on-primary">
+<span class="material-symbols-outlined icon-fill text-xl">health_and_safety</span>
 </div>
-<div class="px-6 mb-8">
-<button class="w-full bg-primary-container text-on-primary-container py-2 px-4 rounded-lg font-semibold hover:bg-surface-tint transition-colors flex items-center justify-center gap-2">
-<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">add</span>
-                New Appointment
-            </button>
+<div>
+<h1 class="font-headline-md text-headline-md font-bold text-surface-container-lowest">MediFlow Pro</h1>
+<p class="font-label-caps text-label-caps text-secondary-fixed-dim/70 mt-0.5">Medical Management</p>
 </div>
-<nav class="flex-1 overflow-y-auto">
-<ul class="space-y-1">
-<li>
-<a class="flex items-center gap-3 py-3 px-6 text-surface-variant opacity-70 hover:bg-surface-variant/10 hover:text-surface-bright transition-colors duration-200 ease-in-out" href="#">
-<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">dashboard</span>
-<span>Dashboard</span>
+</div>
+</div>
+<nav class="flex-1 space-y-1">
+<a class="flex items-center gap-3 py-2.5 text-secondary-fixed-dim font-medium pl-5 hover:bg-surface-variant/10 hover:text-surface-bright rounded-lg group transition-colors" href="#">
+<span class="material-symbols-outlined">calendar_today</span>
+<span>Agenda</span>
 </a>
-</li>
-<li>
-<a class="flex items-center gap-3 py-3 px-6 text-surface-variant opacity-70 hover:bg-surface-variant/10 hover:text-surface-bright transition-colors duration-200 ease-in-out" href="#">
-<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">group</span>
+<a class="flex items-center gap-3 py-2.5 text-secondary-fixed-dim font-medium pl-5 hover:bg-surface-variant/10 hover:text-surface-bright rounded-lg group transition-colors" href="#">
+<span class="material-symbols-outlined">groups</span>
 <span>Patients</span>
 </a>
-</li>
-<li>
-<a class="flex items-center gap-3 py-3 px-6 text-surface-variant opacity-70 hover:bg-surface-variant/10 hover:text-surface-bright transition-colors duration-200 ease-in-out" href="#">
-<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">calendar_today</span>
-<span>Appointments</span>
+<a class="flex items-center gap-3 py-2.5 text-secondary-fixed-dim font-medium pl-5 hover:bg-surface-variant/10 hover:text-surface-bright rounded-lg group transition-colors" href="#">
+<span class="material-symbols-outlined">analytics</span>
+<span>Analytics</span>
 </a>
-</li>
-<li>
-<a class="flex items-center gap-3 py-3 px-6 text-surface-variant opacity-70 hover:bg-surface-variant/10 hover:text-surface-bright transition-colors duration-200 ease-in-out" href="#">
-<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">chat_bubble</span>
-<span>Messages</span>
+<a class="flex items-center gap-3 py-2.5 text-primary-fixed-dim font-bold border-l-4 border-primary-fixed-dim pl-4 bg-surface-variant/10 rounded-r-lg group transition-colors mt-2" href="#">
+<span class="material-symbols-outlined icon-fill">swap_horiz</span>
+<span>Movimientos</span>
 </a>
-</li>
-<li>
-<a class="flex items-center gap-3 py-3 px-6 text-surface-variant opacity-70 hover:bg-surface-variant/10 hover:text-surface-bright transition-colors duration-200 ease-in-out" href="#">
-<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">inventory_2</span>
-<span>Inventory</span>
-</a>
-</li>
-<li>
-<a class="flex items-center gap-3 py-3 px-6 text-primary-fixed font-bold border-l-4 border-primary-fixed pl-4 bg-surface-variant/10 sidebar-item-active transition-colors duration-200 ease-in-out" href="#">
-<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">assessment</span>
-<span>Reports</span>
-</a>
-</li>
-</ul>
 </nav>
-<div class="mt-auto pt-4 border-t border-surface-variant/20">
-<ul class="space-y-1">
-<li>
-<a class="flex items-center gap-3 py-3 px-6 text-surface-variant opacity-70 hover:bg-surface-variant/10 hover:text-surface-bright transition-colors duration-200 ease-in-out" href="#">
-<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">settings</span>
-<span>Settings</span>
+<div class="mt-auto pt-6 border-t border-surface-variant/10 space-y-1">
+<a class="flex items-center gap-3 py-2 text-secondary-fixed-dim font-medium pl-5 hover:bg-surface-variant/10 hover:text-surface-bright rounded-lg transition-colors" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-label-caps text-label-caps">Settings</span>
 </a>
-</li>
-<li>
-<a class="flex items-center gap-3 py-3 px-6 text-surface-variant opacity-70 hover:bg-surface-variant/10 hover:text-surface-bright transition-colors duration-200 ease-in-out" href="#">
-<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">help_outline</span>
-<span>Support</span>
+<a class="flex items-center gap-3 py-2 text-secondary-fixed-dim font-medium pl-5 hover:bg-surface-variant/10 hover:text-surface-bright rounded-lg transition-colors" href="#">
+<span class="material-symbols-outlined">help</span>
+<span class="font-label-caps text-label-caps">Support</span>
 </a>
-</li>
-</ul>
 </div>
 </aside>
 <!-- Main Content Area -->
-<div class="flex-1 flex flex-col h-screen overflow-hidden bg-background">
-<!-- TopNavBar -->
-<header class="bg-surface/80 dark:bg-background/80 text-primary dark:text-primary-fixed-dim font-body-md text-body-md h-16 w-full backdrop-blur-md border-b border-outline-variant dark:border-outline shadow-sm transition-all duration-300 flex justify-between items-center px-grid-gutter sticky top-0 z-50 w-full glass-header">
+<main class="flex-1 flex flex-col h-screen overflow-hidden bg-background">
+<!-- Top App Bar (Replaced by specialized header for this screen, keeping general structure) -->
+<header class="bg-surface/80 dark:bg-surface/80 text-primary dark:text-inverse-primary docked full-width top-0 sticky z-40 backdrop-blur-md border-b border-outline-variant/30 shadow-sm flex justify-between items-center w-full px-grid-gutter h-16 md:hidden">
+<div class="font-headline-md text-headline-md font-black text-primary">MediFlow</div>
 <div class="flex items-center gap-4">
-<button class="md:hidden p-2 text-on-surface-variant hover:bg-surface-container-high rounded-full transition-colors">
-<span class="material-symbols-outlined">menu</span>
-</button>
-<div class="font-headline-md text-headline-md text-primary dark:text-inverse-primary hidden md:block">
-                    MediFlow Pro
-                </div>
-</div>
-<div class="flex-1 max-w-md mx-4 hidden md:block">
-<div class="relative group">
-<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline">search</span>
-<input class="w-full bg-surface-container-lowest border border-outline-variant rounded-lg pl-10 pr-12 py-2 text-body-md focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors" placeholder="Search..." type="text"/>
-<span class="absolute right-3 top-1/2 -translate-y-1/2 font-mono-label text-mono-label text-outline bg-surface px-1.5 rounded border border-outline-variant">⌘ K</span>
-</div>
-</div>
-<div class="flex items-center gap-2">
-<button class="p-2 text-on-surface-variant hover:bg-surface-container-high dark:hover:bg-surface-variant rounded-full transition-colors">
-<span class="material-symbols-outlined">notifications</span>
-</button>
-<button class="p-2 text-on-surface-variant hover:bg-surface-container-high dark:hover:bg-surface-variant rounded-full transition-colors">
-<span class="material-symbols-outlined">help</span>
-</button>
-<div class="h-8 w-8 rounded-full bg-primary-container ml-2 overflow-hidden border border-outline-variant cursor-pointer flex items-center justify-center text-on-primary-container font-bold">
-<span class="material-symbols-outlined">person</span>
-</div>
+<button class="text-on-surface-variant hover:text-primary transition-colors"><span class="material-symbols-outlined">search</span></button>
+<button class="text-on-surface-variant hover:text-primary transition-colors"><span class="material-symbols-outlined">menu</span></button>
 </div>
 </header>
-<!-- Canvas -->
-<main class="flex-1 overflow-y-auto p-container-padding bg-[#F8FAFC]">
-<div class="max-w-4xl mx-auto space-y-grid-gutter">
 <!-- Page Header -->
-<div class="flex items-center gap-4 mb-8">
-<button class="p-2 rounded-full hover:bg-surface-container-high transition-colors text-on-surface-variant flex items-center justify-center">
-<span class="material-symbols-outlined">arrow_back</span>
+<div class="px-8 pt-8 pb-4 bg-surface-container-lowest border-b border-surface-variant shrink-0">
+<div class="flex flex-col md:flex-row md:items-end justify-between gap-4">
+<div>
+<h1 class="font-display-lg text-display-lg text-on-surface tracking-tight">Movimientos de personal</h1>
+<p class="font-body-md text-body-md text-on-surface-variant mt-2">Quién atiende en cada sede. Los cambios se reflejan al instante en la agenda.</p>
+</div>
+<button class="bg-primary hover:bg-primary-container text-on-primary font-medium py-2.5 px-5 rounded-lg flex items-center gap-2 transition-colors shadow-sm whitespace-nowrap">
+<span class="material-symbols-outlined text-sm">add</span>
+                    Nuevo movimiento
+                </button>
+</div>
+<div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mt-8">
+<!-- Filters & Search -->
+<div class="flex items-center gap-4 w-full md:w-auto">
+<div class="flex bg-surface-container-low p-1 rounded-lg border border-surface-variant/50">
+<button class="px-4 py-1.5 rounded-md bg-surface-container-lowest text-primary font-medium shadow-sm border border-surface-variant/50 text-sm">Hoy</button>
+<button class="px-4 py-1.5 rounded-md text-on-surface-variant hover:text-on-surface font-medium text-sm transition-colors flex items-center gap-1">
+                            Próximos <span class="bg-surface-variant text-on-surface-variant text-[10px] font-bold px-1.5 py-0.5 rounded-full ml-1">1</span>
 </button>
-<div>
-<div class="flex items-center gap-3">
-<div class="h-10 w-10 rounded-lg bg-primary-container/10 flex items-center justify-center text-primary">
-<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">link</span>
+<button class="px-4 py-1.5 rounded-md text-on-surface-variant hover:text-on-surface font-medium text-sm transition-colors">Historial</button>
 </div>
-<div>
-<h2 class="font-headline-md text-headline-md text-on-surface">Bloques combinados</h2>
-<p class="text-body-md text-on-surface-variant mt-1">Servicio ancla (profilaxis) + servicios que pueden combinarse en el mismo turno.</p>
-</div>
+<div class="relative hidden md:block w-64">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant/50 text-lg">search</span>
+<input class="w-full pl-9 pr-10 py-2 bg-surface-container-lowest border border-outline-variant/60 rounded-lg text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all" placeholder="Buscar podóloga..." type="text"/>
+<div class="absolute right-2 top-1/2 -translate-y-1/2 flex items-center">
+<span class="font-mono-label text-mono-label text-on-surface-variant/40 bg-surface-container px-1.5 py-0.5 rounded border border-outline-variant/30">⌘K</span>
 </div>
 </div>
 </div>
-<!-- Anchor Service Card -->
-<div class="bg-surface-container-lowest rounded-xl border border-outline-variant p-6 shadow-soft-2026">
-<h3 class="font-headline-sm text-headline-sm text-on-surface mb-1">Servicio ancla para combinaciones</h3>
-<p class="text-body-md text-on-surface-variant mb-4">Es el servicio principal (profilaxis). El toggle "Combinar" solo aparece al agendar este servicio.</p>
-<div class="relative">
-<select class="w-full appearance-none bg-surface-container-lowest border border-outline-variant rounded-lg py-3 px-4 text-body-lg text-on-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors cursor-pointer">
-<option>PROFILAXIS (60 min)</option>
-<option>OTRO SERVICIO (30 min)</option>
-</select>
-<div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-on-surface-variant">
-<span class="material-symbols-outlined">expand_more</span>
+<!-- Date Navigation -->
+<div class="flex items-center gap-2">
+<div class="flex items-center bg-surface-container-lowest border border-outline-variant/60 rounded-lg p-1 shadow-sm">
+<button class="p-1 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low rounded transition-colors"><span class="material-symbols-outlined text-sm">chevron_left</span></button>
+<div class="flex items-center gap-2 px-3 py-1 text-sm font-medium text-on-surface border-x border-outline-variant/30">
+<span class="material-symbols-outlined text-on-surface-variant text-sm">calendar_month</span>
+                            Jue 30 de jul
+                        </div>
+<button class="p-1 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low rounded transition-colors"><span class="material-symbols-outlined text-sm">chevron_right</span></button>
+</div>
+<button class="px-3 py-2 bg-secondary-container/30 text-primary-container font-medium text-sm rounded-lg hover:bg-secondary-container/50 transition-colors">Hoy</button>
 </div>
 </div>
 </div>
-<!-- Combinable Services Card -->
-<div class="bg-surface-container-lowest rounded-xl border border-outline-variant p-6 shadow-soft-2026">
-<div class="mb-6">
-<h3 class="font-headline-sm text-headline-sm text-on-surface mb-1">Servicios combinables con la profilaxis</h3>
-<p class="text-body-md text-on-surface-variant">Estos aparecen como "servicio extra" al combinar. Desactiva para ocultarlos sin perderlos.</p>
+<!-- Kanban Board -->
+<div class="flex-1 overflow-x-auto overflow-y-hidden custom-scrollbar bg-surface-container-low/30 p-6 flex gap-6">
+<!-- Column 1: Los Olivos -->
+<div class="flex flex-col w-[320px] shrink-0 h-full">
+<div class="flex items-center justify-between mb-4 px-1">
+<div class="flex items-center gap-2">
+<div class="w-1.5 h-4 bg-emerald-500 rounded-full"></div>
+<h2 class="font-headline-sm text-headline-sm font-semibold text-on-surface">Los Olivos</h2>
 </div>
-<!-- Add Section -->
-<div class="flex gap-4 mb-8">
-<div class="relative flex-1">
-<select class="w-full appearance-none bg-surface-container-lowest border border-outline-variant rounded-lg py-2.5 px-4 text-body-md text-on-surface-variant focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors cursor-pointer">
-<option>-- Agregar servicio combinable --</option>
-</select>
-<div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-on-surface-variant">
-<span class="material-symbols-outlined">expand_more</span>
+<div class="flex items-center gap-2">
+<span class="bg-surface-variant text-on-surface-variant font-mono-label text-mono-label px-2 py-0.5 rounded-full">7</span>
+<button class="text-on-surface-variant hover:text-primary transition-colors p-1 rounded-full hover:bg-surface-container"><span class="material-symbols-outlined text-sm">add</span></button>
 </div>
 </div>
-<button class="bg-primary text-on-primary px-6 py-2.5 rounded-lg font-medium hover:bg-surface-tint transition-colors">
-                            Agregar
-                        </button>
+<div class="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-3 pb-20">
+<!-- Card 1 -->
+<div class="bg-surface-container-lowest p-4 rounded-xl border-l-4 border-l-primary-container border-y border-r border-y-outline-variant/30 border-r-outline-variant/30 shadow-[0px_4px_8px_-2px_rgba(0,0,0,0.02)] relative group hover:border-r-outline-variant/60 hover:border-y-outline-variant/60 transition-all">
+<div class="flex items-start gap-3">
+<div class="w-8 h-8 rounded-full bg-amber-500 text-white flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">MG</div>
+<div class="flex-1 min-w-0">
+<h3 class="font-medium text-on-surface text-sm truncate">Maximina Gutierrez...</h3>
+<div class="mt-1 flex items-center gap-2">
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary-container/10 text-primary-container font-label-caps text-[10px]">
+<div class="w-1.5 h-1.5 rounded-full bg-primary-container"></div>
+                                        Cambio por tiempo
+                                    </span>
 </div>
-<!-- List -->
-<div class="space-y-0 divide-y divide-surface-variant">
-<!-- List Item 1 -->
-<div class="py-4 flex items-center justify-between hover:bg-surface-container-low/50 transition-colors px-2 -mx-2 rounded-lg">
-<div class="flex items-center gap-3">
-<div class="w-2 h-2 rounded-full bg-amber-500"></div>
-<span class="text-body-md text-on-surface font-medium uppercase tracking-wide">CURACION BLEO</span>
-</div>
-<div class="flex items-center gap-4">
-<span class="bg-emerald-100 text-emerald-800 text-xs font-semibold px-2.5 py-1 rounded-full flex items-center gap-1.5 border border-emerald-200">
-<span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
-                                    Activo
-                                </span>
-<button class="text-error hover:text-on-error-container text-body-md font-medium transition-colors px-2 py-1 rounded hover:bg-error-container/50">
-                                    Quitar
-                                </button>
-</div>
-</div>
-<!-- List Item 2 -->
-<div class="py-4 flex items-center justify-between hover:bg-surface-container-low/50 transition-colors px-2 -mx-2 rounded-lg">
-<div class="flex items-center gap-3">
-<div class="w-2 h-2 rounded-full bg-amber-500"></div>
-<span class="text-body-md text-on-surface font-medium uppercase tracking-wide">CURACION: DE EXTRACCION DE UÑA</span>
-</div>
-<div class="flex items-center gap-4">
-<span class="bg-emerald-100 text-emerald-800 text-xs font-semibold px-2.5 py-1 rounded-full flex items-center gap-1.5 border border-emerald-200">
-<span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
-                                    Activo
-                                </span>
-<button class="text-error hover:text-on-error-container text-body-md font-medium transition-colors px-2 py-1 rounded hover:bg-error-container/50">
-                                    Quitar
-                                </button>
-</div>
-</div>
-<!-- List Item 3 -->
-<div class="py-4 flex items-center justify-between hover:bg-surface-container-low/50 transition-colors px-2 -mx-2 rounded-lg">
-<div class="flex items-center gap-3">
-<div class="w-2 h-2 rounded-full bg-emerald-500"></div>
-<span class="text-body-md text-on-surface font-medium uppercase tracking-wide">LASER DE ALTA: HONGOS</span>
-</div>
-<div class="flex items-center gap-4">
-<span class="bg-emerald-100 text-emerald-800 text-xs font-semibold px-2.5 py-1 rounded-full flex items-center gap-1.5 border border-emerald-200">
-<span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
-                                    Activo
-                                </span>
-<button class="text-error hover:text-on-error-container text-body-md font-medium transition-colors px-2 py-1 rounded hover:bg-error-container/50">
-                                    Quitar
-                                </button>
-</div>
-</div>
-<!-- List Item 4 -->
-<div class="py-4 flex items-center justify-between hover:bg-surface-container-low/50 transition-colors px-2 -mx-2 rounded-lg">
-<div class="flex items-center gap-3">
-<div class="w-2 h-2 rounded-full bg-emerald-500"></div>
-<span class="text-body-md text-on-surface font-medium uppercase tracking-wide">INFILTRACION: CALLOS</span>
-</div>
-<div class="flex items-center gap-4">
-<span class="bg-emerald-100 text-emerald-800 text-xs font-semibold px-2.5 py-1 rounded-full flex items-center gap-1.5 border border-emerald-200">
-<span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
-                                    Activo
-                                </span>
-<button class="text-error hover:text-on-error-container text-body-md font-medium transition-colors px-2 py-1 rounded hover:bg-error-container/50">
-                                    Quitar
-                                </button>
+<p class="text-xs text-on-surface-variant mt-1.5 flex items-center gap-1"><span class="material-symbols-outlined text-[12px]">schedule</span> Desde 13 jul</p>
 </div>
 </div>
 </div>
+<!-- Card 2 -->
+<div class="bg-surface-container-lowest p-4 rounded-xl border border-outline-variant/30 shadow-[0px_2px_4px_-1px_rgba(0,0,0,0.02)] group hover:border-outline-variant/60 transition-all">
+<div class="flex items-start gap-3">
+<div class="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">B1</div>
+<div class="flex-1 min-w-0">
+<h3 class="font-medium text-on-surface text-sm truncate">Baro 1</h3>
+<p class="text-xs text-on-surface-variant mt-1">Asignación fija</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Column 2: One -->
+<div class="flex flex-col w-[320px] shrink-0 h-full">
+<div class="flex items-center justify-between mb-4 px-1">
+<div class="flex items-center gap-2">
+<div class="w-1.5 h-4 bg-red-500 rounded-full"></div>
+<h2 class="font-headline-sm text-headline-sm font-semibold text-on-surface">One</h2>
+</div>
+<div class="flex items-center gap-2">
+<span class="bg-surface-variant text-on-surface-variant font-mono-label text-mono-label px-2 py-0.5 rounded-full">6</span>
+<button class="text-on-surface-variant hover:text-primary transition-colors p-1 rounded-full hover:bg-surface-container"><span class="material-symbols-outlined text-sm">add</span></button>
+</div>
+</div>
+<div class="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-3 pb-20">
+<!-- Card 1 -->
+<div class="bg-surface-container-lowest p-4 rounded-xl border-l-4 border-l-primary-container border-y border-r border-y-outline-variant/30 border-r-outline-variant/30 shadow-[0px_4px_8px_-2px_rgba(0,0,0,0.02)] relative group hover:border-r-outline-variant/60 hover:border-y-outline-variant/60 transition-all">
+<div class="flex items-start gap-3">
+<div class="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">DM</div>
+<div class="flex-1 min-w-0">
+<h3 class="font-medium text-on-surface text-sm truncate">Doris Vicenta Marqu...</h3>
+<div class="mt-1 flex items-center gap-2">
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary-container/10 text-primary-container font-label-caps text-[10px]">
+<div class="w-1.5 h-1.5 rounded-full bg-primary-container"></div>
+                                        Cambio por tiempo
+                                    </span>
+</div>
+<p class="text-xs text-on-surface-variant mt-1.5 flex items-center gap-1"><span class="material-symbols-outlined text-[12px]">schedule</span> Desde 13 jul</p>
+</div>
+</div>
+</div>
+<button class="w-full text-left text-primary text-xs font-medium px-2 py-1 hover:underline flex items-center gap-1">
+                        1 cambio programado <span class="material-symbols-outlined text-[14px]">arrow_right_alt</span>
+</button>
+</div>
+</div>
+<!-- Column 3: San Miguel -->
+<div class="flex flex-col w-[320px] shrink-0 h-full">
+<div class="flex items-center justify-between mb-4 px-1">
+<div class="flex items-center gap-2">
+<div class="w-1.5 h-4 bg-blue-500 rounded-full"></div>
+<h2 class="font-headline-sm text-headline-sm font-semibold text-on-surface">San Miguel</h2>
+</div>
+<div class="flex items-center gap-2">
+<span class="bg-surface-variant text-on-surface-variant font-mono-label text-mono-label px-2 py-0.5 rounded-full">5</span>
+<button class="text-on-surface-variant hover:text-primary transition-colors p-1 rounded-full hover:bg-surface-container"><span class="material-symbols-outlined text-sm">add</span></button>
+</div>
+</div>
+<div class="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-3 pb-20">
+<!-- Card 1 -->
+<div class="bg-surface-container-lowest p-4 rounded-xl border border-outline-variant/30 shadow-[0px_2px_4px_-1px_rgba(0,0,0,0.02)] group hover:border-outline-variant/60 transition-all">
+<div class="flex items-start gap-3">
+<div class="w-8 h-8 rounded-full bg-orange-500 text-white flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">AT</div>
+<div class="flex-1 min-w-0">
+<h3 class="font-medium text-on-surface text-sm truncate">Angelica Isabel Taya...</h3>
+<p class="text-xs text-on-surface-variant mt-1">Asignación fija</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Column 4: Lince -->
+<div class="flex flex-col w-[320px] shrink-0 h-full">
+<div class="flex items-center justify-between mb-4 px-1">
+<div class="flex items-center gap-2">
+<div class="w-1.5 h-4 bg-orange-500 rounded-full"></div>
+<h2 class="font-headline-sm text-headline-sm font-semibold text-on-surface">Lince</h2>
+</div>
+<div class="flex items-center gap-2">
+<span class="bg-surface-variant text-on-surface-variant font-mono-label text-mono-label px-2 py-0.5 rounded-full">9</span>
+<button class="text-on-surface-variant hover:text-primary transition-colors p-1 rounded-full hover:bg-surface-container"><span class="material-symbols-outlined text-sm">add</span></button>
+</div>
+</div>
+<div class="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-3 pb-20">
+<!-- Cards omitted for brevity in partial output -->
+</div>
+</div>
+<!-- Column 5: Paz Soldán -->
+<div class="flex flex-col w-[320px] shrink-0 h-full">
+<div class="flex items-center justify-between mb-4 px-1">
+<div class="flex items-center gap-2">
+<div class="w-1.5 h-4 bg-indigo-500 rounded-full"></div>
+<h2 class="font-headline-sm text-headline-sm font-semibold text-on-surface">Paz Soldán</h2>
+</div>
+<div class="flex items-center gap-2">
+<span class="bg-surface-variant text-on-surface-variant font-mono-label text-mono-label px-2 py-0.5 rounded-full">18</span>
+<button class="text-on-surface-variant hover:text-primary transition-colors p-1 rounded-full hover:bg-surface-container"><span class="material-symbols-outlined text-sm">add</span></button>
+</div>
+</div>
+<div class="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-3 pb-20">
+<!-- Card 1 -->
+<div class="bg-surface-container-lowest p-4 rounded-xl border-l-4 border-l-primary-container border-y border-r border-y-outline-variant/30 border-r-outline-variant/30 shadow-[0px_4px_8px_-2px_rgba(0,0,0,0.02)] relative group hover:border-r-outline-variant/60 hover:border-y-outline-variant/60 transition-all bg-surface-container-lowest/50">
+<div class="flex items-start gap-3">
+<div class="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">EC</div>
+<div class="flex-1 min-w-0">
+<h3 class="font-medium text-on-surface text-sm truncate">Erika Shabell Cham...</h3>
+<div class="mt-1 flex items-center gap-2">
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary-container/10 text-primary-container font-label-caps text-[10px]">
+<div class="w-1.5 h-1.5 rounded-full bg-primary-container"></div>
+                                        Cambio por tiempo
+                                    </span>
+</div>
+<p class="text-xs text-on-surface-variant mt-1.5">1 jul → 31 jul</p>
+</div>
+</div>
+</div>
+<!-- Card 2 -->
+<div class="bg-surface-container-lowest p-4 rounded-xl border-l-4 border-l-emerald-500 border-y border-r border-y-outline-variant/30 border-r-outline-variant/30 shadow-[0px_4px_8px_-2px_rgba(0,0,0,0.02)] relative group hover:border-r-outline-variant/60 hover:border-y-outline-variant/60 transition-all">
+<div class="flex items-start gap-3">
+<div class="w-8 h-8 rounded-full bg-rose-500 text-white flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">LF</div>
+<div class="flex-1 min-w-0">
+<h3 class="font-medium text-on-surface text-sm truncate">Luz Flores</h3>
+<div class="mt-1 flex items-center gap-2">
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-label-caps text-[10px]">
+<div class="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
+                                        Cercanía a casa
+                                    </span>
+</div>
+<p class="text-xs text-on-surface-variant mt-1.5 flex items-center gap-1"><span class="material-symbols-outlined text-[12px]">schedule</span> Desde 1 jul</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Add Column Button -->
+<div class="flex flex-col w-[40px] shrink-0 h-full pt-10 items-center">
+<button class="w-8 h-8 rounded-full bg-surface-container-low border border-outline-variant/50 flex items-center justify-center text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors shadow-sm">
+<span class="material-symbols-outlined text-sm">add</span>
+</button>
 </div>
 </div>
 </main>
-</div>
 </body></html>
