@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+
+<html class="light" lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Competencias del personal - Propuesta 2 (Fichas & Asignación Rápida)</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<script>
+            tailwind.config = {
+                darkMode: "class",
+                theme: {
+                    extend: {
+                        colors: {
+                            "surface-variant": "#e4e1ed",
+                            "surface-container-high": "#e9e6f3",
+                            "outline": "#767586",
+                            "on-primary": "#ffffff",
+                            "error": "#ba1a1a",
+                            "tertiary": "#2f394c",
+                            "on-tertiary": "#ffffff",
+                            "on-primary-fixed-variant": "#2a2bc4",
+                            "on-primary-fixed": "#04006d",
+                            "primary-fixed": "#e1e0ff",
+                            "primary": "#1713b8",
+                            "on-surface-variant": "#454555",
+                            "tertiary-fixed": "#d9e3fb",
+                            "inverse-on-surface": "#f2effc",
+                            "tertiary-fixed-dim": "#bdc7de",
+                            "surface": "#fbf8ff",
+                            "on-primary-container": "#bbbdff",
+                            "on-tertiary-container": "#b8c2da",
+                            "tertiary-container": "#465064",
+                            "surface-tint": "#4549dc",
+                            "primary-container": "#3538cd",
+                            "inverse-surface": "#303039",
+                            "on-secondary-fixed-variant": "#3f4759",
+                            "on-secondary-container": "#5c6477",
+                            "background": "#fbf8ff",
+                            "surface-container-lowest": "#ffffff",
+                            "on-secondary": "#ffffff",
+                            "on-error-container": "#93000a",
+                            "secondary": "#565e71",
+                            "inverse-primary": "#c0c1ff",
+                            "primary-fixed-dim": "#c0c1ff",
+                            "on-secondary-fixed": "#141b2c",
+                            "on-tertiary-fixed": "#111c2d",
+                            "on-background": "#1b1b23",
+                            "surface-bright": "#fbf8ff",
+                            "secondary-container": "#dbe2f9",
+                            "surface-container-low": "#f5f2fe",
+                            "on-tertiary-fixed-variant": "#3d475a",
+                            "secondary-fixed": "#dbe2f9",
+                            "on-error": "#ffffff",
+                            "secondary-fixed-dim": "#bfc6dc",
+                            "on-surface": "#1b1b23",
+                            "surface-dim": "#dbd8e5",
+                            "error-container": "#ffdad6",
+                            "surface-container": "#efecf9",
+                            "outline-variant": "#c6c5d7",
+                            "surface-container-highest": "#e4e1ed",
+                            "success-container": "#00C48C",
+                            "purple-container": "#6F52ED",
+                            "orange-container": "#FF9800",
+                            "pink-container": "#E91E63",
+                            "teal-container": "#00BCD4"
+                        },
+                        borderRadius: {
+                            "DEFAULT": "0.25rem",
+                            "lg": "0.5rem",
+                            "xl": "0.75rem",
+                            "2xl": "1rem"
+                        },
+                        spacing: {
+                            "sidebar-width": "240px",
+                            "container-padding": "24px",
+                            "stack-md": "16px",
+                            "stack-sm": "8px",
+                            "gutter": "24px",
+                            "margin-page": "32px"
+                        },
+                        fontFamily: {
+                            "label-sm": ["Inter"],
+                            "body-lg": ["Inter"],
+                            "headline-lg": ["Inter"],
+                            "body-md": ["Inter"],
+                            "headline-lg-mobile": ["Inter"],
+                            "label-md": ["Inter"],
+                            "headline-md": ["Inter"]
+                        }
+                    }
+                }
+            }
+    </script>
+<style>
+        .font-headline-lg { font-size: 24px; line-height: 32px; letter-spacing: -0.02em; font-weight: 700; }
+        .font-headline-md { font-size: 18px; line-height: 28px; font-weight: 600; }
+        .font-body-lg { font-size: 16px; line-height: 24px; font-weight: 400; }
+        .font-body-md { font-size: 14px; line-height: 20px; font-weight: 400; }
+        .font-label-md { font-size: 12px; line-height: 16px; font-weight: 600; }
+        .font-label-sm { font-size: 11px; line-height: 14px; font-weight: 500; }
+        .shadow-soft { box-shadow: 0px 1px 3px rgba(0,0,0,0.06); }
+    </style>
+</head>
+<body class="bg-background text-on-background antialiased min-h-screen flex">
+
+<!-- Main Content Area -->
+<div class="flex-1 ml-[sidebar-width] flex flex-col min-h-screen">
+<!-- TopAppBar -->
+<header class="h-16 bg-surface-container-lowest border-b border-outline-variant flex items-center justify-between px-8 sticky top-0 z-10">
+<div class="flex items-center gap-8">
+  <span class="font-headline-md text-on-surface font-bold">PROPUESTA 2: Gestión de Competencias por Especialista</span>
+</div>
+<div class="flex items-center gap-4">
+<div class="relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" style="font-variation-settings: 'FILL' 0;">search</span>
+<input class="pl-10 pr-4 py-2 bg-surface-container-low border border-outline-variant rounded-full font-body-md text-on-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-64 transition-all text-xs" placeholder="Buscar podóloga o servicio..." type="text"/>
+</div>
+<button class="text-on-surface-variant hover:bg-surface-container-high rounded-full p-2 transition-colors">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">notifications</span>
+</button>
+</div>
+</header>
+
+<!-- Page Content -->
+<main class="flex-1 p-margin-page overflow-y-auto space-y-6">
+
+<!-- Administration Header Navigation -->
+<div class="bg-surface-container-lowest border-b border-outline-variant pb-0">
+  <h2 class="font-headline-lg text-2xl font-bold text-on-surface mb-4 tracking-tight">Administración</h2>
+  <div class="flex flex-wrap gap-2 border-b border-outline-variant pb-px">
+    <a class="flex items-center gap-2 px-4 py-2 font-label-md text-primary bg-primary-fixed/40 rounded-t-lg border-b-2 border-primary font-bold" href="#">
+      <span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">verified</span>
+      Competencias (Propuesta 2)
+    </a>
+    <a class="flex items-center gap-2 px-4 py-2 font-label-md text-on-surface-variant hover:text-primary transition-colors" href="#">
+      <span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 0;">package</span>
+      Paquetes
+    </a>
+    <a class="flex items-center gap-2 px-4 py-2 font-label-md text-on-surface-variant hover:text-primary transition-colors" href="#">
+      <span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 0;">person</span>
+      Podólogas
+    </a>
+    <a class="flex items-center gap-2 px-4 py-2 font-label-md text-on-surface-variant hover:text-primary transition-colors" href="#">
+      <span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 0;">medical_services</span>
+      Servicios
+    </a>
+  </div>
+</div>
+
+<!-- PROPUESTA 2: CARDS DE ESPECIALISTA CON CHIPS & CLONACIÓN RÁPIDA -->
+<div class="flex items-center justify-between">
+  <div>
+    <h3 class="font-headline-md text-lg font-bold text-on-surface">Capacitación y Servicios por Podóloga</h3>
+    <p class="font-body-md text-xs text-on-surface-variant mt-0.5">
+      Visualiza rápidamente las competencias habilitadas de cada profesional y asigna o clona permisos en 1 clic.
+    </p>
+  </div>
+  <div class="flex gap-2">
+    <button class="bg-surface-container-lowest border border-outline-variant text-on-surface font-label-md px-3.5 py-1.5 rounded-lg hover:bg-surface-container-high transition-colors shadow-xs flex items-center gap-1.5 text-xs font-semibold">
+      <span class="material-symbols-outlined text-[16px]">content_copy</span>
+      Clonar competencias
+    </button>
+    <button class="bg-primary-container text-white font-label-md px-3.5 py-1.5 rounded-lg hover:bg-primary transition-colors shadow-sm flex items-center gap-1.5 text-xs font-semibold">
+      <span class="material-symbols-outlined text-[16px]">done_all</span>
+      Habilitar todos por Sede
+    </button>
+  </div>
+</div>
+
+<!-- Filtros Rápidos -->
+<div class="flex items-center gap-3 bg-surface-container-lowest p-3 rounded-xl border border-outline-variant/60 shadow-soft">
+  <span class="text-xs font-semibold text-on-surface-variant">Filtrar por:</span>
+  <select class="bg-surface-container-low border border-outline-variant text-xs font-medium text-on-surface rounded-lg px-3 py-1 focus:ring-1 focus:ring-primary">
+    <option>Todas las sedes</option>
+    <option>Sede Los Olivos</option>
+    <option>Sede San Miguel</option>
+  </select>
+  <select class="bg-surface-container-low border border-outline-variant text-xs font-medium text-on-surface rounded-lg px-3 py-1 focus:ring-1 focus:ring-primary">
+    <option>Todas las áreas</option>
+    <option>Podología</option>
+    <option>Fisioterapia</option>
+  </select>
+  <div class="flex-1"></div>
+  <span class="text-xs font-bold text-primary bg-primary-fixed/40 px-3 py-1 rounded-full">
+    14 Podólogas • 84% Cobertura
+  </span>
+</div>
+
+<!-- GRID DE TARJETAS POR PODÓLOGA -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+
+  <!-- Tarjeta Podóloga 1 -->
+  <div class="bg-surface-container-lowest rounded-2xl p-5 border border-outline-variant/60 shadow-soft hover:border-primary/40 transition-all flex flex-col justify-between group">
+    <div>
+      {/* Cabecera Podóloga */}
+      <div class="flex items-start justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-full bg-blue-600 text-white font-bold flex items-center justify-center text-sm shadow-sm">
+            ES
+          </div>
+          <div>
+            <h4 class="font-bold text-on-surface text-sm">Dra. Elena Silva</h4>
+            <div class="flex items-center gap-1.5 text-xs text-on-surface-variant mt-0.5">
+              <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+              <span>Sede Los Olivos</span>
+              <span class="text-outline">•</span>
+              <span class="font-medium text-primary">Podología</span>
+            </div>
+          </div>
+        </div>
+        <span class="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+          6/7 (85%)
+        </span>
+      </div>
+
+      {/* Progress bar */}
+      <div class="w-full h-1.5 bg-surface-container-high rounded-full my-4 overflow-hidden">
+        <div class="h-full bg-emerald-500 rounded-full" style="width: 85%"></div>
+      </div>
+
+      {/* Lista de Servicios Habilitados (Chips) */}
+      <div>
+        <p class="text-xxs font-bold uppercase tracking-wider text-outline mb-2">Servicios Habilitados:</p>
+        <div class="flex flex-wrap gap-1.5">
+          <span class="inline-flex items-center gap-1 px-2.5 py-1 bg-surface-container-low border border-outline-variant/60 text-on-surface text-xs font-medium rounded-lg group/chip hover:border-red-300 hover:bg-red-50 hover:text-red-700 transition-colors">
+            <span class="w-2 h-2 rounded-full bg-blue-500"></span>
+            Podología General
+            <button className="text-outline hover:text-red-700 ml-0.5">✕</button>
+          </span>
+
+          <span class="inline-flex items-center gap-1 px-2.5 py-1 bg-surface-container-low border border-outline-variant/60 text-on-surface text-xs font-medium rounded-lg group/chip hover:border-red-300 hover:bg-red-50 hover:text-red-700 transition-colors">
+            <span class="w-2 h-2 rounded-full bg-purple-500"></span>
+            Láser Onicomicosis
+            <button className="text-outline hover:text-red-700 ml-0.5">✕</button>
+          </span>
+
+          <span class="inline-flex items-center gap-1 px-2.5 py-1 bg-surface-container-low border border-outline-variant/60 text-on-surface text-xs font-medium rounded-lg group/chip hover:border-red-300 hover:bg-red-50 hover:text-red-700 transition-colors">
+            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+            Curación Pie Diabético
+            <button className="text-outline hover:text-red-700 ml-0.5">✕</button>
+          </span>
+
+          <span class="inline-flex items-center gap-1 px-2.5 py-1 bg-surface-container-low border border-outline-variant/60 text-on-surface text-xs font-medium rounded-lg group/chip hover:border-red-300 hover:bg-red-50 hover:text-red-700 transition-colors">
+            <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+            Ortotipsa / Espiga
+            <button className="text-outline hover:text-red-700 ml-0.5">✕</button>
+          </span>
+
+          <span class="inline-flex items-center gap-1 px-2.5 py-1 bg-surface-container-low border border-outline-variant/60 text-on-surface text-xs font-medium rounded-lg group/chip hover:border-red-300 hover:bg-red-50 hover:text-red-700 transition-colors">
+            <span class="w-2 h-2 rounded-full bg-pink-500"></span>
+            Reflexología Plantar
+            <button className="text-outline hover:text-red-700 ml-0.5">✕</button>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    {/* Footer Tarjeta: Añadir Nuevo Servicio */}
+    <div class="mt-5 pt-3 border-t border-outline-variant/40 flex items-center justify-between">
+      <select class="bg-surface-container-low border border-outline-variant text-xs text-on-surface rounded-lg px-2.5 py-1 flex-1 mr-2 focus:ring-1 focus:ring-primary">
+        <option disabled selected>+ Agregar servicio pendiente…</option>
+        <option>Profilaxis Láser Alta</option>
+        <option>Aplicación Ácido Nítrico</option>
+      </select>
+      <button class="px-2.5 py-1 bg-primary-fixed/40 text-primary hover:bg-primary hover:text-white rounded-lg text-xs font-bold transition-colors">
+        Asignar
+      </button>
+    </div>
+  </div>
+
+  <!-- Tarjeta Podóloga 2 -->
+  <div class="bg-surface-container-lowest rounded-2xl p-5 border border-outline-variant/60 shadow-soft hover:border-primary/40 transition-all flex flex-col justify-between group">
+    <div>
+      <div class="flex items-start justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-full bg-purple-600 text-white font-bold flex items-center justify-center text-sm shadow-sm">
+            CR
+          </div>
+          <div>
+            <h4 class="font-bold text-on-surface text-sm">Lic. Carmen Rosa</h4>
+            <div class="flex items-center gap-1.5 text-xs text-on-surface-variant mt-0.5">
+              <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+              <span>Sede San Miguel</span>
+              <span class="text-outline">•</span>
+              <span class="font-medium text-primary">Podología</span>
+            </div>
+          </div>
+        </div>
+        <span class="text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+          4/7 (57%)
+        </span>
+      </div>
+
+      <div class="w-full h-1.5 bg-surface-container-high rounded-full my-4 overflow-hidden">
+        <div class="h-full bg-amber-500 rounded-full" style="width: 57%"></div>
+      </div>
+
+      <div>
+        <p class="text-xxs font-bold uppercase tracking-wider text-outline mb-2">Servicios Habilitados:</p>
+        <div class="flex flex-wrap gap-1.5">
+          <span class="inline-flex items-center gap-1 px-2.5 py-1 bg-surface-container-low border border-outline-variant/60 text-on-surface text-xs font-medium rounded-lg hover:border-red-300 hover:bg-red-50 hover:text-red-700 transition-colors">
+            <span class="w-2 h-2 rounded-full bg-blue-500"></span>
+            Podología General
+            <button className="text-outline hover:text-red-700 ml-0.5">✕</button>
+          </span>
+
+          <span class="inline-flex items-center gap-1 px-2.5 py-1 bg-surface-container-low border border-outline-variant/60 text-on-surface text-xs font-medium rounded-lg hover:border-red-300 hover:bg-red-50 hover:text-red-700 transition-colors">
+            <span class="w-2 h-2 rounded-full bg-purple-500"></span>
+            Láser Onicomicosis
+            <button className="text-outline hover:text-red-700 ml-0.5">✕</button>
+          </span>
+
+          <span class="inline-flex items-center gap-1 px-2.5 py-1 bg-surface-container-low border border-outline-variant/60 text-on-surface text-xs font-medium rounded-lg hover:border-red-300 hover:bg-red-50 hover:text-red-700 transition-colors">
+            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+            Curación Pie Diabético
+            <button className="text-outline hover:text-red-700 ml-0.5">✕</button>
+          </span>
+
+          <span class="inline-flex items-center gap-1 px-2.5 py-1 bg-surface-container-low border border-outline-variant/60 text-on-surface text-xs font-medium rounded-lg hover:border-red-300 hover:bg-red-50 hover:text-red-700 transition-colors">
+            <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+            Ortotipsa / Espiga
+            <button className="text-outline hover:text-red-700 ml-0.5">✕</button>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-5 pt-3 border-t border-outline-variant/40 flex items-center justify-between">
+      <select class="bg-surface-container-low border border-outline-variant text-xs text-on-surface rounded-lg px-2.5 py-1 flex-1 mr-2 focus:ring-1 focus:ring-primary">
+        <option disabled selected>+ Agregar servicio pendiente…</option>
+        <option>Reflexología Plantar</option>
+        <option>Profilaxis Láser Alta</option>
+      </select>
+      <button class="px-2.5 py-1 bg-primary-fixed/40 text-primary hover:bg-primary hover:text-white rounded-lg text-xs font-bold transition-colors">
+        Asignar
+      </button>
+    </div>
+  </div>
+
+  <!-- Tarjeta Podóloga 3 -->
+  <div class="bg-surface-container-lowest rounded-2xl p-5 border border-outline-variant/60 shadow-soft hover:border-primary/40 transition-all flex flex-col justify-between group">
+    <div>
+      <div class="flex items-start justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-full bg-amber-600 text-white font-bold flex items-center justify-center text-sm shadow-sm">
+            MG
+          </div>
+          <div>
+            <h4 class="font-bold text-on-surface text-sm">Lic. Mauricio Gutiérrez</h4>
+            <div class="flex items-center gap-1.5 text-xs text-on-surface-variant mt-0.5">
+              <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+              <span>Sede Lince</span>
+              <span class="text-outline">•</span>
+              <span class="font-medium text-primary">Fisioterapia</span>
+            </div>
+          </div>
+        </div>
+        <span class="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+          7/7 (100%)
+        </span>
+      </div>
+
+      <div class="w-full h-1.5 bg-surface-container-high rounded-full my-4 overflow-hidden">
+        <div class="h-full bg-emerald-500 rounded-full" style="width: 100%"></div>
+      </div>
+
+      <div>
+        <p class="text-xxs font-bold uppercase tracking-wider text-outline mb-2">Servicios Habilitados:</p>
+        <div class="flex flex-wrap gap-1.5">
+          <span class="inline-flex items-center gap-1 px-2.5 py-1 bg-surface-container-low border border-outline-variant/60 text-on-surface text-xs font-medium rounded-lg hover:border-red-300 hover:bg-red-50 hover:text-red-700 transition-colors">
+            <span class="w-2 h-2 rounded-full bg-teal-500"></span>
+            Fisioterapia Plantar
+            <button className="text-outline hover:text-red-700 ml-0.5">✕</button>
+          </span>
+
+          <span class="inline-flex items-center gap-1 px-2.5 py-1 bg-surface-container-low border border-outline-variant/60 text-on-surface text-xs font-medium rounded-lg hover:border-red-300 hover:bg-red-50 hover:text-red-700 transition-colors">
+            <span class="w-2 h-2 rounded-full bg-blue-500"></span>
+            Electroterapia
+            <button className="text-outline hover:text-red-700 ml-0.5">✕</button>
+          </span>
+
+          <span class="inline-flex items-center gap-1 px-2.5 py-1 bg-surface-container-low border border-outline-variant/60 text-on-surface text-xs font-medium rounded-lg hover:border-red-300 hover:bg-red-50 hover:text-red-700 transition-colors">
+            <span class="w-2 h-2 rounded-full bg-purple-500"></span>
+            Ultrasonido Terapéutico
+            <button className="text-outline hover:text-red-700 ml-0.5">✕</button>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-5 pt-3 border-t border-outline-variant/40 flex items-center justify-between">
+      <span class="text-xs font-semibold text-emerald-600 flex items-center gap-1">
+        <span class="material-symbols-outlined text-[16px]">check_circle</span>
+        Totalmente capacitado
+      </span>
+      <button class="px-2.5 py-1 border border-outline-variant text-on-surface hover:bg-surface-container-high rounded-lg text-xs font-medium transition-colors">
+        Editar
+      </button>
+    </div>
+  </div>
+
+</div>
+
+</main>
+</div>
+</body></html>

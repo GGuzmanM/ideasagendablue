@@ -464,7 +464,7 @@ router.post('/', requireAuth, async (req, res) => {
       entidad: 'paciente',
       entidadId: p.id,
       despues: { nombres: p.nombres, apellidoPaterno: p.apellidoPaterno, apellidoMaterno: p.apellidoMaterno, tipoDocumento: p.tipoDocumento, numeroDocumento: p.numeroDocumento, telefono: p.telefono, email: p.email, ubigeoId: p.ubigeoId, paisResidencia: p.paisResidencia, canalId: p.canalId },
-      ip: req.ip,
+      ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
     });
     return p;
   });
@@ -525,7 +525,7 @@ router.patch('/:id', requireAuth, async (req, res) => {
       entidadId: p.id,
       antes: { nombres: antes.nombres, apellidoPaterno: antes.apellidoPaterno, apellidoMaterno: antes.apellidoMaterno, numeroDocumento: antes.numeroDocumento, telefono: antes.telefono, email: antes.email, ubigeoId: antes.ubigeoId, paisResidencia: antes.paisResidencia, canalId: antes.canalId },
       despues: { nombres: p.nombres, apellidoPaterno: p.apellidoPaterno, apellidoMaterno: p.apellidoMaterno, numeroDocumento: p.numeroDocumento, telefono: p.telefono, email: p.email, ubigeoId: p.ubigeoId, paisResidencia: p.paisResidencia, canalId: p.canalId },
-      ip: req.ip,
+      ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
     });
     return p;
   });

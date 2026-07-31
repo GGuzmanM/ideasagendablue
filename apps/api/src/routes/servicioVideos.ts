@@ -176,7 +176,7 @@ router.post('/', async (req, res) => {
       usuarioId: req.user?.userId, accion: 'crear_servicio_video',
       entidad: 'servicio_video', entidadId: v.id,
       despues: { servicioId: v.servicioId, youtubeVideoId: v.youtubeVideoId, momento: v.momento, offsetValor: v.offsetValor, offsetUnidad: v.offsetUnidad },
-      ip: req.ip,
+      ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
     });
     return v;
   });
@@ -216,7 +216,7 @@ router.put('/:id', async (req, res) => {
       entidad: 'servicio_video', entidadId: actual.id,
       antes: { momento: actual.momento, offsetValor: actual.offsetValor, offsetUnidad: actual.offsetUnidad, youtubeVideoId: actual.youtubeVideoId },
       despues: { momento: v.momento, offsetValor: v.offsetValor, offsetUnidad: v.offsetUnidad, youtubeVideoId: v.youtubeVideoId },
-      ip: req.ip,
+      ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
     });
     return v;
   });
@@ -237,7 +237,7 @@ router.patch('/:id/toggle', async (req, res) => {
     await auditEnTx(tx, {
       usuarioId: req.user?.userId, accion: nuevoActivo ? 'activar_servicio_video' : 'pausar_servicio_video',
       entidad: 'servicio_video', entidadId: actual.id,
-      antes: { activo: actual.activo }, despues: { activo: nuevoActivo }, ip: req.ip,
+      antes: { activo: actual.activo }, despues: { activo: nuevoActivo }, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
     });
     return v;
   });
@@ -261,7 +261,7 @@ router.delete('/:id', async (req, res) => {
     await auditEnTx(tx, {
       usuarioId: req.user?.userId, accion: 'eliminar_servicio_video',
       entidad: 'servicio_video', entidadId: actual.id,
-      antes: { titulo: actual.tituloVideo }, despues: { deletedAt: new Date().toISOString(), enviosCancelados: cancelados }, ip: req.ip,
+      antes: { titulo: actual.tituloVideo }, despues: { deletedAt: new Date().toISOString(), enviosCancelados: cancelados }, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
     });
   });
   res.json({ ok: true, enviosCancelados: cancelados });
@@ -319,7 +319,7 @@ router.post('/supresiones', async (req, res) => {
     });
     await auditEnTx(tx, {
       usuarioId: req.user?.userId, accion: 'excluir_correo_videos',
-      entidad: 'video_supresion', entidadId: s.id, despues: { email: emailNorm, motivo: motivo ?? null }, ip: req.ip,
+      entidad: 'video_supresion', entidadId: s.id, despues: { email: emailNorm, motivo: motivo ?? null }, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
     });
     return s;
   });
@@ -337,7 +337,7 @@ router.delete('/supresiones/:id', async (req, res) => {
     await tx.videoSupresion.update({ where: { id: actual.id }, data: { deletedAt: new Date() } });
     await auditEnTx(tx, {
       usuarioId: req.user?.userId, accion: 'reactivar_correo_videos',
-      entidad: 'video_supresion', entidadId: actual.id, antes: { email: actual.email }, ip: req.ip,
+      entidad: 'video_supresion', entidadId: actual.id, antes: { email: actual.email }, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
     });
   });
   res.json({ ok: true });

@@ -61,7 +61,7 @@ router.post('/', requireAuth, requireGestor, async (req, res) => {
       : await tx.promocion.create({ data: { nombre, descripcion: data.descripcion ?? null, tipo: data.tipo, valor, orden: (max._max.orden ?? 0) + 1, creadoPor: req.user?.userId } });
     await auditEnTx(tx, {
       usuarioId: req.user?.userId, accion: existente ? 'reactivar_promocion' : 'crear_promocion',
-      entidad: 'promocion', entidadId: p.id, despues: { nombre, tipo: data.tipo, valor }, ip: req.ip,
+      entidad: 'promocion', entidadId: p.id, despues: { nombre, tipo: data.tipo, valor }, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
     });
     return p;
   });
@@ -102,7 +102,7 @@ router.patch('/:id', requireAuth, requireGestor, async (req, res) => {
     await auditEnTx(tx, {
       usuarioId: req.user?.userId, accion: 'editar_promocion', entidad: 'promocion', entidadId: p.id,
       antes: { nombre: promo.nombre, tipo: promo.tipo, valor: promo.valor, activo: promo.activo },
-      despues: { nombre: p.nombre, tipo: p.tipo, valor: p.valor, activo: p.activo }, ip: req.ip,
+      despues: { nombre: p.nombre, tipo: p.tipo, valor: p.valor, activo: p.activo }, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
     });
     return p;
   });
@@ -125,7 +125,7 @@ router.delete('/:id', requireAuth, requireGestor, async (req, res) => {
     await auditEnTx(tx, {
       usuarioId: req.user?.userId, accion: enUso > 0 ? 'desactivar_promocion' : 'eliminar_promocion',
       entidad: 'promocion', entidadId: promo.id, antes: { nombre: promo.nombre, activo: promo.activo },
-      despues: enUso > 0 ? { activo: false } : { deletedAt: new Date().toISOString() }, ip: req.ip,
+      despues: enUso > 0 ? { activo: false } : { deletedAt: new Date().toISOString() }, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
     });
   });
   res.json(enUso > 0 ? { ok: true, desactivado: true, enUso } : { ok: true, eliminado: true });

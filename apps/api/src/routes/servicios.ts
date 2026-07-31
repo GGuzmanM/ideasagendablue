@@ -130,7 +130,7 @@ router.post('/:id/subcategorias', requireAuth, requireRol('admin'), async (req, 
       entidad: 'subcategoria_servicio',
       entidadId: creada.id,
       despues: { servicioId: servicio.id, nombre: data.nombre, precioReferencial: data.precioReferencial ?? null },
-      ip: req.ip,
+      ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
     });
     return creada;
   });
@@ -166,7 +166,7 @@ router.patch('/subcategorias/:subId', requireAuth, requireRol('admin', 'coordina
       entidadId: actual.id,
       antes: { nombre: actual.nombre, precioReferencial: actual.precioReferencial, orden: actual.orden, activo: actual.activo },
       despues: data,
-      ip: req.ip,
+      ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
     });
     return upd;
   });
@@ -187,7 +187,7 @@ router.delete('/subcategorias/:subId', requireAuth, requireRol('admin'), async (
       entidadId: actual.id,
       antes: { nombre: actual.nombre, activo: actual.activo },
       despues: { deletedAt: new Date().toISOString() },
-      ip: req.ip,
+      ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
     });
   });
   res.json({ ok: true });

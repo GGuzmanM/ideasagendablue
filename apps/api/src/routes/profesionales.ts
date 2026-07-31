@@ -387,7 +387,7 @@ router.patch('/:id/entrada', requireAuth, requireRol('admin', 'coordinadora_sede
 
   const resultado = await setOverrideTurnoFecha({
     profesionalId: req.params.id, fechas, horaInicio, forzar,
-    actor: { usuarioId: req.user?.userId, ip: req.ip },
+    actor: { usuarioId: req.user?.userId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined },
   });
   res.json({ ok: true, id: req.params.id, fechas: resultado.fechas, horaInicio });
 });
@@ -442,7 +442,7 @@ router.patch('/:id/presencia-excepcion', requireAuth, requireRol('admin', 'coord
 
   await setPresenciaExcepcion({
     profesionalId: req.params.id, sedeId, fecha, presente, horaInicio,
-    actor: { usuarioId: req.user?.userId, ip: req.ip },
+    actor: { usuarioId: req.user?.userId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined },
   });
   res.json({ ok: true, id: req.params.id, fecha, presente });
 });
@@ -637,7 +637,7 @@ router.put('/:id/horario', requireAuth, requireRol('admin', 'coordinadora_sedes'
   const data = z.object({ dias: z.array(horarioDiaSchema).max(7), forzar: z.boolean().optional() }).parse(req.body);
   const { horarios } = await setHorarioBase({
     profesionalId: req.params.id, dias: data.dias, forzar: data.forzar,
-    actor: { usuarioId: req.user?.userId, ip: req.ip },
+    actor: { usuarioId: req.user?.userId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined },
   });
   res.json({ ok: true, horarios });
 });

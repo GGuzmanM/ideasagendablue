@@ -1,301 +1,681 @@
 <!DOCTYPE html>
-
-<html class="light" lang="es"><head>
-<meta charset="utf-8"/>
-<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>Administración - Paquetes | MediFlow Pro</title>
-<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
-<script id="tailwind-config">
-        tailwind.config = {
-            darkMode: "class",
-            theme: {
-                extend: {
-                    colors: {
-                        "surface-variant": "#e4e1ed",
-                        "surface-container-high": "#e9e6f3",
-                        "outline": "#767586",
-                        "on-primary": "#ffffff",
-                        "error": "#ba1a1a",
-                        "tertiary": "#2f394c",
-                        "on-tertiary": "#ffffff",
-                        "on-primary-fixed-variant": "#2a2bc4",
-                        "on-primary-fixed": "#04006d",
-                        "primary-fixed": "#e1e0ff",
-                        "primary": "#1713b8",
-                        "on-surface-variant": "#454555",
-                        "tertiary-fixed": "#d9e3fb",
-                        "inverse-on-surface": "#f2effc",
-                        "tertiary-fixed-dim": "#bdc7de",
-                        "surface": "#fbf8ff",
-                        "on-primary-container": "#bbbdff",
-                        "on-tertiary-container": "#b8c2da",
-                        "tertiary-container": "#465064",
-                        "surface-tint": "#4549dc",
-                        "primary-container": "#3538cd",
-                        "inverse-surface": "#303039",
-                        "on-secondary-fixed-variant": "#3f4759",
-                        "on-secondary-container": "#5c6477",
-                        "background": "#fbf8ff",
-                        "surface-container-lowest": "#ffffff",
-                        "on-secondary": "#ffffff",
-                        "on-error-container": "#93000a",
-                        "secondary": "#565e71",
-                        "inverse-primary": "#c0c1ff",
-                        "primary-fixed-dim": "#c0c1ff",
-                        "on-secondary-fixed": "#141b2c",
-                        "on-tertiary-fixed": "#111c2d",
-                        "on-background": "#1b1b23",
-                        "surface-bright": "#fbf8ff",
-                        "secondary-container": "#dbe2f9",
-                        "surface-container-low": "#f5f2fe",
-                        "on-tertiary-fixed-variant": "#3d475a",
-                        "secondary-fixed": "#dbe2f9",
-                        "on-error": "#ffffff",
-                        "secondary-fixed-dim": "#bfc6dc",
-                        "on-surface": "#1b1b23",
-                        "surface-dim": "#dbd8e5",
-                        "error-container": "#ffdad6",
-                        "surface-container": "#efecf9",
-                        "outline-variant": "#c6c5d7",
-                        "surface-container-highest": "#e4e1ed",
-                        "success-container": "#00C48C",
-                        "purple-container": "#6F52ED",
-                        "orange-container": "#FF9800",
-                        "pink-container": "#E91E63",
-                        "teal-container": "#00BCD4"
-                    },
-                    borderRadius: {
-                        "DEFAULT": "0.25rem",
-                        "lg": "0.5rem",
-                        "xl": "0.75rem",
-                        "full": "9999px"
-                    },
-                    spacing: {
-                        "sidebar-width": "240px",
-                        "container-padding": "24px",
-                        "stack-md": "16px",
-                        "stack-sm": "8px",
-                        "gutter": "24px",
-                        "margin-page": "32px"
-                    },
-                    fontFamily: {
-                        "label-sm": ["Inter"],
-                        "body-lg": ["Inter"],
-                        "headline-lg": ["Inter"],
-                        "body-md": ["Inter"],
-                        "headline-lg-mobile": ["Inter"],
-                        "label-md": ["Inter"],
-                        "headline-md": ["Inter"]
-                    }
-                }
-            }
-        }
-    </script>
-<style>
-        .font-headline-lg { font-size: 24px; line-height: 32px; letter-spacing: -0.02em; font-weight: 700; }
-        .font-headline-md { font-size: 18px; line-height: 28px; font-weight: 600; }
-        .font-body-lg { font-size: 16px; line-height: 24px; font-weight: 400; }
-        .font-body-md { font-size: 14px; line-height: 20px; font-weight: 400; }
-        .font-label-md { font-size: 12px; line-height: 16px; font-weight: 600; }
-        .font-label-sm { font-size: 11px; line-height: 14px; font-weight: 500; }
-        .shadow-soft { box-shadow: 0px 1px 3px rgba(0,0,0,0.1); }
-    </style>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Auditoría · Propuesta idea1 (v2 · tabla + modal)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=block" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#0044ab',
+            surface: '#f7f9fb',
+            'surface-container-lowest': '#ffffff',
+            'surface-container-low': '#f2f4f6',
+            'surface-container': '#eceef0',
+            'on-surface': '#191c1e',
+            'on-surface-variant': '#464555',
+            'outline-variant': '#c7c4d8',
+            limablue: { 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8' },
+          },
+          fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'], mono: ['JetBrains Mono', 'monospace'] },
+        },
+      },
+    };
+  </script>
+  <style>
+    body { font-family: 'Inter', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+    .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; vertical-align: middle; }
+    .input { display:block; width:100%; padding:6px 10px; border-radius:8px; border:1px solid #cbd5e1; background:#fff; font-size:13px; outline:none; }
+    .input:focus { border-color:#3b82f6; box-shadow:0 0 0 2px rgba(59,130,246,.2); }
+    .custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #c7c4d8; border-radius: 4px; }
+    .diff-row.remove { background: #fef2f2; }
+    .diff-row.add { background: #f0fdf4; }
+    .diff-row.remove td:first-child::before { content: '−  '; color: #dc2626; font-weight: 800; }
+    .diff-row.add td:first-child::before { content: '+  '; color: #16a34a; font-weight: 800; }
+  </style>
 </head>
-<body class="bg-background text-on-background antialiased min-h-screen flex">
+<body class="bg-surface min-h-screen">
 
-<!-- Main Content Area -->
-<div class="flex-1 ml-[sidebar-width] flex flex-col min-h-screen">
-<!-- TopAppBar -->
-<header class="h-16 bg-surface-container-lowest dark:bg-surface-container-low border-b border-outline-variant flex items-center justify-between px-8 sticky top-0 z-10">
-<div class="flex items-center gap-8">
-<!-- Navigation Tab Links in Header (Simulating Contextual Nav) -->
+<!-- ============ BARRA DE TABS ADMIN ============ -->
+<div class="bg-white border-b border-slate-200 shrink-0">
+  <div class="flex items-center gap-1 px-4 overflow-x-auto">
+    <button class="flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 whitespace-nowrap">
+      <span class="material-symbols-outlined text-lg">verified</span> Competencias
+    </button>
+    <button class="flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 whitespace-nowrap">
+      <span class="material-symbols-outlined text-lg">inventory_2</span> Paquetes
+    </button>
+    <button class="flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 whitespace-nowrap">
+      <span class="material-symbols-outlined text-lg">person</span> Podólogas
+    </button>
+    <button class="flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 whitespace-nowrap">
+      <span class="material-symbols-outlined text-lg">medical_services</span> Servicios
+    </button>
+    <button class="flex items-center gap-2 px-4 py-3 text-sm font-semibold border-b-2 border-limablue-600 text-limablue-700 whitespace-nowrap">
+      <span class="material-symbols-outlined text-lg">receipt_long</span> Auditoría
+    </button>
+    <button class="flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 whitespace-nowrap">
+      <span class="material-symbols-outlined text-lg">manage_accounts</span> Usuarios
+    </button>
+    <button class="flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 whitespace-nowrap">
+      <span class="material-symbols-outlined text-lg">shield</span> Roles
+    </button>
+    <button class="flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 whitespace-nowrap">
+      <span class="material-symbols-outlined text-lg">notifications</span> Notificaciones
+    </button>
+  </div>
+</div>
 
+<div class="p-6 space-y-4">
+
+  <!-- Header simple -->
+  <div class="flex items-center justify-between gap-4 flex-wrap">
+    <div>
+      <h1 class="text-lg font-bold text-slate-900">Auditoría del sistema</h1>
+      <p class="text-sm text-slate-500 mt-0.5">Registro cronológico de todas las acciones. Rastrea quién hizo qué, cuándo y desde dónde.</p>
+    </div>
+    <button class="px-3 py-2 rounded-lg text-xs font-bold text-primary bg-primary/10 border border-primary/30 hover:bg-primary/20 transition flex items-center gap-1.5">
+      <span class="material-symbols-outlined text-base">download</span> Exportar CSV
+    </button>
+  </div>
+
+  <!-- Filtros -->
+  <div class="bg-white border border-slate-200 rounded-xl p-3 flex flex-wrap gap-3 items-end">
+    <div>
+      <label class="block text-xs font-semibold text-slate-500 mb-1">Desde</label>
+      <input type="date" class="input text-sm" value="2026-07-24" />
+    </div>
+    <div>
+      <label class="block text-xs font-semibold text-slate-500 mb-1">Hasta</label>
+      <input type="date" class="input text-sm" value="2026-07-31" />
+    </div>
+    <div>
+      <label class="block text-xs font-semibold text-slate-500 mb-1">Entidad</label>
+      <select class="input text-sm">
+        <option>Todas</option>
+        <option>Cita</option>
+        <option>Paciente</option>
+        <option>Profesional</option>
+        <option>Servicio</option>
+        <option>Sede</option>
+        <option>Usuario</option>
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs font-semibold text-slate-500 mb-1">Acción</label>
+      <select class="input text-sm">
+        <option>Todas</option>
+        <option>Crear</option>
+        <option>Editar</option>
+        <option>Cambiar estado</option>
+        <option>Mover</option>
+        <option>Cancelar</option>
+        <option>Eliminar</option>
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs font-semibold text-slate-500 mb-1">Usuario</label>
+      <select class="input text-sm">
+        <option>Todos</option>
+        <option>Admin</option>
+        <option>Recepción Los Olivos</option>
+        <option>Sistema (automático)</option>
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs font-semibold text-slate-500 mb-1">Sede</label>
+      <select class="input text-sm">
+        <option>Todas</option>
+        <option>Los Olivos</option>
+        <option>San Miguel</option>
+        <option>Lince</option>
+        <option>Paz Soldán</option>
+        <option>One</option>
+      </select>
+    </div>
+    <div class="flex-1 min-w-[180px]">
+      <label class="block text-xs font-semibold text-slate-500 mb-1">Buscar</label>
+      <div class="relative">
+        <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-lg pointer-events-none">search</span>
+        <input class="input text-sm pl-10" placeholder="Paciente, servicio, IP…" />
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ TABLA DE LOGS ============ -->
+  <div class="bg-surface-container-lowest rounded-2xl border border-outline-variant/40 shadow-sm overflow-hidden">
+    <div class="overflow-auto custom-scrollbar" style="max-height: calc(100vh - 260px)">
+      <table class="w-full text-sm border-collapse">
+        <thead>
+          <tr class="bg-surface-container-low sticky top-0 z-10">
+            <th class="text-left px-4 py-2.5 border-b border-outline-variant/40 font-bold text-[11px] text-on-surface-variant uppercase tracking-wider">
+              <div class="flex items-center gap-1">Fecha / hora <span class="material-symbols-outlined text-sm">arrow_downward</span></div>
+            </th>
+            <th class="text-left px-3 py-2.5 border-b border-outline-variant/40 font-bold text-[11px] text-on-surface-variant uppercase tracking-wider">Usuario</th>
+            <th class="text-left px-3 py-2.5 border-b border-outline-variant/40 font-bold text-[11px] text-on-surface-variant uppercase tracking-wider">Acción</th>
+            <th class="text-left px-3 py-2.5 border-b border-outline-variant/40 font-bold text-[11px] text-on-surface-variant uppercase tracking-wider">Entidad</th>
+            <th class="text-left px-3 py-2.5 border-b border-outline-variant/40 font-bold text-[11px] text-on-surface-variant uppercase tracking-wider">Descripción</th>
+            <th class="text-left px-3 py-2.5 border-b border-outline-variant/40 font-bold text-[11px] text-on-surface-variant uppercase tracking-wider">Sede</th>
+            <th class="text-left px-3 py-2.5 border-b border-outline-variant/40 font-bold text-[11px] text-on-surface-variant uppercase tracking-wider">IP</th>
+            <th class="text-right px-3 py-2.5 border-b border-outline-variant/40 font-bold text-[11px] text-on-surface-variant uppercase tracking-wider">Cambios</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-outline-variant/25">
+
+          <!-- FILA 1 -->
+          <tr class="hover:bg-primary/5 transition-colors">
+            <td class="px-4 py-3 whitespace-nowrap">
+              <p class="text-[13px] font-bold text-on-surface leading-tight">15:24</p>
+              <p class="text-[10px] text-on-surface-variant">31 jul · hace 3 min</p>
+            </td>
+            <td class="px-3 py-3">
+              <div class="flex items-center gap-2">
+                <span class="w-7 h-7 rounded-full bg-orange-500 text-white text-[10px] font-bold grid place-items-center shrink-0">AS</span>
+                <span class="text-[12px] font-semibold text-on-surface truncate">Administrador</span>
+              </div>
+            </td>
+            <td class="px-3 py-3 whitespace-nowrap">
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-red-100 text-red-800 border border-red-200/70">
+                <span class="material-symbols-outlined text-sm">cancel</span> Cancelar
+              </span>
+            </td>
+            <td class="px-3 py-3 whitespace-nowrap">
+              <span class="text-[11px] font-mono font-bold text-on-surface-variant bg-surface-container-low px-1.5 py-0.5 rounded">cita</span>
+            </td>
+            <td class="px-3 py-3">
+              <p class="text-[13px] text-on-surface truncate max-w-[300px]">Cita de <b>Aitana Mia La Torre</b> · 13:00 · PROFILAXIS</p>
+              <p class="text-[10px] text-on-surface-variant/70 truncate max-w-[300px]">Sarai Abigail · Infantil</p>
+            </td>
+            <td class="px-3 py-3 whitespace-nowrap">
+              <div class="flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full" style="background:#6366f1"></span>
+                <span class="text-[12px] font-semibold text-on-surface">One</span>
+              </div>
+            </td>
+            <td class="px-3 py-3 whitespace-nowrap">
+              <span class="text-[10px] font-mono text-on-surface-variant bg-surface-container-low px-1.5 py-0.5 rounded">192.168.0.55</span>
+            </td>
+            <td class="px-3 py-3 text-right whitespace-nowrap">
+              <button onclick="document.getElementById('modal-diff').showModal()" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-primary bg-primary/10 border border-primary/30 hover:bg-primary/20 transition">
+                <span class="material-symbols-outlined text-sm">visibility</span> Ver
+              </button>
+            </td>
+          </tr>
+
+          <!-- FILA 2 -->
+          <tr class="hover:bg-primary/5 transition-colors">
+            <td class="px-4 py-3 whitespace-nowrap">
+              <p class="text-[13px] font-bold text-on-surface leading-tight">15:15</p>
+              <p class="text-[10px] text-on-surface-variant">31 jul · hace 12 min</p>
+            </td>
+            <td class="px-3 py-3">
+              <div class="flex items-center gap-2">
+                <span class="w-7 h-7 rounded-full bg-rose-500 text-white text-[10px] font-bold grid place-items-center shrink-0">RL</span>
+                <span class="text-[12px] font-semibold text-on-surface truncate">Recepción Los Olivos</span>
+              </div>
+            </td>
+            <td class="px-3 py-3 whitespace-nowrap">
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200/70">
+                <span class="material-symbols-outlined text-sm">add_circle</span> Crear
+              </span>
+            </td>
+            <td class="px-3 py-3 whitespace-nowrap">
+              <span class="text-[11px] font-mono font-bold text-on-surface-variant bg-surface-container-low px-1.5 py-0.5 rounded">cita</span>
+            </td>
+            <td class="px-3 py-3">
+              <p class="text-[13px] text-on-surface truncate max-w-[300px]">Nueva cita para <b>Camila Arias</b> · 11:00</p>
+              <p class="text-[10px] text-on-surface-variant/70 truncate max-w-[300px]">APLIC BLEO · Mirtha Chávez</p>
+            </td>
+            <td class="px-3 py-3 whitespace-nowrap">
+              <div class="flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full" style="background:#0ea5e9"></span>
+                <span class="text-[12px] font-semibold text-on-surface">Los Olivos</span>
+              </div>
+            </td>
+            <td class="px-3 py-3 whitespace-nowrap">
+              <span class="text-[10px] font-mono text-on-surface-variant bg-surface-container-low px-1.5 py-0.5 rounded">200.48.14.201</span>
+            </td>
+            <td class="px-3 py-3 text-right whitespace-nowrap">
+              <button onclick="document.getElementById('modal-diff').showModal()" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-primary bg-primary/10 border border-primary/30 hover:bg-primary/20 transition">
+                <span class="material-symbols-outlined text-sm">visibility</span> Ver
+              </button>
+            </td>
+          </tr>
+
+          <!-- FILA 3 -->
+          <tr class="hover:bg-primary/5 transition-colors">
+            <td class="px-4 py-3 whitespace-nowrap">
+              <p class="text-[13px] font-bold text-on-surface leading-tight">14:53</p>
+              <p class="text-[10px] text-on-surface-variant">31 jul · hace 34 min</p>
+            </td>
+            <td class="px-3 py-3">
+              <div class="flex items-center gap-2">
+                <span class="w-7 h-7 rounded-full bg-orange-500 text-white text-[10px] font-bold grid place-items-center shrink-0">AS</span>
+                <span class="text-[12px] font-semibold text-on-surface truncate">Administrador</span>
+              </div>
+            </td>
+            <td class="px-3 py-3 whitespace-nowrap">
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-blue-100 text-blue-800 border border-blue-200/70">
+                <span class="material-symbols-outlined text-sm">swap_horiz</span> Mover
+              </span>
+            </td>
+            <td class="px-3 py-3 whitespace-nowrap">
+              <span class="text-[11px] font-mono font-bold text-on-surface-variant bg-surface-container-low px-1.5 py-0.5 rounded">cita</span>
+            </td>
+            <td class="px-3 py-3">
+              <p class="text-[13px] text-on-surface truncate max-w-[300px]">Cita <b>Matias Tapia</b> · 15:30 → 16:00</p>
+              <p class="text-[10px] text-on-surface-variant/70 truncate max-w-[300px]">Mirtha → Laura Kelly</p>
+            </td>
+            <td class="px-3 py-3 whitespace-nowrap">
+              <div class="flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full" style="background:#0ea5e9"></span>
+                <span class="text-[12px] font-semibold text-on-surface">Los Olivos</span>
+              </div>
+            </td>
+            <td class="px-3 py-3 whitespace-nowrap">
+              <span class="text-[10px] font-mono text-on-surface-variant bg-surface-container-low px-1.5 py-0.5 rounded">192.168.0.55</span>
+            </td>
+            <td class="px-3 py-3 text-right whitespace-nowrap">
+              <button onclick="document.getElementById('modal-diff').showModal()" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-primary bg-primary/10 border border-primary/30 hover:bg-primary/20 transition">
+                <span class="material-symbols-outlined text-sm">visibility</span> Ver
+              </button>
+            </td>
+          </tr>
+
+          <!-- FILA 4 -->
+          <tr class="hover:bg-primary/5 transition-colors">
+            <td class="px-4 py-3 whitespace-nowrap">
+              <p class="text-[13px] font-bold text-on-surface leading-tight">14:15</p>
+              <p class="text-[10px] text-on-surface-variant">31 jul · hace 1 h</p>
+            </td>
+            <td class="px-3 py-3">
+              <div class="flex items-center gap-2">
+                <span class="w-7 h-7 rounded-full bg-purple-500 text-white text-[10px] font-bold grid place-items-center shrink-0">RO</span>
+                <span class="text-[12px] font-semibold text-on-surface truncate">Recepción One</span>
+              </div>
+            </td>
+            <td class="px-3 py-3 whitespace-nowrap">
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-200/70">
+                <span class="material-symbols-outlined text-sm">autorenew</span> Cambiar estado
+              </span>
+            </td>
+            <td class="px-3 py-3 whitespace-nowrap">
+              <span class="text-[11px] font-mono font-bold text-on-surface-variant bg-surface-container-low px-1.5 py-0.5 rounded">cita</span>
+            </td>
+            <td class="px-3 py-3">
+              <p class="text-[13px] text-on-surface truncate max-w-[300px]">Cita <b>Fiorella Zumary</b> · agendada → llegó</p>
+              <p class="text-[10px] text-on-surface-variant/70 truncate max-w-[300px]">08:30 · Daniel</p>
+            </td>
+            <td class="px-3 py-3 whitespace-nowrap">
+              <div class="flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full" style="background:#6366f1"></span>
+                <span class="text-[12px] font-semibold text-on-surface">One</span>
+              </div>
+            </td>
+            <td class="px-3 py-3 whitespace-nowrap">
+              <span class="text-[10px] font-mono text-on-surface-variant bg-surface-container-low px-1.5 py-0.5 rounded">10.0.1.14</span>
+            </td>
+            <td class="px-3 py-3 text-right whitespace-nowrap">
+              <button onclick="document.getElementById('modal-diff').showModal()" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-primary bg-primary/10 border border-primary/30 hover:bg-primary/20 transition">
+                <span class="material-symbols-outlined text-sm">visibility</span> Ver
+              </button>
+            </td>
+          </tr>
+
+          <!-- FILA 5 -->
+          <tr class="hover:bg-primary/5 transition-colors">
+            <td class="px-4 py-3 whitespace-nowrap">
+              <p class="text-[13px] font-bold text-on-surface leading-tight">13:22</p>
+              <p class="text-[10px] text-on-surface-variant">31 jul · hace 2 h</p>
+            </td>
+            <td class="px-3 py-3">
+              <div class="flex items-center gap-2">
+                <span class="w-7 h-7 rounded-full bg-rose-500 text-white text-[10px] font-bold grid place-items-center shrink-0">RL</span>
+                <span class="text-[12px] font-semibold text-on-surface truncate">Recepción Los Olivos</span>
+              </div>
+            </td>
+            <td class="px-3 py-3 whitespace-nowrap">
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-primary/10 text-primary border border-primary/30">
+                <span class="material-symbols-outlined text-sm">edit</span> Editar
+              </span>
+            </td>
+            <td class="px-3 py-3 whitespace-nowrap">
+              <span class="text-[11px] font-mono font-bold text-on-surface-variant bg-surface-container-low px-1.5 py-0.5 rounded">paciente</span>
+            </td>
+            <td class="px-3 py-3">
+              <p class="text-[13px] text-on-surface truncate max-w-[300px]">Datos de <b>Aitana Mia La Torre</b></p>
+              <p class="text-[10px] text-on-surface-variant/70 truncate max-w-[300px]">Teléfono actualizado</p>
+            </td>
+            <td class="px-3 py-3 whitespace-nowrap">
+              <div class="flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full" style="background:#0ea5e9"></span>
+                <span class="text-[12px] font-semibold text-on-surface">Los Olivos</span>
+              </div>
+            </td>
+            <td class="px-3 py-3 whitespace-nowrap">
+              <span class="text-[10px] font-mono text-on-surface-variant bg-surface-container-low px-1.5 py-0.5 rounded">200.48.14.201</span>
+            </td>
+            <td class="px-3 py-3 text-right whitespace-nowrap">
+              <button onclick="document.getElementById('modal-diff').showModal()" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-primary bg-primary/10 border border-primary/30 hover:bg-primary/20 transition">
+                <span class="material-symbols-outlined text-sm">visibility</span> Ver
+              </button>
+            </td>
+          </tr>
+
+          <!-- FILA 6 -->
+          <tr class="hover:bg-primary/5 transition-colors">
+            <td class="px-4 py-3 whitespace-nowrap">
+              <p class="text-[13px] font-bold text-on-surface leading-tight">12:14</p>
+              <p class="text-[10px] text-on-surface-variant">31 jul · hace 3 h</p>
+            </td>
+            <td class="px-3 py-3">
+              <div class="flex items-center gap-2">
+                <span class="w-7 h-7 rounded-full bg-slate-500 text-white text-[10px] font-bold grid place-items-center shrink-0">SYS</span>
+                <span class="text-[12px] font-semibold text-on-surface-variant italic truncate">Sistema</span>
+              </div>
+            </td>
+            <td class="px-3 py-3 whitespace-nowrap">
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-violet-100 text-violet-800 border border-violet-200/70">
+                <span class="material-symbols-outlined text-sm">mail</span> Recordatorio
+              </span>
+            </td>
+            <td class="px-3 py-3 whitespace-nowrap">
+              <span class="text-[11px] font-mono font-bold text-on-surface-variant bg-surface-container-low px-1.5 py-0.5 rounded">cita</span>
+            </td>
+            <td class="px-3 py-3">
+              <p class="text-[13px] text-on-surface truncate max-w-[300px]">Correo enviado a <b>gguzmanmori@gmail.com</b></p>
+              <p class="text-[10px] text-on-surface-variant/70 truncate max-w-[300px]">Cita de Camila · 11:00</p>
+            </td>
+            <td class="px-3 py-3 whitespace-nowrap">
+              <div class="flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full" style="background:#0ea5e9"></span>
+                <span class="text-[12px] font-semibold text-on-surface">Los Olivos</span>
+              </div>
+            </td>
+            <td class="px-3 py-3 whitespace-nowrap">
+              <span class="text-[10px] font-mono text-on-surface-variant/60 italic">—</span>
+            </td>
+            <td class="px-3 py-3 text-right whitespace-nowrap">
+              <button onclick="document.getElementById('modal-diff').showModal()" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-primary bg-primary/10 border border-primary/30 hover:bg-primary/20 transition">
+                <span class="material-symbols-outlined text-sm">visibility</span> Ver
+              </button>
+            </td>
+          </tr>
+
+          <!-- FILA 7 -->
+          <tr class="hover:bg-primary/5 transition-colors">
+            <td class="px-4 py-3 whitespace-nowrap">
+              <p class="text-[13px] font-bold text-on-surface leading-tight">11:02</p>
+              <p class="text-[10px] text-on-surface-variant">31 jul · hace 4 h</p>
+            </td>
+            <td class="px-3 py-3">
+              <div class="flex items-center gap-2">
+                <span class="w-7 h-7 rounded-full bg-emerald-600 text-white text-[10px] font-bold grid place-items-center shrink-0">CO</span>
+                <span class="text-[12px] font-semibold text-on-surface truncate">Coordinadora</span>
+              </div>
+            </td>
+            <td class="px-3 py-3 whitespace-nowrap">
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-red-100 text-red-800 border border-red-300/70">
+                <span class="material-symbols-outlined text-sm">delete</span> Eliminar
+              </span>
+            </td>
+            <td class="px-3 py-3 whitespace-nowrap">
+              <span class="text-[11px] font-mono font-bold text-on-surface-variant bg-surface-container-low px-1.5 py-0.5 rounded">movimiento</span>
+            </td>
+            <td class="px-3 py-3">
+              <p class="text-[13px] text-on-surface truncate max-w-[300px]">Movimiento de <b>Erika Saavedra</b></p>
+              <p class="text-[10px] text-on-surface-variant/70 truncate max-w-[300px]">Vacaciones · 28 jul → 04 ago</p>
+            </td>
+            <td class="px-3 py-3 whitespace-nowrap">
+              <span class="text-[11px] text-on-surface-variant/60 italic">—</span>
+            </td>
+            <td class="px-3 py-3 whitespace-nowrap">
+              <span class="text-[10px] font-mono text-on-surface-variant bg-surface-container-low px-1.5 py-0.5 rounded">10.0.5.22</span>
+            </td>
+            <td class="px-3 py-3 text-right whitespace-nowrap">
+              <button onclick="document.getElementById('modal-diff').showModal()" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-primary bg-primary/10 border border-primary/30 hover:bg-primary/20 transition">
+                <span class="material-symbols-outlined text-sm">visibility</span> Ver
+              </button>
+            </td>
+          </tr>
+
+          <!-- FILA 8 (día anterior) -->
+          <tr class="hover:bg-primary/5 transition-colors">
+            <td class="px-4 py-3 whitespace-nowrap">
+              <p class="text-[13px] font-bold text-on-surface leading-tight">18:45</p>
+              <p class="text-[10px] text-on-surface-variant">30 jul · ayer</p>
+            </td>
+            <td class="px-3 py-3">
+              <div class="flex items-center gap-2">
+                <span class="w-7 h-7 rounded-full bg-orange-500 text-white text-[10px] font-bold grid place-items-center shrink-0">AS</span>
+                <span class="text-[12px] font-semibold text-on-surface truncate">Administrador</span>
+              </div>
+            </td>
+            <td class="px-3 py-3 whitespace-nowrap">
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-primary/10 text-primary border border-primary/30">
+                <span class="material-symbols-outlined text-sm">verified</span> Competencia
+              </span>
+            </td>
+            <td class="px-3 py-3 whitespace-nowrap">
+              <span class="text-[11px] font-mono font-bold text-on-surface-variant bg-surface-container-low px-1.5 py-0.5 rounded">profesional</span>
+            </td>
+            <td class="px-3 py-3">
+              <p class="text-[13px] text-on-surface truncate max-w-[300px]"><b>Laura Kelly</b> ahora puede atender <b>Láser hongos</b></p>
+            </td>
+            <td class="px-3 py-3 whitespace-nowrap">
+              <span class="text-[11px] text-on-surface-variant/60 italic">—</span>
+            </td>
+            <td class="px-3 py-3 whitespace-nowrap">
+              <span class="text-[10px] font-mono text-on-surface-variant bg-surface-container-low px-1.5 py-0.5 rounded">192.168.0.55</span>
+            </td>
+            <td class="px-3 py-3 text-right whitespace-nowrap">
+              <button onclick="document.getElementById('modal-diff').showModal()" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-primary bg-primary/10 border border-primary/30 hover:bg-primary/20 transition">
+                <span class="material-symbols-outlined text-sm">visibility</span> Ver
+              </button>
+            </td>
+          </tr>
+
+          <!-- FILA 9 -->
+          <tr class="hover:bg-primary/5 transition-colors">
+            <td class="px-4 py-3 whitespace-nowrap">
+              <p class="text-[13px] font-bold text-on-surface leading-tight">16:30</p>
+              <p class="text-[10px] text-on-surface-variant">30 jul · ayer</p>
+            </td>
+            <td class="px-3 py-3">
+              <div class="flex items-center gap-2">
+                <span class="w-7 h-7 rounded-full bg-emerald-600 text-white text-[10px] font-bold grid place-items-center shrink-0">CO</span>
+                <span class="text-[12px] font-semibold text-on-surface truncate">Coordinadora</span>
+              </div>
+            </td>
+            <td class="px-3 py-3 whitespace-nowrap">
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-200/70">
+                <span class="material-symbols-outlined text-sm">event_repeat</span> Excepción
+              </span>
+            </td>
+            <td class="px-3 py-3 whitespace-nowrap">
+              <span class="text-[11px] font-mono font-bold text-on-surface-variant bg-surface-container-low px-1.5 py-0.5 rounded">sede</span>
+            </td>
+            <td class="px-3 py-3">
+              <p class="text-[13px] text-on-surface truncate max-w-[300px]"><b>Paz Soldán</b> cerrada el <b>15 ago</b></p>
+              <p class="text-[10px] text-on-surface-variant/70 truncate max-w-[300px]">Feriado</p>
+            </td>
+            <td class="px-3 py-3 whitespace-nowrap">
+              <div class="flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full" style="background:#f59e0b"></span>
+                <span class="text-[12px] font-semibold text-on-surface">Paz Soldán</span>
+              </div>
+            </td>
+            <td class="px-3 py-3 whitespace-nowrap">
+              <span class="text-[10px] font-mono text-on-surface-variant bg-surface-container-low px-1.5 py-0.5 rounded">10.0.5.22</span>
+            </td>
+            <td class="px-3 py-3 text-right whitespace-nowrap">
+              <button onclick="document.getElementById('modal-diff').showModal()" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-primary bg-primary/10 border border-primary/30 hover:bg-primary/20 transition">
+                <span class="material-symbols-outlined text-sm">visibility</span> Ver
+              </button>
+            </td>
+          </tr>
+
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Footer paginación -->
+    <div class="px-6 py-3 border-t border-outline-variant/30 flex items-center justify-between bg-surface-container-low">
+      <p class="text-xs text-on-surface-variant">Mostrando <b>1-9</b> de <b>530</b> registros</p>
+      <div class="flex items-center gap-1">
+        <button class="w-8 h-8 rounded-lg grid place-items-center text-on-surface-variant hover:bg-surface-container transition disabled:opacity-40" disabled>
+          <span class="material-symbols-outlined text-base">chevron_left</span>
+        </button>
+        <span class="text-xs font-semibold text-on-surface px-2">1 / 59</span>
+        <button class="w-8 h-8 rounded-lg grid place-items-center text-on-surface-variant hover:bg-surface-container transition">
+          <span class="material-symbols-outlined text-base">chevron_right</span>
+        </button>
+      </div>
+    </div>
+  </div>
 </div>
-<div class="flex items-center gap-4">
-<div class="relative">
-<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" style="font-variation-settings: 'FILL' 0;">search</span>
-<input class="pl-10 pr-4 py-2 bg-surface-container-low border border-outline-variant rounded-full font-body-md text-on-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-64 transition-all" placeholder="Buscar pacientes... (⌘ K)" type="text"/>
-</div>
-<button class="text-on-surface-variant hover:bg-surface-container-high rounded-full p-2 transition-colors">
-<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">notifications</span>
-</button>
-<button class="text-on-surface-variant hover:bg-surface-container-high rounded-full p-2 transition-colors">
-<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">grid_view</span>
-</button>
-</div>
-</header>
-<!-- Page Content -->
-<main class="flex-1 p-margin-page overflow-y-auto">
-<!-- Administration Sub-nav -->
-<div class="mb-8">
-<h2 class="font-headline-lg text-on-surface mb-6">Administración</h2>
-<div class="flex flex-wrap gap-2 border-b border-outline-variant pb-px">
-<a class="flex items-center gap-2 px-4 py-2 font-label-md text-on-surface-variant hover:text-primary transition-colors" href="#">
-<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 0;">verified</span>
-                        Competencias
-                    </a>
-<a class="flex items-center gap-2 px-4 py-2 font-label-md text-primary bg-primary-fixed/30 rounded-t-lg border-b-2 border-primary" href="#">
-<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">package</span>
-                        Paquetes
-                    </a>
-<a class="flex items-center gap-2 px-4 py-2 font-label-md text-on-surface-variant hover:text-primary transition-colors" href="#">
-<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 0;">person</span>
-                        Podólogas
-                    </a>
-<a class="flex items-center gap-2 px-4 py-2 font-label-md text-on-surface-variant hover:text-primary transition-colors" href="#">
-<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 0;">medical_services</span>
-                        Servicios
-                    </a>
-<a class="flex items-center gap-2 px-4 py-2 font-label-md text-on-surface-variant hover:text-primary transition-colors" href="#">
-<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 0;">receipt_long</span>
-                        Auditoría
-                    </a>
-<a class="flex items-center gap-2 px-4 py-2 font-label-md text-on-surface-variant hover:text-primary transition-colors" href="#">
-<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 0;">group</span>
-                        Usuarios
-                    </a>
-<a class="flex items-center gap-2 px-4 py-2 font-label-md text-on-surface-variant hover:text-primary transition-colors" href="#">
-<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 0;">key</span>
-                        Roles
-                    </a>
-<a class="flex items-center gap-2 px-4 py-2 font-label-md text-on-surface-variant hover:text-primary transition-colors" href="#">
-<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 0;">notifications_active</span>
-                        Notificaciones
-                    </a>
-</div>
-</div>
-<!-- Content Header -->
-<div class="flex items-center justify-between mb-6">
-<div>
-<h3 class="font-headline-md text-on-surface">Paquetes de sesiones</h3>
-<p class="font-body-md text-on-surface-variant mt-1">Los paquetes activos aparecen como un círculo numerado en las tarjetas de la agenda.</p>
-</div>
-<button class="bg-primary-container text-white font-label-md px-4 py-2 rounded-lg hover:bg-primary transition-colors shadow-sm flex items-center gap-2">
-<span class="material-symbols-outlined text-[18px]">add</span>
-                    Nuevo paquete
-                </button>
-</div>
-<!-- Packages List -->
-<div class="space-y-4 max-w-4xl">
-<!-- Package Card 1 -->
-<div class="bg-surface-container-lowest rounded-xl p-4 shadow-soft border border-surface-variant flex items-center justify-between hover:border-outline-variant transition-colors group">
-<div class="flex items-center gap-4">
-<div class="w-12 h-12 rounded-full bg-success-container flex items-center justify-center text-white font-headline-md shadow-sm">
-                            6
-                        </div>
-<div>
-<h4 class="font-label-md text-on-surface text-[14px]">Ácido Nítrico Onicomicosis 1era sesión hasta la 6</h4>
-<div class="flex items-center gap-2 mt-1">
-<span class="w-2 h-2 rounded-full bg-success-container"></span>
-<p class="font-label-sm text-on-surface-variant">APLICACION ACIDO NITRICO ONICOMICOSIS <span class="text-outline mx-1">•</span> 6 sesiones</p>
-</div>
-</div>
-</div>
-<div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-<button class="px-3 py-1.5 border border-outline-variant rounded-md font-label-md text-secondary hover:bg-surface-container-high transition-colors">
-                            Editar
-                        </button>
-<button class="px-3 py-1.5 border border-error/30 rounded-md font-label-md text-error hover:bg-error-container/50 transition-colors">
-                            Eliminar
-                        </button>
-</div>
-</div>
-<!-- Package Card 2 -->
-<div class="bg-surface-container-lowest rounded-xl p-4 shadow-soft border border-surface-variant flex items-center justify-between hover:border-outline-variant transition-colors group">
-<div class="flex items-center gap-4">
-<div class="w-12 h-12 rounded-full bg-purple-container flex items-center justify-center text-white font-headline-md shadow-sm">
-                            6
-                        </div>
-<div>
-<h4 class="font-label-md text-on-surface text-[14px]">Ácido Nítrico VPH 1era sesión hasta la 6</h4>
-<div class="flex items-center gap-2 mt-1">
-<span class="w-2 h-2 rounded-full bg-purple-container"></span>
-<p class="font-label-sm text-on-surface-variant">APLICAC ACIDO NITRICO VPH <span class="text-outline mx-1">•</span> 6 sesiones</p>
-</div>
-</div>
-</div>
-<div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-<button class="px-3 py-1.5 border border-outline-variant rounded-md font-label-md text-secondary hover:bg-surface-container-high transition-colors">
-                            Editar
-                        </button>
-<button class="px-3 py-1.5 border border-error/30 rounded-md font-label-md text-error hover:bg-error-container/50 transition-colors">
-                            Eliminar
-                        </button>
-</div>
-</div>
-<!-- Package Card 3 -->
-<div class="bg-surface-container-lowest rounded-xl p-4 shadow-soft border border-surface-variant flex items-center justify-between hover:border-outline-variant transition-colors group">
-<div class="flex items-center gap-4">
-<div class="w-12 h-12 rounded-full bg-orange-container flex items-center justify-center text-white font-headline-md shadow-sm">
-                            6
-                        </div>
-<div>
-<h4 class="font-label-md text-on-surface text-[14px]">Curación Bleo 1era sesión hasta la 6</h4>
-<div class="flex items-center gap-2 mt-1">
-<span class="w-2 h-2 rounded-full bg-orange-container"></span>
-<p class="font-label-sm text-on-surface-variant">CURACION BLEO <span class="text-outline mx-1">•</span> 6 sesiones</p>
-</div>
-</div>
-</div>
-<div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-<button class="px-3 py-1.5 border border-outline-variant rounded-md font-label-md text-secondary hover:bg-surface-container-high transition-colors">
-                            Editar
-                        </button>
-<button class="px-3 py-1.5 border border-error/30 rounded-md font-label-md text-error hover:bg-error-container/50 transition-colors">
-                            Eliminar
-                        </button>
-</div>
-</div>
-<!-- Package Card 4 -->
-<div class="bg-surface-container-lowest rounded-xl p-4 shadow-soft border border-surface-variant flex items-center justify-between hover:border-outline-variant transition-colors group">
-<div class="flex items-center gap-4">
-<div class="w-12 h-12 rounded-full bg-pink-container flex items-center justify-center text-white font-headline-md shadow-sm">
-                            12
-                        </div>
-<div>
-<h4 class="font-label-md text-on-surface text-[14px]">Curación de Heridas (pie diabético) 1era sesión hasta la 12</h4>
-<div class="flex items-center gap-2 mt-1">
-<span class="w-2 h-2 rounded-full bg-pink-container"></span>
-<p class="font-label-sm text-on-surface-variant">CURACION DE HERIDAS (PIE DIABETICO) <span class="text-outline mx-1">•</span> 12 sesiones</p>
-</div>
-</div>
-</div>
-<div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-<button class="px-3 py-1.5 border border-outline-variant rounded-md font-label-md text-secondary hover:bg-surface-container-high transition-colors">
-                            Editar
-                        </button>
-<button class="px-3 py-1.5 border border-error/30 rounded-md font-label-md text-error hover:bg-error-container/50 transition-colors">
-                            Eliminar
-                        </button>
-</div>
-</div>
-<!-- Package Card 5 -->
-<div class="bg-surface-container-lowest rounded-xl p-4 shadow-soft border border-surface-variant flex items-center justify-between hover:border-outline-variant transition-colors group">
-<div class="flex items-center gap-4">
-<div class="w-12 h-12 rounded-full bg-teal-container flex items-center justify-center text-white font-headline-md shadow-sm">
-                            12
-                        </div>
-<div>
-<h4 class="font-label-md text-on-surface text-[14px]">Fisio 1era sesión hasta la 12</h4>
-<div class="flex items-center gap-2 mt-1">
-<span class="w-2 h-2 rounded-full bg-teal-container"></span>
-<p class="font-label-sm text-on-surface-variant">Sesión de Fisioterapia <span class="text-outline mx-1">•</span> 12 sesiones</p>
-</div>
-</div>
-</div>
-<div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-<button class="px-3 py-1.5 border border-outline-variant rounded-md font-label-md text-secondary hover:bg-surface-container-high transition-colors">
-                            Editar
-                        </button>
-<button class="px-3 py-1.5 border border-error/30 rounded-md font-label-md text-error hover:bg-error-container/50 transition-colors">
-                            Eliminar
-                        </button>
-</div>
-</div>
-</div>
-</main>
-</div>
-</body></html>
+
+<!-- ============ MODAL DE DIFF ============ -->
+<dialog id="modal-diff" class="rounded-2xl p-0 backdrop:bg-black/40 backdrop:backdrop-blur-sm shadow-2xl w-full max-w-2xl">
+  <div class="bg-surface-container-lowest w-full flex flex-col overflow-hidden max-h-[85vh]">
+
+    <!-- Header modal -->
+    <div class="bg-[#0044ab] text-white p-5 flex items-start justify-between gap-4 shrink-0">
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="material-symbols-outlined">cancel</span>
+          <h2 class="text-lg font-bold tracking-tight">Cancelar cita</h2>
+        </div>
+        <p class="text-sm text-white/85 mt-1">31 jul 2026 · 15:24:12 · hace 3 min</p>
+      </div>
+      <button onclick="document.getElementById('modal-diff').close()" class="p-2 hover:bg-white/20 rounded-xl transition-colors">
+        <span class="material-symbols-outlined">close</span>
+      </button>
+    </div>
+
+    <!-- Body scrolleable -->
+    <div class="flex-1 overflow-y-auto p-5 space-y-4 custom-scrollbar">
+
+      <!-- Metadatos -->
+      <section>
+        <p class="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-2">Contexto</p>
+        <div class="grid grid-cols-2 gap-2">
+          <div class="flex items-center gap-2 p-2 rounded-lg bg-surface-container-low border border-outline-variant/30">
+            <span class="material-symbols-outlined text-primary text-lg">person</span>
+            <div class="min-w-0">
+              <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Usuario</p>
+              <p class="text-xs font-semibold text-on-surface truncate">Administrador Sistema</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 p-2 rounded-lg bg-surface-container-low border border-outline-variant/30">
+            <span class="material-symbols-outlined text-primary text-lg">location_on</span>
+            <div class="min-w-0">
+              <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Sede</p>
+              <p class="text-xs font-semibold text-on-surface truncate">One</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 p-2 rounded-lg bg-surface-container-low border border-outline-variant/30">
+            <span class="material-symbols-outlined text-primary text-lg">router</span>
+            <div class="min-w-0">
+              <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">IP</p>
+              <p class="text-xs font-mono font-semibold text-on-surface truncate">192.168.0.55</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 p-2 rounded-lg bg-surface-container-low border border-outline-variant/30">
+            <span class="material-symbols-outlined text-primary text-lg">devices</span>
+            <div class="min-w-0">
+              <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Dispositivo</p>
+              <p class="text-xs font-semibold text-on-surface truncate">Chrome 141 · macOS</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Entidad afectada -->
+      <section>
+        <div class="flex items-center justify-between mb-2">
+          <p class="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider">Entidad</p>
+          <button class="text-[11px] font-bold text-primary hover:underline flex items-center gap-1">
+            <span class="material-symbols-outlined text-sm">open_in_new</span> Ver cita
+          </button>
+        </div>
+        <div class="p-3 rounded-lg bg-primary/5 border border-primary/20">
+          <p class="text-sm font-bold text-on-surface">Cita — Aitana Mia La Torre Leal</p>
+          <p class="text-xs text-on-surface-variant mt-0.5">13:00 · PROFILAXIS · Infantil · Sarai Abigail · One</p>
+          <p class="text-[10px] font-mono text-on-surface-variant/70 mt-1">bc12de13-9329-4c61-aef0-7f6449e179e0</p>
+        </div>
+      </section>
+
+      <!-- Diff -->
+      <section>
+        <p class="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-2">Cambios</p>
+        <div class="border border-outline-variant/40 rounded-xl overflow-hidden">
+          <table class="w-full text-xs">
+            <thead class="bg-surface-container-low">
+              <tr>
+                <th class="text-left px-3 py-2 font-bold text-[10px] text-on-surface-variant uppercase tracking-wider w-1/4">Campo</th>
+                <th class="text-left px-3 py-2 font-bold text-[10px] text-on-surface-variant uppercase tracking-wider">Antes</th>
+                <th class="text-left px-3 py-2 font-bold text-[10px] text-on-surface-variant uppercase tracking-wider">Después</th>
+              </tr>
+            </thead>
+            <tbody class="font-mono text-[11px]">
+              <tr class="diff-row remove border-t border-outline-variant/25">
+                <td class="px-3 py-2 font-sans font-semibold text-red-900">estado</td>
+                <td class="px-3 py-2 text-red-900">"agendada"</td>
+                <td class="px-3 py-2 text-slate-400">—</td>
+              </tr>
+              <tr class="diff-row add border-t border-outline-variant/25">
+                <td class="px-3 py-2 font-sans font-semibold text-emerald-900">estado</td>
+                <td class="px-3 py-2 text-slate-400">—</td>
+                <td class="px-3 py-2 text-emerald-900">"cancelada"</td>
+              </tr>
+              <tr class="diff-row add border-t border-outline-variant/25">
+                <td class="px-3 py-2 font-sans font-semibold text-emerald-900">motivoCancelacion</td>
+                <td class="px-3 py-2 text-slate-400">null</td>
+                <td class="px-3 py-2 text-emerald-900 whitespace-normal break-words">"Paciente no responde el correo de confirmación"</td>
+              </tr>
+              <tr class="diff-row add border-t border-outline-variant/25">
+                <td class="px-3 py-2 font-sans font-semibold text-emerald-900">canceladoPorUsuarioId</td>
+                <td class="px-3 py-2 text-slate-400">null</td>
+                <td class="px-3 py-2 text-emerald-900 whitespace-normal break-words">"a4f7c891-…"</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- JSON crudo colapsable -->
+      <section>
+        <details>
+          <summary class="cursor-pointer text-[11px] font-bold text-on-surface-variant uppercase tracking-wider flex items-center gap-1">
+            <span class="material-symbols-outlined text-sm">code</span> Payload JSON crudo
+          </summary>
+          <pre class="mt-2 p-3 rounded-lg bg-slate-900 text-slate-100 text-[11px] font-mono overflow-x-auto custom-scrollbar">{
+  "antes":  { "estado": "agendada", "motivoCancelacion": null },
+  "despues":{
+    "estado": "cancelada",
+    "motivoCancelacion": "Paciente no responde el correo de confirmación",
+    "canceladoPorUsuarioId": "a4f7c891-…"
+  }
+}</pre>
+        </details>
+      </section>
+    </div>
+
+    <!-- Footer modal -->
+    <div class="p-4 border-t border-outline-variant/30 flex items-center justify-between shrink-0 bg-surface-container-low">
+      <span class="text-[10px] font-mono text-on-surface-variant/70">log_id: 3f2e1a90-2c4d-4b81-9e2f-8c5a7b6d1e02</span>
+      <button onclick="document.getElementById('modal-diff').close()" class="px-4 py-2 rounded-xl bg-primary text-white font-bold text-sm shadow-md shadow-primary/20 hover:opacity-90 transition">Cerrar</button>
+    </div>
+  </div>
+</dialog>
+
+</body>
+</html>

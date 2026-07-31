@@ -68,6 +68,15 @@ import servicioVideosRouter from './routes/servicioVideos';
 const app = express();
 const server = http.createServer(app);
 
+// ─── Trust proxy ──────────────────────────────────────────────────────────────
+// Cuando la API queda DETRÁS de un reverse proxy (Nginx, Cloudflare, IIS, ELB…)
+// req.ip por defecto muestra la IP del proxy (siempre la misma), no la del cliente.
+// `trust proxy` hace que Express lea el header X-Forwarded-For y devuelva la IP
+// real. Valores comunes: 'true' (confía en cualquier proxy), 'loopback',
+// '10.0.0.0/8', etc. Configurable por env (TRUST_PROXY). Default: 'loopback'
+// (funciona en dev y sirve también si el proxy corre en la misma máquina).
+app.set('trust proxy', process.env.TRUST_PROXY || 'loopback');
+
 // ─── Middleware ───────────────────────────────────────────────────────────────
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors({

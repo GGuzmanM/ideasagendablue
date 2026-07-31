@@ -274,7 +274,7 @@ router.put('/:id', requireAuth, requireRol('admin', 'coordinadora_sedes'), async
   if (cambiaProfesional || cambiaFechaInicio) {
     try {
       const { asignacion: recreado, sedeAnteriorId } = await prisma.$transaction(async (tx) => {
-        await eliminarMovimientoEnTx(tx, existente, { usuarioId: req.user?.userId, ip: req.ip });
+        await eliminarMovimientoEnTx(tx, existente, { usuarioId: req.user?.userId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined });
         const creado = await crearMovimientoEnTx(tx, {
           profesionalId: data.profesionalId ?? existente.profesionalId,
           sedeId: data.sedeId ?? existente.sedeId,
@@ -288,7 +288,7 @@ router.put('/:id', requireAuth, requireRol('admin', 'coordinadora_sedes'), async
           creadoPor: req.user!.userId,
         });
         await auditEnTx(tx, {
-          usuarioId: req.user?.userId, ip: req.ip,
+          usuarioId: req.user?.userId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
           accion: 'MOVIMIENTO_EDITADO',
           entidad: 'asignacion_sede',
           entidadId: creado.asignacion.id,
@@ -473,7 +473,7 @@ router.put('/:id', requireAuth, requireRol('admin', 'coordinadora_sedes'), async
         motivo: upd.motivo, notas: upd.notas,
       },
       sedeId: upd.sedeId,
-      ip: req.ip,
+      ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
     });
 
     return upd;
@@ -529,7 +529,7 @@ router.delete('/:id', requireAuth, requireRol('admin', 'coordinadora_sedes'), as
   // el retorno automático si era temporal, y se refresca la agenda. La lógica vive
   // en asignacionService.eliminarMovimientoEnTx (compartida con la edición estructural).
   const { predecesorSedeId } = await prisma.$transaction((tx) =>
-    eliminarMovimientoEnTx(tx, asignacion, { usuarioId: req.user?.userId, ip: req.ip }),
+    eliminarMovimientoEnTx(tx, asignacion, { usuarioId: req.user?.userId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined }),
   );
 
   // Refrescar la agenda al instante: invalida caché y emite socket para la sede

@@ -85,7 +85,7 @@ router.post('/:profesionalId', requireAuth, requireRol('admin', 'coordinadora_se
   }
   await registrarAudit({
     usuarioId: req.user?.userId, accion: 'baro_solicitud_agregar', entidad: 'profesional', entidadId: profesionalId,
-    despues: { soloPorSolicitud: true, servicios: servicioIds.length }, ip: req.ip,
+    despues: { soloPorSolicitud: true, servicios: servicioIds.length }, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
   });
   res.json({ ok: true });
 });
@@ -102,7 +102,7 @@ router.delete('/:profesionalId', requireAuth, requireRol('admin', 'coordinadora_
   });
   await registrarAudit({
     usuarioId: req.user?.userId, accion: 'baro_solicitud_quitar', entidad: 'profesional', entidadId: profesionalId,
-    despues: { competenciasDesactivadas: r.count }, ip: req.ip,
+    despues: { competenciasDesactivadas: r.count }, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
   });
   res.json({ ok: true, desactivadas: r.count });
 });

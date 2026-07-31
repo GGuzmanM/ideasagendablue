@@ -270,7 +270,7 @@ async function getCitaCompleta(id: string) {
 // del nombre) para que el hilo sea legible aunque el usuario se borre luego.
 async function crearComentarioEnTx(
   tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0],
-  args: { citaId: string; sedeId: string; autorId?: string | null; texto: string; ip?: string },
+  args: { citaId: string; sedeId: string; autorId?: string | null; texto: string; ip?: string; userAgent?: string },
 ) {
   const texto = args.texto.trim();
   if (!texto) return;
@@ -291,6 +291,7 @@ async function crearComentarioEnTx(
     despues: { comentarioId: entrada.id, texto },
     sedeId: args.sedeId,
     ip: args.ip,
+    userAgent: args.userAgent,
   });
   return entrada;
 }
@@ -441,7 +442,7 @@ router.post('/:id/confirmar-mail', requireAuth, async (req, res) => {
   try {
     const { to, estado } = await forzarEnvioRecordatorioAhora(cita.id);
     if (estado === 'diferido') throw new AppError('Se alcanzó el límite diario de correos. El recordatorio quedó en cola para el día siguiente.', 429, 'CUOTA_DIARIA');
-    await registrarAudit({ citaId: cita.id, usuarioId: req.user?.userId, accion: 'recordatorio_reenvio_manual', entidad: 'cita', entidadId: cita.id, ip: req.ip });
+    await registrarAudit({ citaId: cita.id, usuarioId: req.user?.userId, accion: 'recordatorio_reenvio_manual', entidad: 'cita', entidadId: cita.id, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined });
     res.json({ ok: true, to });
   } catch (err) {
     if (err instanceof AppError) throw err;
@@ -587,7 +588,7 @@ router.get('/cancelar', async (req, res) => {
   await registrarAudit({
     citaId: cita.id, accion: 'cancelar_por_paciente', entidad: 'cita', entidadId: cita.id,
     antes: { estado: cita.estado }, despues: { estado: 'cancelada', origen: 'token_correo' },
-    sedeId: cita.sedeId, ip: req.ip,
+    sedeId: cita.sedeId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
   });
 
   try {
@@ -645,7 +646,7 @@ router.get('/confirmar/:token', async (req, res) => {
     emitirEventoCita({ tipo: 'cita:estadoCambiado', sedeId: cita.sedeId, fecha: fechaStr, cita: { id: cita.id, estado: nuevoEstado } as never, cambiadoPor: 'paciente' });
     await invalidateDisponibilidadCache(cita.sedeId, fechaStr);
   } catch { /* no crítico */ }
-  await registrarAudit({ citaId: cita.id, accion: 'confirmar_recordatorio', entidad: 'cita', entidadId: cita.id, despues: { estadoConfirmacion: 'confirmada' }, sedeId: cita.sedeId, ip: req.ip });
+  await registrarAudit({ citaId: cita.id, accion: 'confirmar_recordatorio', entidad: 'cita', entidadId: cita.id, despues: { estadoConfirmacion: 'confirmada' }, sedeId: cita.sedeId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined });
 
   res.send(paginaPublica({ ok: true, titulo: '¡Cita confirmada!', mensaje: 'Gracias por confirmar. ¡Te esperamos en Limablue!', detalle }));
 });
@@ -663,7 +664,7 @@ router.get('/reprogramar/:token', async (req, res) => {
       where: { citaId: r.citaId, tipo: 'RECORDATORIO', deletedAt: null },
       data: { clickReprogramarAt: ahora },
     });
-    await registrarAudit({ citaId: r.citaId, accion: 'click_reprogramar', entidad: 'cita', entidadId: r.citaId, ip: req.ip });
+    await registrarAudit({ citaId: r.citaId, accion: 'click_reprogramar', entidad: 'cita', entidadId: r.citaId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined });
   }
   // Aunque el token sea inválido/expirado, redirigimos igual a WhatsApp (no romper al paciente).
   res.redirect(302, waUrl);
@@ -988,10 +989,10 @@ router.post('/', requireAuth, requireScope('appointments:write'), async (req: Re
         entidadId: c.id,
         despues: c,
         sedeId: data.sedeId,
-        ip: req.ip,
+        ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
       });
       if (comentarioInicial) {
-        await crearComentarioEnTx(tx, { citaId: c.id, sedeId: data.sedeId, autorId: usuarioId ?? null, texto: comentarioInicial, ip: req.ip });
+        await crearComentarioEnTx(tx, { citaId: c.id, sedeId: data.sedeId, autorId: usuarioId ?? null, texto: comentarioInicial, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined });
       }
           return c;
         }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }),
@@ -1243,14 +1244,14 @@ router.post('/combinada', requireAuth, requireScope('appointments:write'), async
         for (const c of [ancla, extra]) {
           await auditEnTx(tx, {
             citaId: c.id, usuarioId, accion: 'crear', entidad: 'cita', entidadId: c.id,
-            despues: c, sedeId: data.sedeId, ip: req.ip,
+            despues: c, sedeId: data.sedeId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
           });
         }
         if (data.comentarioRecepcion?.trim()) {
-          await crearComentarioEnTx(tx, { citaId: ancla.id, sedeId: data.sedeId, autorId: usuarioId ?? null, texto: data.comentarioRecepcion, ip: req.ip });
+          await crearComentarioEnTx(tx, { citaId: ancla.id, sedeId: data.sedeId, autorId: usuarioId ?? null, texto: data.comentarioRecepcion, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined });
         }
         if (data.extra.comentarioRecepcion?.trim()) {
-          await crearComentarioEnTx(tx, { citaId: extra.id, sedeId: data.sedeId, autorId: usuarioId ?? null, texto: data.extra.comentarioRecepcion, ip: req.ip });
+          await crearComentarioEnTx(tx, { citaId: extra.id, sedeId: data.sedeId, autorId: usuarioId ?? null, texto: data.extra.comentarioRecepcion, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined });
         }
         return { anclaId: ancla.id, extraId: extra.id };
       }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
@@ -1365,11 +1366,11 @@ router.patch('/:id/estado', requireAuth, async (req, res) => {
       antes,
       despues: { estado },
       sedeId: cita.sedeId,
-      ip: req.ip,
+      ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
     });
     // Comentario opcional del cambio de estado → entrada del hilo append-only.
     if (comentario?.trim()) {
-      await crearComentarioEnTx(tx, { citaId: cita.id, sedeId: cita.sedeId, autorId: usuarioId ?? null, texto: comentario, ip: req.ip });
+      await crearComentarioEnTx(tx, { citaId: cita.id, sedeId: cita.sedeId, autorId: usuarioId ?? null, texto: comentario, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined });
     }
     // Cascada del bloque combinado: aplicar EL MISMO estado a las hermanas del grupo.
     for (const h of hermanas) {
@@ -1380,7 +1381,7 @@ router.patch('/:id/estado', requireAuth, async (req, res) => {
       await auditEnTx(tx, {
         citaId: h.id, usuarioId, accion: 'cambiar_estado', entidad: 'cita', entidadId: h.id,
         antes: { estado: h.estado }, despues: { estado, slotGrupoId: cita.slotGrupoId, cascada: true },
-        sedeId: h.sedeId, ip: req.ip,
+        sedeId: h.sedeId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
       });
     }
     return u;
@@ -1503,7 +1504,7 @@ router.patch('/:id/gestionar-movimiento', requireAuth, requireRol('admin', 'coor
       antes: { estado: estadoAnterior },
       despues: { estado, motivo: motivo ?? null, contexto: 'Gestión previa a movimiento de podóloga' },
       sedeId: cita.sedeId,
-      ip: req.ip,
+      ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
     });
     for (const h of hermanas) {
       await tx.cita.update({
@@ -1514,7 +1515,7 @@ router.patch('/:id/gestionar-movimiento', requireAuth, requireRol('admin', 'coor
         citaId: h.id, usuarioId: req.user?.userId, accion: 'ESTADO_CAMBIADO_POR_MOVIMIENTO',
         entidad: 'cita', entidadId: h.id,
         antes: { estado: h.estado }, despues: { estado, slotGrupoId: cita.slotGrupoId, cascada: true },
-        sedeId: h.sedeId, ip: req.ip,
+        sedeId: h.sedeId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
       });
     }
   });
@@ -1621,7 +1622,7 @@ router.post('/reportar-enfermedad', requireAuth, requireRol('admin', 'coordinado
       await auditEnTx(tx, {
         citaId: c.id, usuarioId, accion: 'ENFERMEDAD_CANCELAR_CITA', entidad: 'cita', entidadId: c.id,
         antes: { estado: c.estado }, despues: { estado: 'cancelada', motivo: data.motivo, contexto: 'Reporte de enfermedad — liberar día' },
-        sedeId: c.sedeId, ip: req.ip,
+        sedeId: c.sedeId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
       });
     }
 
@@ -1659,7 +1660,7 @@ router.post('/reportar-enfermedad', requireAuth, requireRol('admin', 'coordinado
     await auditEnTx(tx, {
       usuarioId, accion: 'ENFERMEDAD_BLOQUEO_CREADO', entidad: 'bloqueo_agenda', entidadId: b.id,
       despues: { profesionalId: data.profesionalId, horaInicio: data.horaInicio, horaFin: data.horaFin, motivo: data.motivo, citasCanceladas: enRango.length },
-      sedeId: data.sedeId, ip: req.ip,
+      sedeId: data.sedeId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
     });
     return b;
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable })).catch((err) => {
@@ -1837,7 +1838,7 @@ router.patch('/:id/mover', requireAuth, async (req, res) => {
         antes,
         despues: { profesionalId: nuevoProfesionalId, fecha: data.fecha, horaInicio: data.horaInicio },
         sedeId: cita.sedeId,
-        ip: req.ip,
+        ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
       });
       return u;
     });
@@ -1950,7 +1951,7 @@ router.patch('/grupo/:slotGrupoId/mover', requireAuth, async (req, res) => {
           citaId: c.id, usuarioId, accion: 'mover', entidad: 'cita', entidadId: c.id,
           antes: { profesionalId: c.profesionalId, fecha: c.fecha, horaInicio: c.horaInicio },
           despues: { profesionalId: nuevoProfesionalId, fecha: data.fecha, horaInicio: data.horaInicio, bloque: slotGrupoId },
-          sedeId, ip: req.ip,
+          sedeId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
         });
       }
     });
@@ -2000,7 +2001,7 @@ router.delete('/:id', requireAuth, async (req, res) => {
         antes: { estado: c.estado },
         despues: { estado: 'cancelada', ...(cita.slotGrupoId ? { slotGrupoId: cita.slotGrupoId, cascada: true } : {}) },
         sedeId: c.sedeId,
-        ip: req.ip,
+        ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
       });
     }
   });
@@ -2088,7 +2089,7 @@ router.patch('/:id/consultorio', requireAuth, async (req, res) => {
       antes: { consultorioNumero: cita.consultorioNumero },
       despues: { consultorioNumero: consultorioNumero ?? null },
       sedeId: cita.sedeId,
-      ip: req.ip,
+      ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
     });
   });
 
@@ -2116,7 +2117,7 @@ router.patch('/:id/comentario', requireAuth, async (req, res) => {
   if (!texto) throw new AppError('El comentario está vacío', 400, 'COMENTARIO_VACIO');
 
   await prisma.$transaction(async (tx) => {
-    await crearComentarioEnTx(tx, { citaId: cita.id, sedeId: cita.sedeId, autorId: req.user?.userId ?? null, texto, ip: req.ip });
+    await crearComentarioEnTx(tx, { citaId: cita.id, sedeId: cita.sedeId, autorId: req.user?.userId ?? null, texto, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined });
   });
 
   const citaCompleta = await getCitaCompleta(cita.id);
@@ -2142,7 +2143,7 @@ router.patch('/:id/canal', requireAuth, async (req, res) => {
     await tx.cita.update({ where: { id: cita.id }, data: { canal } });
     await auditEnTx(tx, {
       citaId: cita.id, usuarioId: req.user?.userId, accion: 'editar_canal', entidad: 'cita', entidadId: cita.id,
-      antes: { canal: cita.canal }, despues: { canal }, sedeId: cita.sedeId, ip: req.ip,
+      antes: { canal: cita.canal }, despues: { canal }, sedeId: cita.sedeId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
     });
   });
   const citaCompleta = await getCitaCompleta(cita.id);
@@ -2180,7 +2181,7 @@ router.patch('/:id/promocion', requireAuth, async (req, res) => {
     await tx.cita.update({ where: { id: portadoraId }, data: { promocionId } });
     await auditEnTx(tx, {
       citaId: portadoraId, usuarioId: req.user?.userId, accion: 'editar_promocion', entidad: 'cita', entidadId: portadoraId,
-      antes: { promocionId: antes?.promocionId ?? null }, despues: { promocionId }, sedeId: cita.sedeId, ip: req.ip,
+      antes: { promocionId: antes?.promocionId ?? null }, despues: { promocionId }, sedeId: cita.sedeId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
     });
   });
 
@@ -2344,7 +2345,7 @@ router.post('/:id/confirmar-mail', requireAuth, async (req, res) => {
     entidadId: cita.id,
     despues: { to: cita.paciente.email, enviadaEn: ahora },
     sedeId: cita.sedeId,
-    ip: req.ip,
+    ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
   });
 
   res.json({ ok: true, to: cita.paciente.email });

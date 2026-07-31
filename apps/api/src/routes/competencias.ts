@@ -69,7 +69,7 @@ router.post('/toggle', requireAuth, requireRol('admin', 'coordinadora_sedes'), a
       entidadId: existing.id,
       antes: { activa: existing.activa },
       despues: { activa },
-      ip: req.ip,
+      ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
     });
     res.json(updated);
   } else {
@@ -83,7 +83,7 @@ router.post('/toggle', requireAuth, requireRol('admin', 'coordinadora_sedes'), a
       entidadId: created.id,
       antes: null,
       despues: { profesionalId, servicioId, activa },
-      ip: req.ip,
+      ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
     });
     res.status(201).json(created);
   }

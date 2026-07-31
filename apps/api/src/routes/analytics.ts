@@ -131,7 +131,7 @@ router.post('/recalcular', requireAuth, requireCoordinadora, async (req, res) =>
     hasta: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   }).parse(req.body);
   const n = await conLockRecalculo(
-    { usuarioId: req.user?.userId, ip: req.ip, accion: 'recalcular_agregados', detalle: { desde, hasta } },
+    { usuarioId: req.user?.userId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined, accion: 'recalcular_agregados', detalle: { desde, hasta } },
     () => agregarRango(parseFechaStart(desde), parseFechaEnd(hasta)),
   );
   res.json({ ok: true, grupos: n });
@@ -139,7 +139,7 @@ router.post('/recalcular', requireAuth, requireCoordinadora, async (req, res) =>
 
 router.post('/recalcular/hoy', requireAuth, requireCoordinadora, async (req, res) => {
   const n = await conLockRecalculo(
-    { usuarioId: req.user?.userId, ip: req.ip, accion: 'recalcular_agregados_hoy', detalle: { alcance: 'hoy' } },
+    { usuarioId: req.user?.userId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined, accion: 'recalcular_agregados_hoy', detalle: { alcance: 'hoy' } },
     () => agregarHoy(),
   );
   res.json({ ok: true, grupos: n });

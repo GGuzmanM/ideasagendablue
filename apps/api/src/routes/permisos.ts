@@ -660,7 +660,7 @@ router.post('/vacaciones/eliminar', requireAuth, requireRol('admin', 'coordinado
     data: {
       usuarioId: req.user?.userId, accion: 'VACACIONES_ELIMINADAS', entidad: 'bloqueo_agenda', entidadId: rows[0]!.id,
       antes: { profesionalId: rows[0]!.profesionalId, dias: rows.length }, despues: { deletedAt: new Date().toISOString() },
-      sedeId: rows[0]!.sedeId ?? undefined, ip: req.ip,
+      sedeId: rows[0]!.sedeId ?? undefined, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
     },
   });
   res.json({ ok: true, eliminados: rows.length });
@@ -716,7 +716,7 @@ router.patch('/vacaciones', requireAuth, requireRol('admin', 'coordinadora_sedes
     data: {
       usuarioId: req.user?.userId, accion: 'VACACIONES_EDITADAS', entidad: 'bloqueo_agenda', entidadId: viejos[0]!.id,
       antes: { profesionalId, filasViejas: viejos.length }, despues: { fechaInicio: data.fechaInicio, fechaFin: data.fechaFin, dias: dias.length, motivo: data.motivo },
-      sedeId: data.sedeId, ip: req.ip,
+      sedeId: data.sedeId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
     },
   });
   res.json({ ok: true, creados, dias: dias.length });
@@ -739,7 +739,7 @@ router.delete('/:id', requireAuth, requireRol('admin', 'coordinadora_sedes'), as
       antes: { profesionalId: b.profesionalId, horaInicio: b.horaInicio, horaFin: b.horaFin, motivo: b.motivo },
       despues: { deletedAt: new Date().toISOString() },
       sedeId: b.sedeId ?? undefined,
-      ip: req.ip,
+      ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
     },
   });
 

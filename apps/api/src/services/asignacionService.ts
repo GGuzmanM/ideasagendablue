@@ -314,7 +314,7 @@ export async function eliminarMovimientoEnTx(
     fechaInicio: Date; fechaFin: Date | null;
     cierraAsignacionId: string | null; cierraFechaFin: Date | null;
   },
-  actor: { usuarioId?: string; ip?: string },
+  actor: { usuarioId?: string; ip?: string; userAgent?: string },
 ): Promise<{ predecesorSedeId: string | null }> {
   const pred = await hallarPredecesor(tx, asignacion);
 
@@ -356,6 +356,7 @@ export async function eliminarMovimientoEnTx(
       despues: { eliminado: true, predecesorRestaurado: !!pred, restauradoExacto: pred?.exacto ?? false, fechaFinRestaurada: pred?.restaurarFechaFin ? pred.restaurarFechaFin.toISOString().slice(0, 10) : null },
       sedeId: asignacion.sedeId,
       ip: actor.ip,
+      userAgent: actor.userAgent,
     },
   });
 

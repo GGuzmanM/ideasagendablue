@@ -126,7 +126,7 @@ router.post('/', requireAuth, requireGestor, async (req, res) => {
       entidad: 'promocion',
       entidadId: promo.id,
       despues: { nombre: data.nombre, duracionMeses: data.duracionMeses, composicion, plantillaId: plantilla.id },
-      ip: req.ip,
+      ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
     });
     return promo;
   });
@@ -167,7 +167,7 @@ router.patch('/:id', requireAuth, requireGestor, async (req, res) => {
       entidadId: promo.id,
       antes: { nombre: promo.nombre, composicion: plantilla.composicion, duracionMeses: plantilla.duracionMeses },
       despues: { ...data, composicion },
-      ip: req.ip,
+      ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
     });
   });
   res.json({ ok: true });
@@ -188,7 +188,7 @@ router.delete('/:id', requireAuth, requireGestor, async (req, res) => {
       entidadId: promo.id,
       antes: { activo: true },
       despues: { activo: false },
-      ip: req.ip,
+      ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
     });
   });
   res.json({ ok: true });
@@ -233,7 +233,7 @@ router.post('/:id/activar', requireAuth, requireGestor, async (req, res) => {
       entidadId: promo.id,
       antes: { activo: false },
       despues: { activo: true },
-      ip: req.ip,
+      ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
     });
   });
   res.json({ ok: true });
@@ -315,7 +315,7 @@ router.post('/:id/vender', requireAuth, async (req, res) => {
       entidad: 'paquete_paciente',
       entidadId: creado.id,
       despues: { membresia: promo.nombre, pacienteId: data.pacienteId, sedeId: data.sedeId, vigencia: `${inicio} → ${fin}`, composicion },
-      ip: req.ip,
+      ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
     });
     return creado;
   });

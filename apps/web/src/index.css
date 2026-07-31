@@ -145,6 +145,28 @@
     box-shadow: none;
   }
 
+  /* Celda de la matriz de Competencias:
+     - Base: escala leve al hover.
+     - Activa (azul): al hover cambia a rojo suave con ✕ (indica "quitar").
+     - Los dos íconos (check / close) conviven en el DOM; se alternan por CSS. */
+  .cell-btn { transition: all 0.15s ease; }
+  .cell-btn:hover { transform: scale(1.1); }
+  .cell-btn.active:hover {
+    background: #fee2e2 !important;
+    color: #b91c1c !important;
+    border-color: #ef4444 !important;
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.15);
+  }
+  .cell-btn.active .icon-remove { display: none; }
+  .cell-btn.active:hover .icon-check { display: none; }
+  .cell-btn.active:hover .icon-remove { display: block; }
+
+  /* Diff antes/después en el modal de Auditoría */
+  .diff-row.remove { background: #fef2f2; }
+  .diff-row.add    { background: #f0fdf4; }
+  .diff-row.remove td:first-child::before { content: '− '; color: #dc2626; font-weight: 800; margin-right: 6px; }
+  .diff-row.add    td:first-child::before { content: '+ '; color: #16a34a; font-weight: 800; margin-right: 6px; }
+
   /* Tarjetas de cita */
   /* Tarjetas de cita */
   .cita-card {

@@ -164,7 +164,7 @@ router.post('/:citaId/reenviar', requireAuth, requireRol('admin', 'coordinadora_
   await programarJobRecordatorio(req.params.citaId, ahora, 'manual');
   await registrarAudit({
     citaId: req.params.citaId, usuarioId: req.user?.userId, accion: 'recordatorio_reenvio_manual',
-    entidad: 'cita', entidadId: req.params.citaId, ip: req.ip,
+    entidad: 'cita', entidadId: req.params.citaId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
   });
 
   res.json({ ok: true, recordatorioId: rec.id, programadoPara: ahora });

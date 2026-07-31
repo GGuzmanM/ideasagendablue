@@ -173,7 +173,7 @@ router.delete('/:id', requireAuth, async (req, res) => {
       },
       despues: { deletedAt: new Date().toISOString() },
       sedeId: bloqueo.sedeId ?? undefined,
-      ip: req.ip,
+      ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
     },
   });
 

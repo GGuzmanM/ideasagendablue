@@ -126,7 +126,7 @@ router.put('/ancla', requireAuth, requireAdmin, async (req, res) => {
       entidadId: cfg.id,
       antes: { servicioAnclaId: existente?.servicioAnclaId ?? null },
       despues: { servicioAnclaId },
-      ip: req.ip,
+      ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
     });
     return cfg;
   });
@@ -177,7 +177,7 @@ router.post('/', requireAuth, requireAdmin, async (req, res) => {
       entidad: 'combinacion_permitida',
       entidadId: c.id,
       despues: { servicioAnclaId, servicioExtraId, activo: true },
-      ip: req.ip,
+      ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
     });
     return c;
   });
@@ -204,7 +204,7 @@ router.patch('/:id', requireAuth, requireAdmin, async (req, res) => {
       entidadId: existente.id,
       antes: { activo: existente.activo },
       despues: { activo },
-      ip: req.ip,
+      ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
     });
   });
 
@@ -229,7 +229,7 @@ router.delete('/:id', requireAuth, requireAdmin, async (req, res) => {
       entidadId: existente.id,
       antes: { servicioExtraId: existente.servicioExtraId, activo: existente.activo },
       despues: { deletedAt: new Date().toISOString() },
-      ip: req.ip,
+      ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
     });
   });
 

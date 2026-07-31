@@ -150,8 +150,8 @@ function GestionSubcategorias({ servicioId, servicioNombre }: { servicioId: stri
   };
 
   return (
-    <div className="space-y-3">
-      <p className="text-xs font-semibold text-violet-800">Subcategorías de {servicioNombre}</p>
+    <div className="space-y-2.5">
+      <p className="text-xs font-semibold text-violet-900">Subcategorías de {servicioNombre}</p>
       {isLoading ? (
         <p className="text-xs text-slate-400">Cargando…</p>
       ) : (
@@ -179,7 +179,7 @@ function GestionSubcategorias({ servicioId, servicioNombre }: { servicioId: stri
         <button
           onClick={handleAgregar}
           disabled={crearMut.isPending || nuevoNombre.trim().length < 2}
-          className="btn btn-primary btn-sm disabled:opacity-50"
+          className="btn btn-primary btn-sm disabled:opacity-50 text-xs py-1"
         >
           + Agregar
         </button>
@@ -199,23 +199,23 @@ function FilaSubcategoria({ sub, onGuardar, onToggle, onEliminar, guardando }: {
   const [precio, setPrecio] = useState(sub.precioReferencial != null ? String(Number(sub.precioReferencial)) : '');
   const cambiado = nombre.trim() !== sub.nombre || precio !== (sub.precioReferencial != null ? String(Number(sub.precioReferencial)) : '');
   return (
-    <div className={cn('flex items-center gap-2 rounded-lg border px-2 py-1.5 bg-white', sub.activo === false ? 'opacity-50 border-slate-200' : 'border-violet-200')}>
-      <input className="input text-xs flex-1" value={nombre} onChange={e => setNombre(e.target.value)} />
+    <div className={cn('flex items-center gap-2 rounded-lg border px-2.5 py-1 bg-white text-xs', sub.activo === false ? 'opacity-50 border-slate-200' : 'border-violet-200')}>
+      <input className="input text-xs flex-1 py-1" value={nombre} onChange={e => setNombre(e.target.value)} />
       <div className="flex items-center gap-1">
         <span className="text-xs text-slate-400">S/</span>
-        <input className="input text-xs w-20" type="number" min="0" step="0.5" value={precio} onChange={e => setPrecio(e.target.value)} />
+        <input className="input text-xs w-20 py-1" type="number" min="0" step="0.5" value={precio} onChange={e => setPrecio(e.target.value)} />
       </div>
       <button
         onClick={() => onGuardar({ nombre: nombre.trim(), precioReferencial: parseFloat(precio) > 0 ? parseFloat(precio) : null })}
         disabled={guardando || !cambiado || nombre.trim().length < 2}
-        className="text-xs px-2.5 py-1 rounded-lg border border-limablue-200 text-limablue-600 hover:bg-limablue-50 disabled:opacity-40"
+        className="text-xs px-2 py-0.5 rounded border border-limablue-200 text-limablue-600 hover:bg-limablue-50 disabled:opacity-40 font-medium"
       >
         Guardar
       </button>
-      <button onClick={onToggle} className={cn('text-xs px-2.5 py-1 rounded-lg border', sub.activo === false ? 'border-green-200 text-green-600 hover:bg-green-50' : 'border-amber-200 text-amber-600 hover:bg-amber-50')}>
+      <button onClick={onToggle} className={cn('text-xs px-2 py-0.5 rounded border font-medium', sub.activo === false ? 'border-green-200 text-green-600 hover:bg-green-50' : 'border-amber-200 text-amber-600 hover:bg-amber-50')}>
         {sub.activo === false ? 'Activar' : 'Desactivar'}
       </button>
-      <button onClick={onEliminar} className="text-xs px-2.5 py-1 rounded-lg border border-red-200 text-red-500 hover:bg-red-50">Eliminar</button>
+      <button onClick={onEliminar} className="text-xs px-2 py-0.5 rounded border border-red-200 text-red-500 hover:bg-red-50 font-medium">Eliminar</button>
     </div>
   );
 }
@@ -242,23 +242,23 @@ export function ServiciosPage() {
   const srvEditando = editandoId ? servicios?.find(s => s.id === editandoId) : null;
 
   return (
-    <div className="flex flex-col h-full overflow-hidden relative">
+    <div className="flex flex-col h-full overflow-hidden relative bg-background">
       <AdminHeaderNav />
 
-      <div className="flex-1 overflow-y-auto p-6 space-y-5 max-w-4xl">
+      <div className="flex-1 overflow-y-auto p-6 space-y-5">
         {/* Controles */}
         <div className="flex items-center justify-between">
           <div className="flex gap-2">
             <button
               onClick={() => setMostrarInactivos(false)}
-              className={cn('px-3 py-1.5 rounded-lg text-sm font-medium border transition-all',
+              className={cn('px-3 py-1 rounded-lg text-xs font-semibold border transition-all',
                 !mostrarInactivos ? 'bg-limablue-600 text-white border-limablue-600' : 'border-slate-200 text-slate-600 hover:bg-slate-50')}
             >
               Activos ({(servicios ?? []).filter(s => s.activo).length})
             </button>
             <button
               onClick={() => setMostrarInactivos(true)}
-              className={cn('px-3 py-1.5 rounded-lg text-sm font-medium border transition-all',
+              className={cn('px-3 py-1 rounded-lg text-xs font-semibold border transition-all',
                 mostrarInactivos ? 'bg-slate-700 text-white border-slate-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50')}
             >
               Inactivos ({(servicios ?? []).filter(s => !s.activo).length})
@@ -266,95 +266,103 @@ export function ServiciosPage() {
           </div>
           <button
             onClick={() => { setCreando(true); setEditandoId(null); }}
-            className="btn btn-primary btn-sm"
+            className="bg-primary-container text-white font-label-md px-3.5 py-1.5 rounded-lg hover:bg-primary transition-colors shadow-sm flex items-center gap-1.5 text-xs font-semibold"
           >
-            + Nuevo servicio
+            <span className="material-symbols-outlined text-[16px]">add</span>
+            Nuevo servicio
           </button>
         </div>
 
-        {/* Tabla por área */}
+        {/* Lista en formato Cards compactas agrupadas por área */}
         {isLoading ? (
           <div className="flex items-center justify-center py-16">
             <div className="w-8 h-8 border-2 border-limablue-500 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : Object.entries(serviciosPorUnidad).length === 0 ? (
-          <div className="bg-white rounded-xl border border-dashed border-slate-300 p-12 text-center text-slate-400">
+          <div className="bg-surface-container-lowest rounded-xl border border-dashed border-outline-variant p-10 text-center text-on-surface-variant max-w-5xl">
             <p className="text-3xl mb-2">📋</p>
-            <p className="font-medium">Sin servicios {mostrarInactivos ? 'inactivos' : 'activos'}</p>
+            <p className="font-medium text-slate-800 text-sm">Sin servicios {mostrarInactivos ? 'inactivos' : 'activos'}</p>
           </div>
         ) : (
           Object.entries(serviciosPorUnidad).map(([unidad, lista]) => (
-            <div key={unidad} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-              <div className="px-5 py-3 border-b border-slate-100 bg-slate-50">
-                <h3 className="font-semibold text-slate-800">{unidad}</h3>
+            <div key={unidad} className="space-y-2 max-w-5xl">
+              <div className="flex items-center justify-between px-1 pt-1">
+                <h3 className="font-bold text-slate-800 text-xs tracking-wide uppercase text-slate-500">{unidad}</h3>
+                <span className="text-xxs text-slate-400 font-medium">{lista.length} servicio{lista.length === 1 ? '' : 's'}</span>
               </div>
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-xs text-slate-500 border-b border-slate-100">
-                    <th className="px-5 py-2 text-left font-semibold">Servicio</th>
-                    <th className="px-4 py-2 text-left font-semibold">Código</th>
-                    <th className="px-4 py-2 text-left font-semibold">Duración</th>
-                    <th className="px-4 py-2 text-left font-semibold">Precio ref.</th>
-                    <th className="px-4 py-2 text-left font-semibold">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {lista.map(s => (
-                    <>
-                      <tr key={s.id} className="border-b border-slate-50 hover:bg-slate-50/70">
-                        <td className="px-5 py-2.5">
+
+              <div className="space-y-2">
+                {lista.map(s => (
+                  <div
+                    key={s.id}
+                    className="bg-surface-container-lowest rounded-xl px-4 py-2.5 shadow-2xs border border-slate-200 hover:border-slate-300 transition-colors group"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
+                        <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
-                            <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: s.color }} />
-                            <span className="font-medium text-slate-800">{s.nombre}</span>
+                            <h4 className="font-semibold text-slate-800 text-[13px] truncate leading-tight">{s.nombre}</h4>
+                            {s.codigo && (
+                              <span className="font-mono text-[10px] px-1.5 py-0.2 bg-slate-100 text-slate-600 rounded">
+                                {s.codigo}
+                              </span>
+                            )}
                           </div>
-                        </td>
-                        <td className="px-4 py-2.5 font-mono text-xs text-slate-500">{s.codigo}</td>
-                        <td className="px-4 py-2.5 text-slate-600">{s.duracionMinutos} min</td>
-                        <td className="px-4 py-2.5 text-slate-600">
-                          {s.precioReferencial ? `S/ ${Number(s.precioReferencial).toFixed(2)}` : '—'}
-                        </td>
-                        <td className="px-4 py-2.5">
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => { setEditandoId(s.id); setCreando(false); }}
-                              className="text-xs px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors"
-                            >
-                              Editar
-                            </button>
-                            <button
-                              onClick={() => setSubcatDe(prev => prev === s.id ? null : s.id)}
-                              className={cn('text-xs px-2.5 py-1 rounded-lg border transition-colors',
-                                subcatDe === s.id ? 'border-violet-300 bg-violet-50 text-violet-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50')}
-                              title="Subcategorías (ej. Profilaxis → Regular/Premium/…)"
-                            >
-                              Tipos{(s.subcategorias?.length ?? 0) > 0 ? ` (${s.subcategorias!.length})` : ''}
-                            </button>
-                            <button
-                              onClick={() => toggleActivoMut.mutate({ id: s.id, activo: !s.activo })}
-                              disabled={toggleActivoMut.isPending}
-                              className={cn(
-                                'text-xs px-2.5 py-1 rounded-lg border transition-colors',
-                                s.activo
-                                  ? 'border-red-200 text-red-500 hover:bg-red-50'
-                                  : 'border-green-200 text-green-600 hover:bg-green-50'
-                              )}
-                            >
-                              {s.activo ? 'Desactivar' : 'Activar'}
-                            </button>
+                          <div className="flex items-center gap-2 mt-0.5 text-xxs text-slate-500">
+                            <span>⏱ {s.duracionMinutos} min</span>
+                            <span className="text-slate-300">•</span>
+                            <span>{s.precioReferencial ? `S/ ${Number(s.precioReferencial).toFixed(2)}` : 'Sin precio ref.'}</span>
+                            {(s.subcategorias?.length ?? 0) > 0 && (
+                              <>
+                                <span className="text-slate-300">•</span>
+                                <span className="font-medium text-violet-700 bg-violet-50 px-1.5 py-0.2 rounded-full">
+                                  {s.subcategorias!.length} subcategoría{s.subcategorias!.length === 1 ? '' : 's'}
+                                </span>
+                              </>
+                            )}
                           </div>
-                        </td>
-                      </tr>
-                      {subcatDe === s.id && (
-                        <tr key={`${s.id}-subcat`} className="bg-violet-50/40">
-                          <td colSpan={5} className="px-5 py-4">
-                            <GestionSubcategorias servicioId={s.id} servicioNombre={s.nombre} />
-                          </td>
-                        </tr>
-                      )}
-                    </>
-                  ))}
-                </tbody>
-              </table>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0 opacity-90 group-hover:opacity-100 transition-opacity ml-3">
+                        <button
+                          onClick={() => { setEditandoId(s.id); setCreando(false); }}
+                          className="px-2.5 py-1 border border-slate-200 rounded-md text-xs font-medium text-slate-600 hover:bg-slate-100 transition-colors"
+                        >
+                          Editar
+                        </button>
+                        <button
+                          onClick={() => setSubcatDe(prev => prev === s.id ? null : s.id)}
+                          className={cn('px-2.5 py-1 border rounded-md text-xs font-medium transition-colors',
+                            subcatDe === s.id ? 'border-violet-300 bg-violet-50 text-violet-700' : 'border-slate-200 text-slate-600 hover:bg-slate-100')}
+                          title="Subcategorías (ej. Profilaxis → Regular/Premium/…)"
+                        >
+                          Tipos{(s.subcategorias?.length ?? 0) > 0 ? ` (${s.subcategorias!.length})` : ''}
+                        </button>
+                        <button
+                          onClick={() => toggleActivoMut.mutate({ id: s.id, activo: !s.activo })}
+                          disabled={toggleActivoMut.isPending}
+                          className={cn(
+                            'px-2.5 py-1 rounded-md text-xs font-medium border transition-colors',
+                            s.activo
+                              ? 'border-red-200 text-red-600 hover:bg-red-50'
+                              : 'border-green-200 text-green-600 hover:bg-green-50'
+                          )}
+                        >
+                          {s.activo ? 'Desactivar' : 'Activar'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {subcatDe === s.id && (
+                      <div className="mt-2.5 pt-2.5 border-t border-slate-100 bg-violet-50/40 p-3 rounded-lg">
+                        <GestionSubcategorias servicioId={s.id} servicioNombre={s.nombre} />
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           ))
         )}

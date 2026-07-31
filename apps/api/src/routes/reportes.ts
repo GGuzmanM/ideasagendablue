@@ -321,7 +321,7 @@ router.patch('/meta/:profesionalId', requireAuth, requireGestor, async (req, res
       entidadId: prof.id,
       antes: { metaDiasMes: prof.metaDiasMes },
       despues: { metaDiasMes: body.metaDiasMes },
-      ip: req.ip,
+      ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
     });
   });
   res.json({ ok: true, metaDiasMes: body.metaDiasMes });
