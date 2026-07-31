@@ -5,6 +5,7 @@ import { requireAuth } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { fechaDb } from '../utils/fechaLima';
 import { timeToMinutes as toMin } from '@limablue/shared';
+import { registrarAudit } from '../services/audit';
 
 const router = Router();
 
@@ -118,10 +119,28 @@ router.post('/:sedeId/excepciones', requireAuth, async (req, res) => {
 
   const fecha = fechaDb(body.fecha);
 
+  // Estado previo (si ya existía la excepción esa fecha) para diffear en auditoría.
+  const antes = await prisma.excepcionHorario.findUnique({
+    where: { sedeId_fecha: { sedeId, fecha } },
+  });
+
   const exc = await prisma.excepcionHorario.upsert({
     where: { sedeId_fecha: { sedeId, fecha } },
     create: { sedeId, fecha, abierto: body.abierto, horaApertura: body.horaApertura ?? null, horaCierre: body.horaCierre ?? null, nota: body.nota ?? null, creadoPor: req.user?.userId },
     update: { abierto: body.abierto, horaApertura: body.horaApertura ?? null, horaCierre: body.horaCierre ?? null, nota: body.nota ?? null },
+  });
+
+  const resumen = (e: { abierto: boolean; horaApertura: string | null; horaCierre: string | null; nota: string | null }) => ({
+    fecha: body.fecha, abierto: e.abierto, horaApertura: e.horaApertura, horaCierre: e.horaCierre, nota: e.nota,
+  });
+  void registrarAudit({
+    usuarioId: req.user?.userId,
+    accion: antes ? 'editar' : 'crear',
+    entidad: 'excepcion_horario', entidadId: exc.id,
+    antes: antes ? resumen(antes) : undefined,
+    despues: resumen(exc),
+    sedeId,
+    ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
   });
 
   res.json({ ...exc, fecha: exc.fecha.toISOString().split('T')[0] });
@@ -131,9 +150,24 @@ router.post('/:sedeId/excepciones', requireAuth, async (req, res) => {
 router.delete('/:sedeId/excepciones/:fecha', requireAuth, async (req, res) => {
   const { sedeId, fecha } = req.params;
 
+  // Capturar la excepción antes de borrarla para dejar rastro de qué se quitó.
+  const antes = await prisma.excepcionHorario.findUnique({
+    where: { sedeId_fecha: { sedeId, fecha: fechaDb(fecha) } },
+  });
+
   await prisma.excepcionHorario.deleteMany({
     where: { sedeId, fecha: fechaDb(fecha) },
   });
+
+  if (antes) {
+    void registrarAudit({
+      usuarioId: req.user?.userId, accion: 'eliminar', entidad: 'excepcion_horario', entidadId: antes.id,
+      antes: { fecha, abierto: antes.abierto, horaApertura: antes.horaApertura, horaCierre: antes.horaCierre, nota: antes.nota },
+      despues: { eliminado: true, vuelveAlHorarioNormal: true },
+      sedeId,
+      ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
+    });
+  }
 
   res.json({ ok: true });
 });
@@ -151,9 +185,19 @@ router.patch('/:sedeId', requireAuth, async (req, res) => {
   const { sedeId } = req.params;
   const horario = horarioDefaultSchema.parse(req.body);
 
+  const antes = await prisma.sede.findUnique({ where: { id: sedeId }, select: { horario: true } });
+
   const sede = await prisma.sede.update({
     where: { id: sedeId },
     data: { horario },
+  });
+
+  void registrarAudit({
+    usuarioId: req.user?.userId, accion: 'editar', entidad: 'horario_sede', entidadId: sedeId,
+    antes: { horario: antes?.horario ?? null },
+    despues: { horario },
+    sedeId,
+    ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
   });
 
   res.json(sede);

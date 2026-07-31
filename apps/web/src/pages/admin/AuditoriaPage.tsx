@@ -12,6 +12,8 @@ import {
   parseUserAgent,
   calcularDiff,
   renderValor,
+  etiquetaEntidad,
+  formatIp,
   type AuditLog,
 } from '../../services/auditoriaService';
 
@@ -136,7 +138,7 @@ export function AuditoriaPage() {
                     </td>
                   </tr>
                 ) : (
-                  logs.map(log => <LogRow key={log.id} log={log} onVer={() => setLogSeleccionado(log)} />)
+                  logs.map(log => <LogRow key={log.id} log={log} nombresPorId={nombresPorId} onVer={() => setLogSeleccionado(log)} />)
                 )}
               </tbody>
             </table>
@@ -203,10 +205,10 @@ function KpiCard({ icon, label, value, tint, iconColor }: { icon: string; label:
   );
 }
 
-function LogRow({ log, onVer }: { log: AuditLog; onVer: () => void }) {
+function LogRow({ log, nombresPorId, onVer }: { log: AuditLog; nombresPorId: Record<string, string>; onVer: () => void }) {
   const style = estiloDeAccion(log.accion);
   const av = avatarDeUsuario(log.usuario?.nombre);
-  const res = resumenLog(log);
+  const res = resumenLog(log, nombresPorId);
   const esSistema = !log.usuarioId;
 
   return (
@@ -239,8 +241,8 @@ function LogRow({ log, onVer }: { log: AuditLog; onVer: () => void }) {
         </span>
       </td>
       <td className="px-3 py-3 whitespace-nowrap">
-        <span className="text-[11px] font-mono font-bold text-on-surface-variant bg-surface-container-low px-1.5 py-0.5 rounded">
-          {log.entidad}
+        <span className="text-[11px] font-semibold text-on-surface-variant bg-surface-container-low px-2 py-0.5 rounded-full">
+          {etiquetaEntidad(log.entidad)}
         </span>
       </td>
       <td className="px-3 py-3">
@@ -260,13 +262,19 @@ function LogRow({ log, onVer }: { log: AuditLog; onVer: () => void }) {
         )}
       </td>
       <td className="px-3 py-3 whitespace-nowrap">
-        {log.ip ? (
-          <span className="text-[10px] font-mono text-on-surface-variant bg-surface-container-low px-1.5 py-0.5 rounded">
-            {log.ip}
-          </span>
-        ) : (
-          <span className="text-[10px] font-mono text-on-surface-variant/60 italic">—</span>
-        )}
+        {(() => {
+          const ipFmt = formatIp(log.ip);
+          if (!log.ip) return <span className="text-[10px] font-mono text-on-surface-variant/60 italic">—</span>;
+          return ipFmt.esLocal ? (
+            <span className="text-[10px] font-semibold text-on-surface-variant bg-surface-container-low px-1.5 py-0.5 rounded" title={log.ip}>
+              {ipFmt.texto}
+            </span>
+          ) : (
+            <span className="text-[10px] font-mono text-on-surface-variant bg-surface-container-low px-1.5 py-0.5 rounded">
+              {ipFmt.texto}
+            </span>
+          );
+        })()}
       </td>
       <td className="px-3 py-3 text-right whitespace-nowrap">
         <button
@@ -284,7 +292,7 @@ function LogRow({ log, onVer }: { log: AuditLog; onVer: () => void }) {
 function ModalDiff({ log, nombresPorId, onClose }: { log: AuditLog; nombresPorId: Record<string, string>; onClose: () => void }) {
   const style = estiloDeAccion(log.accion);
   const diff = calcularDiff(log.antes, log.despues);
-  const res = resumenLog(log);
+  const res = resumenLog(log, nombresPorId);
   const cuando = format(new Date(log.creadoEn), "d 'de' MMMM yyyy · HH:mm:ss", { locale: es });
 
   return (
@@ -299,7 +307,7 @@ function ModalDiff({ log, nombresPorId, onClose }: { log: AuditLog; nombresPorId
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined">{style.icon}</span>
               <h2 className="text-lg font-bold tracking-tight capitalize truncate">
-                {style.label} · {log.entidad}
+                {style.label} · {etiquetaEntidad(log.entidad)}
               </h2>
             </div>
             <p className="text-sm text-white/85 mt-1">
@@ -320,7 +328,7 @@ function ModalDiff({ log, nombresPorId, onClose }: { log: AuditLog; nombresPorId
             <div className="grid grid-cols-2 gap-2">
               <MetaCell icon="person" label="Usuario" value={log.usuario?.nombre ?? 'Sistema (automático)'} italic={!log.usuarioId} />
               <MetaCell icon="location_on" label="Sede" value={log.sede?.nombre ?? '—'} />
-              <MetaCell icon="router" label="IP" value={log.ip ?? '—'} mono />
+              <MetaCell icon="router" label="IP" value={formatIp(log.ip).texto} mono={!formatIp(log.ip).esLocal} />
               <MetaCell icon="devices" label="Dispositivo" value={parseUserAgent(log.userAgent)} />
             </div>
           </section>

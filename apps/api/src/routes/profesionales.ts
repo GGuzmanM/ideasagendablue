@@ -5,7 +5,7 @@ import { requireAuth, requireRol } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { turnosDelDia } from '../services/disponibilidad';
 import { fechaDb } from '../utils/fechaLima';
-import { auditEnTx } from '../services/audit';
+import { auditEnTx, registrarAudit } from '../services/audit';
 import { setOverrideTurnoFecha, setPresenciaExcepcion, setHorarioBase, efectosCambioHorario } from '../services/horarioService';
 
 const router = Router();
@@ -284,15 +284,30 @@ router.post('/', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (
     data: { ...data, creadoPor: req.user?.userId },
     include: { unidadNegocio: { select: { id: true, nombre: true, color: true, modoReserva: true } } },
   });
+  void registrarAudit({
+    usuarioId: req.user?.userId, accion: 'crear', entidad: 'profesional', entidadId: profesional.id,
+    despues: profesional as unknown as Record<string, unknown>,
+    ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
+  });
   res.status(201).json(profesional);
 });
 
 router.patch('/:id', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (req, res) => {
   const data = profesionalSchema.partial().parse(req.body);
+  // Capturar el estado ANTES para diffear en auditoría.
+  const antes = await prisma.profesional.findUnique({
+    where: { id: req.params.id, deletedAt: null },
+  });
   const profesional = await prisma.profesional.update({
     where: { id: req.params.id, deletedAt: null },
     data,
     include: { unidadNegocio: { select: { id: true, nombre: true, color: true, modoReserva: true } } },
+  });
+  void registrarAudit({
+    usuarioId: req.user?.userId, accion: 'editar', entidad: 'profesional', entidadId: profesional.id,
+    antes: antes as unknown as Record<string, unknown>,
+    despues: profesional as unknown as Record<string, unknown>,
+    ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
   });
   res.json(profesional);
 });

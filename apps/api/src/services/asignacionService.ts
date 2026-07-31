@@ -16,6 +16,8 @@ export interface CrearMovimientoInput {
   reemplazaA?: string | null;
   notas?: string | null;
   creadoPor: string;
+  ip?: string;
+  userAgent?: string;
 }
 
 const MOTIVO_LABELS: Record<MotivoMovimiento, string> = {
@@ -239,7 +241,7 @@ export async function crearMovimientoEnTx(tx: Prisma.TransactionClient, data: Cr
     // borrado; ahora la creación de rotación también deja rastro inmutable).
     await auditEnTx(tx, {
       usuarioId: data.creadoPor,
-      accion: 'MOVIMIENTO_CREADO',
+      accion: 'crear_movimiento',
       entidad: 'asignacion_sede',
       entidadId: asignacion.id,
       antes: cierraAsignacionId
@@ -253,6 +255,8 @@ export async function crearMovimientoEnTx(tx: Prisma.TransactionClient, data: Cr
         motivo: data.motivo,
       },
       sedeId: data.sedeId,
+      ip: data.ip,
+      userAgent: data.userAgent,
     });
 
     return { asignacion, sedeAnteriorId };
@@ -349,7 +353,7 @@ export async function eliminarMovimientoEnTx(
   await tx.auditLog.create({
     data: {
       usuarioId: actor.usuarioId,
-      accion: 'MOVIMIENTO_ELIMINADO',
+      accion: 'eliminar_movimiento',
       entidad: 'asignacion_sede',
       entidadId: asignacion.id,
       antes: { profesionalId: asignacion.profesionalId, sedeId: asignacion.sedeId, fechaInicio: asignacion.fechaInicio.toISOString().slice(0, 10), fechaFin: asignacion.fechaFin?.toISOString().slice(0, 10) ?? null },

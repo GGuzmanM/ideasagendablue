@@ -4,6 +4,7 @@ import { prisma } from '../db';
 import { requireAuth } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { crearAlmuerzo } from '../services/almuerzoService';
+import { registrarAudit } from '../services/audit';
 
 const router = Router();
 
@@ -140,6 +141,18 @@ router.post('/', requireAuth, async (req, res) => {
     orderBy: { creadoEn: 'desc' },
   });
 
+  if (creado) {
+    void registrarAudit({
+      usuarioId, accion: 'crear', entidad: 'almuerzo', entidadId: creado.id,
+      despues: {
+        profesionalId: creado.profesionalId, sedeId: creado.sedeId,
+        horaInicio: creado.horaInicio, horaFin: creado.horaFin, esRecurrente: creado.esRecurrente,
+      },
+      sedeId: creado.sedeId ?? undefined,
+      ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
+    });
+  }
+
   res.status(201).json(creado);
 });
 
@@ -162,8 +175,8 @@ router.delete('/:id', requireAuth, async (req, res) => {
   await prisma.auditLog.create({
     data: {
       usuarioId: req.user?.userId,
-      accion: 'ALMUERZO_ELIMINADO',
-      entidad: 'bloqueo_agenda',
+      accion: 'eliminar',
+      entidad: 'almuerzo',
       entidadId: bloqueo.id,
       antes: {
         profesionalId: bloqueo.profesionalId,

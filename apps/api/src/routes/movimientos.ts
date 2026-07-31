@@ -231,6 +231,8 @@ router.post('/', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (
       reemplazaA: data.reemplazaA ?? null,
       notas: data.notas ?? null,
       creadoPor,
+      ip: req.ip,
+      userAgent: req.headers['user-agent'] as string | undefined,
     });
     res.status(201).json(nueva);
   } catch (err) {
@@ -289,7 +291,7 @@ router.put('/:id', requireAuth, requireRol('admin', 'coordinadora_sedes'), async
         });
         await auditEnTx(tx, {
           usuarioId: req.user?.userId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
-          accion: 'MOVIMIENTO_EDITADO',
+          accion: 'editar_movimiento',
           entidad: 'asignacion_sede',
           entidadId: creado.asignacion.id,
           antes: {
@@ -459,7 +461,7 @@ router.put('/:id', requireAuth, requireRol('admin', 'coordinadora_sedes'), async
 
     await auditEnTx(tx, {
       usuarioId: req.user?.userId,
-      accion: 'MOVIMIENTO_EDITADO',
+      accion: 'editar_movimiento',
       entidad: 'asignacion_sede',
       entidadId: existente.id,
       antes: {

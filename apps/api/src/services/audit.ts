@@ -18,6 +18,17 @@ interface AuditParams {
 // misma transacción que la acción (historial atómico: o quedan ambos, o ninguno).
 type PrismaLike = Pick<Prisma.TransactionClient, 'auditLog'>;
 
+/**
+ * Node devuelve las IPs IPv4 con prefijo IPv4-mapped IPv6 (`::ffff:192.168.0.55`)
+ * cuando el socket es dual-stack. Es la misma IP pero cuesta leerla — le sacamos
+ * el prefijo para que quede como `192.168.0.55`. `::1` (loopback puro IPv6) se
+ * deja tal cual (no es una IPv4 mapeada, sino localhost auténtico en IPv6).
+ */
+function normalizarIp(ip?: string): string | undefined {
+  if (!ip) return ip;
+  return ip.startsWith('::ffff:') ? ip.slice(7) : ip;
+}
+
 function datosAudit(params: AuditParams) {
   return {
     citaId: params.citaId,
@@ -28,7 +39,7 @@ function datosAudit(params: AuditParams) {
     antes: params.antes as never,
     despues: params.despues as never,
     sedeId: params.sedeId,
-    ip: params.ip,
+    ip: normalizarIp(params.ip),
     userAgent: params.userAgent,
   };
 }

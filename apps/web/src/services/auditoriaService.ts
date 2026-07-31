@@ -117,9 +117,42 @@ export function tiempoRelativo(iso: string, ahora: Date = new Date()): string {
   return format(new Date(iso), 'd MMM');
 }
 
-/** Resumen humano de la acción sobre la cita (una línea). */
-export function resumenLog(log: AuditLog): { titulo: string; subtitulo?: string } {
-  // Cita
+// Etiqueta legible de la ENTIDAD (columna + título del resumen).
+export const ENTIDAD_LABEL: Record<string, string> = {
+  cita: 'Cita',
+  paciente: 'Paciente',
+  profesional: 'Profesional',
+  servicio: 'Servicio',
+  paquete: 'Paquete',
+  paquete_paciente: 'Paquete del paciente',
+  sede: 'Sede',
+  usuario: 'Usuario',
+  promocion: 'Promoción',
+  canal: 'Canal',
+  subcategoria: 'Subcategoría',
+  unidad_negocio: 'Unidad de negocio',
+  asignacion_sede: 'Movimiento',
+  bloqueo_agenda: 'Bloqueo',
+  almuerzo: 'Almuerzo',
+  competencia: 'Competencia',
+  excepcion_horario: 'Excepción de horario',
+  horario_sede: 'Horario de sede',
+};
+
+/** Etiqueta amigable de la entidad ("Movimiento", "Almuerzo"…) o la cruda si no está mapeada. */
+export function etiquetaEntidad(entidad: string): string {
+  return ENTIDAD_LABEL[entidad] ?? entidad.replace(/_/g, ' ');
+}
+
+/**
+ * Resumen humano de la acción (una línea). Usa `nombresPorId` (resuelto server-side)
+ * para mostrar nombres en vez de UUIDs — incluido el entidadId principal del log.
+ */
+export function resumenLog(log: AuditLog, nombresPorId: Record<string, string> = {}): { titulo: string; subtitulo?: string } {
+  const contexto = (log.despues || log.antes || {}) as Record<string, unknown>;
+  const etiqueta = etiquetaEntidad(log.entidad);
+
+  // Cita — se muestra con datos del paciente (join server-side).
   if (log.entidad === 'cita' && log.cita) {
     const p = log.cita.paciente;
     const nombrePac = `${p.nombres} ${p.apellidoPaterno}`;
@@ -129,11 +162,70 @@ export function resumenLog(log: AuditLog): { titulo: string; subtitulo?: string 
     const subtitulo = [servicio, prof].filter(Boolean).join(' · ');
     return { titulo: `Cita de ${nombrePac} · ${hora}`, subtitulo };
   }
-  // Otros — recurro al despues/antes si trae "nombre"
-  const contexto = (log.despues || log.antes || {}) as Record<string, unknown>;
-  const nombre = (contexto.nombre as string) || (contexto.titulo as string) || null;
-  if (nombre) return { titulo: `${log.entidad} · ${nombre}` };
-  return { titulo: `${log.entidad} · ${log.entidadId.slice(0, 8)}…` };
+
+  // Almuerzo / bloqueo — resuelve la profesional del payload y muestra la hora.
+  if (log.entidad === 'almuerzo' || log.entidad === 'bloqueo_agenda') {
+    const profId = contexto.profesionalId as string | undefined;
+    const profNombre = profId ? nombresPorId[profId] : undefined;
+    const hora = contexto.horaInicio as string | undefined;
+    return {
+      titulo: profNombre ? `${etiqueta} de ${profNombre}` : etiqueta,
+      subtitulo: hora ? `${hora}${contexto.horaFin ? ` – ${contexto.horaFin}` : ''}` : undefined,
+    };
+  }
+
+  // Excepción de horario — sede + fecha + estado (abierto/cerrado).
+  if (log.entidad === 'excepcion_horario') {
+    const sedeNombre = log.sede?.nombre;
+    const fecha = contexto.fecha as string | undefined;
+    const abierto = contexto.abierto as boolean | undefined;
+    const estado = abierto === false ? 'Cerrado' : abierto === true ? `${contexto.horaApertura ?? ''}–${contexto.horaCierre ?? ''}` : '';
+    return {
+      titulo: sedeNombre ? `Excepción · ${sedeNombre}` : 'Excepción de horario',
+      subtitulo: [fecha, estado, contexto.nota as string | undefined].filter(Boolean).join(' · ') || undefined,
+    };
+  }
+
+  // Cambio del horario base de la sede.
+  if (log.entidad === 'horario_sede') {
+    const sedeNombre = nombresPorId[log.entidadId] || log.sede?.nombre;
+    return { titulo: sedeNombre ? `Horario · ${sedeNombre}` : 'Horario de sede', subtitulo: 'Horario semanal actualizado' };
+  }
+
+  // Movimiento (asignacion_sede) — profesional + sede destino.
+  if (log.entidad === 'asignacion_sede') {
+    const profId = contexto.profesionalId as string | undefined;
+    const sedeId = contexto.sedeId as string | undefined;
+    const profNombre = profId ? nombresPorId[profId] : undefined;
+    const sedeNombre = sedeId ? nombresPorId[sedeId] : undefined;
+    return {
+      titulo: profNombre ? `Movimiento de ${profNombre}` : 'Movimiento',
+      subtitulo: sedeNombre ? `→ ${sedeNombre}` : (contexto.motivo as string | undefined),
+    };
+  }
+
+  // Resto (profesional/servicio/paquete/sede/etc): usa el nombre del entidadId.
+  const nombreEntidad =
+    nombresPorId[log.entidadId] ||
+    (contexto.nombre as string) ||
+    (contexto.titulo as string) ||
+    null;
+  if (nombreEntidad) return { titulo: `${etiqueta} · ${nombreEntidad}` };
+  return { titulo: `${etiqueta} · ${log.entidadId.slice(0, 8)}…` };
+}
+
+/**
+ * Formatea la IP para mostrar. Las loopback (`::1`, `127.0.0.1`, IPv4-mapped)
+ * significan "la petición vino desde la propia máquina servidor" → se muestran
+ * como "Servidor local" para que no se confundan con una IP real de la LAN.
+ */
+export function formatIp(ip?: string | null): { texto: string; esLocal: boolean } {
+  if (!ip) return { texto: '—', esLocal: false };
+  const limpia = ip.replace(/^::ffff:/, '');
+  if (limpia === '::1' || limpia === '127.0.0.1' || ip === '::1') {
+    return { texto: 'Servidor local', esLocal: true };
+  }
+  return { texto: limpia, esLocal: false };
 }
 
 /** Parsea el userAgent en algo legible (Chrome 141 · macOS). */

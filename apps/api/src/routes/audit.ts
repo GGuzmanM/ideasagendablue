@@ -120,15 +120,37 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * plano { uuid → "Nombre legible" } que el frontend consume para reemplazar
  * los códigos por sus etiquetas en el diff.
  */
-async function resolverNombres(logs: { antes: unknown; despues: unknown }[]): Promise<Record<string, string>> {
+// Mapa ENTIDAD (columna del log) → TABLA, para resolver el entidadId principal.
+const ENTIDAD_A_TIPO: Record<string, TipoEntidad> = {
+  sede: 'sede',
+  horario_sede: 'sede', // el entidadId de un cambio de horario ES el sedeId
+  paciente: 'paciente',
+  profesional: 'profesional',
+  servicio: 'servicio',
+  usuario: 'usuario',
+  promocion: 'promocion',
+  paquete: 'paquete',
+  canal: 'canal',
+  subcategoria: 'subcategoria',
+  unidad_negocio: 'unidadNegocio',
+};
+
+async function resolverNombres(logs: { entidad: string; entidadId: string; antes: unknown; despues: unknown }[]): Promise<Record<string, string>> {
   const idsPorTipo: Record<string, Set<string>> = {};
+
+  const agregar = (tipo: TipoEntidad | undefined, valor: unknown) => {
+    if (!tipo || typeof valor !== 'string' || !UUID_RE.test(valor)) return;
+    (idsPorTipo[tipo] ??= new Set()).add(valor);
+  };
+
   for (const log of logs) {
+    // 1) El entidadId principal, según el tipo de entidad del log.
+    agregar(ENTIDAD_A_TIPO[log.entidad], log.entidadId);
+    // 2) Todos los *Id dentro de antes/despues.
     for (const obj of [log.antes, log.despues]) {
       if (!obj || typeof obj !== 'object') continue;
       for (const [campo, valor] of Object.entries(obj as Record<string, unknown>)) {
-        const tipo = CAMPO_A_MODELO[campo];
-        if (!tipo || typeof valor !== 'string' || !UUID_RE.test(valor)) continue;
-        (idsPorTipo[tipo] ??= new Set()).add(valor);
+        agregar(CAMPO_A_MODELO[campo], valor);
       }
     }
   }

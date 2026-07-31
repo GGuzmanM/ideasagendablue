@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../db';
 import { requireAuth, requireRol } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
-import { auditEnTx } from '../services/audit';
+import { auditEnTx, registrarAudit } from '../services/audit';
 
 const router = Router();
 
@@ -80,14 +80,29 @@ router.post('/', requireAuth, requireRol('admin'), async (req, res) => {
   // El código se asigna automáticamente para mantener el formato consistente por unidad.
   const codigo = await generarCodigo(data.unidadNegocioId);
   const servicio = await prisma.servicio.create({ data: { ...data, codigo, precioReferencial: data.precioReferencial as never, creadoPor: req.user?.userId } });
+  void registrarAudit({
+    usuarioId: req.user?.userId, accion: 'crear', entidad: 'servicio', entidadId: servicio.id,
+    despues: servicio as unknown as Record<string, unknown>,
+    ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
+  });
   res.status(201).json(servicio);
 });
 
 router.patch('/:id', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (req, res) => {
   const data = servicioSchema.partial().parse(req.body);
+  // Capturar el estado ANTES para poder diffear en auditoría.
+  const antes = await prisma.servicio.findUnique({
+    where: { id: req.params.id, deletedAt: null },
+  });
   const servicio = await prisma.servicio.update({
     where: { id: req.params.id, deletedAt: null },
     data: { ...data, precioReferencial: data.precioReferencial as never },
+  });
+  void registrarAudit({
+    usuarioId: req.user?.userId, accion: 'editar', entidad: 'servicio', entidadId: servicio.id,
+    antes: antes as unknown as Record<string, unknown>,
+    despues: servicio as unknown as Record<string, unknown>,
+    ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
   });
   res.json(servicio);
 });

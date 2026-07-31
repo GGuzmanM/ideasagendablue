@@ -4,6 +4,7 @@ import { prisma } from '../db';
 import { requireAuth, requireRol } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { recalcularPaquete } from '../services/consumoService';
+import { registrarAudit } from '../services/audit';
 
 const router = Router();
 
@@ -209,6 +210,11 @@ router.post('/', requireAuth, requireRol('admin'), async (req, res) => {
     data: { ...data, precio: data.precio as never, creadoPor: req.user?.userId },
     include: { servicio: { select: { id: true, nombre: true, color: true } } },
   });
+  void registrarAudit({
+    usuarioId: req.user?.userId, accion: 'crear', entidad: 'paquete', entidadId: paquete.id,
+    despues: paquete as unknown as Record<string, unknown>,
+    ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
+  });
   res.status(201).json(paquete);
 });
 
@@ -222,6 +228,12 @@ router.patch('/:id', requireAuth, requireRol('admin'), async (req, res) => {
     data: { ...data, precio: data.precio as never },
     include: { servicio: { select: { id: true, nombre: true, color: true } } },
   });
+  void registrarAudit({
+    usuarioId: req.user?.userId, accion: 'editar', entidad: 'paquete', entidadId: updated.id,
+    antes: paquete as unknown as Record<string, unknown>,
+    despues: updated as unknown as Record<string, unknown>,
+    ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
+  });
   res.json(updated);
 });
 
@@ -232,6 +244,12 @@ router.delete('/:id', requireAuth, requireRol('admin'), async (req, res) => {
   await prisma.paquete.update({
     where: { id: req.params.id },
     data: { deletedAt: new Date() },
+  });
+  void registrarAudit({
+    usuarioId: req.user?.userId, accion: 'eliminar', entidad: 'paquete', entidadId: paquete.id,
+    antes: paquete as unknown as Record<string, unknown>,
+    despues: { deletedAt: new Date().toISOString() },
+    ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
   });
   res.json({ ok: true });
 });
