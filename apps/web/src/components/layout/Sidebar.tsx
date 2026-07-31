@@ -33,9 +33,9 @@ export function Sidebar() {
 
       {/* Nav */}
       {items.map(item => {
-        const active = item.to === '/'
-          ? location.pathname === '/'
-          : location.pathname === item.to || (item.to !== '/admin' && location.pathname.startsWith(item.to));
+        const isExactOrSub = location.pathname === item.to || (item.to !== '/' && location.pathname.startsWith(item.to + '/'));
+        const hasMoreSpecificMatch = items.some(other => other.to !== item.to && other.to.length > item.to.length && (location.pathname === other.to || location.pathname.startsWith(other.to + '/')));
+        const active = isExactOrSub && !hasMoreSpecificMatch;
         return (
           <Link
             key={item.to}

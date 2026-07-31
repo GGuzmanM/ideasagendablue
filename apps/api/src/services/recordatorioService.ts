@@ -48,12 +48,16 @@ export async function programarRecordatoriosDeCita(citaId: string): Promise<void
     }
 
     // ── Correo 2: recordatorio (programado para 2 h antes de la cita) ──
+    // Si el momento óptimo (2h antes) ya pasó porque la cita se creó con poca
+    // anticipación, igual programamos el correo para un delay corto (2 min) tras
+    // la creación. El paciente PREFIERE recibir el correo con botones de confirmar/
+    // reprogramar aunque llegue pegado al de reserva; antes se omitía sin enviar
+    // nada y quedaba huérfano.
     const ahora = new Date();
-    const programadoPara = calcularProgramadoPara(cita.fecha, cita.horaInicio, ahora);
-    // Si ese momento ya pasó (cita reservada con muy poca anticipación o ya pasada), NO
-    // enviar el Correo 2: llegaría PEGADO al Correo 1 de reserva. El recordatorio solo
-    // tiene sentido si cae en un instante FUTURO, separado de la confirmación de reserva.
-    if (programadoPara.getTime() <= ahora.getTime() + 60_000) return;
+    let programadoPara = calcularProgramadoPara(cita.fecha, cita.horaInicio, ahora);
+    if (programadoPara.getTime() <= ahora.getTime() + 60_000) {
+      programadoPara = new Date(ahora.getTime() + 2 * 60_000);
+    }
 
     const recExistente = await prisma.recordatorioCita.findFirst({
       where: { citaId, tipo: 'RECORDATORIO', deletedAt: null, estado: { not: 'CANCELADO' } },

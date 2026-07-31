@@ -43,7 +43,7 @@ export interface CitaAgenda {
   servicioNombre?: string;
   subcategoriaNombre?: string;
   etiquetaAsignacion?: string;
-  estado: 'AGENDADA' | 'CONFIRMADA' | 'LLEGÓ' | 'EN ATENCIÓN' | 'COMPLETADA' | 'NO SHOW';
+  estado: 'AGENDADA' | 'CONFIRMADA' | 'LLEGÓ' | 'EN ATENCIÓN' | 'COMPLETADA' | 'NO SHOW' | 'CANCELADA';
   raw?: any;
   esCombinada?: boolean;
   extraServicioNombre?: string;
@@ -153,6 +153,7 @@ export function mapearCitasDbACitaAgenda(citasDb: any[] = []): CitaAgenda[] {
     else if (st === 'confirmada') estadoNormalizado = 'CONFIRMADA';
     else if (st === 'completada') estadoNormalizado = 'COMPLETADA';
     else if (st === 'no_show' || st === 'no show') estadoNormalizado = 'NO SHOW';
+    else if (st === 'cancelada') estadoNormalizado = 'CANCELADA';
 
     let etiquetaAsignacion = '';
     if (c.origenAsignacion === 'elegida_por_paciente' || c.solicitadoProfesional) {
@@ -238,11 +239,13 @@ export function mapearCitasDbACitaAgenda(citasDb: any[] = []): CitaAgenda[] {
     result.push(item);
   });
 
-  // NO SHOW visible salvo que otra cita ACTIVA del mismo profesional se solape
-  // en tiempo con ella. Se usa el estado real de DB (`raw.estado`) para no
-  // depender del mapping visual; cancelada/reprogramada/no_show NO son activas.
-  const inactivos = new Set(['cancelada', 'reprogramada', 'no_show']);
-  const esActivaEnDb = (c: CitaAgenda) => !inactivos.has(String(c.raw?.estado || '').toLowerCase());
+  // NO SHOW y CANCELADA visibles salvo que otra cita ACTIVA del mismo profesional
+  // se solape en tiempo con ellas. En ese caso el slot lo ocupa la cita activa y
+  // se oculta la inactiva para no pisar visualmente. Se usa el estado real de DB
+  // (`raw.estado`) para no depender del mapping visual.
+  const noActivos = new Set(['cancelada', 'reprogramada', 'no_show']);
+  const esActivaEnDb = (c: CitaAgenda) => !noActivos.has(String(c.raw?.estado || '').toLowerCase());
+  const estadoDb = (c: CitaAgenda) => String(c.raw?.estado || '').toLowerCase();
   const toMin = (t: string) => {
     const [h, m] = t.split(':').map(Number);
     return (h || 0) * 60 + (m || 0);
@@ -257,7 +260,8 @@ export function mapearCitasDbACitaAgenda(citasDb: any[] = []): CitaAgenda[] {
     rangosActivosPorDoctor.set(c.doctorId, arr);
   });
   return result.filter((c) => {
-    if (String(c.raw?.estado || '').toLowerCase() !== 'no_show') return true;
+    const est = estadoDb(c);
+    if (est !== 'no_show' && est !== 'cancelada') return true;
     const ini = toMin(c.horaInicio);
     const fin = ini + (c.duracionMinutos || 30);
     const activas = rangosActivosPorDoctor.get(c.doctorId) || [];

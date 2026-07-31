@@ -184,7 +184,7 @@ export function UsersPage() {
 
       {/* Modal crear/editar */}
       {modal.open && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
           <div className="bg-[#111e35] rounded-2xl shadow-2xl w-full max-w-md border border-white/10">
             <div className="bg-[#003366] px-6 py-4 rounded-t-2xl">
               <h2 className="text-white font-semibold">{modal.editing ? 'Editar usuario' : 'Nuevo usuario'}</h2>

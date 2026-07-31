@@ -822,13 +822,27 @@ export function Idea1AgendaPage() {
                             const heightPx = Math.max((duracion / 60) * ROW_HEIGHT - 4, 40);
                             const isCompact = heightPx < 60;
                             const isMicro = heightPx < 42;
-                            const esDraggable = cita.estado !== 'COMPLETADA' && cita.estado !== 'NO SHOW';
+                            const esDraggable =
+                              cita.estado !== 'COMPLETADA' &&
+                              cita.estado !== 'NO SHOW' &&
+                              cita.estado !== 'CANCELADA';
+
+                            const esCancelada = cita.estado === 'CANCELADA';
+                            // Patrón inline: rayas diagonales rojas sobre fondo cremita —
+                            // se diferencia a un vistazo de cualquier otro estado.
+                            const canceladaBgStyle = esCancelada
+                              ? {
+                                  backgroundColor: '#fff5f5',
+                                  backgroundImage:
+                                    'repeating-linear-gradient(135deg, rgba(220, 38, 38, 0.14) 0, rgba(220, 38, 38, 0.14) 6px, transparent 6px, transparent 14px)',
+                                }
+                              : {};
 
                             return (
                               <div
                                 key={cita.id}
                                 draggable={esDraggable}
-                                onClick={() => setCitaSeleccionada(cita.raw)}
+                                onClick={() => { if (!esCancelada) setCitaSeleccionada(cita.raw); }}
                                 onDragStart={(e) => {
                                   if (!esDraggable) return;
                                   const payload = {
@@ -845,16 +859,25 @@ export function Idea1AgendaPage() {
                                   e.dataTransfer.effectAllowed = 'move';
                                 }}
                                 onDragEnd={() => setDragOverSlot(null)}
-                                title={esDraggable ? 'Arrastra para mover esta cita a otro médico u horario' : undefined}
+                                title={
+                                  esDraggable
+                                    ? 'Arrastra para mover esta cita a otro médico u horario'
+                                    : esCancelada
+                                    ? 'Cita cancelada · pasá el mouse para ver acciones'
+                                    : undefined
+                                }
                                 style={{
                                   position: 'absolute',
                                   top: `${topPx}px`,
                                   height: `${heightPx}px`,
                                   left: '3px',
                                   right: '3px',
+                                  ...canceladaBgStyle,
                                 }}
-                                className={`appointment-card pointer-events-auto rounded-xl p-2 flex flex-col justify-between transition-all hover:scale-[1.01] hover:shadow-lg border overflow-hidden ${
-                                  esDraggable ? 'cursor-grab active:cursor-grabbing hover:border-primary/50' : 'cursor-pointer'
+                                className={`group appointment-card pointer-events-auto rounded-xl p-2 flex flex-col justify-between transition-all border overflow-hidden relative ${
+                                  esCancelada ? 'is-cancelada' : 'hover:scale-[1.01] hover:shadow-lg'
+                                } ${
+                                  esDraggable ? 'cursor-grab active:cursor-grabbing hover:border-primary/50' : esCancelada ? 'cursor-default' : 'cursor-pointer'
                                 } ${
                                   cita.estado === 'EN ATENCIÓN'
                                     ? 'bg-tertiary-fixed/30 border-tertiary-container/30 text-on-surface'
@@ -866,6 +889,8 @@ export function Idea1AgendaPage() {
                                     ? 'bg-surface-container-high/60 border-outline-variant/40 text-on-surface-variant opacity-75'
                                     : cita.estado === 'NO SHOW'
                                     ? 'bg-error-container/70 border-error/60 text-on-surface opacity-90'
+                                  : esCancelada
+                                    ? 'border-dashed border-2 border-red-400/60 text-red-900/80 line-through'
                                     : 'bg-surface-container-lowest border-outline-variant/30 text-on-surface shadow-sm'
                                 }`}
                               >
@@ -882,9 +907,47 @@ export function Idea1AgendaPage() {
                                       ? 'bg-outline'
                                       : cita.estado === 'NO SHOW'
                                       ? 'bg-error'
+                                      : cita.estado === 'CANCELADA'
+                                      ? 'bg-red-500'
                                       : 'bg-primary'
                                   }`}
                                 />
+
+                                {/* Overlay de acciones para citas CANCELADAS: al pasar el mouse
+                                    aparecen 2 botones compactos centrados en la card — ver la
+                                    cita cancelada o agendar una nueva en el slot liberado. */}
+                                {esCancelada && (
+                                  <div
+                                    className="absolute inset-0 rounded-xl bg-surface-container-lowest/70 backdrop-blur-[2px] opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 z-30"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setCitaSeleccionada(cita.raw);
+                                      }}
+                                      title="Ver detalle de la cita cancelada"
+                                      className="w-8 h-8 grid place-items-center rounded-full bg-surface-container-lowest border border-outline-variant text-on-surface-variant hover:text-on-surface hover:border-outline shadow-sm hover:shadow-md transition-all"
+                                    >
+                                      <span className="material-symbols-outlined text-[18px]">visibility</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleAbrirNuevaCita({
+                                          horaInicio: cita.horaInicio,
+                                          profesionalId: doc.id,
+                                        });
+                                      }}
+                                      title="Agendar una nueva cita en este slot"
+                                      className="w-8 h-8 grid place-items-center rounded-full bg-primary text-white shadow-md shadow-primary/30 hover:shadow-lg hover:opacity-90 transition-all"
+                                    >
+                                      <span className="material-symbols-outlined text-[18px]">add_circle</span>
+                                    </button>
+                                  </div>
+                                )}
 
                                 <div className="pl-1.5 flex flex-col gap-0.5 min-w-0">
                                   <div className="flex justify-between items-center gap-1">
@@ -910,6 +973,8 @@ export function Idea1AgendaPage() {
                                             ? 'bg-surface-variant text-on-surface-variant'
                                             : cita.estado === 'NO SHOW'
                                             ? 'bg-error-container text-on-error-container'
+                                            : cita.estado === 'CANCELADA'
+                                            ? 'bg-surface-container-high text-on-surface-variant'
                                             : 'bg-secondary-container text-on-secondary-container'
                                         }`}
                                       >
@@ -923,6 +988,8 @@ export function Idea1AgendaPage() {
                                               ? 'bg-primary-container'
                                               : cita.estado === 'NO SHOW'
                                               ? 'bg-error'
+                                              : cita.estado === 'CANCELADA'
+                                              ? 'bg-outline'
                                               : 'bg-secondary-fixed-dim'
                                           }`}
                                         />

@@ -15,6 +15,11 @@ import { HerramientasPage } from './pages/HerramientasPage';
 import { MovimientosPage } from './pages/MovimientosPage';
 import { UsersPage } from './pages/admin/UsersPage';
 import { RolesPage } from './pages/admin/RolesPage';
+import { CompetenciasPage } from './pages/admin/CompetenciasPage';
+import { PaquetesPage } from './pages/admin/PaquetesPage';
+import { PodologasPage } from './pages/admin/PodologasPage';
+import { ServiciosPage } from './pages/admin/ServiciosPage';
+import { AuditoriaPage } from './pages/admin/AuditoriaPage';
 import { NotificacionesAdminPage } from './pages/NotificacionesAdminPage';
 import { AlmuerzosPage } from './pages/herramientas/AlmuerzosPage';
 import { ConfirmacionMailPage } from './pages/herramientas/ConfirmacionMailPage';
@@ -78,6 +83,11 @@ export default function App() {
         <Route path="/herramientas/horarios-personal" element={<Navigate to="/herramientas/horarios?tab=semana" replace />} />
         <Route path="/movimientos" element={<MovimientosPage />} />
         <Route path="/admin" element={<AdminPage />} />
+        <Route path="/admin/competencias" element={<CompetenciasPage />} />
+        <Route path="/admin/paquetes" element={<PaquetesPage />} />
+        <Route path="/admin/podologas" element={<PodologasPage />} />
+        <Route path="/admin/servicios" element={<ServiciosPage />} />
+        <Route path="/admin/auditoria" element={<AuditoriaPage />} />
         <Route path="/admin/usuarios" element={<UsersPage />} />
         <Route path="/admin/roles" element={<RolesPage />} />
         <Route path="/admin/notificaciones" element={<NotificacionesAdminPage />} />

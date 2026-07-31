@@ -38,7 +38,7 @@ export function Idea1Sidebar() {
     : idea1NavItems;
 
   return (
-    <aside className="h-full sticky top-0 left-0 w-sidebar-expanded bg-[#0e4f9f] border-r border-outline-variant/20 flex flex-col py-6 px-4 z-50 shrink-0 select-none">
+    <aside className="h-full sticky top-0 left-0 w-sidebar-expanded bg-[#0e4f9f] border-r border-outline-variant/20 flex flex-col py-6 px-4 z-30 shrink-0 select-none">
       {/* Header / Logo */}
       <div className="mb-6 px-3">
         <Link to="/idea1" className="flex items-center gap-3 group">
@@ -59,9 +59,9 @@ export function Idea1Sidebar() {
       {/* Navigation items */}
       <nav className="idea1-sidebar-nav flex-1 space-y-1 overflow-y-auto custom-scrollbar pr-1">
         {items.map((item) => {
-          const isActive = item.to === '/idea1' || item.to === '/'
-            ? (location.pathname === '/idea1' || location.pathname === '/')
-            : (location.pathname === item.to || (item.to !== '/admin' && location.pathname.startsWith(item.to)));
+          const isExactOrSub = location.pathname === item.to || (item.to !== '/' && item.to !== '/idea1' && location.pathname.startsWith(item.to + '/'));
+          const hasMoreSpecificMatch = items.some(other => other.to !== item.to && other.to.length > item.to.length && (location.pathname === other.to || location.pathname.startsWith(other.to + '/')));
+          const isActive = isExactOrSub && !hasMoreSpecificMatch;
 
           return (
             <Link
