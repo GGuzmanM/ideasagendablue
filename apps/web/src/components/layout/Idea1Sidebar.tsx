@@ -12,6 +12,7 @@ export interface NavItem {
 export const idea1NavItems: NavItem[] = [
   { to: '/idea1', label: 'Agenda', icon: 'calendar_today', permiso: 'agenda.ver' },
   { to: '/pacientes', label: 'Pacientes', icon: 'groups', permiso: 'pacientes.ver' },
+  { to: '/horarios', label: 'Horarios y Restricciones', icon: 'schedule', permiso: ['agenda.ver', 'horarios.ver', 'sedes.editar', 'admin.ver'] },
   { to: '/herramientas', label: 'Herramientas', icon: 'home_repair_service', permiso: ['herramientas.operativas', 'herramientas.estrategicas'] },
   { to: '/movimientos', label: 'Movimientos', icon: 'sync_alt', permiso: 'movimientos.ver' },
   { to: '/admin', label: 'Administración', icon: 'admin_panel_settings', permiso: 'admin.ver' },
@@ -89,20 +90,8 @@ export function Idea1Sidebar() {
         })}
       </nav>
 
-      {/* Footer / Shortcuts & User profile */}
-      <div className="mt-auto pt-4 border-t border-white/10 space-y-3 shrink-0">
-        <button
-          type="button"
-          title="Atajos de teclado (?)"
-          onClick={() => {
-            const ev = new KeyboardEvent('keydown', { key: '?', bubbles: true });
-            document.dispatchEvent(ev);
-          }}
-          className="w-full flex items-center gap-3 py-2 px-3 text-[13px] text-blue-100/70 hover:text-white hover:bg-white/10 rounded-xl transition-all duration-200"
-        >
-          <span className="material-symbols-outlined text-lg">help</span>
-          <span className="font-medium">Atajos (?)</span>
-        </button>
+      {/* Footer / User profile */}
+      <div className="mt-auto pt-4 border-t border-white/10 shrink-0">
 
         <div className="p-3 bg-white/10 rounded-2xl flex items-center justify-between gap-2 border border-white/15 shadow-sm">
           <div className="flex items-center gap-2.5 overflow-hidden">

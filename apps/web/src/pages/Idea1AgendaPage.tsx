@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { format, subDays, addDays } from 'date-fns';
 import { Idea1Sidebar } from '../components/layout/Idea1Sidebar';
 import { Idea1NuevaCitaModal } from '../components/agenda/Idea1NuevaCitaModal';
@@ -14,6 +15,7 @@ import {
 } from '../services/idea1AgendaService';
 
 export function Idea1AgendaPage() {
+  const navigate = useNavigate();
   const {
     // Store
     sedeId,
@@ -223,30 +225,32 @@ export function Idea1AgendaPage() {
         </header>
 
         {/* AGENDA CONTENT */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-8 space-y-8">
-          {/* HEADER & METRICS */}
-          <section className="flex flex-col lg:flex-row gap-grid-gutter items-start">
-            <div className="flex-1">
-              <div className="flex items-center gap-3">
-                <h2 className="font-headline-md text-headline-md font-bold text-on-surface">
-                  Horario Diario
-                </h2>
-                <span className="px-3 py-1 font-label-caps text-label-caps rounded-full bg-primary/10 text-primary border border-primary/20">
-                  {activeSedeName} • {activeUnidadName}
-                </span>
-              </div>
-              <div className="flex flex-wrap items-center gap-4 mt-4">
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-4">
+          {/* HEADER & CONTROLS */}
+          <section className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex flex-wrap items-center gap-3">
+                {/* Title & Badge */}
+                <div className="flex items-center gap-3">
+                  <h2 className="font-headline-md text-headline-md font-bold text-on-surface">
+                    Horario Diario
+                  </h2>
+                  <span className="px-3 py-1 font-label-caps text-label-caps rounded-full bg-primary/10 text-primary border border-primary/20">
+                    {activeSedeName} • {activeUnidadName}
+                  </span>
+                </div>
+
                 {/* Selector de fecha con flechas e input date */}
                 <div className="flex items-center bg-surface-container-lowest border border-outline-variant/50 rounded-xl p-1 shadow-sm gap-2">
                   <button
                     onClick={() => setFecha(subDays(fecha, 1))}
-                    className="p-2 hover:bg-surface-container rounded-lg transition-colors"
+                    className="p-1.5 hover:bg-surface-container rounded-lg transition-colors"
                     title="Día anterior"
                   >
-                    <span className="material-symbols-outlined">chevron_left</span>
+                    <span className="material-symbols-outlined text-base">chevron_left</span>
                   </button>
 
-                  <div className="flex items-center gap-2 px-2">
+                  <div className="flex items-center gap-2 px-1.5">
                     <span className="font-body-lg text-body-lg font-bold text-on-surface">
                       {formatearFechaAgenda(fecha)}
                     </span>
@@ -258,16 +262,16 @@ export function Idea1AgendaPage() {
                           setFecha(new Date(e.target.value + 'T12:00:00'));
                         }
                       }}
-                      className="bg-surface-container border border-outline-variant/40 rounded-lg px-2 py-1 text-xs font-mono text-on-surface cursor-pointer focus:ring-2 focus:ring-primary/20 outline-none"
+                      className="bg-surface-container border border-outline-variant/40 rounded-lg px-2 py-0.5 text-xs font-mono text-on-surface cursor-pointer focus:ring-2 focus:ring-primary/20 outline-none"
                     />
                   </div>
 
                   <button
                     onClick={() => setFecha(addDays(fecha, 1))}
-                    className="p-2 hover:bg-surface-container rounded-lg transition-colors"
+                    className="p-1.5 hover:bg-surface-container rounded-lg transition-colors"
                     title="Día siguiente"
                   >
-                    <span className="material-symbols-outlined">chevron_right</span>
+                    <span className="material-symbols-outlined text-base">chevron_right</span>
                   </button>
                 </div>
 
@@ -279,7 +283,7 @@ export function Idea1AgendaPage() {
                       <button
                         key={sc.label}
                         onClick={() => setFecha(sc.date)}
-                        className={`px-4 py-2 rounded-lg font-body-md font-semibold text-sm transition-all ${
+                        className={`px-3.5 py-1.5 rounded-lg font-body-md font-semibold text-sm transition-all ${
                           isActive
                             ? 'bg-primary text-white shadow-md shadow-primary/20'
                             : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
@@ -294,8 +298,8 @@ export function Idea1AgendaPage() {
                 {/* Horario efectivo de la sede — clic para ver y gestionar horarios */}
                 {sedeId && horarioEfectivo && (
                   <button
-                    onClick={() => setModalHorarioOpen(true)}
-                    className="group flex items-center gap-2 bg-surface-container-lowest border border-outline-variant/50 rounded-xl px-3 py-2 shadow-sm hover:bg-surface-container transition-colors"
+                    onClick={() => navigate('/horarios')}
+                    className="group flex items-center gap-2 bg-surface-container-lowest border border-outline-variant/50 rounded-xl px-3 py-1.5 shadow-sm hover:bg-surface-container transition-colors"
                     title="Ver y gestionar horarios de la sede"
                   >
                     {horarioEfectivo.abierto ? (
@@ -324,7 +328,7 @@ export function Idea1AgendaPage() {
               </div>
 
               {/* Leyenda de Estados de Citas */}
-              <div className="flex flex-wrap items-center gap-5 mt-3 pt-3 border-t border-outline-variant/20">
+              <div className="flex flex-wrap items-center gap-4">
                 <div className="flex items-center gap-1.5">
                   <span className="w-2.5 h-2.5 rounded-full bg-secondary-fixed-dim shrink-0"></span>
                   <span className="font-label-caps text-[11px] font-semibold text-on-surface-variant">
@@ -357,66 +361,10 @@ export function Idea1AgendaPage() {
                 </div>
               </div>
             </div>
-
-            {/* KPI PANEL */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full lg:w-auto">
-              <div className="bg-surface-container-lowest p-4 rounded-2xl border border-outline-variant/30 shadow-sm min-w-[140px]">
-                <p className="font-label-caps text-label-caps text-on-surface-variant mb-1">
-                  Total
-                </p>
-                <div className="flex items-end justify-between">
-                  <span className="font-headline-md text-headline-md font-bold">
-                    {totalCitas}
-                  </span>
-                  <span className="text-[10px] font-mono-label text-on-surface-variant bg-surface-container p-1 rounded">
-                    100%
-                  </span>
-                </div>
-              </div>
-              <div className="bg-surface-container-lowest p-4 rounded-2xl border border-outline-variant/30 shadow-sm min-w-[140px]">
-                <p className="font-label-caps text-label-caps text-on-surface-variant mb-1">
-                  Llegadas
-                </p>
-                <div className="flex items-end justify-between">
-                  <span className="font-headline-md text-headline-md font-bold">
-                    {llegadasCitas}
-                  </span>
-                  <span className="text-[10px] font-mono-label text-primary bg-primary/10 p-1 rounded">
-                    {totalCitas > 0 ? Math.round((llegadasCitas / totalCitas) * 100) : 0}%
-                  </span>
-                </div>
-              </div>
-              <div className="bg-surface-container-lowest p-4 rounded-2xl border border-outline-variant/30 shadow-sm min-w-[140px]">
-                <p className="font-label-caps text-label-caps text-on-surface-variant mb-1">
-                  Completadas
-                </p>
-                <div className="flex items-end justify-between">
-                  <span className="font-headline-md text-headline-md font-bold">
-                    {completadasCitas}
-                  </span>
-                  <span className="text-[10px] font-mono-label text-on-tertiary-fixed-variant bg-tertiary-fixed p-1 rounded">
-                    {totalCitas > 0 ? Math.round((completadasCitas / totalCitas) * 100) : 0}%
-                  </span>
-                </div>
-              </div>
-              <div className="bg-surface-container-lowest p-4 rounded-2xl border border-outline-variant/30 shadow-sm min-w-[140px]">
-                <p className="font-label-caps text-label-caps text-on-surface-variant mb-1">
-                  No Show
-                </p>
-                <div className="flex items-end justify-between">
-                  <span className="font-headline-md text-headline-md font-bold">
-                    {noShowCitas}
-                  </span>
-                  <span className="text-[10px] font-mono-label text-error bg-error-container p-1 rounded">
-                    {totalCitas > 0 ? Math.round((noShowCitas / totalCitas) * 100) : 0}%
-                  </span>
-                </div>
-              </div>
-            </div>
           </section>
 
           {/* CALENDAR GRID CONTAINER */}
-          <div className="bg-surface-container-lowest rounded-3xl border border-outline-variant/40 shadow-sm flex flex-col h-[750px] w-full overflow-hidden">
+          <div className="bg-surface-container-lowest rounded-3xl border border-outline-variant/40 shadow-sm flex flex-col h-[calc(100vh-145px)] min-h-[650px] w-full overflow-hidden">
             {/* BARRA DE SCROLL HORIZONTAL SUPERIOR SINCRONIZADA */}
             {hasHorizontalScroll && (
               <div className="bg-surface-container-low border-b border-outline-variant/30 px-3 py-1 flex items-center justify-between gap-3 shrink-0">

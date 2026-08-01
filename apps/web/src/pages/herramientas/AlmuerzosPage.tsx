@@ -323,7 +323,15 @@ function FilaProfesional({
 }
 
 // ─── Página (front — todo el back vive en almuerzosService) ──────────────────
-export function AlmuerzosPage() {
+export function AlmuerzosPage({
+  hideHeader = false,
+  hideSedeTabs = false,
+  sedeId: externalSedeId,
+}: {
+  hideHeader?: boolean;
+  hideSedeTabs?: boolean;
+  sedeId?: string;
+}) {
   const {
     sedes,
     sedeId,
@@ -337,43 +345,47 @@ export function AlmuerzosPage() {
     confirmando,
     setConfirmando,
     eliminarMutation,
-  } = useAlmuerzosData();
+  } = useAlmuerzosData(externalSedeId);
 
   return (
     <div className="flex-1 overflow-y-auto bg-background text-on-background">
       <div className="max-w-4xl mx-auto p-container-padding">
         {/* Page Header */}
-        <div className="mb-8 flex items-start gap-4">
-          <div className="w-12 h-12 rounded-xl bg-tertiary-fixed-dim/20 flex items-center justify-center text-tertiary shrink-0">
-            <span className="material-symbols-outlined text-2xl" style={{ fontVariationSettings: "'FILL' 1" }}>
-              restaurant
-            </span>
+        {!hideHeader && (
+          <div className="mb-8 flex items-start gap-4">
+            <div className="w-12 h-12 rounded-xl bg-tertiary-fixed-dim/20 flex items-center justify-center text-tertiary shrink-0">
+              <span className="material-symbols-outlined text-2xl" style={{ fontVariationSettings: "'FILL' 1" }}>
+                restaurant
+              </span>
+            </div>
+            <div>
+              <h2 className="font-headline-md text-headline-md text-on-background">Horarios de almuerzo</h2>
+              <p className="font-body-md text-body-md text-on-surface-variant mt-1">
+                Bloqueo de 1 hora fija en la agenda de cada profesional
+              </p>
+            </div>
           </div>
-          <div>
-            <h2 className="font-headline-md text-headline-md text-on-background">Horarios de almuerzo</h2>
-            <p className="font-body-md text-body-md text-on-surface-variant mt-1">
-              Bloqueo de 1 hora fija en la agenda de cada profesional
-            </p>
-          </div>
-        </div>
+        )}
 
         {/* Location Tabs */}
-        <div className="border-b border-outline-variant/30 mb-6 flex overflow-x-auto">
-          {sedes.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => setSedeSelId(s.id)}
-              className={cn(
-                'px-6 py-3 border-b-2 font-headline-sm text-sm whitespace-nowrap transition-colors',
-                sedeId === s.id
-                  ? 'border-primary text-primary bg-surface-variant/10'
-                  : 'border-transparent text-on-surface-variant font-medium hover:text-primary',
-              )}
-            >
-              {s.nombre}
-            </button>
-          ))}
-        </div>
+        {!hideSedeTabs && (
+          <div className="border-b border-outline-variant/30 mb-6 flex overflow-x-auto">
+            {sedes.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => setSedeSelId(s.id)}
+                className={cn(
+                  'px-6 py-3 border-b-2 font-headline-sm text-sm whitespace-nowrap transition-colors',
+                  sedeId === s.id
+                    ? 'border-primary text-primary bg-surface-variant/10'
+                    : 'border-transparent text-on-surface-variant font-medium hover:text-primary',
+                )}
+              >
+                {s.nombre}
+              </button>
+            ))}
+          </div>
+        )}
 
         {loading ? (
           <div className="flex justify-center py-12">

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { pacientesApi, sedesApi } from '../../api';
 import { useAgendaStore } from '../../stores/agendaStore';
+import { useAuthStore } from '../../stores/authStore';
 import { cn } from '../../utils/cn';
 
 export function CommandPalette() {
@@ -12,6 +13,14 @@ export function CommandPalette() {
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const { setSedeId, setFecha } = useAgendaStore();
+  const usuario = useAuthStore(s => s.usuario);
+  const perms = usuario?.permisos ?? [];
+
+  const tienePermiso = (p: string | string[]) => {
+    if (!usuario) return true;
+    if (perms.length === 0) return true;
+    return Array.isArray(p) ? p.some(x => perms.includes(x)) : perms.includes(p);
+  };
 
   // Abrir con Ctrl+K / Cmd+K
   useEffect(() => {
@@ -23,9 +32,6 @@ export function CommandPalette() {
         setSelectedIdx(0);
       }
       if (e.key === 'Escape') setOpen(false);
-      if (e.key === '?' && !['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) {
-        setOpen(true);
-      }
       // Atajos rápidos (cuando no hay modal abierto)
       if (!open) {
         if (e.key === 'n' || e.key === 'N') {
@@ -56,7 +62,7 @@ export function CommandPalette() {
   const { data: pacientes } = useQuery({
     queryKey: ['buscar-pacientes-cmd', query],
     queryFn: () => pacientesApi.buscar(query),
-    enabled: open && query.length >= 2,
+    enabled: open && query.length >= 2 && tienePermiso('pacientes.ver'),
   });
 
   const { data: sedes } = useQuery({
@@ -70,12 +76,12 @@ export function CommandPalette() {
            | { type: 'nav'; label: string; sub: string; action: () => void };
 
   const commands: Cmd[] = [
-    ...(pacientes?.map(p => ({
+    ...(tienePermiso('pacientes.ver') && pacientes ? pacientes.map(p => ({
       type: 'paciente' as const,
       label: p.nombreCompleto,
       sub: `${p.tipoDocumento} ${p.numeroDocumento} · ${p.telefono}`,
       action: () => { navigate(`/pacientes/${p.id}`); setOpen(false); },
-    })) ?? []),
+    })) : []),
     ...(query.length < 2 && sedes ? sedes.map(s => ({
       type: 'sede' as const,
       label: s.nombre,
@@ -84,8 +90,12 @@ export function CommandPalette() {
     })) : []),
     ...(!query ? [
       { type: 'nav' as const, label: 'Ir a hoy', sub: 'Navegar a la fecha de hoy', action: () => { setFecha(new Date()); setOpen(false); } },
-      { type: 'nav' as const, label: 'Pacientes', sub: 'Abrir lista de pacientes', action: () => { navigate('/pacientes'); setOpen(false); } },
-      { type: 'nav' as const, label: 'Administración', sub: 'Panel de administración', action: () => { navigate('/admin'); setOpen(false); } },
+      ...(tienePermiso('pacientes.ver') ? [{ type: 'nav' as const, label: 'Pacientes', sub: 'Abrir lista de pacientes', action: () => { navigate('/pacientes'); setOpen(false); } }] : []),
+      ...(tienePermiso(['agenda.ver', 'horarios.ver', 'sedes.editar', 'admin.ver']) ? [{ type: 'nav' as const, label: 'Horarios y Restricciones', sub: 'Horarios de sede, excepciones y ausencias', action: () => { navigate('/horarios'); setOpen(false); } }] : []),
+      ...(tienePermiso(['herramientas.operativas', 'herramientas.estrategicas']) ? [{ type: 'nav' as const, label: 'Herramientas', sub: 'Abrir herramientas', action: () => { navigate('/herramientas'); setOpen(false); } }] : []),
+      ...(tienePermiso('movimientos.ver') ? [{ type: 'nav' as const, label: 'Movimientos', sub: 'Registro de movimientos', action: () => { navigate('/movimientos'); setOpen(false); } }] : []),
+      ...(tienePermiso('admin.ver') ? [{ type: 'nav' as const, label: 'Administración', sub: 'Panel de administración', action: () => { navigate('/admin'); setOpen(false); } }] : []),
+      ...(tienePermiso('analytics.ver') ? [{ type: 'nav' as const, label: 'Analytics', sub: 'Panel de métricas y reporte', action: () => { navigate('/analytics'); setOpen(false); } }] : []),
     ] : []),
   ];
 

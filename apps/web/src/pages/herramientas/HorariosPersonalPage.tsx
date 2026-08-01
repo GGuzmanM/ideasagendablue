@@ -46,44 +46,83 @@ export function SemanaTipoContent() {
   }, [personal, q]);
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-6 space-y-5">
-      <div className="bg-teal-50 border border-teal-200 rounded-xl p-4 flex gap-3">
-        <span className="text-lg leading-none">💡</span>
-        <p className="text-xs text-teal-800 leading-relaxed">
-          Este es el horario <strong>permanente</strong> de cada persona (hasta volver a editarlo) y define
-          los horarios <strong>reservables</strong> en la agenda. Para cambiar la entrada de un día concreto
-          usa la pestaña <strong>Ajustes por fecha</strong>; para ausencias puntuales usa <strong>Permisos</strong>.
+    <div className="max-w-4xl mx-auto space-y-6">
+      {/* Banner Informativo */}
+      <div className="bg-[#0044ab]/5 border border-[#0044ab]/20 rounded-2xl p-4 flex items-start gap-3 shadow-2xs">
+        <div className="w-8 h-8 rounded-xl bg-[#0044ab]/10 text-[#0044ab] flex items-center justify-center shrink-0">
+          <span className="material-symbols-outlined text-lg">lightbulb</span>
+        </div>
+        <p className="text-xs text-on-surface-variant leading-relaxed">
+          Este es el horario <strong className="text-on-surface">permanente</strong> de cada trabajador (vigente hasta volver a editarlo) y define las franjas <strong className="text-on-surface">reservables</strong> en la agenda. Para cambiar la hora de entrada de un día concreto usa <strong className="text-on-surface">Ajustes por fecha</strong>; para ausencias puntuales usa <strong className="text-on-surface">Restricciones/Ausencias</strong>.
         </p>
       </div>
 
-      <input className="input text-sm w-full" placeholder="Buscar por nombre…" value={q} onChange={(e) => setQ(e.target.value)} />
+      {/* Buscador */}
+      <div className="relative">
+        <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant text-lg">
+          search
+        </span>
+        <input
+          type="text"
+          className="w-full pl-10 pr-4 py-3 bg-surface-container-lowest border border-outline-variant/60 rounded-xl text-xs font-semibold text-on-surface outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-2xs placeholder:text-on-surface-variant/50"
+          placeholder="Buscar profesional por nombre…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+        />
+      </div>
 
       {isLoading ? (
-        <p className="text-sm text-slate-400 text-center py-12">Cargando…</p>
-      ) : grupos.length === 0 ? (
-        <p className="text-sm text-slate-400 text-center py-12">Sin personal que coincida.</p>
-      ) : grupos.map(([tipo, lista]) => (
-        <div key={tipo} className="space-y-2">
-          <p className="text-xxs font-semibold text-slate-400 uppercase tracking-widest">{TIPO_LABEL[tipo] ?? tipo} · {lista.length}</p>
-          <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100 overflow-hidden">
-            {lista.map((p) => (
-              <div key={p.id}>
-                <button
-                  onClick={() => setAbierto(abierto === p.id ? null : p.id)}
-                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left hover:bg-slate-50/70"
-                >
-                  <span className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xxs font-bold shrink-0" style={{ backgroundColor: p.colorAvatar }}>
-                    {`${p.nombres} ${p.apellidos}`.split(' ').map((x) => x[0]).slice(0, 2).join('')}
-                  </span>
-                  <span className="flex-1 text-sm font-medium text-slate-800">{p.nombres} {p.apellidos}</span>
-                  <span className="text-slate-400 text-xs">{abierto === p.id ? '▲' : '▼'}</span>
-                </button>
-                {abierto === p.id && <EditorHorario profesionalId={p.id} nombre={`${p.nombres} ${p.apellidos}`} />}
-              </div>
-            ))}
-          </div>
+        <div className="p-12 text-center text-xs font-semibold text-on-surface-variant/70">
+          Cargando horarios del personal…
         </div>
-      ))}
+      ) : grupos.length === 0 ? (
+        <div className="p-12 text-center text-xs font-semibold text-on-surface-variant/70 bg-surface-container-lowest rounded-2xl border border-outline-variant/40">
+          No se encontró ningún profesional que coincida.
+        </div>
+      ) : (
+        grupos.map(([tipo, lista]) => (
+          <div key={tipo} className="space-y-3">
+            <div className="flex items-center justify-between px-1">
+              <span className="font-label-caps text-label-caps text-on-surface-variant font-bold uppercase tracking-wider">
+                {TIPO_LABEL[tipo] ?? tipo} ({lista.length})
+              </span>
+            </div>
+            <div className="bg-surface-container-lowest rounded-2xl border border-outline-variant/60 divide-y divide-outline-variant/30 overflow-hidden shadow-xs">
+              {lista.map((p) => (
+                <div key={p.id} className="transition-colors">
+                  <button
+                    onClick={() => setAbierto(abierto === p.id ? null : p.id)}
+                    className="w-full flex items-center justify-between px-5 py-3.5 text-left hover:bg-surface-container-low/60 transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span
+                        className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0 shadow-2xs"
+                        style={{ backgroundColor: p.colorAvatar || '#0044ab' }}
+                      >
+                        {`${p.nombres} ${p.apellidos}`.split(' ').map((x) => x[0]).slice(0, 2).join('')}
+                      </span>
+                      <span className="text-xs font-bold text-on-surface">
+                        {p.nombres} {p.apellidos}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-semibold text-on-surface-variant/70">
+                        {abierto === p.id ? 'Ocultar horarios' : 'Editar horario'}
+                      </span>
+                      <span className="material-symbols-outlined text-base text-on-surface-variant">
+                        {abierto === p.id ? 'expand_less' : 'expand_more'}
+                      </span>
+                    </div>
+                  </button>
+                  {abierto === p.id && (
+                    <EditorHorario profesionalId={p.id} nombre={`${p.nombres} ${p.apellidos}`} />
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))
+      )}
     </div>
   );
 }
@@ -116,11 +155,9 @@ function EditorHorario({ profesionalId, nombre }: { profesionalId: string; nombr
       qc.invalidateQueries({ queryKey: ['horario-semanal', profesionalId] });
       qc.invalidateQueries({ queryKey: ['profesionales-sede'] });
       qc.invalidateQueries({ queryKey: ['disponibilidad'] });
-      toast.success(`Horario de ${nombre.split(' ')[0]} guardado`);
+      toast.success(`Horario de ${nombre.split(' ')[0]} guardado correctamente`);
     },
     onError: (e: Error) => {
-      // Salvaguarda del backend: hay citas que quedarían FUERA del nuevo turno.
-      // Se muestra el detalle y se ofrece aplicar de todos modos (forzar).
       if ((e as Error & { data?: { error?: string } }).data?.error === 'HORARIO_CONFLICTO_CITAS') {
         if (window.confirm(`${e.message}\n\n¿Aplicar el horario de todos modos?`)) {
           guardar.mutate({ forzar: true });
@@ -136,42 +173,96 @@ function EditorHorario({ profesionalId, nombre }: { profesionalId: string; nombr
   const invalido = DIAS.some((d) => ed[d.n].activo && ed[d.n].horaFin <= ed[d.n].horaInicio);
   const sinDias = DIAS.every((d) => !ed[d.n].activo);
 
-  if (isLoading) return <div className="px-4 py-3 text-xs text-slate-400">Cargando horario…</div>;
+  if (isLoading) {
+    return (
+      <div className="px-5 py-4 text-xs font-medium text-on-surface-variant/60 italic bg-surface-container-low/40 border-t border-outline-variant/30">
+        Cargando horario semanal…
+      </div>
+    );
+  }
 
   return (
-    <div className="px-4 py-3 bg-slate-50/60 border-t border-slate-100 space-y-1.5">
-      {DIAS.map((d) => {
-        const st = ed[d.n];
-        const malRango = st.activo && st.horaFin <= st.horaInicio;
-        return (
-          <div key={d.n} className="flex items-center gap-2.5">
-            <label className="flex items-center gap-1.5 w-28 shrink-0 cursor-pointer">
-              <input type="checkbox" checked={st.activo} onChange={(e) => set(d.n, { activo: e.target.checked })} />
-              <span className={cn('text-xs', st.activo ? 'font-semibold text-slate-800' : 'text-slate-400')}>{d.label}</span>
-            </label>
-            {st.activo ? (
-              <div className="flex items-center gap-1.5">
-                <input type="time" step={1800} className={cn('input text-xs w-28 py-1', malRango && 'border-rose-400')} value={st.horaInicio} onChange={(e) => set(d.n, { horaInicio: e.target.value })} />
-                <span className="text-slate-400 text-xs">a</span>
-                <input type="time" step={1800} className={cn('input text-xs w-28 py-1', malRango && 'border-rose-400')} value={st.horaFin} onChange={(e) => set(d.n, { horaFin: e.target.value })} />
-                {malRango && <span className="text-rose-500 text-xxs">fin ≤ inicio</span>}
-              </div>
-            ) : (
-              <span className="text-xs text-slate-400">No trabaja</span>
-            )}
-          </div>
-        );
-      })}
-      <div className="flex items-center gap-2 pt-1.5">
-        <button
-          onClick={() => guardar.mutate({})}
-          disabled={guardar.isPending || invalido || sinDias}
-          className="btn btn-primary btn-sm disabled:opacity-50"
-        >
-          {guardar.isPending ? 'Guardando…' : 'Guardar horario'}
-        </button>
-        {sinDias && <span className="text-xxs text-amber-600">Marca al menos un día.</span>}
-        <span className="text-xxs text-slate-400 ml-auto">Cambia la agenda y la disponibilidad desde hoy en adelante.</span>
+    <div className="px-5 py-4 bg-surface-container-low/40 border-t border-outline-variant/30 space-y-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+        {DIAS.map((d) => {
+          const st = ed[d.n];
+          const malRango = st.activo && st.horaFin <= st.horaInicio;
+          return (
+            <div
+              key={d.n}
+              className={cn(
+                'flex items-center justify-between p-2.5 rounded-xl border transition-colors',
+                st.activo
+                  ? 'bg-surface-container-lowest border-outline-variant/60 shadow-2xs'
+                  : 'bg-transparent border-transparent opacity-60'
+              )}
+            >
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={st.activo}
+                  onChange={(e) => set(d.n, { activo: e.target.checked })}
+                  className="w-4 h-4 rounded text-primary border-outline-variant focus:ring-primary/20 cursor-pointer"
+                />
+                <span className={cn('text-xs font-bold', st.activo ? 'text-on-surface' : 'text-on-surface-variant')}>
+                  {d.label}
+                </span>
+              </label>
+
+              {st.activo ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="time"
+                    step={1800}
+                    value={st.horaInicio}
+                    onChange={(e) => set(d.n, { horaInicio: e.target.value })}
+                    className={cn(
+                      'px-2 py-1 bg-surface-container-lowest border rounded-lg text-xs font-mono font-semibold text-on-surface outline-none focus:border-primary',
+                      malRango ? 'border-error text-error' : 'border-outline-variant/60'
+                    )}
+                  />
+                  <span className="text-xs text-on-surface-variant/60 font-bold">a</span>
+                  <input
+                    type="time"
+                    step={1800}
+                    value={st.horaFin}
+                    onChange={(e) => set(d.n, { horaFin: e.target.value })}
+                    className={cn(
+                      'px-2 py-1 bg-surface-container-lowest border rounded-lg text-xs font-mono font-semibold text-on-surface outline-none focus:border-primary',
+                      malRango ? 'border-error text-error' : 'border-outline-variant/60'
+                    )}
+                  />
+                </div>
+              ) : (
+                <span className="text-[11px] font-semibold text-on-surface-variant/50 uppercase">
+                  Libre
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="flex items-center justify-between pt-2 border-t border-outline-variant/30 flex-wrap gap-2">
+        <span className="text-[11px] text-on-surface-variant/70 font-medium">
+          * Los cambios actualizan la agenda y disponibilidad hacia adelante.
+        </span>
+
+        <div className="flex items-center gap-2">
+          {sinDias && (
+            <span className="text-[11px] text-amber-700 font-semibold">
+              Marca al menos un día laboral.
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => guardar.mutate({})}
+            disabled={guardar.isPending || invalido || sinDias}
+            className="px-4 py-2 bg-[#0044ab] text-white rounded-xl text-xs font-bold hover:bg-[#003380] transition-colors shadow-xs disabled:opacity-40 cursor-pointer"
+          >
+            {guardar.isPending ? 'Guardando…' : 'Guardar horario'}
+          </button>
+        </div>
       </div>
     </div>
   );

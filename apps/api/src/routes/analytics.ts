@@ -76,7 +76,7 @@ const RECALC_LOCK_TTL_S = 600; // 10 min
 const LUA_UNLOCK = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end";
 
 async function conLockRecalculo<T>(
-  meta: { usuarioId?: string; ip?: string; accion: string; detalle: Record<string, unknown> },
+  meta: { usuarioId?: string; ip?: string; userAgent?: string; accion: string; detalle: Record<string, unknown> },
   run: () => Promise<T>,
 ): Promise<T> {
   const token = randomUUID();

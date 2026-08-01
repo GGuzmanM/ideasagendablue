@@ -35,6 +35,28 @@ export const api = {
   },
   post: <T>(path: string, body?: unknown, headers?: Record<string, string>) =>
     request<T>(path, { method: 'POST', body: JSON.stringify(body), headers }),
+  upload: async <T>(path: string, formData: FormData): Promise<T> => {
+    const token = useAuthStore.getState().token;
+    const res = await fetch(`${BASE}${path}`, {
+      method: 'POST',
+      body: formData,
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+
+    if (!res.ok) {
+      if (res.status === 401) {
+        useAuthStore.getState().logout();
+        window.location.href = '/login';
+      }
+      const err = await res.json().catch(() => ({ message: 'Error de red' }));
+      const msg = (err as { message?: string }).message ?? 'Error desconocido';
+      throw Object.assign(new Error(msg), { statusCode: res.status, data: err });
+    }
+
+    return res.json() as Promise<T>;
+  },
   patch: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: 'PATCH', body: JSON.stringify(body) }),
   put: <T>(path: string, body?: unknown) =>

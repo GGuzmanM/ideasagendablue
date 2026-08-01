@@ -58,6 +58,7 @@ export interface Profesional {
   nombres: string;
   apellidos: string;
   tipo: string;
+  colegiatura?: string | null;
   colorAvatar: string;
   activo: boolean;
   iniciales: string;

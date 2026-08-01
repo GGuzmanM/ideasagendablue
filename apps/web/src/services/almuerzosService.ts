@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
@@ -31,10 +31,14 @@ export interface ProfesionalConAlmuerzo {
   noDisponibleMotivo: 'vacaciones' | 'no_trabaja' | null;
 }
 
-export function useAlmuerzosData() {
+export function useAlmuerzosData(overrideSedeId?: string) {
   const qc = useQueryClient();
-  const [sedeSelId, setSedeSelId] = useState<string>('');
+  const [sedeSelId, setSedeSelId] = useState<string>(overrideSedeId ?? '');
   const [confirmando, setConfirmando] = useState<BloqueoAlmuerzo | null>(null);
+
+  useEffect(() => {
+    if (overrideSedeId) setSedeSelId(overrideSedeId);
+  }, [overrideSedeId]);
 
   const { usuario, puedeAccederSede } = useAuthStore();
   const hoy = format(new Date(), 'yyyy-MM-dd');

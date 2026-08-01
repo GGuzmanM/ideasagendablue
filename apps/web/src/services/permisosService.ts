@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
@@ -28,12 +28,18 @@ export const tipoLabel = (t: string) =>
     ? 'Baropodometría'
     : t;
 
-export function usePermisosData() {
+export function usePermisosData(overrideSedeId?: string) {
   const qc = useQueryClient();
   const { usuario, puedeAccederSede, isCoordinadora } = useAuthStore();
   const puedeGestionar = isCoordinadora();
 
-  const [sedeSelId, setSedeSelId] = useState('');
+  const [sedeSelId, setSedeSelId] = useState(overrideSedeId ?? '');
+
+  useEffect(() => {
+    if (overrideSedeId) {
+      setSedeSelId(overrideSedeId);
+    }
+  }, [overrideSedeId]);
   const [fecha, setFecha] = useState<string>(hoyISO());
 
   // Formulario — se puede bloquear a uno o VARIOS profesionales a la vez.

@@ -159,10 +159,16 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
               )}
 
               {cita.comprobanteUrl && (
-                <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
-                  <span className="material-symbols-outlined text-sm">check_circle</span>
-                  Pago registrado
-                </span>
+                <a
+                  href={cita.comprobanteUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Ver comprobante de pago anticipado"
+                >
+                  <span className="material-symbols-outlined text-sm">payments</span>
+                  <span>Ver Pago Anticipado</span>
+                </a>
               )}
             </div>
           </div>

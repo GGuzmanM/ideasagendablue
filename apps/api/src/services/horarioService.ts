@@ -32,7 +32,7 @@ function sumarMinutos(hora: string, minutos: number): string {
   return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
 }
 
-interface Actor { usuarioId?: string; ip?: string }
+interface Actor { usuarioId?: string; ip?: string; userAgent?: string }
 
 export interface ConflictoCita { fecha: string; horaInicio: string; paciente?: string }
 

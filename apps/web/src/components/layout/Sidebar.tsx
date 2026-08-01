@@ -6,6 +6,7 @@ import { useAuthStore } from '../../stores/authStore';
 const navItems = [
   { to: '/', label: 'Agenda', icon: '📅', permiso: 'agenda.ver' },
   { to: '/pacientes', label: 'Pacientes', icon: '👤', permiso: 'pacientes.ver' },
+  { to: '/horarios', label: 'Horarios y Restricciones', icon: '⏰', permiso: ['agenda.ver', 'horarios.ver', 'sedes.editar', 'admin.ver'] },
   { to: '/herramientas', label: 'Herramientas', icon: '🛠️', permiso: ['herramientas.operativas', 'herramientas.estrategicas'] },
   { to: '/movimientos', label: 'Movimientos', icon: '⇄', permiso: 'movimientos.ver' },
   { to: '/admin', label: 'Administración', icon: '⚙️', permiso: 'admin.ver' },
@@ -56,18 +57,6 @@ export function Sidebar() {
 
       {/* Spacer */}
       <div className="flex-1" />
-
-      {/* Ayuda */}
-      <button
-        title="Atajos de teclado (?)"
-        onClick={() => {
-          const ev = new KeyboardEvent('keydown', { key: '?', bubbles: true });
-          document.dispatchEvent(ev);
-        }}
-        className="w-11 h-11 rounded-xl flex items-center justify-center text-limablue-400 hover:bg-limablue-800 hover:text-white transition-all"
-      >
-        <span className="text-lg">?</span>
-      </button>
 
       {/* Usuario */}
       <button

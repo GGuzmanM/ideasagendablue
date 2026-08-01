@@ -19,6 +19,7 @@ export interface FormProfesional {
   apellidos: string;
   tipo: string;
   unidadNegocioId: string;
+  colegiatura?: string;
   colorAvatar: string;
 }
 

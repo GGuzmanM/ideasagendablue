@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   useIdea1NuevaCitaForm,
   type UseIdea1NuevaCitaFormProps,
@@ -107,6 +107,8 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
     opcionesHoras,
     fechaHeader,
   } = useIdea1NuevaCitaForm(props);
+
+  const [isDragging, setIsDragging] = useState(false);
 
   return (
     <div className="fixed inset-0 bg-inverse-surface/40 backdrop-blur-[2px] z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
@@ -857,13 +859,46 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
             ) : (
               <div
                 onClick={() => inputFileRef.current?.click()}
-                className="border-2 border-dashed border-[#F59E0B]/40 bg-white/60 rounded-xl p-5 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-white hover:border-[#F59E0B]/70 transition-all group"
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIsDragging(true);
+                }}
+                onDragEnter={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIsDragging(true);
+                }}
+                onDragLeave={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIsDragging(false);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIsDragging(false);
+                  if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                    handleSubirComprobante(e.dataTransfer.files[0]);
+                  }
+                }}
+                className={`border-2 border-dashed rounded-xl p-5 flex flex-col items-center justify-center text-center cursor-pointer transition-all group ${
+                  isDragging
+                    ? 'border-amber-500 bg-amber-100/80 scale-[1.02] shadow-md'
+                    : 'border-[#F59E0B]/40 bg-white/60 hover:bg-white hover:border-[#F59E0B]/70'
+                }`}
               >
-                <span className="material-symbols-outlined text-[#B45309]/50 mb-1 text-2xl group-hover:scale-110 transition-transform">
-                  upload_file
+                <span className={`material-symbols-outlined text-2xl mb-1 transition-transform ${
+                  isDragging ? 'text-amber-700 scale-125 animate-bounce' : 'text-[#B45309]/50 group-hover:scale-110'
+                }`}>
+                  {isDragging ? 'cloud_upload' : 'upload_file'}
                 </span>
                 <p className="font-body-md text-xs text-[#92400E] font-bold">
-                  {subiendo ? 'Subiendo comprobante...' : 'Haz clic, arrastra o pega (Ctrl+V) el comprobante'}
+                  {subiendo
+                    ? 'Subiendo comprobante...'
+                    : isDragging
+                    ? '¡Suelte el comprobante aquí!'
+                    : 'Haz clic, arrastra o pega (Ctrl+V) el comprobante'}
                 </p>
                 <p className="font-body-md text-[11px] text-[#92400E]/70 mt-0.5">JPG · PNG · PDF (máx. 10MB)</p>
                 <input

@@ -6,6 +6,7 @@
 // Ambas capas las resuelve el backend con `turnosDelDia`; lo que se ve aquí es lo que
 // el motor de reservas permite. Las ausencias puntuales van en Permisos/Bloqueos.
 
+import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { cn } from '../../utils/cn';
@@ -13,20 +14,30 @@ import { SemanaTipoContent } from './HorariosPersonalPage';
 import { AjustesFechaContent } from './HorariosEntradaPage';
 
 const TABS = [
-  { id: 'semana', label: 'Semana tipo', hint: 'Días y horas permanentes de cada persona' },
+  { id: 'semana', label: 'Semana tipo', hint: 'Días y horas permanentes de cada persona (Todas las Sedes)' },
   { id: 'fechas', label: 'Ajustes por fecha', hint: 'Entrada 8/9 de días concretos y días especiales' },
 ] as const;
 type TabId = typeof TABS[number]['id'];
 
-export function HorariosPage() {
+export function HorariosPage({ hideHeader = false }: { hideHeader?: boolean }) {
   const navigate = useNavigate();
   const puedeGestionar = useAuthStore(s => s.isCoordinadora()); // admin + coordinadora_sedes
   const [params, setParams] = useSearchParams();
-  const tab: TabId = params.get('tab') === 'fechas' ? 'fechas' : 'semana';
+  const [localTab, setLocalTab] = useState<TabId>('semana');
+
+  const tab: TabId = hideHeader ? localTab : (params.get('tab') === 'fechas' ? 'fechas' : 'semana');
+
+  const changeTab = (t: TabId) => {
+    if (hideHeader) {
+      setLocalTab(t);
+    } else {
+      setParams({ tab: t }, { replace: true });
+    }
+  };
 
   if (!puedeGestionar) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-slate-50 text-slate-400 text-sm">
+      <div className="flex-1 flex items-center justify-center bg-slate-50 text-slate-400 text-sm p-8">
         Solo la Coordinadora de Sedes (y el admin) pueden gestionar los horarios del personal.
       </div>
     );
@@ -34,30 +45,57 @@ export function HorariosPage() {
 
   return (
     <div className="flex-1 overflow-y-auto bg-slate-50">
-      {/* Header */}
-      <div className="bg-white border-b border-slate-200 px-6 py-4 flex items-center gap-3 sticky top-0 z-20">
-        <button onClick={() => navigate('/herramientas')} className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-all" title="Volver a Herramientas">
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-        </button>
-        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-teal-400 to-cyan-600 flex items-center justify-center shrink-0"><span className="text-white text-lg">🗓️</span></div>
-        <div className="flex-1">
-          <h1 className="text-base font-bold text-slate-900">Horarios del personal</h1>
-          <p className="text-xs text-slate-500">{TABS.find(t => t.id === tab)?.hint}</p>
+      {/* Header (Versión independiente) */}
+      {!hideHeader && (
+        <div className="bg-white border-b border-slate-200 px-6 py-4 flex items-center gap-3 sticky top-0 z-20">
+          <button onClick={() => navigate('/herramientas')} className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-all" title="Volver a Herramientas">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+          </button>
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-teal-400 to-cyan-600 flex items-center justify-center shrink-0"><span className="text-white text-lg">🗓️</span></div>
+          <div className="flex-1">
+            <h1 className="text-base font-bold text-slate-900">Horarios del personal</h1>
+            <p className="text-xs text-slate-500">{TABS.find(t => t.id === tab)?.hint}</p>
+          </div>
+          {/* Tabs */}
+          <div className="flex bg-slate-100 rounded-lg p-0.5">
+            {TABS.map(t => (
+              <button
+                key={t.id}
+                onClick={() => changeTab(t.id)}
+                className={cn('px-3.5 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer',
+                  tab === t.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700')}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
         </div>
-        {/* Tabs */}
-        <div className="flex bg-slate-100 rounded-lg p-0.5">
-          {TABS.map(t => (
-            <button
-              key={t.id}
-              onClick={() => setParams({ tab: t.id }, { replace: true })}
-              className={cn('px-3.5 py-1.5 text-xs font-semibold rounded-md transition-all',
-                tab === t.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700')}
-            >
-              {t.label}
-            </button>
-          ))}
+      )}
+
+      {/* Sub-selector embebido */}
+      {hideHeader && (
+        <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between bg-white p-4 rounded-2xl border border-slate-200 shadow-xs gap-3">
+          <div>
+            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <span className="material-symbols-outlined text-teal-600 text-base">badge</span>
+              Horarios del Personal (Vista General — Todas las Sedes)
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">{TABS.find(t => t.id === tab)?.hint}</p>
+          </div>
+          <div className="flex bg-slate-100 rounded-xl p-1 gap-1 shrink-0">
+            {TABS.map(t => (
+              <button
+                key={t.id}
+                onClick={() => changeTab(t.id)}
+                className={cn('px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer',
+                  tab === t.id ? 'bg-[#0044ab] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900')}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {tab === 'semana' ? <SemanaTipoContent /> : <AjustesFechaContent />}
     </div>

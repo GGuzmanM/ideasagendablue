@@ -252,8 +252,8 @@ export function useIdea1NuevaCitaForm({
       setSubiendo(true);
       try {
         const formData = new FormData();
-        formData.append('file', file);
-        const res = await api.post<{ url: string; nombre: string; mimeType: string }>('/uploads/comprobante', formData);
+        formData.append('comprobante', file);
+        const res = await api.upload<{ url: string; nombre: string; mimeType: string }>('/citas/upload-comprobante', formData);
         setComprobante(res);
         toast.success('Comprobante adjuntado');
       } catch (e: any) {

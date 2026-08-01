@@ -10,7 +10,15 @@ import {
 import { type Permiso } from '../../api/permisos';
 import { cn } from '../../utils/cn';
 
-export function PermisosPage() {
+export function PermisosPage({
+  hideHeader = false,
+  hideSedeTabs = false,
+  sedeId: externalSedeId,
+}: {
+  hideHeader?: boolean;
+  hideSedeTabs?: boolean;
+  sedeId?: string;
+}) {
   const navigate = useNavigate();
   const {
     puedeGestionar,
@@ -60,7 +68,7 @@ export function PermisosPage() {
     setEditMotivo,
     eliminarVacMut,
     editarVacMut,
-  } = usePermisosData();
+  } = usePermisosData(externalSedeId);
 
   if (!puedeGestionar) {
     return (
@@ -73,28 +81,30 @@ export function PermisosPage() {
   return (
     <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-background">
       {/* Header Bar */}
-      <header className="flex justify-between items-center px-6 py-4 bg-surface-container-lowest border-b border-outline-variant/50 sticky top-0 z-20 shadow-xs">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => navigate('/herramientas')}
-            className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-all"
-            title="Volver a Herramientas"
-          >
-            <span className="material-symbols-outlined text-[20px]">arrow_back</span>
-          </button>
-          <div className="w-10 h-10 rounded-xl bg-error/10 text-error flex items-center justify-center shrink-0">
-            <span className="material-symbols-outlined text-[22px]">block</span>
+      {!hideHeader && (
+        <header className="flex justify-between items-center px-6 py-4 bg-surface-container-lowest border-b border-outline-variant/50 sticky top-0 z-20 shadow-xs">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => navigate('/herramientas')}
+              className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-all"
+              title="Volver a Herramientas"
+            >
+              <span className="material-symbols-outlined text-[20px]">arrow_back</span>
+            </button>
+            <div className="w-10 h-10 rounded-xl bg-error/10 text-error flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-[22px]">block</span>
+            </div>
+            <div>
+              <h1 className="font-headline-md text-headline-md font-bold text-on-surface leading-tight">
+                Permisos / Bloqueos
+              </h1>
+              <p className="font-body-md text-body-md text-on-surface-variant/80">
+                Bloquea a una podóloga, fisioterapeuta o baropodometría en un rango horario
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="font-headline-md text-headline-md font-bold text-on-surface leading-tight">
-              Permisos / Bloqueos
-            </h1>
-            <p className="font-body-md text-body-md text-on-surface-variant/80">
-              Bloquea a una podóloga, fisioterapeuta o baropodometría en un rango horario
-            </p>
-          </div>
-        </div>
-      </header>
+        </header>
+      )}
 
       {/* Main Content Workspace */}
       <main className="flex-1 overflow-y-auto p-6 bg-background">
@@ -104,30 +114,32 @@ export function PermisosPage() {
             {/* Form Area (Left - 8 cols) */}
             <div className="lg:col-span-8 space-y-6">
               {/* Location Tabs Card */}
-              <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/60 p-1.5 shadow-xs overflow-x-auto">
-                <div className="flex items-center min-w-max gap-1">
-                  {sedes.map((s) => {
-                    const act = sedeId === s.id;
-                    return (
-                      <button
-                        key={s.id}
-                        onClick={() => setSedeSelId(s.id)}
-                        className={cn(
-                          'px-5 py-2 rounded-lg font-label-caps text-label-caps transition-all relative cursor-pointer',
-                          act
-                            ? 'bg-surface-container-high text-on-surface font-bold shadow-xs'
-                            : 'hover:bg-surface-container-low text-on-surface-variant',
-                        )}
-                      >
-                        {s.nombre}
-                        {act && (
-                          <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-5 h-0.5 bg-primary rounded-t-full" />
-                        )}
-                      </button>
-                    );
-                  })}
+              {!hideSedeTabs && (
+                <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/60 p-1.5 shadow-xs overflow-x-auto">
+                  <div className="flex items-center min-w-max gap-1">
+                    {sedes.map((s) => {
+                      const act = sedeId === s.id;
+                      return (
+                        <button
+                          key={s.id}
+                          onClick={() => setSedeSelId(s.id)}
+                          className={cn(
+                            'px-5 py-2 rounded-lg font-label-caps text-label-caps transition-all relative cursor-pointer',
+                            act
+                              ? 'bg-surface-container-high text-on-surface font-bold shadow-xs'
+                              : 'hover:bg-surface-container-low text-on-surface-variant',
+                          )}
+                        >
+                          {s.nombre}
+                          {act && (
+                            <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-5 h-0.5 bg-primary rounded-t-full" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Main Form Card */}
               <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/60 p-6 shadow-xs space-y-6">

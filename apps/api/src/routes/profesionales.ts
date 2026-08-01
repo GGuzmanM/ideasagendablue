@@ -125,6 +125,7 @@ router.get('/', requireAuth, async (req, res) => {
     nombres: p.nombres,
     apellidos: p.apellidos,
     tipo: p.tipo,
+    colegiatura: p.colegiatura ?? null,
     colorAvatar: p.colorAvatar,
     activo: p.activo,
     unidadNegocio: p.unidadNegocio,
@@ -274,6 +275,7 @@ const profesionalSchema = z.object({
   apellidos: z.string().min(2),
   tipo: z.enum(['podologa', 'medico', 'fisioterapeuta']),
   unidadNegocioId: z.string().uuid(),
+  colegiatura: z.string().optional().nullable(),
   colorAvatar: z.string().optional(),
   activo: z.boolean().optional(),
 });

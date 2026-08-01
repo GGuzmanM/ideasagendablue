@@ -265,6 +265,8 @@ model Profesional {
   // accesible por Graph. Configurable en BD (antes hardcodeado). Yasica Doy →
   // yasicadoy@limablue.com. Daniel Doy se sincroniza por Graph y queda null.
   emailAgenda      String?
+  // Número de colegiatura profesional (ej: CMP/COP/CTMP 12345) - opcional
+  colegiatura      String?
   deletedAt        DateTime?
 
   unidadNegocio    UnidadNegocio            @relation(fields: [unidadNegocioId], references: [id])

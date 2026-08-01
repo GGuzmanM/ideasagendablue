@@ -39,6 +39,24 @@ import { ComposicionImprimirPage } from './pages/herramientas/ComposicionImprimi
 import { ComprobantesImprimirPage } from './pages/herramientas/ComprobantesImprimirPage';
 import { VideosServicioPage } from './pages/herramientas/VideosServicioPage';
 import { Idea1AgendaPage } from './pages/Idea1AgendaPage';
+import { HorariosRestriccionesPage } from './pages/HorariosRestriccionesPage';
+
+function RequirePermiso({ permiso, children }: { permiso: string | string[]; children: React.ReactNode }) {
+  const usuario = useAuthStore(s => s.usuario);
+  const perms = usuario?.permisos ?? [];
+
+  if (!usuario) return <>{children}</>;
+
+  const tiene = Array.isArray(permiso)
+    ? permiso.some(p => perms.includes(p))
+    : perms.includes(permiso);
+
+  if (!tiene) {
+    return <Navigate to="/idea1" replace />;
+  }
+
+  return <>{children}</>;
+}
 
 export default function App() {
   const token = useAuthStore(s => s.token);
@@ -60,43 +78,44 @@ export default function App() {
       <Route element={<Layout />}>
         <Route path="/" element={<Navigate to="/idea1" replace />} />
         <Route path="/agenda-vieja" element={<AgendaPage />} />
-        <Route path="/pacientes" element={<PacientesPage />} />
-        <Route path="/pacientes/:id" element={<FichaPacientePage />} />
-        <Route path="/herramientas" element={<HerramientasPage />} />
-        <Route path="/herramientas/almuerzos" element={<AlmuerzosPage />} />
-        <Route path="/herramientas/confirmacion-mail" element={<ConfirmacionMailPage />} />
-        <Route path="/herramientas/horarios" element={<HorariosPage />} />
+        <Route path="/pacientes" element={<RequirePermiso permiso="pacientes.ver"><PacientesPage /></RequirePermiso>} />
+        <Route path="/pacientes/:id" element={<RequirePermiso permiso="pacientes.ver"><FichaPacientePage /></RequirePermiso>} />
+        <Route path="/horarios" element={<RequirePermiso permiso={['agenda.ver', 'horarios.ver', 'sedes.editar', 'admin.ver']}><HorariosRestriccionesPage /></RequirePermiso>} />
+        <Route path="/herramientas" element={<RequirePermiso permiso={['herramientas.operativas', 'herramientas.estrategicas']}><HerramientasPage /></RequirePermiso>} />
+        <Route path="/herramientas/almuerzos" element={<RequirePermiso permiso={['herramientas.operativas', 'herramientas.estrategicas']}><AlmuerzosPage /></RequirePermiso>} />
+        <Route path="/herramientas/confirmacion-mail" element={<RequirePermiso permiso={['herramientas.operativas', 'herramientas.estrategicas']}><ConfirmacionMailPage /></RequirePermiso>} />
+        <Route path="/herramientas/horarios" element={<RequirePermiso permiso={['herramientas.operativas', 'herramientas.estrategicas']}><HorariosPage /></RequirePermiso>} />
         {/* Rutas viejas → herramienta unificada (enlaces guardados siguen funcionando) */}
         <Route path="/herramientas/horarios-entrada" element={<Navigate to="/herramientas/horarios?tab=fechas" replace />} />
-        <Route path="/herramientas/permisos" element={<PermisosPage />} />
-        <Route path="/herramientas/canales" element={<CanalesPage />} />
-        <Route path="/herramientas/promociones" element={<PromocionesPage />} />
-        <Route path="/herramientas/membresias" element={<MembresiasPage />} />
-        <Route path="/herramientas/dias-especiales" element={<DiasEspecialesPage />} />
-        <Route path="/herramientas/conciliacion" element={<ConciliacionPage />} />
-        <Route path="/herramientas/recordatorios" element={<RecordatoriosPanel />} />
-        <Route path="/herramientas/baro-solicitud" element={<BaroSolicitudPage />} />
-        <Route path="/herramientas/combinaciones" element={<CombinacionesPage />} />
-        <Route path="/herramientas/videos-servicio" element={<VideosServicioPage />} />
-        <Route path="/herramientas/reportes-rrhh" element={<ReportesRrhhPage />} />
-        <Route path="/herramientas/composicion-sede" element={<ComposicionSedePage />} />
+        <Route path="/herramientas/permisos" element={<RequirePermiso permiso={['herramientas.operativas', 'herramientas.estrategicas']}><PermisosPage /></RequirePermiso>} />
+        <Route path="/herramientas/canales" element={<RequirePermiso permiso={['herramientas.operativas', 'herramientas.estrategicas']}><CanalesPage /></RequirePermiso>} />
+        <Route path="/herramientas/promociones" element={<RequirePermiso permiso={['herramientas.operativas', 'herramientas.estrategicas']}><PromocionesPage /></RequirePermiso>} />
+        <Route path="/herramientas/membresias" element={<RequirePermiso permiso={['herramientas.operativas', 'herramientas.estrategicas']}><MembresiasPage /></RequirePermiso>} />
+        <Route path="/herramientas/dias-especiales" element={<RequirePermiso permiso={['herramientas.operativas', 'herramientas.estrategicas']}><DiasEspecialesPage /></RequirePermiso>} />
+        <Route path="/herramientas/conciliacion" element={<RequirePermiso permiso={['herramientas.operativas', 'herramientas.estrategicas']}><ConciliacionPage /></RequirePermiso>} />
+        <Route path="/herramientas/recordatorios" element={<RequirePermiso permiso={['herramientas.operativas', 'herramientas.estrategicas']}><RecordatoriosPanel /></RequirePermiso>} />
+        <Route path="/herramientas/baro-solicitud" element={<RequirePermiso permiso={['herramientas.operativas', 'herramientas.estrategicas']}><BaroSolicitudPage /></RequirePermiso>} />
+        <Route path="/herramientas/combinaciones" element={<RequirePermiso permiso={['herramientas.operativas', 'herramientas.estrategicas']}><CombinacionesPage /></RequirePermiso>} />
+        <Route path="/herramientas/videos-servicio" element={<RequirePermiso permiso={['herramientas.operativas', 'herramientas.estrategicas']}><VideosServicioPage /></RequirePermiso>} />
+        <Route path="/herramientas/reportes-rrhh" element={<RequirePermiso permiso={['herramientas.operativas', 'herramientas.estrategicas']}><ReportesRrhhPage /></RequirePermiso>} />
+        <Route path="/herramientas/composicion-sede" element={<RequirePermiso permiso={['herramientas.operativas', 'herramientas.estrategicas']}><ComposicionSedePage /></RequirePermiso>} />
         <Route path="/herramientas/horarios-personal" element={<Navigate to="/herramientas/horarios?tab=semana" replace />} />
-        <Route path="/movimientos" element={<MovimientosPage />} />
-        <Route path="/admin" element={<AdminPage />} />
-        <Route path="/admin/competencias" element={<CompetenciasPage />} />
-        <Route path="/admin/paquetes" element={<PaquetesPage />} />
-        <Route path="/admin/podologas" element={<PodologasPage />} />
-        <Route path="/admin/servicios" element={<ServiciosPage />} />
-        <Route path="/admin/auditoria" element={<AuditoriaPage />} />
-        <Route path="/admin/usuarios" element={<UsersPage />} />
-        <Route path="/admin/roles" element={<RolesPage />} />
-        <Route path="/admin/notificaciones" element={<NotificacionesAdminPage />} />
-        <Route path="/analytics" element={<AnalyticsPage />} />
+        <Route path="/movimientos" element={<RequirePermiso permiso="movimientos.ver"><MovimientosPage /></RequirePermiso>} />
+        <Route path="/admin" element={<RequirePermiso permiso="admin.ver"><AdminPage /></RequirePermiso>} />
+        <Route path="/admin/competencias" element={<RequirePermiso permiso="admin.ver"><CompetenciasPage /></RequirePermiso>} />
+        <Route path="/admin/paquetes" element={<RequirePermiso permiso="admin.ver"><PaquetesPage /></RequirePermiso>} />
+        <Route path="/admin/podologas" element={<RequirePermiso permiso="admin.ver"><PodologasPage /></RequirePermiso>} />
+        <Route path="/admin/servicios" element={<RequirePermiso permiso="admin.ver"><ServiciosPage /></RequirePermiso>} />
+        <Route path="/admin/auditoria" element={<RequirePermiso permiso="admin.ver"><AuditoriaPage /></RequirePermiso>} />
+        <Route path="/admin/usuarios" element={<RequirePermiso permiso="usuarios.ver"><UsersPage /></RequirePermiso>} />
+        <Route path="/admin/roles" element={<RequirePermiso permiso="roles.editar"><RolesPage /></RequirePermiso>} />
+        <Route path="/admin/notificaciones" element={<RequirePermiso permiso="notificaciones.ver"><NotificacionesAdminPage /></RequirePermiso>} />
+        <Route path="/analytics" element={<RequirePermiso permiso="analytics.ver"><AnalyticsPage /></RequirePermiso>} />
         {/* Desempeño de Agentes: rutas estáticas ganan sobre /analytics/:kpi */}
-        <Route path="/analytics/agentes" element={<AgentesResumenPage />} />
-        <Route path="/analytics/agentes/comparativa" element={<AgentesComparativaPage />} />
-        <Route path="/analytics/agentes/:agenteId" element={<AgenteDetallePage />} />
-        <Route path="/analytics/:kpi" element={<AnalyticsDetallePage />} />
+        <Route path="/analytics/agentes" element={<RequirePermiso permiso="analytics.ver"><AgentesResumenPage /></RequirePermiso>} />
+        <Route path="/analytics/agentes/comparativa" element={<RequirePermiso permiso="analytics.ver"><AgentesComparativaPage /></RequirePermiso>} />
+        <Route path="/analytics/agentes/:agenteId" element={<RequirePermiso permiso="analytics.ver"><AgenteDetallePage /></RequirePermiso>} />
+        <Route path="/analytics/:kpi" element={<RequirePermiso permiso="analytics.ver"><AnalyticsDetallePage /></RequirePermiso>} />
       </Route>
       <Route path="*" element={<Navigate to="/idea1" replace />} />
     </Routes>

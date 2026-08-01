@@ -22,6 +22,7 @@ function FormularioProfesional({
   const [apellidos, setApellidos] = useState(inicial?.apellidos ?? '');
   const [tipo, setTipo] = useState(inicial?.tipo ?? 'podologa');
   const [unidadNegocioId, setUnidadNegocioId] = useState(inicial?.unidadNegocioId ?? '');
+  const [colegiatura, setColegiatura] = useState(inicial?.colegiatura ?? '');
   const [colorAvatar, setColorAvatar] = useState(inicial?.colorAvatar ?? AVATAR_COLORES[0]);
 
   const submit = () => {
@@ -29,7 +30,14 @@ function FormularioProfesional({
       toast.error('Completa nombres, apellidos y área');
       return;
     }
-    onGuardar({ nombres: nombres.trim(), apellidos: apellidos.trim(), tipo, unidadNegocioId, colorAvatar });
+    onGuardar({
+      nombres: nombres.trim(),
+      apellidos: apellidos.trim(),
+      tipo,
+      unidadNegocioId,
+      colegiatura: colegiatura.trim() || undefined,
+      colorAvatar,
+    });
   };
 
   return (
@@ -68,6 +76,15 @@ function FormularioProfesional({
                 <option value="">Seleccionar área…</option>
                 {unidades.map(u => <option key={u.id} value={u.id}>{u.nombre}</option>)}
               </select>
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-semibold text-slate-500 mb-1">N° Colegiatura (Opcional)</label>
+              <input
+                className="input w-full text-sm font-mono"
+                value={colegiatura}
+                onChange={e => setColegiatura(e.target.value)}
+                placeholder="Ej: CMP 12345, COP 9876, CTMP 4567..."
+              />
             </div>
             <div className="col-span-2">
               <label className="block text-xs font-semibold text-slate-500 mb-1.5">Color de avatar</label>
@@ -193,6 +210,14 @@ export function PodologasPage() {
                     </h4>
                     <div className="flex items-center gap-2 mt-0.5 flex-wrap text-xxs text-slate-500">
                       <span className="font-medium text-slate-700">{TIPO_LABELS[prof.tipo] ?? prof.tipo}</span>
+                      {prof.colegiatura && (
+                        <>
+                          <span className="text-slate-300">•</span>
+                          <span className="bg-slate-100 text-slate-700 font-mono px-1.5 py-0.5 rounded text-[10px] font-semibold border border-slate-200/80">
+                            Col: {prof.colegiatura}
+                          </span>
+                        </>
+                      )}
                       <span className="text-slate-300">•</span>
                       <span>{prof.unidadNegocio.nombre}</span>
                       <span className="text-slate-300">•</span>
@@ -253,6 +278,7 @@ export function PodologasPage() {
             apellidos: profEditando.apellidos,
             tipo: profEditando.tipo,
             unidadNegocioId: profEditando.unidadNegocio.id,
+            colegiatura: profEditando.colegiatura ?? '',
             colorAvatar: profEditando.colorAvatar,
           } : undefined}
           unidades={unidades}
