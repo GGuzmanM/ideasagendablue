@@ -8,8 +8,12 @@ import { useAuthStore } from '../../stores/authStore';
 import { Idea1NuevoPacienteModal } from '../pacientes/Idea1NuevoPacienteModal';
 import { cn } from '../../utils/cn';
 
-export function CommandPalette() {
-  const [open, setOpen] = useState(false);
+interface BuscadorPacientesModalProps {
+  open: boolean;
+  onClose: () => void;
+}
+
+export function BuscadorPacientesModal({ open, onClose }: BuscadorPacientesModalProps) {
   const [query, setQuery] = useState('');
   const [selectedPacienteId, setSelectedPacienteId] = useState<string | null>(null);
   const [nuevoPacienteOpen, setNuevoPacienteOpen] = useState(false);
@@ -24,37 +28,19 @@ export function CommandPalette() {
     return Array.isArray(p) ? p.some((x) => perms.includes(x)) : perms.includes(p);
   };
 
-  // Abrir con Ctrl+K / Cmd+K o con evento personalizado 'agenda:open-command-palette'
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key?.toLowerCase() === 'k') {
-        e.preventDefault();
-        setOpen((o) => !o);
-        setQuery('');
-        setSelectedPacienteId(null);
-      }
-      if (e.key === 'Escape') {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && open) {
         if (selectedPacienteId) {
           setSelectedPacienteId(null);
         } else {
-          setOpen(false);
+          onClose();
         }
       }
     };
-
-    const handleOpenPalette = () => {
-      setOpen(true);
-      setQuery('');
-      setSelectedPacienteId(null);
-    };
-
-    window.addEventListener('keydown', handler);
-    document.addEventListener('agenda:open-command-palette', handleOpenPalette);
-    return () => {
-      window.removeEventListener('keydown', handler);
-      document.removeEventListener('agenda:open-command-palette', handleOpenPalette);
-    };
-  }, [selectedPacienteId]);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [open, selectedPacienteId, onClose]);
 
   useEffect(() => {
     if (open && !selectedPacienteId) {
@@ -62,7 +48,7 @@ export function CommandPalette() {
     }
   }, [open, selectedPacienteId]);
 
-  // Búsqueda de pacientes (Devuelve pacientes coincidentes o recientes si query está vacía)
+  // Búsqueda de pacientes (recientes si query está vacía, filtro si tiene texto)
   const { data: pacientes = [], isLoading: buscandoPacientes } = useQuery({
     queryKey: ['buscar-pacientes-modal', query],
     queryFn: () => pacientesApi.buscar(query),
@@ -113,20 +99,21 @@ export function CommandPalette() {
     );
   };
 
+  if (!open && !nuevoPacienteOpen) return null;
+
   return (
     <>
-      {/* Modal Búsqueda de Pacientes e Historial */}
       {open && (
         <div
           className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-inverse-surface/40 backdrop-blur-[2px] animate-in fade-in duration-200"
-          onClick={() => setOpen(false)}
+          onClick={onClose}
         >
           <div
             className="bg-surface-container-lowest border border-outline-variant/60 w-full max-w-3xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Header: ÚNICAMENTE las 2 Opciones solicitadas */}
-            <div className="p-3 bg-surface-container-low border-b border-outline-variant/30 flex items-center justify-between gap-3 shrink-0">
+            {/* Header: ÚNICAMENTE las 2 Opciones */}
+            <div className="p-3.5 bg-surface-container-low border-b border-outline-variant/30 flex items-center justify-between gap-3 shrink-0">
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -148,7 +135,7 @@ export function CommandPalette() {
                 <button
                   type="button"
                   onClick={() => {
-                    setOpen(false);
+                    onClose();
                     setNuevoPacienteOpen(true);
                   }}
                   className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white transition-all flex items-center gap-2 shadow-xs cursor-pointer"
@@ -160,7 +147,7 @@ export function CommandPalette() {
 
               <button
                 type="button"
-                onClick={() => setOpen(false)}
+                onClick={onClose}
                 className="p-1.5 rounded-xl hover:bg-surface-container text-on-surface-variant transition-colors cursor-pointer"
                 title="Cerrar ventana"
               >
@@ -273,7 +260,7 @@ export function CommandPalette() {
                       type="button"
                       onClick={() => {
                         navigate(`/pacientes/${selectedPacienteId}`);
-                        setOpen(false);
+                        onClose();
                       }}
                       className="px-3.5 py-1.5 bg-surface-container-lowest border border-outline-variant/60 text-on-surface text-xs font-bold rounded-xl hover:bg-surface-container transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
                     >

@@ -5,6 +5,7 @@ import { Idea1Sidebar } from '../components/layout/Idea1Sidebar';
 import { Idea1NuevaCitaModal } from '../components/agenda/Idea1NuevaCitaModal';
 import { Idea1DetalleCitaModal } from '../components/agenda/Idea1DetalleCitaModal';
 import { Idea1ModalHorarioSemanal } from '../components/agenda/Idea1ModalHorarioSemanal';
+import { BuscadorPacientesModal } from '../components/agenda/BuscadorPacientesModal';
 import {
   useIdea1AgendaData,
   getDefaultAvatar,
@@ -74,12 +75,25 @@ export function Idea1AgendaPage() {
   const [nuevaCitaParams, setNuevaCitaParams] = useState<{ horaInicio?: string; profesionalId?: string } | undefined>(undefined);
   const [citaSeleccionada, setCitaSeleccionada] = useState<any>(null);
   const [modalHorarioOpen, setModalHorarioOpen] = useState(false);
+  const [buscadorOpen, setBuscadorOpen] = useState(false);
   const [dragOverSlot, setDragOverSlot] = useState<{ doctorId: string; hora: string } | null>(null);
 
   const handleAbrirNuevaCita = (params?: { horaInicio?: string; profesionalId?: string }) => {
     setNuevaCitaParams(params);
     setIsNuevaCitaOpen(true);
   };
+
+  // Atajo Cmd/Ctrl+K para abrir el buscador de pacientes (mismo que el chip ⌘K).
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setBuscadorOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   return (
     <div className="bg-background text-on-surface antialiased overflow-hidden flex h-screen w-full">
@@ -91,17 +105,27 @@ export function Idea1AgendaPage() {
         {/* TOP NAVBAR */}
         <header className="docked full-width top-0 sticky z-50 bg-surface/80 backdrop-blur-md border-b border-outline-variant/30 shadow-sm flex justify-between items-center w-full px-8 h-16 shrink-0">
           <div className="flex items-center gap-6 flex-1">
-            <div className="relative w-full max-w-md group">
+            <div
+              onClick={(e) => {
+                e.stopPropagation();
+                setBuscadorOpen(true);
+              }}
+              className="relative w-full max-w-md group cursor-pointer"
+            >
               <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-lg">
                 search
               </span>
               <input
-                className="w-full bg-surface-container-low border border-outline-variant/50 rounded-lg pl-10 pr-16 py-2 text-body-md font-body-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
-                placeholder="Buscar pacientes, registros, archivos..."
+                className="w-full bg-surface-container-low border border-outline-variant/50 rounded-lg pl-10 pr-16 py-2 text-body-md font-body-md outline-none transition-all cursor-pointer"
+                placeholder="Buscar pacientes por nombre, DNI o teléfono..."
                 type="text"
-                onClick={() => setIsPaletteOpen(true)}
+                readOnly
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setBuscadorOpen(true);
+                }}
               />
-              <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1">
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 pointer-events-none">
                 <kbd className="px-1.5 py-0.5 text-[10px] font-mono-label bg-surface-container-high border border-outline-variant rounded text-on-surface-variant">
                   ⌘
                 </kbd>
@@ -1043,62 +1067,6 @@ export function Idea1AgendaPage() {
         </div>
       </main>
 
-      {/* COMMAND PALETTE OVERLAY */}
-      {isPaletteOpen && (
-        <div
-          className="fixed inset-0 bg-inverse-surface/20 backdrop-blur-sm z-[100] flex items-center justify-center p-4"
-          onClick={() => setIsPaletteOpen(false)}
-        >
-          <div
-            className="w-full max-w-2xl bg-surface-container-lowest rounded-2xl shadow-2xl border border-outline-variant/30 overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="p-4 border-b border-outline-variant/20 flex items-center gap-3">
-              <span className="material-symbols-outlined text-on-surface-variant">search</span>
-              <input
-                className="flex-1 border-none focus:ring-0 font-headline-sm text-headline-sm bg-transparent outline-none"
-                placeholder="Escribe un comando o busca..."
-                type="text"
-                autoFocus
-              />
-              <kbd className="px-2 py-1 text-xs font-mono-label bg-surface-container-high border border-outline-variant rounded text-on-surface-variant">
-                ESC
-              </kbd>
-            </div>
-            <div className="p-4 space-y-4">
-              <div className="space-y-1">
-                <p className="px-2 font-label-caps text-[10px] text-on-surface-variant mb-2">
-                  ACCIONES
-                </p>
-                <div className="flex items-center gap-3 p-2 hover:bg-primary/5 rounded-lg cursor-pointer group transition-colors">
-                  <span className="material-symbols-outlined text-on-surface-variant group-hover:text-primary">
-                    calendar_clock
-                  </span>
-                  <span className="flex-1 font-body-md text-on-surface">Crear Nueva Cita</span>
-                  <kbd className="text-[10px] font-mono-label text-on-surface-variant">N</kbd>
-                </div>
-                <div className="flex items-center gap-3 p-2 hover:bg-primary/5 rounded-lg cursor-pointer group transition-colors">
-                  <span className="material-symbols-outlined text-on-surface-variant group-hover:text-primary">
-                    person_add
-                  </span>
-                  <span className="flex-1 font-body-md text-on-surface">
-                    Registrar Nuevo Paciente
-                  </span>
-                  <kbd className="text-[10px] font-mono-label text-on-surface-variant">P</kbd>
-                </div>
-              </div>
-            </div>
-            <div className="bg-surface-container-low px-4 py-2 flex justify-between items-center text-[10px] text-on-surface-variant">
-              <div className="flex items-center gap-3">
-                <span>↑↓ para navegar</span>
-                <span>ENTER para seleccionar</span>
-              </div>
-              <span>Agenda</span>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Modal de Nueva Cita (Estilos Idea 1) */}
       {isNuevaCitaOpen && (
         <Idea1NuevaCitaModal
@@ -1127,6 +1095,9 @@ export function Idea1AgendaPage() {
           onClose={() => setModalHorarioOpen(false)}
         />
       )}
+
+      {/* Buscador de pacientes: buscar + historial de citas / registrar nuevo */}
+      <BuscadorPacientesModal open={buscadorOpen} onClose={() => setBuscadorOpen(false)} />
     </div>
   );
 }

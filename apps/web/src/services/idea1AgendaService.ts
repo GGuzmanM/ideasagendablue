@@ -807,19 +807,7 @@ export function useIdea1AgendaData() {
     });
   };
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        setIsPaletteOpen((prev) => !prev);
-      }
-      if (e.key === 'Escape') {
-        setIsPaletteOpen(false);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+
 
   // 8. Atajos de fecha y calculadores de renderizado de la grilla
   const quickShortcuts = obtenerAtajosFechaRapidos();

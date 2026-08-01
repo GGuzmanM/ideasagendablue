@@ -40,25 +40,42 @@ const crearPacienteSchema = z.object({
 // ─── Búsqueda con trigram ─────────────────────────────────────────────────────
 router.get('/buscar', requireAuth, requireScope('patients:read'), async (req, res) => {
   const q = (req.query.q as string)?.trim() ?? '';
-  if (q.length < 2) {
-    res.json([]);
-    return;
-  }
+  let pacientes: { id: string; nombres: string; apellidoPaterno: string; apellidoMaterno: string; telefono: string; tipoDocumento: string; numeroDocumento: string; email: string | null; fechaNacimiento: Date | null; requiereActualizacionDatos: boolean }[];
 
-  const pacientes = await prisma.$queryRaw<{ id: string; nombres: string; apellidoPaterno: string; apellidoMaterno: string; telefono: string; tipoDocumento: string; numeroDocumento: string; email: string | null; fechaNacimiento: Date | null; requiereActualizacionDatos: boolean }[]>`
-    SELECT id, nombres, "apellidoPaterno", "apellidoMaterno", telefono, "tipoDocumento", "numeroDocumento", email, "fechaNacimiento", "requiereActualizacionDatos"
-    FROM pacientes
-    WHERE "deletedAt" IS NULL
-      AND (
-        (nombres || ' ' || "apellidoPaterno" || ' ' || "apellidoMaterno") ILIKE ${'%' + q + '%'}
-        OR "numeroDocumento" ILIKE ${'%' + q + '%'}
-        OR telefono ILIKE ${'%' + q + '%'}
-      )
-    ORDER BY similarity(
-      nombres || ' ' || "apellidoPaterno" || ' ' || "apellidoMaterno", ${q}
-    ) DESC
-    LIMIT 10
-  `;
+  if (!q) {
+    pacientes = await prisma.paciente.findMany({
+      where: { deletedAt: null },
+      orderBy: { creadoEn: 'desc' },
+      take: 15,
+      select: {
+        id: true,
+        nombres: true,
+        apellidoPaterno: true,
+        apellidoMaterno: true,
+        telefono: true,
+        tipoDocumento: true,
+        numeroDocumento: true,
+        email: true,
+        fechaNacimiento: true,
+        requiereActualizacionDatos: true,
+      },
+    });
+  } else {
+    pacientes = await prisma.$queryRaw<{ id: string; nombres: string; apellidoPaterno: string; apellidoMaterno: string; telefono: string; tipoDocumento: string; numeroDocumento: string; email: string | null; fechaNacimiento: Date | null; requiereActualizacionDatos: boolean }[]>`
+      SELECT id, nombres, "apellidoPaterno", "apellidoMaterno", telefono, "tipoDocumento", "numeroDocumento", email, "fechaNacimiento", "requiereActualizacionDatos"
+      FROM pacientes
+      WHERE "deletedAt" IS NULL
+        AND (
+          (nombres || ' ' || "apellidoPaterno" || ' ' || "apellidoMaterno") ILIKE ${'%' + q + '%'}
+          OR "numeroDocumento" ILIKE ${'%' + q + '%'}
+          OR telefono ILIKE ${'%' + q + '%'}
+        )
+      ORDER BY similarity(
+        nombres || ' ' || "apellidoPaterno" || ' ' || "apellidoMaterno", ${q}
+      ) DESC
+      LIMIT 15
+    `;
+  }
 
   const [alertas, familiares] = await Promise.all([
     alertasDePacientes(pacientes.map((p) => p.id)),
