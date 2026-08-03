@@ -195,16 +195,17 @@ export async function calcularDisponibilidad(params: DisponibilidadParams): Prom
       },
     });
 
-    // Bloqueos de almuerzo recurrentes — vigentes en la fecha consultada
+    // Bloqueos de almuerzo — vigentes en la fecha consultada (los domingos solo aplican los almuerzos puntuales de esa fecha)
     const fechaConsultada = new Date(fecha + 'T12:00:00Z');
+    const esDom1 = fechaConsultada.getUTCDay() === 0;
     const bloqueosAlmuerzo = await prisma.bloqueoAgenda.findMany({
       where: {
         profesionalId: prof.id,
         deletedAt: null,
-        esRecurrente: true,
         tipo: 'ALMUERZO',
         fechaInicio: { lte: fechaConsultada },
         fechaFin: { gte: fechaConsultada },
+        ...(esDom1 ? { esRecurrente: false } : {}),
       },
     });
 
@@ -381,16 +382,17 @@ export async function seleccionarProfesionalOptimo(
     }
     if (bloqueado) continue;
 
-    // Verificar bloqueos de almuerzo recurrentes
+    // Verificar bloqueos de almuerzo (los domingos solo aplican los almuerzos puntuales de esa fecha)
     const fechaDate2 = new Date(fecha + 'T12:00:00Z');
+    const esDom2 = fechaDate2.getUTCDay() === 0;
     const almuerzosProf = await prisma.bloqueoAgenda.findMany({
       where: {
         profesionalId: prof.id,
         deletedAt: null,
-        esRecurrente: true,
         tipo: 'ALMUERZO',
         fechaInicio: { lte: fechaDate2 },
         fechaFin: { gte: fechaDate2 },
+        ...(esDom2 ? { esRecurrente: false } : {}),
       },
       select: { horaInicio: true, horaFin: true },
     });

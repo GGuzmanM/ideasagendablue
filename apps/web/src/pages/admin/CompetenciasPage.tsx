@@ -122,7 +122,6 @@ export function CompetenciasPage() {
 
                     {/* Columnas de servicios */}
                     {servsFiltrados.map(s => {
-                      const todosActivos = profsFiltrados.every(p => tieneCompetencia(p.id, s.id));
                       const tint = tintDeColor(s.color);
                       return (
                         <th key={s.id} className="sticky top-0 z-30 bg-surface-container-lowest border-b border-outline-variant/40 px-2 py-3 min-w-[110px]">
@@ -138,17 +137,6 @@ export function CompetenciasPage() {
                               </p>
                               <p className="text-[10px] text-on-surface-variant/70 font-mono">{s.duracionMinutos} min</p>
                             </div>
-                            <button
-                              onClick={() => toggleColumna(s.id, !todosActivos, s.nombre)}
-                              className={cn(
-                                'mt-1 px-2 py-0.5 rounded-full border text-[10px] font-bold uppercase tracking-wider transition',
-                                todosActivos
-                                  ? 'border-red-300/50 bg-red-50 text-red-700 hover:bg-red-100'
-                                  : 'border-primary/30 bg-primary/10 text-primary hover:bg-primary/20',
-                              )}
-                            >
-                              {todosActivos ? 'Quitar todas' : 'Agregar todas'}
-                            </button>
                           </div>
                         </th>
                       );
@@ -158,7 +146,6 @@ export function CompetenciasPage() {
 
                 <tbody>
                   {profsFiltrados.map(prof => {
-                    const todosActivos = servsFiltrados.every(s => tieneCompetencia(prof.id, s.id));
                     const count = servsFiltrados.filter(s => tieneCompetencia(prof.id, s.id)).length;
                     const nombreCorto = `${prof.nombres.split(' ')[0]} ${prof.apellidos.split(' ')[0]}`;
                     const enVacaciones = (prof as unknown as { enVacaciones?: boolean }).enVacaciones ?? false;
@@ -214,17 +201,6 @@ export function CompetenciasPage() {
                                 <span className={cn('text-[10px] font-bold px-1.5 py-0.5 rounded-full', chipCount)}>
                                   {count}/{servsFiltrados.length}
                                 </span>
-                                <button
-                                  onClick={() => toggleFila(prof.id, !todosActivos, nombreCorto)}
-                                  className={cn(
-                                    'text-[10px] font-bold px-1.5 py-0.5 rounded-full border uppercase tracking-wider transition',
-                                    todosActivos
-                                      ? 'text-red-700 bg-red-50 border-red-200/70 hover:bg-red-100'
-                                      : 'text-primary bg-primary/10 border-primary/30 hover:bg-primary/20',
-                                  )}
-                                >
-                                  {todosActivos ? 'Quitar' : 'Agregar'}
-                                </button>
                               </div>
                             </div>
                           </div>
@@ -283,7 +259,7 @@ export function CompetenciasPage() {
         {/* Instrucción + leyenda */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-xs text-slate-500">
-            Haz clic en una celda para agregar o quitar la competencia. Hover sobre una celda azul la marca en rojo = quitar. Usa los botones de fila/columna para operaciones masivas.
+            Haz clic en una celda para agregar o quitar la competencia de cada profesional.
           </p>
           <div className="flex flex-wrap items-center gap-4 text-xs text-on-surface-variant">
             <div className="flex items-center gap-1.5">

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../db';
 import { requireAuth } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
-import { crearAlmuerzo } from '../services/almuerzoService';
+import { crearAlmuerzo, esDomingo } from '../services/almuerzoService';
 import { registrarAudit } from '../services/audit';
 
 const router = Router();
@@ -21,16 +21,16 @@ router.get('/', requireAuth, async (req, res) => {
     : new Date().toISOString().split('T')[0]!;
   const fechaStart = new Date(`${fechaIso}T00:00:00.000Z`);
   const fechaEnd = new Date(`${fechaIso}T23:59:59.999Z`);
+  const esDom = esDomingo(fechaIso);
 
   const bloqueos = await prisma.bloqueoAgenda.findMany({
     where: {
       sedeId,
       tipo: 'ALMUERZO',
       deletedAt: null,
-      OR: [
-        { esRecurrente: true, fechaInicio: { lte: fechaEnd }, fechaFin: { gte: fechaStart } },
-        { esRecurrente: false, fechaInicio: { lte: fechaEnd }, fechaFin: { gte: fechaStart } },
-      ],
+      fechaInicio: { lte: fechaEnd },
+      fechaFin: { gte: fechaStart },
+      ...(esDom ? { esRecurrente: false } : {}),
     },
     include: {
       profesional: {
@@ -54,6 +54,7 @@ router.get('/profesional/:profesionalId', requireAuth, async (req, res) => {
     : new Date().toISOString().split('T')[0]!;
   const fechaStart = new Date(`${fechaIso}T00:00:00.000Z`);
   const fechaEnd = new Date(`${fechaIso}T23:59:59.999Z`);
+  const esDom = esDomingo(fechaIso);
 
   const bloqueo = await prisma.bloqueoAgenda.findFirst({
     where: {
@@ -61,10 +62,9 @@ router.get('/profesional/:profesionalId', requireAuth, async (req, res) => {
       sedeId,
       tipo: 'ALMUERZO',
       deletedAt: null,
-      OR: [
-        { esRecurrente: true, fechaInicio: { lte: fechaEnd }, fechaFin: { gte: fechaStart } },
-        { esRecurrente: false, fechaInicio: { lte: fechaEnd }, fechaFin: { gte: fechaStart } },
-      ],
+      fechaInicio: { lte: fechaEnd },
+      fechaFin: { gte: fechaStart },
+      ...(esDom ? { esRecurrente: false } : {}),
     },
     include: {
       creadoPorUsuario: { select: { id: true, nombre: true } },
@@ -166,28 +166,39 @@ router.delete('/:id', requireAuth, async (req, res) => {
     throw new AppError('Solo se pueden eliminar bloqueos de tipo almuerzo aquí.', 400);
   }
 
-  await prisma.bloqueoAgenda.update({
-    where: { id: req.params.id },
-    data: { deletedAt: new Date() },
-  });
+  const hoyLimaStr = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Lima' });
+  const hoyStart = new Date(`${hoyLimaStr}T00:00:00.000Z`);
+
+  if (bloqueo.fechaInicio < hoyStart) {
+    // Si el almuerzo inició en el pasado, acortamos su fechaFin a ayer para preservar el historial previo
+    const ayerEnd = new Date(hoyStart.getTime() - 1);
+    await prisma.bloqueoAgenda.update({
+      where: { id: req.params.id },
+      data: { fechaFin: ayerEnd },
+    });
+  } else {
+    // Si comenzó hoy o en el futuro, soft-delete
+    await prisma.bloqueoAgenda.update({
+      where: { id: req.params.id },
+      data: { deletedAt: new Date() },
+    });
+  }
 
   // Audit en AuditLog
-  await prisma.auditLog.create({
-    data: {
-      usuarioId: req.user?.userId,
-      accion: 'eliminar',
-      entidad: 'almuerzo',
-      entidadId: bloqueo.id,
-      antes: {
-        profesionalId: bloqueo.profesionalId,
-        sedeId: bloqueo.sedeId,
-        horaInicio: bloqueo.horaInicio,
-        horaFin: bloqueo.horaFin,
-      },
-      despues: { deletedAt: new Date().toISOString() },
-      sedeId: bloqueo.sedeId ?? undefined,
-      ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
+  await registrarAudit({
+    usuarioId: req.user?.userId,
+    accion: 'eliminar',
+    entidad: 'almuerzo',
+    entidadId: bloqueo.id,
+    antes: {
+      profesionalId: bloqueo.profesionalId,
+      sedeId: bloqueo.sedeId,
+      horaInicio: bloqueo.horaInicio,
+      horaFin: bloqueo.horaFin,
     },
+    despues: { eliminadoDesde: hoyLimaStr },
+    sedeId: bloqueo.sedeId ?? undefined,
+    ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
   });
 
   res.json({ ok: true });

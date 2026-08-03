@@ -7,12 +7,20 @@ function getFechaIso(fecha?: string): string {
   return `${hoyLima.getFullYear()}-${String(hoyLima.getMonth() + 1).padStart(2, '0')}-${String(hoyLima.getDate()).padStart(2, '0')}`;
 }
 
+export function esDomingo(fechaStr: string): boolean {
+  const [y, m, d] = fechaStr.split('-').map(Number);
+  const date = new Date(Date.UTC(y!, m! - 1, d!));
+  return date.getUTCDay() === 0;
+}
+
 export async function tieneAlmuerzoEnSede(
   profesionalId: string,
   sedeId: string,
   fecha?: string,
 ): Promise<boolean> {
   const f = getFechaIso(fecha);
+  if (esDomingo(f)) return false;
+
   const ini = new Date(`${f}T00:00:00.000Z`);
   const fin = new Date(`${f}T23:59:59.999Z`);
 
@@ -22,10 +30,8 @@ export async function tieneAlmuerzoEnSede(
       sedeId,
       tipo: 'ALMUERZO',
       deletedAt: null,
-      OR: [
-        { esRecurrente: true },
-        { fechaInicio: { lte: fin }, fechaFin: { gte: ini } },
-      ],
+      fechaInicio: { lte: fin },
+      fechaFin: { gte: ini },
     },
   });
   return !!existente;
@@ -43,42 +49,73 @@ export async function crearAlmuerzo(data: {
   if (!turno) throw new Error('Turno inválido. Debe ser 12:00, 13:00 o 14:00.');
 
   const fechaStr = getFechaIso(data.fecha);
-  const yaExiste = await tieneAlmuerzoEnSede(data.profesionalId, data.sedeId, fechaStr);
-  if (yaExiste) {
-    throw new Error(
-      'Esta profesional ya tiene un horario de almuerzo registrado para esa fecha en esta sede. ' +
-        'Elimínalo primero si necesitas cambiarlo.',
-    );
+  const [year, month, day] = fechaStr.split('-').map(Number);
+  const esDom = esDomingo(fechaStr);
+
+  let fIni: Date;
+  let fFin: Date;
+  let esRec: boolean;
+
+  if (esDom) {
+    // Si la fecha es domingo, el almuerzo es PUNTUAL (solo aplica para ese domingo específico)
+    fIni = new Date(Date.UTC(year!, month! - 1, day!, 0, 0, 0, 0));
+    fFin = new Date(Date.UTC(year!, month! - 1, day!, 23, 59, 59, 999));
+    esRec = false;
+  } else {
+    // Para días normales (Lunes a Sábado), rige vigencia hasta fin de mes
+    fIni = new Date(Date.UTC(year!, month! - 1, day!, 0, 0, 0, 0));
+    const fFinMes = new Date(Date.UTC(year!, month!, 0, 23, 59, 59, 999));
+
+    const fechaConsulta = new Date(`${fechaStr}T12:00:00Z`);
+    const asignacion = await prisma.asignacionSede.findFirst({
+      where: {
+        profesionalId: data.profesionalId,
+        sedeId: data.sedeId,
+        activa: true,
+        fechaInicio: { lte: fechaConsulta },
+        OR: [{ fechaFin: null }, { fechaFin: { gte: fechaConsulta } }],
+      },
+      orderBy: { fechaInicio: 'desc' },
+    });
+
+    fFin = fFinMes;
+    if (asignacion?.fechaFin && asignacion.fechaFin < fFinMes) {
+      fFin = asignacion.fechaFin;
+    }
+    esRec = true;
   }
 
-  const fechaConsulta = new Date(`${fechaStr}T12:00:00Z`);
-
-  const asignacion = await prisma.asignacionSede.findFirst({
+  // Buscar almuerzos previos activos que se traslapen con la nueva ventana [fIni, fFin]
+  const existentes = await prisma.bloqueoAgenda.findMany({
     where: {
       profesionalId: data.profesionalId,
       sedeId: data.sedeId,
-      activa: true,
-      fechaInicio: { lte: fechaConsulta },
-      OR: [{ fechaFin: null }, { fechaFin: { gte: fechaConsulta } }],
+      tipo: 'ALMUERZO',
+      deletedAt: null,
+      fechaInicio: { lte: fFin },
+      fechaFin: { gte: fIni },
     },
-    orderBy: { fechaInicio: 'desc' },
   });
 
-  if (!asignacion) {
-    throw new Error(
-      'La profesional no tiene asignación activa en esta sede para esa fecha. ' +
-        'Verifica el módulo de Movimientos antes de registrar el almuerzo.',
-    );
+  const diaAnteriorAIni = new Date(fIni.getTime() - 1);
+
+  for (const b of existentes) {
+    if (b.fechaInicio >= fIni) {
+      // Si el almuerzo previo inició en o después de la fecha del cambio, se desactiva
+      await prisma.bloqueoAgenda.update({
+        where: { id: b.id },
+        data: { deletedAt: new Date() },
+      });
+    } else {
+      // Si el almuerzo previo viene del pasado (antes de fIni), acortamos su fechaFin al día anterior
+      await prisma.bloqueoAgenda.update({
+        where: { id: b.id },
+        data: { fechaFin: diaAnteriorAIni },
+      });
+    }
   }
 
-  const esRec = data.esRecurrente ?? false;
-  const fIni = esRec
-    ? asignacion.fechaInicio
-    : new Date(`${fechaStr}T${turno.horaInicio}:00.000Z`);
-  const fFin = esRec
-    ? asignacion.fechaFin ?? new Date('2099-12-31')
-    : new Date(`${fechaStr}T${turno.horaFin}:00.000Z`);
-
+  // Crear el nuevo almuerzo (puntual si es domingo, recurrente mensual si es día normal)
   await prisma.bloqueoAgenda.create({
     data: {
       profesionalId: data.profesionalId,

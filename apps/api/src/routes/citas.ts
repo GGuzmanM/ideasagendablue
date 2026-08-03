@@ -155,9 +155,17 @@ async function validarSinBloqueo(profesionalId: string, fecha: string, horaInici
     }
   }
 
-  // Almuerzos recurrentes vigentes en la fecha.
+  // Almuerzos vigentes en la fecha (los domingos solo aplican los almuerzos puntuales de esa fecha).
+  const esDom = fechaPunto.getUTCDay() === 0;
   const almuerzos = await prisma.bloqueoAgenda.findMany({
-    where: { profesionalId, deletedAt: null, esRecurrente: true, tipo: 'ALMUERZO', fechaInicio: { lte: fechaPunto }, fechaFin: { gte: fechaPunto } },
+    where: {
+      profesionalId,
+      deletedAt: null,
+      tipo: 'ALMUERZO',
+      fechaInicio: { lte: fechaPunto },
+      fechaFin: { gte: fechaPunto },
+      ...(esDom ? { esRecurrente: false } : {}),
+    },
     select: { horaInicio: true, horaFin: true },
   });
   for (const a of almuerzos) {

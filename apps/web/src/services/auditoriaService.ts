@@ -262,7 +262,6 @@ export function parseUserAgent(ua?: string | null): string {
   return os ? `${browser} · ${os}` : browser;
 }
 
-// ── Diff antes/después ───────────────────────────────────────────────────────
 export interface DiffRow {
   campo: string;
   antes: unknown;
@@ -270,18 +269,119 @@ export interface DiffRow {
   tipo: 'add' | 'remove' | 'change';
 }
 
+// ── Nombres legibles (Alias) para los campos técnicos ─────────────────────────
+export const CAMPO_LABEL: Record<string, string> = {
+  id: 'ID',
+  sedeId: 'Sede',
+  pacienteId: 'Paciente',
+  profesionalId: 'Profesional',
+  servicioId: 'Servicio',
+  subcategoriaId: 'Subcategoría',
+  unidadNegocioId: 'Unidad de negocio',
+  solicitadoProfesionalId: 'Profesional solicitado',
+  creadoPorUsuarioId: 'Creado por',
+  creadoPor: 'Creado por',
+  createdBy: 'Creado por',
+  usuarioId: 'Usuario',
+  paqueteId: 'Paquete',
+  paquetePacienteId: 'Paquete del paciente',
+  promocionId: 'Promoción',
+  canalId: 'Canal',
+  citaId: 'Cita',
+  creadoEn: 'Creado',
+  actualizadoEn: 'Actualizado',
+  deletedAt: 'Eliminado',
+  fecha: 'Fecha',
+  horaInicio: 'Hora de inicio',
+  horaFin: 'Hora de fin',
+  duracionMinutos: 'Duración (min)',
+  estado: 'Estado',
+  estadoConfirmacion: 'Estado confirmación',
+  confirmacionEnviadaEn: 'Confirmación enviada',
+  confirmadaEn: 'Confirmado el',
+  canal: 'Canal',
+  origenAsignacion: 'Origen de asignación',
+  sesionConsumida: 'Sesión consumida',
+  sesionExonerada: 'Sesión no descontada',
+  sesionExoneradaMotivo: 'Motivo de no descuento',
+  sesionNumero: 'N° de sesión',
+  consultorioNumero: 'Consultorio',
+  comprobanteUrl: 'Comprobante',
+  idempotencyKey: 'Clave de idempotencia',
+  observaciones: 'Observaciones',
+  comentarios: 'Comentarios',
+  nota: 'Nota',
+  motivo: 'Motivo',
+  motivoCancelacion: 'Motivo de cancelación',
+  monto: 'Monto',
+  precio: 'Precio',
+  descuento: 'Descuento',
+  precioFinal: 'Precio final',
+  activo: 'Activo',
+  nombre: 'Nombre',
+  nombres: 'Nombres',
+  apellidoPaterno: 'Apellido paterno',
+  apellidoMaterno: 'Apellido materno',
+  email: 'Correo electrónico',
+  telefono: 'Teléfono',
+  documento: 'N° Documento',
+  tipoDocumento: 'Tipo documento',
+  fechaNacimiento: 'Fecha de nacimiento',
+  genero: 'Género',
+  direccion: 'Dirección',
+  distrito: 'Distrito',
+  color: 'Color',
+  rol: 'Rol',
+  orden: 'Orden',
+  etiqueta: 'Etiqueta',
+  valor: 'Valor',
+};
+
+/** Devuelve la etiqueta amigable del campo (o una versión limpia en Title Case si no está mapeado). */
+export function etiquetaCampo(campo: string): string {
+  if (CAMPO_LABEL[campo]) return CAMPO_LABEL[campo];
+
+  // Si termina en Id/ID y tiene longitud > 2, limpiar el sufijo Id
+  let limpio = campo.replace(/Id$/i, '');
+
+  // Convertir camelCase (ej: origenAsignacion) a separado por espacios: "Origen asignacion"
+  limpio = limpio.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/_/g, ' ');
+
+  // Primera letra en mayúscula
+  return limpio.charAt(0).toUpperCase() + limpio.slice(1);
+}
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Renderiza un valor del diff. Si es un UUID conocido (está en `nombresPorId`),
- * reemplaza por el nombre humano. Si no, devuelve el JSON del valor. Placeholder
- * '—' para valores ausentes.
+ * reemplaza por el nombre humano. Si es una fecha ISO, la formatea como dd/MM/yyyy - HH:mm.
+ * Si es null o undefined, devuelve '—'.
  */
 export function renderValor(v: unknown, nombresPorId: Record<string, string>): string {
-  if (v === undefined) return '—';
-  if (v === null) return 'null';
-  if (typeof v === 'string' && UUID_RE.test(v)) {
-    return nombresPorId[v] ?? v;
+  if (v === undefined || v === null) return '—';
+  if (v instanceof Date) return format(v, 'dd/MM/yyyy - HH:mm');
+  if (typeof v === 'string') {
+    // Si coincide con patrón de fecha ISO (ej: 2026-08-03T13:54:47.207Z o 2026-08-03)
+    if (/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d+)?Z?)?$/.test(v) && !isNaN(Date.parse(v))) {
+      try {
+        const d = new Date(v);
+        if (v.includes('T')) {
+          return format(d, 'dd/MM/yyyy - HH:mm');
+        }
+        return format(new Date(v + 'T00:00:00'), 'dd/MM/yyyy');
+      } catch {
+        // fallback en caso de error de fecha
+      }
+    }
+    // Si es un UUID conocido
+    if (UUID_RE.test(v)) {
+      return nombresPorId[v] ?? v;
+    }
+    return v;
+  }
+  if (typeof v === 'number' || typeof v === 'boolean') {
+    return String(v);
   }
   return JSON.stringify(v);
 }
@@ -293,11 +393,24 @@ export function calcularDiff(antes: Record<string, unknown> | null, despues: Rec
   for (const k of claves) {
     const a = antes?.[k];
     const d = despues?.[k];
+
+    // Omitir si ambos son nulos o indefinidos
+    if ((a === null || a === undefined) && (d === null || d === undefined)) continue;
+
+    // Omitir campos que nacen con null en despues (ruido de esquema Prisma al crear registros)
+    if (a === undefined && d === null) continue;
+
     const jsonA = JSON.stringify(a);
     const jsonD = JSON.stringify(d);
     if (jsonA === jsonD) continue;
+
+    // Si ambos valores se renderizan exactamente igual (ej: '—'), omitir la fila
+    const renderA = renderValor(a, {});
+    const renderD = renderValor(d, {});
+    if (renderA === renderD) continue;
+
     if (a === undefined) rows.push({ campo: k, antes: undefined, despues: d, tipo: 'add' });
-    else if (d === undefined) rows.push({ campo: k, antes: a, despues: undefined, tipo: 'remove' });
+    else if (d === undefined || d === null) rows.push({ campo: k, antes: a, despues: d, tipo: 'remove' });
     else rows.push({ campo: k, antes: a, despues: d, tipo: 'change' });
   }
   return rows;

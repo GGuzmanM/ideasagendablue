@@ -298,18 +298,32 @@ function FilaProfesional({
 
       {/* Acción */}
       {prof.almuerzo ? (
-        <button
-          onClick={() => onEliminar(prof.almuerzo!)}
-          className="p-2 text-on-surface-variant hover:text-error hover:bg-error-container/40 rounded-lg transition-all shrink-0"
-          title="Eliminar almuerzo"
-        >
-          <span className="material-symbols-outlined text-[20px]">delete</span>
-        </button>
+        <div className="flex items-center gap-1 shrink-0">
+          <div className="relative">
+            <button
+              onClick={() => setMostrando((v) => !v)}
+              className="px-3 py-1.5 rounded-lg border border-outline-variant text-primary font-headline-sm text-xs hover:bg-primary/5 transition-colors flex items-center gap-1 font-semibold"
+              title="Cambiar horario de almuerzo desde hoy hasta fin de mes"
+            >
+              <span className="material-symbols-outlined text-[16px]">edit</span> Cambiar
+            </button>
+            {mostrando && (
+              <PopoverAsignar profesional={prof} sedeId={sedeId} onClose={() => setMostrando(false)} />
+            )}
+          </div>
+          <button
+            onClick={() => onEliminar(prof.almuerzo!)}
+            className="p-1.5 text-on-surface-variant hover:text-error hover:bg-error-container/40 rounded-lg transition-all"
+            title="Eliminar horario de almuerzo"
+          >
+            <span className="material-symbols-outlined text-[18px]">delete</span>
+          </button>
+        </div>
       ) : noDisponible ? null : (
         <div className="relative shrink-0">
           <button
             onClick={() => setMostrando((v) => !v)}
-            className="px-4 py-2 rounded-lg border border-outline-variant text-primary font-headline-sm text-sm hover:bg-primary/5 transition-colors flex items-center gap-2"
+            className="px-4 py-2 rounded-lg border border-outline-variant text-primary font-headline-sm text-sm hover:bg-primary/5 transition-colors flex items-center gap-2 font-semibold"
           >
             <span className="material-symbols-outlined text-[18px]">add</span> Asignar
           </button>

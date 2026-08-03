@@ -13,6 +13,7 @@ import {
   calcularDiff,
   renderValor,
   etiquetaEntidad,
+  etiquetaCampo,
   formatIp,
   type AuditLog,
 } from '../../services/auditoriaService';
@@ -426,20 +427,6 @@ function ModalDiff({ log, nombresPorId, onClose }: { log: AuditLog; nombresPorId
               </div>
             )}
           </section>
-
-          {/* JSON crudo colapsable */}
-          {(log.antes || log.despues) && (
-            <section>
-              <details>
-                <summary className="cursor-pointer text-[11px] font-bold text-on-surface-variant uppercase tracking-wider flex items-center gap-1">
-                  <span className="material-symbols-outlined text-sm">code</span> Payload JSON crudo
-                </summary>
-                <pre className="mt-2 p-3 rounded-lg bg-slate-900 text-slate-100 text-[11px] font-mono overflow-x-auto custom-scrollbar">
-{JSON.stringify({ antes: log.antes, despues: log.despues }, null, 2)}
-                </pre>
-              </details>
-            </section>
-          )}
         </div>
 
         {/* Footer */}
@@ -483,8 +470,11 @@ function DiffRow({ row, nombresPorId }: { row: import('../../services/auditoriaS
   const despuesTitle = typeof row.despues === 'string' && /^[0-9a-f-]{36}$/i.test(row.despues) ? row.despues : undefined;
   return (
     <tr className={cn(cls, 'border-t border-outline-variant/25')}>
-      <td className={cn('px-3 py-2 font-sans font-semibold', row.tipo === 'remove' ? 'text-red-900' : row.tipo === 'add' ? 'text-emerald-900' : 'text-on-surface')}>
-        {row.campo}
+      <td
+        className={cn('px-3 py-2 font-sans font-semibold', row.tipo === 'remove' ? 'text-red-900' : row.tipo === 'add' ? 'text-emerald-900' : 'text-on-surface')}
+        title={`Campo técnico: ${row.campo}`}
+      >
+        {etiquetaCampo(row.campo)}
       </td>
       <td className={cn('px-3 py-2 whitespace-normal break-words', row.antes === undefined ? 'text-slate-400' : 'text-red-900')} title={antesTitle}>
         {antesTxt}
