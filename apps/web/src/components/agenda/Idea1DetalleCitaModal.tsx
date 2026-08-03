@@ -369,15 +369,17 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
               </div>
             </div>
 
-            {/* CONFIRMACIÓN POR CORREO */}
+            {/* CORREO DE CONFIRMACIÓN DE CITA */}
             {!esFinal && (
-              <div className="bg-primary/5 rounded-2xl p-4 flex justify-between items-center border border-primary/10">
+              <div className="p-4 rounded-2xl bg-surface-container-low border border-outline-variant/30 flex items-center justify-between gap-3">
                 <div>
                   <p className="font-label-caps text-label-caps text-primary font-bold">
                     Confirmación por correo
                   </p>
                   <p className="text-xs text-on-surface-variant/70 mt-0.5 font-medium">
-                    {cita.estadoConfirmacion === 'confirmada'
+                    {!cita.paciente.email?.trim()
+                      ? '⚠️ Paciente sin correo registrado'
+                      : cita.estadoConfirmacion === 'confirmada'
                       ? `✓ Confirmada por paciente`
                       : cita.confirmacionEnviadaEn
                       ? `Correo enviado`
@@ -386,11 +388,16 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                 </div>
                 <button
                   onClick={() => confirmarMailMutation.mutate()}
-                  disabled={confirmarMailMutation.isPending}
-                  className="bg-surface-container-lowest hover:bg-primary hover:text-white text-primary border border-primary/20 px-4 py-2 rounded-xl text-xs flex items-center gap-2 transition-all shadow-sm font-bold disabled:opacity-50 cursor-pointer"
+                  disabled={confirmarMailMutation.isPending || !cita.paciente.email?.trim()}
+                  title={!cita.paciente.email?.trim() ? 'El paciente no tiene correo electrónico registrado' : undefined}
+                  className="bg-surface-container-lowest hover:bg-primary hover:text-white text-primary border border-primary/20 px-4 py-2 rounded-xl text-xs flex items-center gap-2 transition-all shadow-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <span className="material-symbols-outlined text-base">mail</span>
-                  {confirmarMailMutation.isPending ? 'Enviando...' : 'Reenviar correo'}
+                  {confirmarMailMutation.isPending
+                    ? 'Enviando...'
+                    : !cita.paciente.email?.trim()
+                    ? 'Sin correo'
+                    : 'Reenviar correo'}
                 </button>
               </div>
             )}

@@ -26,10 +26,12 @@ export function AuditoriaPage() {
     q, setQ, page, setPage,
     logs, total, totalPages, limit,
     isLoading, stats, facetas, sedes,
-    nombresPorId,
+    nombresPorId, resetFiltros, hayFiltroActivo,
   } = useAuditoriaData();
 
   const [logSeleccionado, setLogSeleccionado] = useState<AuditLog | null>(null);
+
+  const esModoLoginOnly = accion.toUpperCase() === 'LOGIN' && (entidad === '' || entidad === 'usuario');
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -52,7 +54,46 @@ export function AuditoriaPage() {
           </div>
         </div>
 
-        {/* Filtros */}
+        {/* Acceso rápido a Vistas (Todos vs Logins) */}
+        <div className="flex items-center justify-between gap-2 flex-wrap bg-slate-100/70 p-1.5 rounded-xl border border-slate-200/80">
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => { setAccion(''); setEntidad(''); setQ(''); }}
+              className={cn(
+                'px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5',
+                !esModoLoginOnly
+                  ? 'bg-white text-slate-900 shadow-sm border border-slate-200'
+                  : 'text-slate-600 hover:bg-white/50'
+              )}
+            >
+              <span className="material-symbols-outlined text-sm">history</span>
+              Todos los eventos
+            </button>
+            <button
+              onClick={() => { setAccion('LOGIN'); setEntidad('usuario'); }}
+              className={cn(
+                'px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5',
+                esModoLoginOnly
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:bg-white/50'
+              )}
+            >
+              <span className="material-symbols-outlined text-sm">login</span>
+              Inicios de Sesión (Logins)
+            </button>
+          </div>
+          {hayFiltroActivo && (
+            <button
+              onClick={resetFiltros}
+              className="px-2.5 py-1 text-xs text-slate-500 hover:text-slate-700 font-semibold flex items-center gap-1"
+            >
+              <span className="material-symbols-outlined text-sm">filter_alt_off</span>
+              Limpiar filtros
+            </button>
+          )}
+        </div>
+
+        {/* Filtros detallados */}
         <div className="bg-white border border-slate-200 rounded-xl p-3 flex flex-wrap gap-3 items-end">
           <div>
             <label className="block text-xs font-semibold text-slate-500 mb-1">Desde</label>
@@ -102,7 +143,7 @@ export function AuditoriaPage() {
 
         {/* Tabla */}
         <div className="bg-surface-container-lowest rounded-2xl border border-outline-variant/40 shadow-sm overflow-hidden">
-          <div className="overflow-auto custom-scrollbar" style={{ maxHeight: 'calc(100vh - 320px)' }}>
+          <div className="overflow-auto custom-scrollbar" style={{ maxHeight: 'calc(100vh - 360px)' }}>
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr className="bg-surface-container-low sticky top-0 z-10">
@@ -112,7 +153,7 @@ export function AuditoriaPage() {
                   <ThCell>Entidad</ThCell>
                   <ThCell>Descripción</ThCell>
                   <ThCell>Sede</ThCell>
-                  <ThCell>IP</ThCell>
+                  <ThCell>IP / Dispositivo</ThCell>
                   <th className="text-right px-3 py-2.5 border-b border-outline-variant/40 font-bold text-[11px] text-on-surface-variant uppercase tracking-wider">
                     Cambios
                   </th>
@@ -210,6 +251,7 @@ function LogRow({ log, nombresPorId, onVer }: { log: AuditLog; nombresPorId: Rec
   const av = avatarDeUsuario(log.usuario?.nombre);
   const res = resumenLog(log, nombresPorId);
   const esSistema = !log.usuarioId;
+  const uaFmt = parseUserAgent(log.userAgent);
 
   return (
     <tr className="hover:bg-primary/5 transition-colors">
@@ -264,15 +306,26 @@ function LogRow({ log, nombresPorId, onVer }: { log: AuditLog; nombresPorId: Rec
       <td className="px-3 py-3 whitespace-nowrap">
         {(() => {
           const ipFmt = formatIp(log.ip);
-          if (!log.ip) return <span className="text-[10px] font-mono text-on-surface-variant/60 italic">—</span>;
-          return ipFmt.esLocal ? (
-            <span className="text-[10px] font-semibold text-on-surface-variant bg-surface-container-low px-1.5 py-0.5 rounded" title={log.ip}>
-              {ipFmt.texto}
-            </span>
-          ) : (
-            <span className="text-[10px] font-mono text-on-surface-variant bg-surface-container-low px-1.5 py-0.5 rounded">
-              {ipFmt.texto}
-            </span>
+          if (!log.ip && !log.userAgent) return <span className="text-[10px] font-mono text-on-surface-variant/60 italic">—</span>;
+          return (
+            <div className="flex flex-col gap-0.5">
+              {log.ip && (
+                ipFmt.esLocal ? (
+                  <span className="text-[10px] font-semibold text-on-surface-variant bg-surface-container-low px-1.5 py-0.5 rounded w-fit" title={log.ip}>
+                    {ipFmt.texto}
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-mono text-on-surface-variant bg-surface-container-low px-1.5 py-0.5 rounded w-fit">
+                    {ipFmt.texto}
+                  </span>
+                )
+              )}
+              {log.userAgent && (
+                <span className="text-[9px] text-on-surface-variant/70 truncate max-w-[140px]" title={uaFmt}>
+                  {uaFmt}
+                </span>
+              )}
+            </div>
           );
         })()}
       </td>

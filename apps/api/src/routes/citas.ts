@@ -375,6 +375,110 @@ router.get('/', requireAuth, async (req, res) => {
   res.json(conAlerta);
 });
 
+// ─── GET /citas/ocupacion-externa ─────────────────────────────────────────────
+// Devuelve las citas de OTRAS unidades de negocio (misma sede + fecha) que ocupan
+// el tiempo de algún profesional. Sirve para pintar "bloques fantasma" en la agenda:
+// p.ej. un médico que hace Baropodometría (guardado como solicitadoProfesional en una
+// cita cuya columna es la máquina Baro 1) debe verse OCUPADO también en su columna de
+// Podología, y viceversa. Es puramente informativo/visual — la validación anti-doble
+// booking ya existe en el backend (validarProfesionalLibre).
+router.get('/ocupacion-externa', requireAuth, async (req, res) => {
+  const { sedeId, fecha, unidadNegocioId } = req.query as Record<string, string>;
+  if (!sedeId || !fecha || !unidadNegocioId) {
+    throw new AppError('Faltan parámetros: sedeId, fecha, unidadNegocioId', 400);
+  }
+
+  // Todas las citas activas de la sede/fecha que NO pertenecen a la unidad actual.
+  const citas = await prisma.cita.findMany({
+    where: {
+      sedeId,
+      fecha: fechaDb(fecha),
+      unidadNegocioId: { not: unidadNegocioId },
+      deletedAt: null,
+      estado: { notIn: ['cancelada', 'no_show', 'reprogramada'] },
+    },
+    select: {
+      id: true,
+      horaInicio: true,
+      duracionMinutos: true,
+      estado: true,
+      profesionalId: true,
+      solicitadoProfesionalId: true,
+      paciente: { select: { nombres: true, apellidoPaterno: true } },
+      servicio: { select: { nombre: true, color: true } },
+      unidadNegocio: { select: { id: true, nombre: true, color: true } },
+      profesional: { select: { id: true, nombres: true, apellidos: true } },
+      solicitadoProfesional: { select: { id: true, nombres: true, apellidos: true } },
+    },
+    orderBy: { horaInicio: 'asc' },
+  });
+
+  // Para cada cita externa, emitir UNA entrada por cada profesional que ocupa
+  // (profesionalId y/o solicitadoProfesionalId). El frontend la pinta como bloque
+  // fantasma en la columna de ese profesional si aparece en la vista actual.
+  const ocupaciones = citas.flatMap((c) => {
+    const ids = new Set<string>();
+    if (c.profesionalId) ids.add(c.profesionalId);
+    if (c.solicitadoProfesionalId) ids.add(c.solicitadoProfesionalId);
+    const pacienteNombre = `${c.paciente.nombres.split(' ')[0]} ${c.paciente.apellidoPaterno}`;
+    // Etiqueta de "dónde está realmente" (la columna real de esa cita externa).
+    const enColumna = c.profesional ? `${c.profesional.nombres.split(' ')[0]} ${c.profesional.apellidos.split(' ')[0]}` : c.unidadNegocio.nombre;
+    return [...ids].map((profesionalOcupadoId) => ({
+      citaId: c.id,
+      profesionalOcupadoId,
+      horaInicio: c.horaInicio,
+      duracionMinutos: c.duracionMinutos,
+      estado: c.estado,
+      pacienteNombre,
+      servicioNombre: c.servicio.nombre,
+      unidadNegocio: c.unidadNegocio,
+      enColumna, // "Baro 1", etc. — dónde ocurre físicamente
+    }));
+  });
+
+  res.json(ocupaciones);
+});
+
+// ─── GET /citas/ocupacion-dia ─────────────────────────────────────────────────
+// Ocupación de TODOS los profesionales en una sede/fecha, a través de TODAS las
+// unidades. La usa el modal de Nueva Cita para avisar que un médico ya está ocupado
+// a la hora elegida (ej. elegir a Daniel para baro cuando ya tiene podología). Cada
+// entrada expande profesionalId + solicitadoProfesionalId (un médico ocupa su tiempo
+// aunque la cita esté a nombre de una máquina).
+router.get('/ocupacion-dia', requireAuth, async (req, res) => {
+  const { sedeId, fecha } = req.query as Record<string, string>;
+  if (!sedeId || !fecha) throw new AppError('Faltan parámetros: sedeId, fecha', 400);
+
+  const citas = await prisma.cita.findMany({
+    where: {
+      sedeId,
+      fecha: fechaDb(fecha),
+      deletedAt: null,
+      estado: { notIn: ['cancelada', 'no_show', 'reprogramada'] },
+    },
+    select: {
+      id: true, horaInicio: true, duracionMinutos: true,
+      profesionalId: true, solicitadoProfesionalId: true,
+      unidadNegocio: { select: { nombre: true } },
+    },
+  });
+
+  const ocupaciones = citas.flatMap((c) => {
+    const ids = new Set<string>();
+    if (c.profesionalId) ids.add(c.profesionalId);
+    if (c.solicitadoProfesionalId) ids.add(c.solicitadoProfesionalId);
+    return [...ids].map((profesionalId) => ({
+      profesionalId,
+      citaId: c.id,
+      horaInicio: c.horaInicio,
+      duracionMinutos: c.duracionMinutos,
+      unidad: c.unidadNegocio.nombre,
+    }));
+  });
+
+  res.json(ocupaciones);
+});
+
 // ─── Página HTML pública (confirmar/cancelar desde el correo) ─────────────────
 // Branding Limablue mínimo y autocontenido (sin assets externos = portable).
 function paginaPublica(opts: { ok: boolean; titulo: string; mensaje: string; detalle?: string }): string {

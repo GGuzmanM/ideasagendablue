@@ -510,7 +510,9 @@ export function PopoverCita({ cita, onClose, onReprogramar }: PopoverCitaProps) 
                 <div className="min-w-0">
                   <p className="text-xs font-semibold text-slate-600">Confirmación por correo</p>
                   <p className="text-xxs text-slate-400 mt-0.5">
-                    {cita.estadoConfirmacion === 'confirmada'
+                    {!cita.paciente.email?.trim()
+                      ? '⚠️ Paciente sin correo registrado'
+                      : cita.estadoConfirmacion === 'confirmada'
                       ? `✓ Confirmada por el paciente${cita.confirmadaEn ? ` · ${format(new Date(cita.confirmadaEn), "d MMM HH:mm", { locale: es })}` : ''}`
                       : cita.estadoConfirmacion === 'cancelada'
                       ? '✕ Cancelada por el paciente'
@@ -521,16 +523,21 @@ export function PopoverCita({ cita, onClose, onReprogramar }: PopoverCitaProps) 
                 </div>
                 <button
                   onClick={() => confirmarMailMutation.mutate()}
-                  disabled={confirmarMailMutation.isPending}
-                  className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-limablue-700 bg-limablue-50 border border-limablue-200 hover:bg-limablue-100 disabled:opacity-50 transition-colors"
+                  disabled={confirmarMailMutation.isPending || !cita.paciente.email?.trim()}
+                  title={!cita.paciente.email?.trim() ? 'El paciente no tiene correo electrónico registrado' : undefined}
+                  className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-limablue-700 bg-limablue-50 border border-limablue-200 hover:bg-limablue-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   {confirmarMailMutation.isPending
                     ? 'Enviando…'
+                    : !cita.paciente.email?.trim()
+                    ? '✉️ Sin correo'
                     : '✉️ Reenviar correo'}
                 </button>
               </div>
               <p className="text-xxs text-slate-400 mt-1.5">
-                El correo se envía automáticamente al agendar. Usa este botón solo si el paciente no lo recibió.
+                {!cita.paciente.email?.trim()
+                  ? 'Agrega un correo en la ficha del paciente para habilitar la confirmación.'
+                  : 'El correo se envía automáticamente al agendar. Usa este botón solo si el paciente no lo recibió.'}
               </p>
             </div>
           )}

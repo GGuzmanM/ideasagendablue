@@ -6,6 +6,7 @@ import { Idea1NuevaCitaModal } from '../components/agenda/Idea1NuevaCitaModal';
 import { Idea1DetalleCitaModal } from '../components/agenda/Idea1DetalleCitaModal';
 import { Idea1ModalHorarioSemanal } from '../components/agenda/Idea1ModalHorarioSemanal';
 import { BuscadorPacientesModal } from '../components/agenda/BuscadorPacientesModal';
+import { citasApi } from '../api/citas';
 import {
   useIdea1AgendaData,
   getDefaultAvatar,
@@ -41,6 +42,7 @@ export function Idea1AgendaPage() {
     doctores,
     bloqueosAlmuerzo = [],
     permisosAgenda = [],
+    ocupacionesExternas = [],
     turnosProfesionales = {},
     horarioEfectivo,
     horarios,
@@ -81,6 +83,17 @@ export function Idea1AgendaPage() {
   const handleAbrirNuevaCita = (params?: { horaInicio?: string; profesionalId?: string }) => {
     setNuevaCitaParams(params);
     setIsNuevaCitaOpen(true);
+  };
+
+  // Al hacer clic en un bloque fantasma (ocupación en otra unidad), trae la cita
+  // completa y abre su detalle — aunque pertenezca a Baropodometría u otra unidad.
+  const handleVerOcupacionExterna = async (citaId: string) => {
+    try {
+      const cita = await citasApi.obtener(citaId);
+      setCitaSeleccionada(cita);
+    } catch {
+      /* si falla la carga, no rompe la agenda */
+    }
   };
 
   // Atajo Cmd/Ctrl+K para abrir el buscador de pacientes (mismo que el chip ⌘K).
@@ -682,6 +695,8 @@ export function Idea1AgendaPage() {
                       const docCitas = citas.filter((c) => c.doctorId === doc.id);
                       const docAlmuerzos = bloqueosAlmuerzo.filter((b) => b.profesionalId === doc.id);
                       const docPermisos = permisosAgenda.filter((p) => p.profesionalId === doc.id && !p.esVacaciones);
+                      // Ocupaciones en OTRA unidad (ej. Baropodometría) de este profesional.
+                      const docOcupaciones = ocupacionesExternas.filter((o) => o.profesionalOcupadoId === doc.id);
                       const startMinGrid = horaInicioInt * 60;
                       const endMinGrid = horaFinInt * 60;
 
@@ -787,6 +802,52 @@ export function Idea1AgendaPage() {
                               </div>
                             );
                           })}
+
+                          {/* BLOQUES FANTASMA: ocupación de este profesional en OTRA unidad
+                              (ej. Baropodometría). Rayado, clickeable para ver el detalle. */}
+                          {docOcupaciones.map((oc) => {
+                            const ini = Math.max(timeToMinutes(oc.horaInicio), startMinGrid);
+                            const fin = Math.min(ini + (oc.duracionMinutos || 30), endMinGrid);
+                            if (fin <= ini) return null;
+                            const topPx = ((ini - startMinGrid) / 60) * ROW_HEIGHT;
+                            const heightPx = Math.max(((fin - ini) / 60) * ROW_HEIGHT - 4, 40);
+                            const isCompact = heightPx < 58;
+                            return (
+                              <div
+                                key={`ocup-${oc.citaId}-${doc.id}`}
+                                onClick={() => handleVerOcupacionExterna(oc.citaId)}
+                                title={`Ocupado en ${oc.unidadNegocio.nombre} (${oc.enColumna}) · ${oc.pacienteNombre} · ${oc.servicioNombre}\nClic para ver el detalle`}
+                                style={{
+                                  position: 'absolute',
+                                  top: `${topPx}px`,
+                                  height: `${heightPx}px`,
+                                  left: '3px',
+                                  right: '3px',
+                                  backgroundColor: '#f1f5f9',
+                                  backgroundImage:
+                                    'repeating-linear-gradient(135deg, rgba(100,116,139,0.18) 0, rgba(100,116,139,0.18) 6px, transparent 6px, transparent 13px)',
+                                }}
+                                className="pointer-events-auto cursor-pointer rounded-xl px-2 py-1.5 flex flex-col justify-center border-2 border-dashed border-slate-400/70 text-slate-700 overflow-hidden select-none z-15 hover:border-slate-500 transition-colors shadow-xs"
+                              >
+                                <div className="flex items-center gap-1 font-bold text-[11px] text-slate-700 truncate">
+                                  <span className="material-symbols-outlined text-sm shrink-0">block</span>
+                                  <span className="truncate">Ocupado · {oc.unidadNegocio.nombre}</span>
+                                </div>
+                                {!isCompact && (
+                                  <div className="flex flex-col gap-0.5 mt-0.5 min-w-0">
+                                    <span className="text-[10px] font-semibold text-slate-600 truncate">
+                                      {oc.pacienteNombre}
+                                    </span>
+                                    <span className="text-[10px] text-slate-500 truncate">
+                                      {oc.servicioNombre} · {oc.enColumna}
+                                    </span>
+                                    <span className="text-[9px] font-mono text-slate-500">{oc.horaInicio}</span>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+
                           {docCitas.map((cita) => {
                             const citaStart = timeToMinutes(cita.horaInicio);
                             const topPx = ((citaStart - startMinGrid) / 60) * ROW_HEIGHT;

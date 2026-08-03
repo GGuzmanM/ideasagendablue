@@ -310,6 +310,34 @@ export function useIdea1NuevaCitaForm({
     enabled: Boolean(sedeId) && Boolean(unidadNegocioId),
   });
 
+  // Ocupación de TODOS los profesionales ese día (todas las unidades). Se usa para
+  // avisar en el dropdown si un médico ya está ocupado a la hora elegida — clave para
+  // baro: elegir a un médico que ya tiene podología a esa hora (o viceversa).
+  const { data: ocupacionDia = [] } = useQuery({
+    queryKey: ['ocupacion-dia', sedeId, fechaCita],
+    queryFn: () => citasApi.ocupacionDia({ sedeId, fecha: fechaCita }),
+    enabled: Boolean(sedeId) && Boolean(fechaCita),
+  });
+
+  // Mapa profesionalId → "ocupado en Unidad a las HH:MM" para los que se solapan
+  // con el slot elegido (hora + duración del servicio seleccionado).
+  const profesionalesOcupados = useMemo(() => {
+    const toMin = (t: string) => { const [h, m] = t.split(':').map(Number); return (h || 0) * 60 + (m || 0); };
+    const dur = serviciosData.find((s) => s.id === servicioId)?.duracionMinutos ?? 30;
+    const ini = toMin(horaCita);
+    const fin = ini + dur;
+    const map = new Map<string, { unidad: string; hora: string }>();
+    for (const o of ocupacionDia) {
+      const oIni = toMin(o.horaInicio);
+      const oFin = oIni + (o.duracionMinutos || 30);
+      if (ini < oFin && oIni < fin) {
+        // Solo el primer solape encontrado por profesional (basta para el aviso).
+        if (!map.has(o.profesionalId)) map.set(o.profesionalId, { unidad: o.unidad, hora: o.horaInicio });
+      }
+    }
+    return map;
+  }, [ocupacionDia, horaCita, servicioId, serviciosData]);
+
   // Filtro de servicios: si hay un profesional seleccionado (desde el horario o dropdown),
   // filtrar inmediatamente los servicios habilitados por sus competencias.
   const servicios = useMemo(() => {
@@ -765,6 +793,7 @@ export function useIdea1NuevaCitaForm({
     servicios,
     subcategorias,
     profesionales,
+    profesionalesOcupados,
     resultadosPacientes,
     buscandoPacientes,
     canales,

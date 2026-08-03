@@ -66,6 +66,7 @@ export interface AccionStyle {
 }
 
 const ACCION_MATCHERS: { match: RegExp; style: AccionStyle }[] = [
+  { match: /login|inicio_sesion/i, style: { label: 'Login',           icon: 'login',        bg: 'bg-emerald-100', text: 'text-emerald-800', border: 'border-emerald-200/70', circleBg: 'bg-emerald-600' } },
   { match: /crear|registrar/i,     style: { label: 'Crear',           icon: 'add_circle',   bg: 'bg-emerald-100', text: 'text-emerald-800', border: 'border-emerald-200/70', circleBg: 'bg-emerald-600' } },
   { match: /mover|reprogramar/i,   style: { label: 'Mover',           icon: 'swap_horiz',   bg: 'bg-blue-100',    text: 'text-blue-800',    border: 'border-blue-200/70',    circleBg: 'bg-blue-600' } },
   { match: /cambiar_estado/i,      style: { label: 'Cambiar estado',  icon: 'autorenew',    bg: 'bg-amber-100',   text: 'text-amber-800',   border: 'border-amber-200/70',   circleBg: 'bg-amber-600' } },
@@ -151,6 +152,18 @@ export function etiquetaEntidad(entidad: string): string {
 export function resumenLog(log: AuditLog, nombresPorId: Record<string, string> = {}): { titulo: string; subtitulo?: string } {
   const contexto = (log.despues || log.antes || {}) as Record<string, unknown>;
   const etiqueta = etiquetaEntidad(log.entidad);
+
+  // Login / Inicio de sesión
+  if (log.accion.toLowerCase().includes('login') || (log.entidad === 'usuario' && log.accion.toUpperCase() === 'LOGIN')) {
+    const usrNombre = log.usuario?.nombre || (contexto.nombre as string) || 'Usuario';
+    const email = log.usuario?.email || (contexto.email as string);
+    const rol = log.usuario?.rol || (contexto.rol as string);
+    const subtitulo = [email, rol].filter(Boolean).join(' · ');
+    return {
+      titulo: `Inicio de sesión · ${usrNombre}`,
+      subtitulo: subtitulo || undefined,
+    };
+  }
 
   // Cita — se muestra con datos del paciente (join server-side).
   if (log.entidad === 'cita' && log.cita) {

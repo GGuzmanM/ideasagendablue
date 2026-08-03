@@ -666,6 +666,21 @@ export function useIdea1AgendaData() {
     refetchInterval: 5_000,
   });
 
+  // 3b. Ocupaciones externas (otras unidades) para pintar bloques fantasma.
+  // Ej.: un médico ocupado en Baropodometría se ve OCUPADO en su columna de Podología
+  // (y viceversa). Solo visual — la validación anti-doble-booking ya existe en backend.
+  const { data: ocupacionesExternas = [] } = useQuery({
+    queryKey: ['ocupacion-externa', sedeId, unidadNegocioId, fechaStr()],
+    queryFn: () =>
+      citasApi.ocupacionExterna({
+        sedeId: sedeId!,
+        unidadNegocioId: unidadNegocioId!,
+        fecha: fechaStr(),
+      }),
+    enabled: !!sedeId && !!unidadNegocioId,
+    refetchInterval: 5_000,
+  });
+
   // 4. Doctores/Profesionales desde la Base de Datos
   const { data: profesionalesDb } = useQuery({
     queryKey: ['profesionales-sede', sedeId, unidadNegocioId, fechaStr()],
@@ -883,6 +898,7 @@ export function useIdea1AgendaData() {
     doctores,
     bloqueosAlmuerzo,
     permisosAgenda,
+    ocupacionesExternas,
     turnosProfesionales,
     horarioEfectivo: horarioData?.efectivo,
     horarios,

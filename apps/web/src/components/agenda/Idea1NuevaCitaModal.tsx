@@ -87,6 +87,7 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
     servicios,
     subcategorias,
     profesionales,
+    profesionalesOcupados,
     resultadosPacientes,
     buscandoPacientes,
     canales,
@@ -765,16 +766,33 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
                 className="w-full appearance-none bg-surface-container-low border border-outline-variant rounded-xl pl-11 pr-4 py-3 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all font-medium text-on-surface"
               >
                 <option value="">Sin preferencia (asignación automática)</option>
-                {profesionales.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.nombres} {p.apellidos} ({p.tipo})
-                  </option>
-                ))}
+                {profesionales.map((p) => {
+                  const ocup = profesionalesOcupados?.get(p.id);
+                  return (
+                    <option key={p.id} value={p.id} disabled={!!ocup}>
+                      {p.nombres} {p.apellidos} ({p.tipo})
+                      {ocup ? ` — OCUPADO ${ocup.hora} en ${ocup.unidad}` : ''}
+                    </option>
+                  );
+                })}
               </select>
               <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-outline">
                 expand_more
               </span>
             </div>
+
+            {/* Aviso si el profesional elegido ya está ocupado a esa hora en otra unidad */}
+            {profesionalId && profesionalesOcupados?.get(profesionalId) && (
+              <div className="flex items-center gap-2 p-2.5 bg-red-50 border border-red-200 rounded-xl">
+                <span className="material-symbols-outlined text-red-600 text-lg">block</span>
+                <p className="text-xs font-semibold text-red-800">
+                  Este profesional ya está ocupado a las {profesionalesOcupados.get(profesionalId)!.hora} en{' '}
+                  {profesionalesOcupados.get(profesionalId)!.unidad}. No puede atender en dos lugares a la vez — elige otro
+                  horario o profesional.
+                </p>
+              </div>
+            )}
+
             <p className="font-body-md text-xs text-on-surface-variant/70 italic">
               Por defecto se asigna automáticamente. Elige un médico o especialista solo si el paciente lo pidió expresamente.
             </p>

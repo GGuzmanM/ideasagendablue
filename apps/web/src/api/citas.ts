@@ -116,9 +116,41 @@ export interface RespuestaCombinada {
   extra: CitaResumen;
 }
 
+// Bloque "fantasma" de ocupación externa: una cita de OTRA unidad (ej. Baropodometría)
+// que ocupa el tiempo de un profesional que sí tiene columna en la vista actual.
+export interface OcupacionExterna {
+  citaId: string;
+  profesionalOcupadoId: string; // el profesional cuyo tiempo se ocupa (→ su columna)
+  horaInicio: string;
+  duracionMinutos: number;
+  estado: string;
+  pacienteNombre: string;
+  servicioNombre: string;
+  unidadNegocio: { id: string; nombre: string; color: string };
+  enColumna: string; // dónde ocurre físicamente (ej. "Baro 1")
+}
+
+// Ocupación de un profesional en la sede/fecha (una entrada por cita que lo ocupa).
+export interface OcupacionDia {
+  profesionalId: string;
+  citaId: string;
+  horaInicio: string;
+  duracionMinutos: number;
+  unidad: string;
+}
+
 export const citasApi = {
   listar: (params: { sedeId?: string; fecha?: string; unidadNegocioId?: string; profesionalId?: string }) =>
     api.get<CitaResumen[]>('/citas', params as Record<string, string>),
+
+  // Ocupaciones de otras unidades para pintar bloques fantasma en la agenda.
+  ocupacionExterna: (params: { sedeId: string; fecha: string; unidadNegocioId: string }) =>
+    api.get<OcupacionExterna[]>('/citas/ocupacion-externa', params as Record<string, string>),
+
+  // Ocupación de todos los profesionales en una sede/fecha (todas las unidades).
+  // La usa el modal Nueva Cita para avisar "ya ocupado a las HH:MM".
+  ocupacionDia: (params: { sedeId: string; fecha: string }) =>
+    api.get<OcupacionDia[]>('/citas/ocupacion-dia', params as Record<string, string>),
 
   obtener: (id: string) =>
     api.get<CitaResumen>(`/citas/${id}`),

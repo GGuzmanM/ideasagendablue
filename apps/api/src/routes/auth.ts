@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import { prisma } from '../db';
 import { signToken, requireAuth, getPermisosRol } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
+import { registrarAudit } from '../services/audit';
 
 const router = Router();
 
@@ -32,6 +33,19 @@ router.post('/login', async (req, res) => {
   const sedeIds = usuario.sedes.map((us: { sedeId: string }) => us.sedeId);
   const permisos = await getPermisosRol(usuario.rol);
   const token = signToken({ userId: usuario.id, rol: usuario.rol, sedes: sedeIds, permisos });
+
+  const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || req.socket.remoteAddress;
+  const userAgent = req.headers['user-agent'];
+
+  await registrarAudit({
+    usuarioId: usuario.id,
+    accion: 'LOGIN',
+    entidad: 'usuario',
+    entidadId: usuario.id,
+    ip: clientIp,
+    userAgent,
+    despues: { email: usuario.email, nombre: usuario.nombre, rol: usuario.rol },
+  });
 
   res.json({
     token,
