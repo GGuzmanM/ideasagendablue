@@ -29,536 +29,409 @@ interface Paciente {
   telefono: string;
 }
 
-type Vista = 'inicio' | 'excel' | 'pdf' | 'reactivacion';
+type Vista = 'inicio' | 'exportaciones' | 'marketing' | 'operaciones_personal' | 'comunicaciones' | 'config_sistema';
 
 // ── Componente principal ─────────────────────────────────────────────────────
 export function HerramientasPage() {
+  const navigate = useNavigate();
+  const tiene = useAuthStore(s => s.tiene);
+  const esAdmin = useAuthStore.getState().usuario?.rol === 'admin';
+
   const [vista, setVista] = useState<Vista>('inicio');
+  const [exportTab, setExportTab] = useState<'excel' | 'reactivacion' | 'pdf'>('excel');
+
+  const verOperativas = tiene('herramientas.operativas') || tiene('herramientas.estrategicas');
+  const verEstrategicas = tiene('herramientas.estrategicas');
 
   return (
     <div className="flex-1 overflow-y-auto bg-slate-50 flex flex-col">
-      {/* Header */}
-      <div className="bg-white border-b border-slate-200 px-6 py-4 flex items-center gap-3 flex-shrink-0">
-        {vista !== 'inicio' && (
-          <button
-            onClick={() => setVista('inicio')}
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-all mr-1"
-            title="Volver a Herramientas"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+      {/* Header Superior */}
+      <div className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between flex-shrink-0">
+        <div className="flex items-center gap-3">
+          {vista !== 'inicio' && (
+            <button
+              onClick={() => setVista('inicio')}
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-all mr-1"
+              title="Volver a Herramientas"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+          )}
+          <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center flex-shrink-0 shadow-sm">
+            <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
             </svg>
-          </button>
-        )}
-        <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center flex-shrink-0">
-          <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-              d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
-        </div>
-        <div>
-          <h1 className="text-base font-bold text-slate-900">
-            {vista === 'inicio'
-              ? 'Herramientas'
-              : vista === 'excel'
-              ? 'Lista de citas · Excel'
-              : vista === 'reactivacion'
-              ? 'Reactivación de Pacientes · Excel'
-              : 'Historial de Atenciones · PDF'}
-          </h1>
-          <p className="text-xs text-slate-500">
-            {vista === 'inicio'
-              ? 'Exportaciones y reportes para la gestión de la clínica'
-              : vista === 'excel'
-              ? 'Exportar agenda del día para confirmaciones WhatsApp'
-              : vista === 'reactivacion'
-              ? 'Pacientes que no han visitado Limablue en un período de tiempo'
-              : 'Resumen de atenciones del paciente'}
-          </p>
+          </div>
+          <div>
+            <h1 className="text-base font-bold text-slate-900">
+              {vista === 'inicio'
+                ? 'Herramientas'
+                : vista === 'exportaciones'
+                ? 'Exportaciones y Reportes'
+                : vista === 'marketing'
+                ? 'Marketing y Canales'
+                : vista === 'operaciones_personal'
+                ? 'Operaciones de Personal y Sedes'
+                : vista === 'comunicaciones'
+                ? 'Comunicaciones y Envíos'
+                : 'Configuración del Sistema'}
+            </h1>
+            <p className="text-xs text-slate-500">
+              {vista === 'inicio'
+                ? 'Módulos y herramientas centralizadas de la clínica'
+                : vista === 'exportaciones'
+                ? 'Extracción de agendas en CSV/Excel, reactivación y reportes'
+                : vista === 'marketing'
+                ? 'Administración de promociones, canales de origen y membresías'
+                : vista === 'operaciones_personal'
+                ? 'Días especiales, composición de sedes y personal por solicitud'
+                : vista === 'comunicaciones'
+                ? 'Recordatorios por correo, servidores de envío y videos educativos'
+                : 'Reglas avanzadas de agenda y conciliaciones'}
+            </p>
+          </div>
         </div>
       </div>
 
-      {/* Contenido según vista */}
-      {vista === 'inicio' && <VistaInicio onSeleccionar={setVista} />}
-      {vista === 'excel' && (
-        <div className="p-6 max-w-2xl">
-          <ExcelTool />
+      {/* Vista de inicio (Hubs Principales) */}
+      {vista === 'inicio' && (
+        <div className="flex-1 p-8">
+          <div className="mb-8">
+            <h2 className="text-xl font-bold text-slate-900 mb-1">Módulos de Herramientas</h2>
+            <p className="text-sm text-slate-500">Selecciona un área para acceder a sus funciones.</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {/* 1. Exportaciones y Reportes */}
+            {verOperativas && (
+              <button
+                onClick={() => setVista('exportaciones')}
+                className="group bg-white rounded-2xl border border-slate-200 p-6 text-left transition-all duration-200 hover:-translate-y-1 hover:shadow-xl hover:shadow-emerald-100 hover:border-emerald-300"
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-700 text-white flex items-center justify-center shadow-lg text-2xl group-hover:scale-105 transition-transform">
+                    📊
+                  </div>
+                  <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800">
+                    4 Herramientas
+                  </span>
+                </div>
+                <p className="text-xxs font-semibold text-slate-400 uppercase tracking-wider mb-1">Gestión de Datos</p>
+                <h3 className="text-base font-bold text-slate-900 mb-2">Exportaciones y Reportes</h3>
+                <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+                  Lista de citas (CSV), reactivación de pacientes (Excel), historial clínico (PDF) y reportes de RRHH.
+                </p>
+                <div className="flex flex-wrap gap-1.5 pt-2 border-t border-slate-100">
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">Lista Citas</span>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">Reactivación</span>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">Historial PDF</span>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">Reportes RRHH</span>
+                </div>
+              </button>
+            )}
+
+            {/* 2. Marketing y Canales */}
+            {verEstrategicas && (
+              <button
+                onClick={() => setVista('marketing')}
+                className="group bg-white rounded-2xl border border-slate-200 p-6 text-left transition-all duration-200 hover:-translate-y-1 hover:shadow-xl hover:shadow-amber-100 hover:border-amber-300"
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-600 text-white flex items-center justify-center shadow-lg text-2xl group-hover:scale-105 transition-transform">
+                    📣
+                  </div>
+                  <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-800">
+                    3 Herramientas
+                  </span>
+                </div>
+                <p className="text-xxs font-semibold text-slate-400 uppercase tracking-wider mb-1">Atracción y Ofertas</p>
+                <h3 className="text-base font-bold text-slate-900 mb-2">Marketing y Canales</h3>
+                <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+                  Administración de promociones, canales de origen de pacientes y catálogo de membresías.
+                </p>
+                <div className="flex flex-wrap gap-1.5 pt-2 border-t border-slate-100">
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">Promociones</span>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">Canales Reserva</span>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">Membresías</span>
+                </div>
+              </button>
+            )}
+
+            {/* 3. Operaciones de Personal y Sedes */}
+            {verEstrategicas && (
+              <button
+                onClick={() => setVista('operaciones_personal')}
+                className="group bg-white rounded-2xl border border-slate-200 p-6 text-left transition-all duration-200 hover:-translate-y-1 hover:shadow-xl hover:shadow-indigo-100 hover:border-indigo-300"
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-700 text-white flex items-center justify-center shadow-lg text-2xl group-hover:scale-105 transition-transform">
+                    👥
+                  </div>
+                  <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-800">
+                    3 Herramientas
+                  </span>
+                </div>
+                <p className="text-xxs font-semibold text-slate-400 uppercase tracking-wider mb-1">Gestión Operativa</p>
+                <h3 className="text-base font-bold text-slate-900 mb-2">Operaciones de Personal y Sedes</h3>
+                <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+                  Días especiales (domingos/feriados), composición mensual por sede y atenciones por solicitud.
+                </p>
+                <div className="flex flex-wrap gap-1.5 pt-2 border-t border-slate-100">
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">Días Especiales</span>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">Composición Sede</span>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">Baropodometría Solicitud</span>
+                </div>
+              </button>
+            )}
+
+            {/* 4. Comunicaciones y Envíos */}
+            {verOperativas && (
+              <button
+                onClick={() => setVista('comunicaciones')}
+                className="group bg-white rounded-2xl border border-slate-200 p-6 text-left transition-all duration-200 hover:-translate-y-1 hover:shadow-xl hover:shadow-sky-100 hover:border-sky-300"
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-sky-500 to-blue-600 text-white flex items-center justify-center shadow-lg text-2xl group-hover:scale-105 transition-transform">
+                    ✉️
+                  </div>
+                  <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-sky-100 text-sky-800">
+                    3 Herramientas
+                  </span>
+                </div>
+                <p className="text-xxs font-semibold text-slate-400 uppercase tracking-wider mb-1">Mensajería y Avisos</p>
+                <h3 className="text-base font-bold text-slate-900 mb-2">Comunicaciones y Envíos</h3>
+                <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+                  Panel de recordatorios de cita por correo, servidor de envío y videos educativos por servicio.
+                </p>
+                <div className="flex flex-wrap gap-1.5 pt-2 border-t border-slate-100">
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">Recordatorios Panel</span>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">Config Mail</span>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">Videos Servicio</span>
+                </div>
+              </button>
+            )}
+
+            {/* 5. Configuración Avanzada del Sistema */}
+            {verEstrategicas && (
+              <button
+                onClick={() => setVista('config_sistema')}
+                className="group bg-white rounded-2xl border border-slate-200 p-6 text-left transition-all duration-200 hover:-translate-y-1 hover:shadow-xl hover:shadow-purple-100 hover:border-purple-300"
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-500 to-purple-700 text-white flex items-center justify-center shadow-lg text-2xl group-hover:scale-105 transition-transform">
+                    ⚙️
+                  </div>
+                  <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-purple-100 text-purple-800">
+                    2 Herramientas
+                  </span>
+                </div>
+                <p className="text-xxs font-semibold text-slate-400 uppercase tracking-wider mb-1">Reglas del Sistema</p>
+                <h3 className="text-base font-bold text-slate-900 mb-2">Configuración del Sistema</h3>
+                <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+                  Bloques combinados de servicios en agenda y firma de saldos de paquetes migrados.
+                </p>
+                <div className="flex flex-wrap gap-1.5 pt-2 border-t border-slate-100">
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">Bloques Combinados</span>
+                  {esAdmin && <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">Conciliación Genexis</span>}
+                </div>
+              </button>
+            )}
+          </div>
         </div>
       )}
-      {vista === 'pdf' && (
-        <div className="p-6 max-w-2xl">
-          <PdfHistorialTool />
+
+      {/* Hub 1: Exportaciones y Reportes */}
+      {vista === 'exportaciones' && (
+        <div className="flex-1 flex flex-col p-6 space-y-6">
+          <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-3 items-center">
+            <button
+              onClick={() => setExportTab('excel')}
+              className={`px-4 py-2 text-xs font-bold rounded-xl transition-all flex items-center gap-2 ${
+                exportTab === 'excel' ? 'bg-emerald-600 text-white shadow-md' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              <span>📄</span> Lista de Citas (CSV)
+            </button>
+            <button
+              onClick={() => setExportTab('reactivacion')}
+              className={`px-4 py-2 text-xs font-bold rounded-xl transition-all flex items-center gap-2 ${
+                exportTab === 'reactivacion' ? 'bg-purple-600 text-white shadow-md' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              <span>📈</span> Reactivación de Pacientes (Excel)
+            </button>
+            <button
+              onClick={() => setExportTab('pdf')}
+              className={`px-4 py-2 text-xs font-bold rounded-xl transition-all flex items-center gap-2 ${
+                exportTab === 'pdf' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              <span>📑</span> Historial Clínico (PDF)
+            </button>
+            <button
+              onClick={() => navigate('/herramientas/reportes-rrhh')}
+              className="ml-auto px-4 py-2 text-xs font-bold rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition-all flex items-center gap-2"
+            >
+              <span>📊</span> Reportes RRHH (Horas Extra & Rotación) →
+            </button>
+          </div>
+
+          <div className="max-w-2xl">
+            {exportTab === 'excel' && <ExcelTool />}
+            {exportTab === 'reactivacion' && <ReactivacionTool />}
+            {exportTab === 'pdf' && <PdfHistorialTool />}
+          </div>
         </div>
       )}
-      {vista === 'reactivacion' && (
-        <div className="p-6 max-w-2xl">
-          <ReactivacionTool />
+
+      {/* Hub 2: Marketing y Canales */}
+      {vista === 'marketing' && (
+        <div className="flex-1 p-8 max-w-5xl">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <button
+              onClick={() => navigate('/herramientas/promociones')}
+              className="bg-white border border-slate-200 rounded-2xl p-6 text-left hover:shadow-lg transition-all hover:border-pink-300 group"
+            >
+              <div className="w-12 h-12 rounded-xl bg-pink-100 text-pink-700 text-2xl grid place-items-center mb-4 group-hover:scale-105 transition-transform">
+                🎁
+              </div>
+              <h3 className="font-bold text-slate-900 text-base mb-1">Promociones y Descuentos</h3>
+              <p className="text-xs text-slate-500 leading-relaxed">Agrega o quita promociones y define precio o descuento aplicable en agendamiento.</p>
+            </button>
+            <button
+              onClick={() => navigate('/herramientas/canales')}
+              className="bg-white border border-slate-200 rounded-2xl p-6 text-left hover:shadow-lg transition-all hover:border-amber-300 group"
+            >
+              <div className="w-12 h-12 rounded-xl bg-amber-100 text-amber-700 text-2xl grid place-items-center mb-4 group-hover:scale-105 transition-transform">
+                📣
+              </div>
+              <h3 className="font-bold text-slate-900 text-base mb-1">Canales de Reserva</h3>
+              <p className="text-xs text-slate-500 leading-relaxed">Administra la lista de fuentes de origen de pacientes (Instagram, Recomendado, etc.).</p>
+            </button>
+            <button
+              onClick={() => navigate('/herramientas/membresias')}
+              className="bg-white border border-slate-200 rounded-2xl p-6 text-left hover:shadow-lg transition-all hover:border-violet-300 group"
+            >
+              <div className="w-12 h-12 rounded-xl bg-violet-100 text-violet-700 text-2xl grid place-items-center mb-4 group-hover:scale-105 transition-transform">
+                🎫
+              </div>
+              <h3 className="font-bold text-slate-900 text-base mb-1">Catálogo de Membresías</h3>
+              <p className="text-xs text-slate-500 leading-relaxed">Crea y edita paquetes de membresías y distribución de sesiones por tratamiento.</p>
+            </button>
+          </div>
         </div>
       )}
-    </div>
-  );
-}
 
-// ── Vista de inicio: grid de iconos ─────────────────────────────────────────
-const HERRAMIENTAS = [
-  {
-    id: 'excel' as Vista,
-    titulo: 'Lista de citas',
-    subtitulo: 'Exportar Excel',
-    descripcion: 'Genera el CSV (solo texto) con las citas del día para el envío masivo de confirmaciones por WhatsApp.',
-    color: 'from-emerald-500 to-teal-600',
-    colorHover: 'hover:shadow-emerald-200',
-    iconoBg: 'bg-emerald-600',
-    tag: 'XLSX',
-    tagColor: 'bg-emerald-100 text-emerald-700',
-    icon: (
-      <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8}
-          d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-      </svg>
-    ),
-  },
-  {
-    id: 'reactivacion' as Vista,
-    titulo: 'Reactivación de Pacientes',
-    subtitulo: 'Exportar Excel',
-    descripcion: 'Identifica pacientes que llevan tiempo sin venir para llamarlos o escribirles y recuperar su agenda.',
-    color: 'from-violet-500 to-purple-700',
-    colorHover: 'hover:shadow-violet-200',
-    iconoBg: 'bg-violet-600',
-    tag: 'XLSX',
-    tagColor: 'bg-violet-100 text-violet-700',
-    icon: (
-      <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8}
-          d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-      </svg>
-    ),
-  },
-  {
-    id: 'pdf' as Vista,
-    titulo: 'Historial de Atenciones',
-    subtitulo: 'Exportar PDF',
-    descripcion: 'Genera el historial completo de atenciones de un paciente en formato PDF.',
-    color: 'from-indigo-500 to-violet-600',
-    colorHover: 'hover:shadow-indigo-200',
-    iconoBg: 'bg-indigo-600',
-    tag: 'PDF',
-    tagColor: 'bg-indigo-100 text-indigo-700',
-    icon: (
-      <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8}
-          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-      </svg>
-    ),
-  },
-];
-
-function VistaInicio({ onSeleccionar }: { onSeleccionar: (v: Vista) => void }) {
-  const navigate = useNavigate();
-  const tiene = useAuthStore(s => s.tiene);
-  // Operativas: las 3 de export. Estratégicas: TODAS (incluye las operativas) → las de configuración.
-  const verOperativas = tiene('herramientas.operativas') || tiene('herramientas.estrategicas');
-  const verEstrategicas = tiene('herramientas.estrategicas');
-  const esAdminConciliacion = useAuthStore.getState().usuario?.rol === 'admin';
-
-  return (
-    <div className="flex-1 p-8">
-      {/* Intro */}
-      <div className="mb-8">
-        <h2 className="text-xl font-bold text-slate-900 mb-1">¿Qué necesitas hacer?</h2>
-        <p className="text-sm text-slate-500">Selecciona una herramienta para continuar.</p>
-      </div>
-
-      {/* Grid de tarjetas */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-        {verOperativas && HERRAMIENTAS.map(h => (
-          <button
-            key={h.id}
-            onClick={() => onSeleccionar(h.id)}
-            className={`group relative bg-white rounded-2xl border border-slate-200 p-6 text-left transition-all duration-200 hover:-translate-y-1 hover:shadow-xl ${h.colorHover} hover:border-transparent`}
-          >
-            {/* Badge tipo */}
-            <span className={`absolute top-4 right-4 text-xxs font-bold px-2 py-0.5 rounded-full ${h.tagColor}`}>
-              {h.tag}
-            </span>
-
-            {/* Icono */}
-            <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${h.color} flex items-center justify-center mb-4 shadow-lg group-hover:scale-105 transition-transform duration-200`}>
-              {h.icon}
-            </div>
-
-            {/* Texto */}
-            <p className="text-xxs font-semibold text-slate-400 uppercase tracking-widest mb-1">{h.subtitulo}</p>
-            <h3 className="text-base font-bold text-slate-900 mb-2 leading-snug">{h.titulo}</h3>
-            <p className="text-xs text-slate-500 leading-relaxed">{h.descripcion}</p>
-
-            {/* Arrow */}
-            <div className="mt-4 flex items-center gap-1 text-xs font-semibold text-slate-400 group-hover:text-slate-700 transition-colors">
-              Abrir herramienta
-              <svg className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </div>
-          </button>
-        ))}
-
-        {/* Tarjeta Recordatorios por correo — operativa */}
-        {verOperativas && (
-        <button
-          onClick={() => navigate('/herramientas/recordatorios')}
-          className="group relative bg-white rounded-2xl border border-slate-200 p-6 text-left transition-all duration-200 hover:-translate-y-1 hover:shadow-xl hover:shadow-sky-200 hover:border-transparent"
-        >
-          <span className="absolute top-4 right-4 text-xxs font-bold px-2 py-0.5 rounded-full bg-sky-100 text-sky-700">Panel</span>
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-sky-500 to-blue-600 flex items-center justify-center mb-4 shadow-lg group-hover:scale-105 transition-transform duration-200">
-            <span className="text-3xl leading-none">🔔</span>
+      {/* Hub 3: Operaciones de Personal y Sedes */}
+      {vista === 'operaciones_personal' && (
+        <div className="flex-1 p-8 max-w-5xl">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <button
+              onClick={() => navigate('/herramientas/dias-especiales')}
+              className="bg-white border border-slate-200 rounded-2xl p-6 text-left hover:shadow-lg transition-all hover:border-amber-300 group"
+            >
+              <div className="w-12 h-12 rounded-xl bg-amber-100 text-amber-700 text-2xl grid place-items-center mb-4 group-hover:scale-105 transition-transform">
+                📅
+              </div>
+              <h3 className="font-bold text-slate-900 text-base mb-1">Días Especiales y Excepciones</h3>
+              <p className="text-xs text-slate-500 leading-relaxed">Habilita podólogas un domingo o feriado, u horarios extendidos de sede.</p>
+            </button>
+            <button
+              onClick={() => navigate('/herramientas/composicion-sede')}
+              className="bg-white border border-slate-200 rounded-2xl p-6 text-left hover:shadow-lg transition-all hover:border-indigo-300 group"
+            >
+              <div className="w-12 h-12 rounded-xl bg-indigo-100 text-indigo-700 text-2xl grid place-items-center mb-4 group-hover:scale-105 transition-transform">
+                🏢
+              </div>
+              <h3 className="font-bold text-slate-900 text-base mb-1">Composición de Sedes</h3>
+              <p className="text-xs text-slate-500 leading-relaxed">Cuadro de personal por sede en el mes con exportador a PDF imprimible.</p>
+            </button>
+            <button
+              onClick={() => navigate('/herramientas/baro-solicitud')}
+              className="bg-white border border-slate-200 rounded-2xl p-6 text-left hover:shadow-lg transition-all hover:border-rose-300 group"
+            >
+              <div className="w-12 h-12 rounded-xl bg-rose-100 text-rose-700 text-2xl grid place-items-center mb-4 group-hover:scale-105 transition-transform">
+                🦶
+              </div>
+              <h3 className="font-bold text-slate-900 text-base mb-1">Baropodometría por Solicitud</h3>
+              <p className="text-xs text-slate-500 leading-relaxed">Configura los especialistas que atienden baropodometría por solicitud directa.</p>
+            </button>
           </div>
-          <p className="text-xxs font-semibold text-slate-400 uppercase tracking-widest mb-1">Confirmaciones</p>
-          <h3 className="text-base font-bold text-slate-900 mb-2 leading-snug">Recordatorios por Correo</h3>
-          <p className="text-xs text-slate-500 leading-relaxed">
-            Estado de los recordatorios de cita: enviados, confirmados, fallidos y quién pidió reprogramar.
-          </p>
-          <div className="mt-4 flex items-center gap-1 text-xs font-semibold text-slate-400 group-hover:text-slate-700 transition-colors">
-            Abrir panel
-            <svg className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
+        </div>
+      )}
+
+      {/* Hub 4: Comunicaciones y Envíos */}
+      {vista === 'comunicaciones' && (
+        <div className="flex-1 p-8 max-w-5xl">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <button
+              onClick={() => navigate('/herramientas/recordatorios')}
+              className="bg-white border border-slate-200 rounded-2xl p-6 text-left hover:shadow-lg transition-all hover:border-sky-300 group"
+            >
+              <div className="w-12 h-12 rounded-xl bg-sky-100 text-sky-700 text-2xl grid place-items-center mb-4 group-hover:scale-105 transition-transform">
+                🔔
+              </div>
+              <h3 className="font-bold text-slate-900 text-base mb-1">Panel de Recordatorios</h3>
+              <p className="text-xs text-slate-500 leading-relaxed">Estado de confirmaciones por correo, envíos automáticos y reprogramaciones.</p>
+            </button>
+            <button
+              onClick={() => navigate('/herramientas/confirmacion-mail')}
+              className="bg-white border border-slate-200 rounded-2xl p-6 text-left hover:shadow-lg transition-all hover:border-blue-300 group"
+            >
+              <div className="w-12 h-12 rounded-xl bg-blue-100 text-blue-700 text-2xl grid place-items-center mb-4 group-hover:scale-105 transition-transform">
+                ✉️
+              </div>
+              <h3 className="font-bold text-slate-900 text-base mb-1">Configuración de Correo</h3>
+              <p className="text-xs text-slate-500 leading-relaxed">Configura las credenciales y servidor de salida de correo institucional.</p>
+            </button>
+            <button
+              onClick={() => navigate('/herramientas/videos-servicio')}
+              className="bg-white border border-slate-200 rounded-2xl p-6 text-left hover:shadow-lg transition-all hover:border-indigo-300 group"
+            >
+              <div className="w-12 h-12 rounded-xl bg-indigo-100 text-indigo-700 text-2xl grid place-items-center mb-4 group-hover:scale-105 transition-transform">
+                🎬
+              </div>
+              <h3 className="font-bold text-slate-900 text-base mb-1">Videos por Servicio</h3>
+              <p className="text-xs text-slate-500 leading-relaxed">Programación de envíos de videos explicativos pre y post cita.</p>
+            </button>
           </div>
-        </button>
-        )}
+        </div>
+      )}
 
-        {/* Tarjeta Almuerzos — estratégica */}
-        {verEstrategicas && (
-        <button
-          onClick={() => navigate('/herramientas/almuerzos')}
-          className="group relative bg-white rounded-2xl border border-slate-200 p-6 text-left transition-all duration-200 hover:-translate-y-1 hover:shadow-xl hover:shadow-amber-200 hover:border-transparent"
-        >
-          <span className="absolute top-4 right-4 text-xxs font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
-            Config
-          </span>
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center mb-4 shadow-lg group-hover:scale-105 transition-transform duration-200">
-            <span className="text-3xl leading-none">🍽</span>
+      {/* Hub 5: Configuración del Sistema */}
+      {vista === 'config_sistema' && (
+        <div className="flex-1 p-8 max-w-5xl">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <button
+              onClick={() => navigate('/herramientas/combinaciones')}
+              className="bg-white border border-slate-200 rounded-2xl p-6 text-left hover:shadow-lg transition-all hover:border-violet-300 group"
+            >
+              <div className="w-12 h-12 rounded-xl bg-violet-100 text-violet-700 text-2xl grid place-items-center mb-4 group-hover:scale-105 transition-transform">
+                🔗
+              </div>
+              <h3 className="font-bold text-slate-900 text-base mb-1">Bloques Combinados</h3>
+              <p className="text-xs text-slate-500 leading-relaxed">Configuración del servicio ancla y combinación de turnos en 1 hora.</p>
+            </button>
+            {esAdmin && (
+              <button
+                onClick={() => navigate('/herramientas/conciliacion')}
+                className="bg-white border border-slate-200 rounded-2xl p-6 text-left hover:shadow-lg transition-all hover:border-slate-400 group"
+              >
+                <div className="w-12 h-12 rounded-xl bg-slate-200 text-slate-700 text-2xl grid place-items-center mb-4 group-hover:scale-105 transition-transform">
+                  🗄️
+                </div>
+                <h3 className="font-bold text-slate-900 text-base mb-1">Conciliación Genexis</h3>
+                <p className="text-xs text-slate-500 leading-relaxed">Aprobación de saldos de apertura migrados del sistema anterior.</p>
+              </button>
+            )}
           </div>
-          <p className="text-xxs font-semibold text-slate-400 uppercase tracking-widest mb-1">Gestión</p>
-          <h3 className="text-base font-bold text-slate-900 mb-2 leading-snug">Horarios de Almuerzo</h3>
-          <p className="text-xs text-slate-500 leading-relaxed">
-            Asigna y gestiona el bloqueo de 1 hora diaria de almuerzo para cada profesional por sede.
-          </p>
-          <div className="mt-4 flex items-center gap-1 text-xs font-semibold text-slate-400 group-hover:text-slate-700 transition-colors">
-            Abrir herramienta
-            <svg className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-          </div>
-        </button>
-        )}
-
-        {/* Tarjeta Horarios del personal — herramienta UNIFICADA (semana tipo + ajustes por fecha) */}
-        {verEstrategicas && (
-          <button
-            onClick={() => navigate('/herramientas/horarios')}
-            className="group relative bg-white rounded-2xl border border-slate-200 p-6 text-left transition-all duration-200 hover:-translate-y-1 hover:shadow-xl hover:shadow-teal-200 hover:border-transparent"
-          >
-            <span className="absolute top-4 right-4 text-xxs font-bold px-2 py-0.5 rounded-full bg-teal-100 text-teal-700">
-              Personal
-            </span>
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-teal-400 to-cyan-600 flex items-center justify-center mb-4 shadow-lg group-hover:scale-105 transition-transform duration-200">
-              <span className="text-3xl leading-none">🗓️</span>
-            </div>
-            <p className="text-xxs font-semibold text-slate-400 uppercase tracking-widest mb-1">Gestión</p>
-            <h3 className="text-base font-bold text-slate-900 mb-2 leading-snug">Horarios del personal</h3>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Semana tipo de cada persona (días y horas permanentes) y ajustes por fecha: entrada 8/9 y días especiales. Una sola verdad para agenda y reservas.
-            </p>
-            <div className="mt-4 flex items-center gap-1 text-xs font-semibold text-slate-400 group-hover:text-slate-700 transition-colors">
-              Abrir herramienta
-              <svg className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </div>
-          </button>
-        )}
-
-        {/* Tarjeta Permisos / Bloqueos — admin + coordinadora de sedes */}
-        {verEstrategicas && (
-          <button
-            onClick={() => navigate('/herramientas/permisos')}
-            className="group relative bg-white rounded-2xl border border-slate-200 p-6 text-left transition-all duration-200 hover:-translate-y-1 hover:shadow-xl hover:shadow-rose-200 hover:border-transparent"
-          >
-            <span className="absolute top-4 right-4 text-xxs font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-700">
-              Config
-            </span>
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-rose-400 to-red-600 flex items-center justify-center mb-4 shadow-lg group-hover:scale-105 transition-transform duration-200">
-              <span className="text-3xl leading-none">🚫</span>
-            </div>
-            <p className="text-xxs font-semibold text-slate-400 uppercase tracking-widest mb-1">Gestión</p>
-            <h3 className="text-base font-bold text-slate-900 mb-2 leading-snug">Permisos / Bloqueos</h3>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Bloquea manualmente a podólogas, fisioterapeutas o baropodometría en un rango horario (permisos, reuniones).
-            </p>
-            <div className="mt-4 flex items-center gap-1 text-xs font-semibold text-slate-400 group-hover:text-slate-700 transition-colors">
-              Abrir herramienta
-              <svg className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </div>
-          </button>
-        )}
-
-        {/* Tarjeta Días especiales / Excepciones — admin + coordinadora de sedes */}
-        {verEstrategicas && (
-          <button
-            onClick={() => navigate('/herramientas/dias-especiales')}
-            className="group relative bg-white rounded-2xl border border-slate-200 p-6 text-left transition-all duration-200 hover:-translate-y-1 hover:shadow-xl hover:shadow-amber-200 hover:border-transparent"
-          >
-            <span className="absolute top-4 right-4 text-xxs font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Gestión</span>
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-600 flex items-center justify-center mb-4 shadow-lg group-hover:scale-105 transition-transform duration-200">
-              <span className="text-3xl leading-none">📅</span>
-            </div>
-            <p className="text-xxs font-semibold text-slate-400 uppercase tracking-widest mb-1">Sedes</p>
-            <h3 className="text-base font-bold text-slate-900 mb-2 leading-snug">Días especiales</h3>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Elige qué podólogas trabajan un domingo, feriado u horario extendido — y trae podólogas de otras sedes con un clic.
-            </p>
-            <div className="mt-4 flex items-center gap-1 text-xs font-semibold text-slate-400 group-hover:text-slate-700 transition-colors">
-              Abrir herramienta
-              <svg className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-            </div>
-          </button>
-        )}
-
-        {/* Tarjeta Reportes RRHH — admin + coordinadora de sedes */}
-        {verEstrategicas && (
-          <button
-            onClick={() => navigate('/herramientas/reportes-rrhh')}
-            className="group relative bg-white rounded-2xl border border-slate-200 p-6 text-left transition-all duration-200 hover:-translate-y-1 hover:shadow-xl hover:shadow-indigo-200 hover:border-transparent"
-          >
-            <span className="absolute top-4 right-4 text-xxs font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">RRHH</span>
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-700 flex items-center justify-center mb-4 shadow-lg group-hover:scale-105 transition-transform duration-200">
-              <span className="text-3xl leading-none">📊</span>
-            </div>
-            <p className="text-xxs font-semibold text-slate-400 uppercase tracking-widest mb-1">Personal</p>
-            <h3 className="text-base font-bold text-slate-900 mb-2 leading-snug">Reportes RRHH</h3>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Horas extra fuera de horario (con recargo peruano) y rotación intersedes por mes para el pago de bonos.
-            </p>
-            <div className="mt-4 flex items-center gap-1 text-xs font-semibold text-slate-400 group-hover:text-slate-700 transition-colors">
-              Abrir herramienta
-              <svg className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-            </div>
-          </button>
-        )}
-
-        {/* Tarjeta Composición de sedes — admin + coordinadora de sedes */}
-        {verEstrategicas && (
-          <button
-            onClick={() => navigate('/herramientas/composicion-sede')}
-            className="group relative bg-white rounded-2xl border border-slate-200 p-6 text-left transition-all duration-200 hover:-translate-y-1 hover:shadow-xl hover:shadow-indigo-200 hover:border-transparent"
-          >
-            <span className="absolute top-4 right-4 text-xxs font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">Personal</span>
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-700 flex items-center justify-center mb-4 shadow-lg group-hover:scale-105 transition-transform duration-200">
-              <span className="text-3xl leading-none">🏢</span>
-            </div>
-            <p className="text-xxs font-semibold text-slate-400 uppercase tracking-widest mb-1">Distribución</p>
-            <h3 className="text-base font-bold text-slate-900 mb-2 leading-snug">Composición de sedes</h3>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Quiénes componen cada sede en el mes (podólogas, fisios, doctores y recepcionistas) con imprimible en PDF.
-            </p>
-            <div className="mt-4 flex items-center gap-1 text-xs font-semibold text-slate-400 group-hover:text-slate-700 transition-colors">
-              Abrir herramienta
-              <svg className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-            </div>
-          </button>
-        )}
-
-        {/* Tarjeta Canales de Reserva — admin + coordinadora de sedes */}
-        {verEstrategicas && (
-          <button
-            onClick={() => navigate('/herramientas/canales')}
-            className="group relative bg-white rounded-2xl border border-slate-200 p-6 text-left transition-all duration-200 hover:-translate-y-1 hover:shadow-xl hover:shadow-amber-200 hover:border-transparent"
-          >
-            <span className="absolute top-4 right-4 text-xxs font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
-              Config
-            </span>
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-600 flex items-center justify-center mb-4 shadow-lg group-hover:scale-105 transition-transform duration-200">
-              <span className="text-3xl leading-none">📣</span>
-            </div>
-            <p className="text-xxs font-semibold text-slate-400 uppercase tracking-widest mb-1">Marketing</p>
-            <h3 className="text-base font-bold text-slate-900 mb-2 leading-snug">Canales de Reserva</h3>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Agrega o quita los canales (de dónde viene el cliente). Alimenta el KPI de Analytics.
-            </p>
-            <div className="mt-4 flex items-center gap-1 text-xs font-semibold text-slate-400 group-hover:text-slate-700 transition-colors">
-              Abrir herramienta
-              <svg className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </div>
-          </button>
-        )}
-
-        {/* Tarjeta Membresías — constructor (admin + coordinadora) */}
-        {verEstrategicas && (
-          <button
-            onClick={() => navigate('/herramientas/membresias')}
-            className="group relative bg-white rounded-2xl border border-slate-200 p-6 text-left transition-all duration-200 hover:-translate-y-1 hover:shadow-xl hover:shadow-violet-200 hover:border-transparent"
-          >
-            <span className="absolute top-4 right-4 text-xxs font-bold px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">Config</span>
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-400 to-purple-600 flex items-center justify-center mb-4 shadow-lg group-hover:scale-105 transition-transform duration-200">
-              <span className="text-3xl leading-none">🎫</span>
-            </div>
-            <p className="text-xxs font-semibold text-slate-400 uppercase tracking-widest mb-1">Marketing</p>
-            <h3 className="text-base font-bold text-slate-900 mb-2 leading-snug">Membresías</h3>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Crea y edita membresías (duración, sedes y composición de sesiones). Editar no altera las ya vendidas.
-            </p>
-          </button>
-        )}
-
-        {/* Tarjeta Conciliación Genexis — SOLO admin (firma de saldos de apertura) */}
-        {esAdminConciliacion && (
-          <button
-            onClick={() => navigate('/herramientas/conciliacion')}
-            className="group relative bg-white rounded-2xl border border-slate-200 p-6 text-left transition-all duration-200 hover:-translate-y-1 hover:shadow-xl hover:shadow-slate-300 hover:border-transparent"
-          >
-            <span className="absolute top-4 right-4 text-xxs font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">Migración</span>
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-slate-500 to-slate-700 flex items-center justify-center mb-4 shadow-lg group-hover:scale-105 transition-transform duration-200">
-              <span className="text-3xl leading-none">🗄️</span>
-            </div>
-            <p className="text-xxs font-semibold text-slate-400 uppercase tracking-widest mb-1">Genexis</p>
-            <h3 className="text-base font-bold text-slate-900 mb-2 leading-snug">Conciliación de saldos</h3>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Firma humana de las aperturas de paquetes y membresías del sistema anterior. El motor propone; dirección aprueba.
-            </p>
-          </button>
-        )}
-
-        {/* Tarjeta Promociones — admin + coordinadora de sedes */}
-        {verEstrategicas && (
-          <button
-            onClick={() => navigate('/herramientas/promociones')}
-            className="group relative bg-white rounded-2xl border border-slate-200 p-6 text-left transition-all duration-200 hover:-translate-y-1 hover:shadow-xl hover:shadow-pink-200 hover:border-transparent"
-          >
-            <span className="absolute top-4 right-4 text-xxs font-bold px-2 py-0.5 rounded-full bg-pink-100 text-pink-700">
-              Config
-            </span>
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-pink-400 to-rose-600 flex items-center justify-center mb-4 shadow-lg group-hover:scale-105 transition-transform duration-200">
-              <span className="text-3xl leading-none">🎁</span>
-            </div>
-            <p className="text-xxs font-semibold text-slate-400 uppercase tracking-widest mb-1">Marketing</p>
-            <h3 className="text-base font-bold text-slate-900 mb-2 leading-snug">Promociones</h3>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Agrega o quita promociones y define precio/descuento. Se eligen al agendar y alimentan Analytics.
-            </p>
-            <div className="mt-4 flex items-center gap-1 text-xs font-semibold text-slate-400 group-hover:text-slate-700 transition-colors">
-              Abrir herramienta
-              <svg className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </div>
-          </button>
-        )}
-
-        {/* Tarjeta Bloques combinados — admin */}
-        {verEstrategicas && (
-          <button
-            onClick={() => navigate('/herramientas/combinaciones')}
-            className="group relative bg-white rounded-2xl border border-slate-200 p-6 text-left transition-all duration-200 hover:-translate-y-1 hover:shadow-xl hover:shadow-violet-200 hover:border-transparent"
-          >
-            <span className="absolute top-4 right-4 text-xxs font-bold px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">Config</span>
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-400 to-purple-600 flex items-center justify-center mb-4 shadow-lg group-hover:scale-105 transition-transform duration-200">
-              <span className="text-3xl leading-none">🔗</span>
-            </div>
-            <p className="text-xxs font-semibold text-slate-400 uppercase tracking-widest mb-1">Agenda</p>
-            <h3 className="text-base font-bold text-slate-900 mb-2 leading-snug">Bloques Combinados</h3>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Define el servicio ancla (profilaxis) y qué servicios pueden combinarse en el mismo turno de 1 h.
-            </p>
-            <div className="mt-4 flex items-center gap-1 text-xs font-semibold text-slate-400 group-hover:text-slate-700 transition-colors">
-              Abrir herramienta
-              <svg className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </div>
-          </button>
-        )}
-
-        {/* Tarjeta Baropodometría por solicitud — admin + coordinadora */}
-        {verEstrategicas && (
-          <button
-            onClick={() => navigate('/herramientas/baro-solicitud')}
-            className="group relative bg-white rounded-2xl border border-slate-200 p-6 text-left transition-all duration-200 hover:-translate-y-1 hover:shadow-xl hover:shadow-rose-200 hover:border-transparent"
-          >
-            <span className="absolute top-4 right-4 text-xxs font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-700">Config</span>
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-rose-400 to-rose-600 flex items-center justify-center mb-4 shadow-lg group-hover:scale-105 transition-transform duration-200">
-              <span className="text-3xl leading-none">🦶</span>
-            </div>
-            <p className="text-xxs font-semibold text-slate-400 uppercase tracking-widest mb-1">Baropodometría</p>
-            <h3 className="text-base font-bold text-slate-900 mb-2 leading-snug">Atención por solicitud</h3>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Agrega o quita los médicos (y Daniel) que atienden baropodometría solo cuando el paciente los pide.
-            </p>
-            <div className="mt-4 flex items-center gap-1 text-xs font-semibold text-slate-400 group-hover:text-slate-700 transition-colors">
-              Abrir herramienta
-              <svg className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </div>
-          </button>
-        )}
-
-        {/* Tarjeta Confirmación por Mail — solo administradores */}
-        {verEstrategicas && (
-          <button
-            onClick={() => navigate('/herramientas/confirmacion-mail')}
-            className="group relative bg-white rounded-2xl border border-slate-200 p-6 text-left transition-all duration-200 hover:-translate-y-1 hover:shadow-xl hover:shadow-limablue-200 hover:border-transparent"
-          >
-            <span className="absolute top-4 right-4 text-xxs font-bold px-2 py-0.5 rounded-full bg-limablue-100 text-limablue-700">
-              Config
-            </span>
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-limablue-500 to-blue-700 flex items-center justify-center mb-4 shadow-lg group-hover:scale-105 transition-transform duration-200">
-              <span className="text-3xl leading-none">✉️</span>
-            </div>
-            <p className="text-xxs font-semibold text-slate-400 uppercase tracking-widest mb-1">Comunicaciones</p>
-            <h3 className="text-base font-bold text-slate-900 mb-2 leading-snug">Confirmación por Mail</h3>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Configura desde qué correo se envían las confirmaciones de cita y prueba el envío.
-            </p>
-            <div className="mt-4 flex items-center gap-1 text-xs font-semibold text-slate-400 group-hover:text-slate-700 transition-colors">
-              Abrir herramienta
-              <svg className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </div>
-          </button>
-        )}
-
-        {/* Tarjeta Videos por Servicio — solo administradores */}
-        {esAdminConciliacion && (
-          <button
-            onClick={() => navigate('/herramientas/videos-servicio')}
-            className="group relative bg-white rounded-2xl border border-slate-200 p-6 text-left transition-all duration-200 hover:-translate-y-1 hover:shadow-xl hover:shadow-limablue-200 hover:border-transparent"
-          >
-            <span className="absolute top-4 right-4 text-xxs font-bold px-2 py-0.5 rounded-full bg-limablue-100 text-limablue-700">Config</span>
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-limablue-500 to-limablue-800 flex items-center justify-center mb-4 shadow-lg group-hover:scale-105 transition-transform duration-200">
-              <span className="text-3xl leading-none">🎬</span>
-            </div>
-            <p className="text-xxs font-semibold text-slate-400 uppercase tracking-widest mb-1">Comunicaciones</p>
-            <h3 className="text-base font-bold text-slate-900 mb-2 leading-snug">Videos por Servicio</h3>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Envía videos educativos por correo a los pacientes, según el servicio y el momento de la cita (antes o después).
-            </p>
-            <div className="mt-4 flex items-center gap-1 text-xs font-semibold text-slate-400 group-hover:text-slate-700 transition-colors">
-              Abrir herramienta
-              <svg className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </div>
-          </button>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

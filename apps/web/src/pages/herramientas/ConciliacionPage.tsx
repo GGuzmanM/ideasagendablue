@@ -123,6 +123,15 @@ export function ConciliacionPage() {
     <div className="flex flex-col h-full overflow-hidden">
       <header className="bg-white border-b border-slate-200 px-6 py-4">
         <div className="flex items-center gap-3 flex-wrap">
+          <button
+            onClick={() => navigate('/herramientas')}
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-all shrink-0"
+            title="Volver a Herramientas"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
           <h1 className="text-lg font-bold text-slate-900">Conciliación de saldos Genexis</h1>
           <span className="text-xs text-slate-400">el motor propone · una persona firma</span>
           <div className="flex-1" />
