@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <title>Roles y Permisos · Propuesta idea1</title>
+  <title>Composición de Sedes · Propuesta v2 (timeline)</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -22,7 +22,6 @@
             'on-surface': '#191c1e',
             'on-surface-variant': '#464555',
             'outline-variant': '#c7c4d8',
-            limablue: { 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8' },
           },
           fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'], mono: ['JetBrains Mono', 'monospace'] },
         },
@@ -33,580 +32,597 @@
     body { font-family: 'Inter', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
     .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; vertical-align: middle; }
     .msf { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
-    .input { display:block; width:100%; padding:7px 10px; border-radius:10px; border:1px solid #cbd5e1; background:#fff; font-size:13px; outline:none; }
+    .input { display:block; width:100%; padding:8px 12px; border-radius:10px; border:1px solid #cbd5e1; background:#fff; font-size:13px; outline:none; }
     .input:focus { border-color:#0044ab; box-shadow:0 0 0 2px rgba(0,68,171,.15); }
     .custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #c7c4d8; border-radius: 4px; }
-    /* Toggle switch */
-    .switch { position: relative; width: 36px; height: 20px; }
-    .switch input { opacity: 0; width: 0; height: 0; }
-    .slider { position:absolute; inset:0; background:#cbd5e1; border-radius:20px; transition:.18s; cursor:pointer; }
-    .slider::before { content:''; position:absolute; width:16px; height:16px; left:2px; top:2px; background:#fff; border-radius:50%; transition:.18s; box-shadow:0 1px 2px rgba(0,0,0,.2); }
-    .switch input:checked + .slider { background:#0044ab; }
-    .switch input:checked + .slider::before { transform:translateX(16px); }
+    /* Rejilla del gantt: líneas verticales por semana */
+    .gantt-track {
+      background-image: repeating-linear-gradient(to right, rgba(199,196,216,.35) 0 1px, transparent 1px calc(100%/31*7));
+      background-position: left;
+    }
   </style>
 </head>
 <body class="bg-surface min-h-screen">
 
-<!-- ============ BARRA DE TABS ADMIN ============ -->
-<div class="bg-white border-b border-slate-200 shrink-0">
-  <div class="flex items-center gap-1 px-4 overflow-x-auto">
-    <button class="flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 whitespace-nowrap">
-      <span class="material-symbols-outlined text-lg">verified</span> Competencias
+<!-- ============ HEADER ============ -->
+<header class="px-8 py-5 bg-surface-container-lowest border-b border-outline-variant/30 flex items-center justify-between gap-4 sticky top-0 z-20">
+  <div class="flex items-center gap-3 min-w-0">
+    <button class="w-9 h-9 rounded-xl grid place-items-center text-on-surface-variant hover:bg-surface-container transition" title="Volver a Herramientas">
+      <span class="material-symbols-outlined">arrow_back</span>
     </button>
-    <button class="flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 whitespace-nowrap">
-      <span class="material-symbols-outlined text-lg">inventory_2</span> Paquetes
+    <div class="w-11 h-11 rounded-xl bg-primary/10 grid place-items-center shrink-0">
+      <span class="material-symbols-outlined msf text-primary text-2xl">apartment</span>
+    </div>
+    <div class="min-w-0">
+      <h1 class="text-xl font-bold text-on-surface tracking-tight">Composición de sedes</h1>
+      <p class="text-sm text-on-surface-variant">Línea de tiempo del personal de cada sede durante el mes</p>
+    </div>
+  </div>
+
+  <div class="flex items-center gap-2 shrink-0">
+    <div class="inline-flex items-center bg-surface-container-lowest border border-outline-variant/50 rounded-xl overflow-hidden shadow-sm">
+      <button class="w-9 h-9 grid place-items-center text-on-surface-variant hover:bg-surface-container transition">
+        <span class="material-symbols-outlined text-base">chevron_left</span>
+      </button>
+      <div class="flex items-center gap-2 px-3 h-9 border-x border-outline-variant/40">
+        <span class="material-symbols-outlined text-base text-primary">calendar_month</span>
+        <span class="text-sm font-semibold text-on-surface capitalize">Agosto 2026</span>
+      </div>
+      <button class="w-9 h-9 grid place-items-center text-on-surface-variant hover:bg-surface-container transition">
+        <span class="material-symbols-outlined text-base">chevron_right</span>
+      </button>
+    </div>
+    <button onclick="verTab('roster')" class="px-4 py-2.5 rounded-xl font-bold text-sm border border-outline-variant/50 text-on-surface hover:bg-surface-container transition flex items-center gap-2">
+      <span class="material-symbols-outlined text-lg">badge</span>
+      Gestionar roster
     </button>
-    <button class="flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 whitespace-nowrap">
-      <span class="material-symbols-outlined text-lg">person</span> Podólogas
-    </button>
-    <button class="flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 whitespace-nowrap">
-      <span class="material-symbols-outlined text-lg">medical_services</span> Servicios
-    </button>
-    <button class="flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 whitespace-nowrap">
-      <span class="material-symbols-outlined text-lg">receipt_long</span> Auditoría
-    </button>
-    <button class="flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 whitespace-nowrap">
-      <span class="material-symbols-outlined text-lg">manage_accounts</span> Usuarios
-    </button>
-    <button class="flex items-center gap-2 px-4 py-3 text-sm font-semibold border-b-2 border-limablue-600 text-limablue-700 whitespace-nowrap">
-      <span class="material-symbols-outlined text-lg">shield</span> Roles
-    </button>
-    <button class="flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 whitespace-nowrap">
-      <span class="material-symbols-outlined text-lg">notifications</span> Notificaciones
+    <button class="bg-primary text-white px-4 py-2.5 rounded-xl font-bold text-sm shadow-md shadow-primary/20 hover:opacity-90 active:scale-95 transition-all flex items-center gap-2">
+      <span class="material-symbols-outlined text-lg">picture_as_pdf</span>
+      PDF
     </button>
   </div>
+</header>
+
+<!-- ============ VISTA PRINCIPAL: SEDES + TIMELINE ============ -->
+<div id="vista-ver" class="flex" style="height: calc(100vh - 81px)">
+
+  <!-- Rail de sedes -->
+  <aside class="w-64 shrink-0 border-r border-outline-variant/30 bg-surface-container-lowest p-3 space-y-1.5 overflow-y-auto custom-scrollbar">
+    <p class="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider px-2 pt-1 pb-2">Sedes · Agosto</p>
+
+    <!-- Sede activa -->
+    <button class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary/10 border border-primary/30 text-left transition">
+      <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:#0ea5e9"></span>
+      <div class="flex-1 min-w-0">
+        <p class="text-sm font-bold text-primary truncate">Los Olivos</p>
+        <p class="text-[11px] text-on-surface-variant">9 personas · 1 cobertura</p>
+      </div>
+      <span class="material-symbols-outlined text-primary text-lg">chevron_right</span>
+    </button>
+
+    <button class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-surface-container-low border border-transparent text-left transition">
+      <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:#10b981"></span>
+      <div class="flex-1 min-w-0">
+        <p class="text-sm font-semibold text-on-surface truncate">San Miguel</p>
+        <p class="text-[11px] text-on-surface-variant">7 personas</p>
+      </div>
+    </button>
+
+    <button class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-surface-container-low border border-transparent text-left transition">
+      <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:#8b5cf6"></span>
+      <div class="flex-1 min-w-0">
+        <p class="text-sm font-semibold text-on-surface truncate">Lince</p>
+        <p class="text-[11px] text-on-surface-variant">8 personas</p>
+      </div>
+    </button>
+
+    <button class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-surface-container-low border border-transparent text-left transition">
+      <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:#f59e0b"></span>
+      <div class="flex-1 min-w-0">
+        <p class="text-sm font-semibold text-on-surface truncate">Paz Soldán</p>
+        <p class="text-[11px] text-on-surface-variant">8 personas</p>
+      </div>
+    </button>
+
+    <button class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-surface-container-low border border-transparent text-left transition">
+      <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:#6366f1"></span>
+      <div class="flex-1 min-w-0">
+        <p class="text-sm font-semibold text-on-surface truncate">One</p>
+        <p class="text-[11px] text-on-surface-variant">6 personas</p>
+      </div>
+    </button>
+
+    <!-- Total -->
+    <div class="mt-3 mx-1 p-3 rounded-xl bg-surface-container-low border border-outline-variant/30">
+      <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Total del mes</p>
+      <p class="text-lg font-bold text-on-surface mt-0.5">38 <span class="text-xs font-semibold text-on-surface-variant">personas</span></p>
+      <div class="flex items-center gap-2.5 mt-2">
+        <span class="flex items-center gap-1 text-[10px] font-bold text-primary" title="Podólogas"><span class="material-symbols-outlined text-sm">medical_services</span>21</span>
+        <span class="flex items-center gap-1 text-[10px] font-bold text-cyan-700" title="Fisioterapeutas"><span class="material-symbols-outlined text-sm">fitness_center</span>2</span>
+        <span class="flex items-center gap-1 text-[10px] font-bold text-teal-700" title="Doctores"><span class="material-symbols-outlined text-sm">monitor_heart</span>6</span>
+        <span class="flex items-center gap-1 text-[10px] font-bold text-violet-700" title="Recepcionistas"><span class="material-symbols-outlined text-sm">support_agent</span>9</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Panel de la sede: timeline -->
+  <main class="flex-1 overflow-y-auto custom-scrollbar">
+
+    <!-- Encabezado del panel -->
+    <div class="px-6 py-4 flex items-center justify-between gap-3 border-b border-outline-variant/30 bg-surface-container-lowest sticky top-0 z-10">
+      <div class="flex items-center gap-3">
+        <span class="w-3 h-3 rounded-full" style="background:#0ea5e9"></span>
+        <h2 class="text-lg font-bold text-on-surface">Los Olivos</h2>
+        <span class="text-xs text-on-surface-variant">01 ago — 31 ago · 9 personas</span>
+      </div>
+      <!-- Leyenda -->
+      <div class="flex items-center gap-4 text-[11px] text-on-surface-variant">
+        <span class="flex items-center gap-1.5"><span class="w-6 h-2 rounded-full bg-primary"></span> Todo el mes</span>
+        <span class="flex items-center gap-1.5"><span class="w-6 h-2 rounded-full bg-primary/40"></span> Parcial</span>
+        <span class="flex items-center gap-1.5"><span class="w-6 h-2 rounded-full bg-amber-400"></span> Cobertura</span>
+      </div>
+    </div>
+
+    <div class="p-6 space-y-6">
+
+      <!-- Escala de días -->
+      <div class="flex items-center">
+        <div class="w-64 shrink-0"></div>
+        <div class="flex-1 relative h-5 text-[10px] font-mono text-on-surface-variant/70 select-none">
+          <span class="absolute" style="left:0%">1</span>
+          <span class="absolute" style="left:19.3%">7</span>
+          <span class="absolute" style="left:41.9%">14</span>
+          <span class="absolute" style="left:64.5%">21</span>
+          <span class="absolute" style="left:87.1%">28</span>
+          <span class="absolute right-0">31</span>
+        </div>
+      </div>
+
+      <!-- ── GRUPO: PODÓLOGAS ── -->
+      <section>
+        <div class="flex items-center gap-2 mb-2">
+          <span class="material-symbols-outlined text-primary text-lg">medical_services</span>
+          <h3 class="text-xs font-bold text-primary uppercase tracking-wider">Podólogas</h3>
+          <span class="text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded-full">5</span>
+          <span class="text-[10px] text-on-surface-variant italic ml-1">· desde Movimientos</span>
+        </div>
+
+        <div class="bg-surface-container-lowest border border-outline-variant/40 rounded-2xl divide-y divide-outline-variant/20 overflow-hidden">
+
+          <!-- Persona: todo el mes -->
+          <div class="flex items-center px-4 py-2.5 hover:bg-surface-container-low/50 transition">
+            <div class="w-60 shrink-0 flex items-center gap-2.5 min-w-0 pr-3">
+              <span class="w-8 h-8 rounded-full text-white text-[10px] font-bold grid place-items-center shrink-0" style="background:#e11d48">MC</span>
+              <div class="min-w-0">
+                <p class="text-[13px] font-bold text-on-surface truncate">Mirtha Chavez</p>
+                <p class="text-[10px] text-on-surface-variant">Titular</p>
+              </div>
+            </div>
+            <div class="flex-1 relative h-7 gantt-track rounded-lg">
+              <div class="absolute inset-y-1 rounded-full bg-primary flex items-center px-2.5" style="left:0%; width:100%" title="Todo el mes (indefinido)">
+                <span class="text-[10px] font-bold text-white truncate">1 — 31 ago · indefinido</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Persona: parcial primera quincena -->
+          <div class="flex items-center px-4 py-2.5 hover:bg-surface-container-low/50 transition">
+            <div class="w-60 shrink-0 flex items-center gap-2.5 min-w-0 pr-3">
+              <span class="w-8 h-8 rounded-full text-white text-[10px] font-bold grid place-items-center shrink-0" style="background:#7c3aed">LE</span>
+              <div class="min-w-0">
+                <p class="text-[13px] font-bold text-on-surface truncate">Laura Escalante</p>
+                <p class="text-[10px] text-on-surface-variant">Titular</p>
+              </div>
+            </div>
+            <div class="flex-1 relative h-7 gantt-track rounded-lg">
+              <div class="absolute inset-y-1 rounded-full bg-primary/40 border border-primary/50 flex items-center px-2.5" style="left:0%; width:48.4%" title="1 — 15 ago">
+                <span class="text-[10px] font-bold text-primary truncate">1 — 15 ago</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Persona: COBERTURA (llega a mitad de mes) -->
+          <div class="flex items-center px-4 py-2.5 bg-amber-50/40 hover:bg-amber-50/70 transition">
+            <div class="w-60 shrink-0 flex items-center gap-2.5 min-w-0 pr-3">
+              <span class="w-8 h-8 rounded-full text-white text-[10px] font-bold grid place-items-center shrink-0" style="background:#0891b2">MG</span>
+              <div class="min-w-0">
+                <p class="text-[13px] font-bold text-on-surface truncate">Maximina Gutierrez</p>
+                <p class="text-[10px] font-bold text-amber-700 flex items-center gap-0.5">
+                  <span class="material-symbols-outlined text-xs">swap_horiz</span> Cobertura · viene de One
+                </p>
+              </div>
+            </div>
+            <div class="flex-1 relative h-7 gantt-track rounded-lg">
+              <div class="absolute inset-y-1 rounded-full bg-amber-400 flex items-center px-2.5" style="left:35.5%; width:22.6%" title="12 — 18 ago · cobertura desde One">
+                <span class="text-[10px] font-bold text-amber-950 truncate">12 — 18</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Persona: segunda quincena -->
+          <div class="flex items-center px-4 py-2.5 hover:bg-surface-container-low/50 transition">
+            <div class="w-60 shrink-0 flex items-center gap-2.5 min-w-0 pr-3">
+              <span class="w-8 h-8 rounded-full text-white text-[10px] font-bold grid place-items-center shrink-0" style="background:#65a30d">GM</span>
+              <div class="min-w-0">
+                <p class="text-[13px] font-bold text-on-surface truncate">Gissela Morote</p>
+                <p class="text-[10px] text-on-surface-variant">Titular</p>
+              </div>
+            </div>
+            <div class="flex-1 relative h-7 gantt-track rounded-lg">
+              <div class="absolute inset-y-1 rounded-full bg-primary/40 border border-primary/50 flex items-center px-2.5" style="left:51.6%; width:48.4%" title="16 — 31 ago">
+                <span class="text-[10px] font-bold text-primary truncate">16 — 31 ago</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Persona: todo el mes -->
+          <div class="flex items-center px-4 py-2.5 hover:bg-surface-container-low/50 transition">
+            <div class="w-60 shrink-0 flex items-center gap-2.5 min-w-0 pr-3">
+              <span class="w-8 h-8 rounded-full text-white text-[10px] font-bold grid place-items-center shrink-0" style="background:#db2777">LS</span>
+              <div class="min-w-0">
+                <p class="text-[13px] font-bold text-on-surface truncate">Luz Saldaña</p>
+                <p class="text-[10px] text-on-surface-variant">Titular</p>
+              </div>
+            </div>
+            <div class="flex-1 relative h-7 gantt-track rounded-lg">
+              <div class="absolute inset-y-1 rounded-full bg-primary flex items-center px-2.5" style="left:0%; width:100%" title="Todo el mes (indefinido)">
+                <span class="text-[10px] font-bold text-white truncate">1 — 31 ago · indefinido</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── GRUPO: DOCTORES (BARO) ── -->
+      <section>
+        <div class="flex items-center gap-2 mb-2">
+          <span class="material-symbols-outlined text-teal-700 text-lg">monitor_heart</span>
+          <h3 class="text-xs font-bold text-teal-700 uppercase tracking-wider">Doctores (baro)</h3>
+          <span class="text-[10px] font-bold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded-full">2</span>
+          <span class="text-[10px] text-on-surface-variant italic ml-1">· desde el Roster</span>
+        </div>
+
+        <div class="bg-surface-container-lowest border border-outline-variant/40 rounded-2xl divide-y divide-outline-variant/20 overflow-hidden">
+          <div class="flex items-center px-4 py-2.5 hover:bg-surface-container-low/50 transition">
+            <div class="w-60 shrink-0 flex items-center gap-2.5 min-w-0 pr-3">
+              <span class="w-8 h-8 rounded-full text-white text-[10px] font-bold grid place-items-center shrink-0" style="background:#0d9488">DY</span>
+              <div class="min-w-0">
+                <p class="text-[13px] font-bold text-on-surface truncate">Dante Yoplac</p>
+                <p class="text-[10px] text-on-surface-variant">Doctor</p>
+              </div>
+            </div>
+            <div class="flex-1 relative h-7 gantt-track rounded-lg">
+              <div class="absolute inset-y-1 rounded-full bg-teal-600 flex items-center px-2.5" style="left:0%; width:100%">
+                <span class="text-[10px] font-bold text-white truncate">1 — 31 ago · indefinido</span>
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center px-4 py-2.5 hover:bg-surface-container-low/50 transition">
+            <div class="w-60 shrink-0 flex items-center gap-2.5 min-w-0 pr-3">
+              <span class="w-8 h-8 rounded-full text-white text-[10px] font-bold grid place-items-center shrink-0" style="background:#0d9488">AL</span>
+              <div class="min-w-0">
+                <p class="text-[13px] font-bold text-on-surface truncate">Alexandra Leyva</p>
+                <p class="text-[10px] text-on-surface-variant">Doctora</p>
+              </div>
+            </div>
+            <div class="flex-1 relative h-7 gantt-track rounded-lg">
+              <div class="absolute inset-y-1 rounded-full bg-teal-600/40 border border-teal-600/50 flex items-center px-2.5" style="left:9.7%; width:61.3%" title="4 — 22 ago">
+                <span class="text-[10px] font-bold text-teal-800 truncate">4 — 22 ago</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── GRUPO: RECEPCIONISTAS ── -->
+      <section>
+        <div class="flex items-center gap-2 mb-2">
+          <span class="material-symbols-outlined text-violet-700 text-lg">support_agent</span>
+          <h3 class="text-xs font-bold text-violet-700 uppercase tracking-wider">Recepcionistas</h3>
+          <span class="text-[10px] font-bold text-violet-700 bg-violet-50 px-1.5 py-0.5 rounded-full">2</span>
+          <span class="text-[10px] text-on-surface-variant italic ml-1">· desde el Roster</span>
+        </div>
+
+        <div class="bg-surface-container-lowest border border-outline-variant/40 rounded-2xl divide-y divide-outline-variant/20 overflow-hidden">
+          <div class="flex items-center px-4 py-2.5 hover:bg-surface-container-low/50 transition">
+            <div class="w-60 shrink-0 flex items-center gap-2.5 min-w-0 pr-3">
+              <span class="w-8 h-8 rounded-full text-white text-[10px] font-bold grid place-items-center shrink-0" style="background:#8b5cf6">KP</span>
+              <div class="min-w-0">
+                <p class="text-[13px] font-bold text-on-surface truncate">Karla Ponce</p>
+                <p class="text-[10px] text-on-surface-variant">Recepción</p>
+              </div>
+            </div>
+            <div class="flex-1 relative h-7 gantt-track rounded-lg">
+              <div class="absolute inset-y-1 rounded-full bg-violet-500 flex items-center px-2.5" style="left:0%; width:100%">
+                <span class="text-[10px] font-bold text-white truncate">1 — 31 ago · indefinido</span>
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center px-4 py-2.5 hover:bg-surface-container-low/50 transition">
+            <div class="w-60 shrink-0 flex items-center gap-2.5 min-w-0 pr-3">
+              <span class="w-8 h-8 rounded-full text-white text-[10px] font-bold grid place-items-center shrink-0" style="background:#8b5cf6">RS</span>
+              <div class="min-w-0">
+                <p class="text-[13px] font-bold text-on-surface truncate">Rosa Salazar</p>
+                <p class="text-[10px] text-on-surface-variant">Recepción</p>
+              </div>
+            </div>
+            <div class="flex-1 relative h-7 gantt-track rounded-lg">
+              <div class="absolute inset-y-1 rounded-full bg-violet-500/40 border border-violet-500/50 flex items-center px-2.5" style="left:0%; width:48.4%" title="1 — 15 ago">
+                <span class="text-[10px] font-bold text-violet-800 truncate">1 — 15 ago</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Fisioterapeutas vacío -->
+      <section>
+        <div class="flex items-center gap-2 mb-2">
+          <span class="material-symbols-outlined text-cyan-700 text-lg">fitness_center</span>
+          <h3 class="text-xs font-bold text-cyan-700 uppercase tracking-wider">Fisioterapeutas</h3>
+          <span class="text-[10px] font-bold text-on-surface-variant bg-surface-container px-1.5 py-0.5 rounded-full">0</span>
+        </div>
+        <div class="border border-dashed border-outline-variant/40 rounded-2xl py-5 text-center">
+          <p class="text-xs text-on-surface-variant/60 italic">Sin fisioterapeutas asignadas este mes en esta sede</p>
+        </div>
+      </section>
+
+    </div>
+  </main>
 </div>
 
-<div class="p-6 space-y-5">
+<!-- ============ VISTA: ROSTER (tabla limpia + modal) ============ -->
+<div id="vista-roster" class="hidden p-8 max-w-5xl mx-auto space-y-6">
 
-  <!-- Header + KPIs -->
-  <div class="flex items-center justify-between gap-4 flex-wrap">
-    <div>
-      <h1 class="text-xl font-bold text-slate-900 tracking-tight">Gestión de Roles y Permisos</h1>
-      <p class="text-sm text-slate-500 mt-0.5">Configura los perfiles de acceso por módulo. Cada rol define qué puede ver y hacer un usuario.</p>
-    </div>
-    <div class="flex items-center gap-2 flex-wrap">
-      <div class="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-white border border-slate-200/80 shadow-sm">
-        <div class="w-9 h-9 rounded-lg bg-primary/10 grid place-items-center"><span class="material-symbols-outlined text-primary text-xl">key</span></div>
-        <div><p class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Total roles</p><p class="text-lg font-bold text-slate-900 leading-none mt-0.5">5</p></div>
-      </div>
-      <div class="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-white border border-slate-200/80 shadow-sm">
-        <div class="w-9 h-9 rounded-lg bg-amber-100 grid place-items-center"><span class="material-symbols-outlined text-amber-700 text-xl">verified_user</span></div>
-        <div><p class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Del sistema</p><p class="text-lg font-bold text-slate-900 leading-none mt-0.5">3</p></div>
-      </div>
-      <div class="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-white border border-slate-200/80 shadow-sm">
-        <div class="w-9 h-9 rounded-lg bg-emerald-100 grid place-items-center"><span class="material-symbols-outlined text-emerald-700 text-xl">extension</span></div>
-        <div><p class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Personalizados</p><p class="text-lg font-bold text-slate-900 leading-none mt-0.5">2</p></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Barra de control -->
-  <div class="flex items-center justify-between gap-3 flex-wrap">
-    <div class="relative flex-1 max-w-md">
-      <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-lg pointer-events-none">search</span>
-      <input class="input pl-10" placeholder="Buscar por nombre, clave o descripción…" />
-    </div>
-    <button class="bg-primary text-white px-4 py-2.5 rounded-xl font-bold text-sm shadow-md shadow-primary/20 hover:opacity-90 active:scale-95 transition-all flex items-center gap-2">
-      <span class="material-symbols-outlined text-lg">add_moderator</span>
-      Nuevo rol
+  <div class="flex items-center justify-between gap-3">
+    <button onclick="verTab('ver')" class="flex items-center gap-1.5 text-sm font-bold text-primary hover:underline">
+      <span class="material-symbols-outlined text-lg">arrow_back</span>
+      Volver a la composición
     </button>
+    <div class="flex items-center gap-2">
+      <button onclick="document.getElementById('modal-recep').showModal()" class="px-4 py-2 rounded-xl font-bold text-sm border border-outline-variant/50 text-on-surface hover:bg-surface-container transition flex items-center gap-1.5">
+        <span class="material-symbols-outlined text-lg">person_add</span>
+        Nueva recepcionista
+      </button>
+      <button onclick="document.getElementById('modal-asignar').showModal()" class="bg-primary text-white px-4 py-2 rounded-xl font-bold text-sm shadow-md shadow-primary/20 hover:opacity-90 active:scale-95 transition-all flex items-center gap-1.5">
+        <span class="material-symbols-outlined text-lg">assignment_ind</span>
+        Asignar a sede
+      </button>
+    </div>
   </div>
 
-  <!-- ============ GRID DE ROLES ============ -->
-  <div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-
-    <!-- CARD 1: Admin (acceso total) -->
-    <div class="bg-surface-container-lowest border border-outline-variant/40 rounded-2xl shadow-sm overflow-hidden flex flex-col hover:shadow-md hover:border-outline-variant transition-all">
-      <!-- franja de color superior -->
-      <div class="h-1.5 bg-primary"></div>
-      <div class="p-5 flex-1 flex flex-col gap-4">
-        <div class="flex items-start justify-between gap-3">
-          <div class="flex items-center gap-3 min-w-0">
-            <div class="w-11 h-11 rounded-xl bg-primary/10 grid place-items-center shrink-0">
-              <span class="material-symbols-outlined msf text-primary text-2xl">local_police</span>
+  <!-- Tabla única de asignaciones -->
+  <div class="bg-surface-container-lowest rounded-2xl border border-outline-variant/40 shadow-sm overflow-hidden">
+    <table class="w-full text-sm border-collapse">
+      <thead>
+        <tr class="bg-surface-container-low">
+          <th class="text-left px-4 py-2.5 border-b border-outline-variant/40 font-bold text-[11px] text-on-surface-variant uppercase tracking-wider">Persona</th>
+          <th class="text-left px-3 py-2.5 border-b border-outline-variant/40 font-bold text-[11px] text-on-surface-variant uppercase tracking-wider">Cargo</th>
+          <th class="text-left px-3 py-2.5 border-b border-outline-variant/40 font-bold text-[11px] text-on-surface-variant uppercase tracking-wider">Sede</th>
+          <th class="text-left px-3 py-2.5 border-b border-outline-variant/40 font-bold text-[11px] text-on-surface-variant uppercase tracking-wider">Vigencia</th>
+          <th class="text-left px-3 py-2.5 border-b border-outline-variant/40 font-bold text-[11px] text-on-surface-variant uppercase tracking-wider">Notas</th>
+          <th class="text-right px-4 py-2.5 border-b border-outline-variant/40 font-bold text-[11px] text-on-surface-variant uppercase tracking-wider"></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-outline-variant/25">
+        <tr class="hover:bg-primary/5 transition-colors">
+          <td class="px-4 py-3">
+            <div class="flex items-center gap-2.5">
+              <span class="w-8 h-8 rounded-full text-white text-[10px] font-bold grid place-items-center shrink-0" style="background:#0d9488">DD</span>
+              <span class="text-[13px] font-bold text-on-surface">Daniel Doy</span>
             </div>
-            <div class="min-w-0">
-              <div class="flex items-center gap-2 flex-wrap">
-                <h3 class="text-base font-bold text-on-surface">Administrador</h3>
-                <span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 uppercase tracking-wider">
-                  <span class="material-symbols-outlined text-xs">verified</span> Sistema
-                </span>
-              </div>
-              <code class="text-[11px] font-mono text-on-surface-variant">admin</code>
+          </td>
+          <td class="px-3 py-3">
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-teal-50 text-teal-700 border border-teal-200/70">
+              <span class="material-symbols-outlined text-sm">monitor_heart</span> Doctor
+            </span>
+          </td>
+          <td class="px-3 py-3">
+            <div class="flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full" style="background:#6366f1"></span>
+              <span class="text-[13px] font-semibold text-on-surface">One</span>
             </div>
-          </div>
-          <div class="flex items-center gap-1 shrink-0">
-            <button class="w-8 h-8 grid place-items-center rounded-lg text-on-surface-variant hover:bg-primary/10 hover:text-primary transition" title="Editar rol">
-              <span class="material-symbols-outlined text-lg">edit</span>
-            </button>
-          </div>
-        </div>
-
-        <p class="text-xs text-on-surface-variant">Acceso completo a todos los módulos y herramientas del sistema.</p>
-
-        <!-- Cobertura -->
-        <div>
-          <div class="flex items-center justify-between mb-1.5">
-            <span class="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider">Permisos</span>
-            <span class="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">Acceso total · 13/13</span>
-          </div>
-          <div class="h-1.5 bg-surface-container rounded-full overflow-hidden">
-            <div class="h-full bg-emerald-500 rounded-full" style="width:100%"></div>
-          </div>
-        </div>
-
-        <!-- Matriz de módulos -->
-        <div class="grid grid-cols-3 gap-1.5">
-          <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-primary/10 border border-primary/25" title="Agenda: acceso completo">
-            <span class="material-symbols-outlined text-primary text-base">calendar_today</span>
-            <span class="text-[10px] font-bold text-primary truncate">Agenda</span>
-          </div>
-          <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-primary/10 border border-primary/25" title="Pacientes: acceso completo">
-            <span class="material-symbols-outlined text-primary text-base">groups</span>
-            <span class="text-[10px] font-bold text-primary truncate">Pacientes</span>
-          </div>
-          <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-primary/10 border border-primary/25" title="Herramientas: acceso completo">
-            <span class="material-symbols-outlined text-primary text-base">home_repair_service</span>
-            <span class="text-[10px] font-bold text-primary truncate">Herram.</span>
-          </div>
-          <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-primary/10 border border-primary/25" title="Movimientos: acceso completo">
-            <span class="material-symbols-outlined text-primary text-base">sync_alt</span>
-            <span class="text-[10px] font-bold text-primary truncate">Movim.</span>
-          </div>
-          <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-primary/10 border border-primary/25" title="Administración: acceso completo">
-            <span class="material-symbols-outlined text-primary text-base">admin_panel_settings</span>
-            <span class="text-[10px] font-bold text-primary truncate">Admin</span>
-          </div>
-          <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-primary/10 border border-primary/25" title="Usuarios y Roles: acceso completo">
-            <span class="material-symbols-outlined text-primary text-base">manage_accounts</span>
-            <span class="text-[10px] font-bold text-primary truncate">Usuarios</span>
-          </div>
-        </div>
-      </div>
-      <div class="px-5 py-3 border-t border-outline-variant/30 bg-surface-container-low/50 flex items-center justify-between">
-        <span class="text-[11px] text-on-surface-variant flex items-center gap-1">
-          <span class="material-symbols-outlined text-sm">lock</span> Protegido por el sistema
-        </span>
-        <span class="text-[11px] font-semibold text-on-surface-variant flex items-center gap-1">
-          <span class="material-symbols-outlined text-sm">group</span> 2 usuarios
-        </span>
-      </div>
-    </div>
-
-    <!-- CARD 2: Coordinadora (parcial) -->
-    <div class="bg-surface-container-lowest border border-outline-variant/40 rounded-2xl shadow-sm overflow-hidden flex flex-col hover:shadow-md hover:border-outline-variant transition-all">
-      <div class="h-1.5 bg-emerald-500"></div>
-      <div class="p-5 flex-1 flex flex-col gap-4">
-        <div class="flex items-start justify-between gap-3">
-          <div class="flex items-center gap-3 min-w-0">
-            <div class="w-11 h-11 rounded-xl bg-emerald-100 grid place-items-center shrink-0">
-              <span class="material-symbols-outlined msf text-emerald-700 text-2xl">supervisor_account</span>
-            </div>
-            <div class="min-w-0">
-              <div class="flex items-center gap-2 flex-wrap">
-                <h3 class="text-base font-bold text-on-surface">Coordinadora de Sedes</h3>
-                <span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 uppercase tracking-wider">
-                  <span class="material-symbols-outlined text-xs">verified</span> Sistema
-                </span>
-              </div>
-              <code class="text-[11px] font-mono text-on-surface-variant">coordinadora_sedes</code>
-            </div>
-          </div>
-          <div class="flex items-center gap-1 shrink-0">
-            <button class="w-8 h-8 grid place-items-center rounded-lg text-on-surface-variant hover:bg-primary/10 hover:text-primary transition" title="Editar rol">
-              <span class="material-symbols-outlined text-lg">edit</span>
-            </button>
-          </div>
-        </div>
-
-        <p class="text-xs text-on-surface-variant">Gestión operativa completa: agenda, pacientes, movimientos y herramientas estratégicas.</p>
-
-        <div>
-          <div class="flex items-center justify-between mb-1.5">
-            <span class="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider">Permisos</span>
-            <span class="text-[11px] font-bold text-on-surface-variant">10/13</span>
-          </div>
-          <div class="h-1.5 bg-surface-container rounded-full overflow-hidden">
-            <div class="h-full bg-primary rounded-full" style="width:77%"></div>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-3 gap-1.5">
-          <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-primary/10 border border-primary/25" title="Agenda: Ver · Editar">
-            <span class="material-symbols-outlined text-primary text-base">calendar_today</span>
-            <span class="text-[10px] font-bold text-primary truncate">Agenda</span>
-          </div>
-          <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-primary/10 border border-primary/25" title="Pacientes: Ver · Editar">
-            <span class="material-symbols-outlined text-primary text-base">groups</span>
-            <span class="text-[10px] font-bold text-primary truncate">Pacientes</span>
-          </div>
-          <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-primary/10 border border-primary/25" title="Herramientas: Estratégicas">
-            <span class="material-symbols-outlined text-primary text-base">home_repair_service</span>
-            <span class="text-[10px] font-bold text-primary truncate">Herram.</span>
-          </div>
-          <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-primary/10 border border-primary/25" title="Movimientos: Ver · Editar">
-            <span class="material-symbols-outlined text-primary text-base">sync_alt</span>
-            <span class="text-[10px] font-bold text-primary truncate">Movim.</span>
-          </div>
-          <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-amber-50 border border-amber-300/60" title="Administración: parcial (2 de 4) — Ver panel, Analytics">
-            <span class="material-symbols-outlined text-amber-700 text-base">admin_panel_settings</span>
-            <span class="text-[10px] font-bold text-amber-800 truncate">Admin ½</span>
-          </div>
-          <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-surface-container-low border border-outline-variant/40 opacity-60" title="Usuarios y Roles: sin acceso">
-            <span class="material-symbols-outlined text-on-surface-variant text-base">manage_accounts</span>
-            <span class="text-[10px] font-bold text-on-surface-variant truncate">Usuarios</span>
-          </div>
-        </div>
-      </div>
-      <div class="px-5 py-3 border-t border-outline-variant/30 bg-surface-container-low/50 flex items-center justify-between">
-        <span class="text-[11px] text-on-surface-variant flex items-center gap-1">
-          <span class="material-symbols-outlined text-sm">lock</span> Protegido por el sistema
-        </span>
-        <span class="text-[11px] font-semibold text-on-surface-variant flex items-center gap-1">
-          <span class="material-symbols-outlined text-sm">group</span> 1 usuario
-        </span>
-      </div>
-    </div>
-
-    <!-- CARD 3: Recepcionista -->
-    <div class="bg-surface-container-lowest border border-outline-variant/40 rounded-2xl shadow-sm overflow-hidden flex flex-col hover:shadow-md hover:border-outline-variant transition-all">
-      <div class="h-1.5 bg-sky-500"></div>
-      <div class="p-5 flex-1 flex flex-col gap-4">
-        <div class="flex items-start justify-between gap-3">
-          <div class="flex items-center gap-3 min-w-0">
-            <div class="w-11 h-11 rounded-xl bg-sky-100 grid place-items-center shrink-0">
-              <span class="material-symbols-outlined msf text-sky-700 text-2xl">support_agent</span>
-            </div>
-            <div class="min-w-0">
-              <div class="flex items-center gap-2 flex-wrap">
-                <h3 class="text-base font-bold text-on-surface">Recepcionista</h3>
-                <span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 uppercase tracking-wider">
-                  <span class="material-symbols-outlined text-xs">verified</span> Sistema
-                </span>
-              </div>
-              <code class="text-[11px] font-mono text-on-surface-variant">recepcionista</code>
-            </div>
-          </div>
-          <div class="flex items-center gap-1 shrink-0">
-            <button class="w-8 h-8 grid place-items-center rounded-lg text-on-surface-variant hover:bg-primary/10 hover:text-primary transition" title="Editar rol">
-              <span class="material-symbols-outlined text-lg">edit</span>
-            </button>
-          </div>
-        </div>
-
-        <p class="text-xs text-on-surface-variant">Agenda y atención al paciente en la sede.</p>
-
-        <div>
-          <div class="flex items-center justify-between mb-1.5">
-            <span class="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider">Permisos</span>
-            <span class="text-[11px] font-bold text-on-surface-variant">4/13</span>
-          </div>
-          <div class="h-1.5 bg-surface-container rounded-full overflow-hidden">
-            <div class="h-full bg-primary rounded-full" style="width:31%"></div>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-3 gap-1.5">
-          <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-primary/10 border border-primary/25" title="Agenda: Ver · Editar">
-            <span class="material-symbols-outlined text-primary text-base">calendar_today</span>
-            <span class="text-[10px] font-bold text-primary truncate">Agenda</span>
-          </div>
-          <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-primary/10 border border-primary/25" title="Pacientes: Ver · Editar">
-            <span class="material-symbols-outlined text-primary text-base">groups</span>
-            <span class="text-[10px] font-bold text-primary truncate">Pacientes</span>
-          </div>
-          <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-surface-container-low border border-outline-variant/40 opacity-60" title="Herramientas: sin acceso">
-            <span class="material-symbols-outlined text-on-surface-variant text-base">home_repair_service</span>
-            <span class="text-[10px] font-bold text-on-surface-variant truncate">Herram.</span>
-          </div>
-          <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-surface-container-low border border-outline-variant/40 opacity-60" title="Movimientos: sin acceso">
-            <span class="material-symbols-outlined text-on-surface-variant text-base">sync_alt</span>
-            <span class="text-[10px] font-bold text-on-surface-variant truncate">Movim.</span>
-          </div>
-          <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-surface-container-low border border-outline-variant/40 opacity-60" title="Administración: sin acceso">
-            <span class="material-symbols-outlined text-on-surface-variant text-base">admin_panel_settings</span>
-            <span class="text-[10px] font-bold text-on-surface-variant truncate">Admin</span>
-          </div>
-          <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-surface-container-low border border-outline-variant/40 opacity-60" title="Usuarios y Roles: sin acceso">
-            <span class="material-symbols-outlined text-on-surface-variant text-base">manage_accounts</span>
-            <span class="text-[10px] font-bold text-on-surface-variant truncate">Usuarios</span>
-          </div>
-        </div>
-      </div>
-      <div class="px-5 py-3 border-t border-outline-variant/30 bg-surface-container-low/50 flex items-center justify-between">
-        <span class="text-[11px] text-on-surface-variant flex items-center gap-1">
-          <span class="material-symbols-outlined text-sm">lock</span> Protegido por el sistema
-        </span>
-        <span class="text-[11px] font-semibold text-on-surface-variant flex items-center gap-1">
-          <span class="material-symbols-outlined text-sm">group</span> 5 usuarios
-        </span>
-      </div>
-    </div>
-
-    <!-- CARD 4: Contact Center (personalizado) -->
-    <div class="bg-surface-container-lowest border border-outline-variant/40 rounded-2xl shadow-sm overflow-hidden flex flex-col hover:shadow-md hover:border-outline-variant transition-all">
-      <div class="h-1.5 bg-violet-500"></div>
-      <div class="p-5 flex-1 flex flex-col gap-4">
-        <div class="flex items-start justify-between gap-3">
-          <div class="flex items-center gap-3 min-w-0">
-            <div class="w-11 h-11 rounded-xl bg-violet-100 grid place-items-center shrink-0">
-              <span class="material-symbols-outlined msf text-violet-700 text-2xl">headset_mic</span>
-            </div>
-            <div class="min-w-0">
-              <div class="flex items-center gap-2 flex-wrap">
-                <h3 class="text-base font-bold text-on-surface">Contact Center</h3>
-                <span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 uppercase tracking-wider">
-                  <span class="material-symbols-outlined text-xs">extension</span> Personalizado
-                </span>
-              </div>
-              <code class="text-[11px] font-mono text-on-surface-variant">contact_center</code>
-            </div>
-          </div>
-          <div class="flex items-center gap-1 shrink-0">
-            <button onclick="document.getElementById('modal-rol').showModal()" class="w-8 h-8 grid place-items-center rounded-lg text-on-surface-variant hover:bg-primary/10 hover:text-primary transition" title="Editar rol">
-              <span class="material-symbols-outlined text-lg">edit</span>
-            </button>
-            <button onclick="document.getElementById('modal-eliminar').showModal()" class="w-8 h-8 grid place-items-center rounded-lg text-on-surface-variant hover:bg-red-50 hover:text-red-600 transition" title="Eliminar rol">
+          </td>
+          <td class="px-3 py-3 whitespace-nowrap">
+            <span class="text-xs font-mono text-on-surface">04 — 08 ago</span>
+          </td>
+          <td class="px-3 py-3">
+            <span class="text-xs text-on-surface-variant truncate">Cobertura baro semana</span>
+          </td>
+          <td class="px-4 py-3 text-right">
+            <button class="w-8 h-8 grid place-items-center rounded-lg text-on-surface-variant hover:bg-red-50 hover:text-red-600 transition" title="Eliminar asignación">
               <span class="material-symbols-outlined text-lg">delete</span>
             </button>
-          </div>
-        </div>
-
-        <p class="text-xs text-on-surface-variant">Reservas telefónicas: agenda + pacientes + herramientas operativas.</p>
-
-        <div>
-          <div class="flex items-center justify-between mb-1.5">
-            <span class="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider">Permisos</span>
-            <span class="text-[11px] font-bold text-on-surface-variant">5/13</span>
-          </div>
-          <div class="h-1.5 bg-surface-container rounded-full overflow-hidden">
-            <div class="h-full bg-primary rounded-full" style="width:38%"></div>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-3 gap-1.5">
-          <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-primary/10 border border-primary/25" title="Agenda: Ver · Editar">
-            <span class="material-symbols-outlined text-primary text-base">calendar_today</span>
-            <span class="text-[10px] font-bold text-primary truncate">Agenda</span>
-          </div>
-          <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-primary/10 border border-primary/25" title="Pacientes: Ver · Editar">
-            <span class="material-symbols-outlined text-primary text-base">groups</span>
-            <span class="text-[10px] font-bold text-primary truncate">Pacientes</span>
-          </div>
-          <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-amber-50 border border-amber-300/60" title="Herramientas: parcial — solo Operativas">
-            <span class="material-symbols-outlined text-amber-700 text-base">home_repair_service</span>
-            <span class="text-[10px] font-bold text-amber-800 truncate">Herram. ½</span>
-          </div>
-          <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-surface-container-low border border-outline-variant/40 opacity-60" title="Movimientos: sin acceso">
-            <span class="material-symbols-outlined text-on-surface-variant text-base">sync_alt</span>
-            <span class="text-[10px] font-bold text-on-surface-variant truncate">Movim.</span>
-          </div>
-          <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-surface-container-low border border-outline-variant/40 opacity-60" title="Administración: sin acceso">
-            <span class="material-symbols-outlined text-on-surface-variant text-base">admin_panel_settings</span>
-            <span class="text-[10px] font-bold text-on-surface-variant truncate">Admin</span>
-          </div>
-          <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-surface-container-low border border-outline-variant/40 opacity-60" title="Usuarios y Roles: sin acceso">
-            <span class="material-symbols-outlined text-on-surface-variant text-base">manage_accounts</span>
-            <span class="text-[10px] font-bold text-on-surface-variant truncate">Usuarios</span>
-          </div>
-        </div>
-      </div>
-      <div class="px-5 py-3 border-t border-outline-variant/30 bg-surface-container-low/50 flex items-center justify-between">
-        <span class="text-[11px] text-emerald-700 font-semibold flex items-center gap-1">
-          <span class="material-symbols-outlined text-sm">edit_note</span> Rol personalizado
-        </span>
-        <span class="text-[11px] font-semibold text-on-surface-variant flex items-center gap-1">
-          <span class="material-symbols-outlined text-sm">group</span> 3 usuarios
-        </span>
-      </div>
+          </td>
+        </tr>
+        <tr class="hover:bg-primary/5 transition-colors">
+          <td class="px-4 py-3">
+            <div class="flex items-center gap-2.5">
+              <span class="w-8 h-8 rounded-full text-white text-[10px] font-bold grid place-items-center shrink-0" style="background:#8b5cf6">KP</span>
+              <span class="text-[13px] font-bold text-on-surface">Karla Ponce</span>
+            </div>
+          </td>
+          <td class="px-3 py-3">
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-violet-50 text-violet-700 border border-violet-200/70">
+              <span class="material-symbols-outlined text-sm">support_agent</span> Recep.
+            </span>
+          </td>
+          <td class="px-3 py-3">
+            <div class="flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full" style="background:#0ea5e9"></span>
+              <span class="text-[13px] font-semibold text-on-surface">Los Olivos</span>
+            </div>
+          </td>
+          <td class="px-3 py-3 whitespace-nowrap">
+            <span class="text-xs font-mono text-on-surface">desde 01 ago</span>
+            <span class="ml-1 text-[9px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-1.5 py-0.5">INDEF.</span>
+          </td>
+          <td class="px-3 py-3"><span class="text-xs text-on-surface-variant/50 italic">—</span></td>
+          <td class="px-4 py-3 text-right">
+            <button class="w-8 h-8 grid place-items-center rounded-lg text-on-surface-variant hover:bg-red-50 hover:text-red-600 transition" title="Eliminar asignación">
+              <span class="material-symbols-outlined text-lg">delete</span>
+            </button>
+          </td>
+        </tr>
+        <tr class="hover:bg-primary/5 transition-colors">
+          <td class="px-4 py-3">
+            <div class="flex items-center gap-2.5">
+              <span class="w-8 h-8 rounded-full text-white text-[10px] font-bold grid place-items-center shrink-0" style="background:#0d9488">AL</span>
+              <span class="text-[13px] font-bold text-on-surface">Alexandra Leyva</span>
+            </div>
+          </td>
+          <td class="px-3 py-3">
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-teal-50 text-teal-700 border border-teal-200/70">
+              <span class="material-symbols-outlined text-sm">monitor_heart</span> Doctora
+            </span>
+          </td>
+          <td class="px-3 py-3">
+            <div class="flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full" style="background:#0ea5e9"></span>
+              <span class="text-[13px] font-semibold text-on-surface">Los Olivos</span>
+            </div>
+          </td>
+          <td class="px-3 py-3 whitespace-nowrap"><span class="text-xs font-mono text-on-surface">04 — 22 ago</span></td>
+          <td class="px-3 py-3"><span class="text-xs text-on-surface-variant/50 italic">—</span></td>
+          <td class="px-4 py-3 text-right">
+            <button class="w-8 h-8 grid place-items-center rounded-lg text-on-surface-variant hover:bg-red-50 hover:text-red-600 transition" title="Eliminar asignación">
+              <span class="material-symbols-outlined text-lg">delete</span>
+            </button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="px-4 py-2.5 border-t border-outline-variant/30 bg-surface-container-low flex items-center justify-between">
+      <p class="text-xs text-on-surface-variant">3 asignaciones vigentes en agosto</p>
+      <p class="text-[11px] text-on-surface-variant/70">Las podólogas y fisios se gestionan desde <b>Movimientos</b></p>
     </div>
-
   </div>
 
-  <p class="text-xs text-slate-400 flex items-center gap-1.5">
-    <span class="material-symbols-outlined text-sm">info</span>
-    Azul = acceso completo al módulo · Ámbar ½ = acceso parcial · Gris = sin acceso. Pasa el mouse sobre cada módulo para ver el detalle.
-  </p>
+  <!-- Fichas de recepcionistas (colapsable/simple) -->
+  <div class="bg-surface-container-lowest rounded-2xl border border-outline-variant/40 shadow-sm overflow-hidden">
+    <div class="px-4 py-3 border-b border-outline-variant/30 flex items-center gap-2">
+      <span class="material-symbols-outlined text-violet-700 text-lg">support_agent</span>
+      <h3 class="text-sm font-bold text-on-surface">Fichas de recepcionistas</h3>
+      <span class="text-[10px] font-bold text-violet-700 bg-violet-50 px-1.5 py-0.5 rounded-full">6</span>
+      <span class="text-[11px] text-on-surface-variant ml-1">— personal sin cuenta de acceso</span>
+    </div>
+    <div class="p-3 flex flex-wrap gap-2">
+      <span class="inline-flex items-center gap-2 pl-1.5 pr-2 py-1.5 rounded-full bg-surface-container-low border border-outline-variant/40">
+        <span class="w-6 h-6 rounded-full text-white text-[9px] font-bold grid place-items-center" style="background:#8b5cf6">KP</span>
+        <span class="text-xs font-semibold text-on-surface">Karla Ponce</span>
+        <button class="text-on-surface-variant hover:text-red-600 grid place-items-center" title="Eliminar"><span class="material-symbols-outlined text-base">close</span></button>
+      </span>
+      <span class="inline-flex items-center gap-2 pl-1.5 pr-2 py-1.5 rounded-full bg-surface-container-low border border-outline-variant/40">
+        <span class="w-6 h-6 rounded-full text-white text-[9px] font-bold grid place-items-center" style="background:#8b5cf6">MT</span>
+        <span class="text-xs font-semibold text-on-surface">María Torres</span>
+        <button class="text-on-surface-variant hover:text-red-600 grid place-items-center" title="Eliminar"><span class="material-symbols-outlined text-base">close</span></button>
+      </span>
+      <span class="inline-flex items-center gap-2 pl-1.5 pr-2 py-1.5 rounded-full bg-surface-container-low border border-outline-variant/40">
+        <span class="w-6 h-6 rounded-full text-white text-[9px] font-bold grid place-items-center" style="background:#8b5cf6">RS</span>
+        <span class="text-xs font-semibold text-on-surface">Rosa Salazar</span>
+        <button class="text-on-surface-variant hover:text-red-600 grid place-items-center" title="Eliminar"><span class="material-symbols-outlined text-base">close</span></button>
+      </span>
+      <span class="inline-flex items-center gap-2 pl-1.5 pr-2 py-1.5 rounded-full bg-surface-container-low border border-outline-variant/40">
+        <span class="w-6 h-6 rounded-full text-white text-[9px] font-bold grid place-items-center" style="background:#94a3b8">LQ</span>
+        <span class="text-xs font-semibold text-on-surface">Lucía Quispe</span>
+        <button class="text-on-surface-variant hover:text-red-600 grid place-items-center" title="Eliminar"><span class="material-symbols-outlined text-base">close</span></button>
+      </span>
+      <button onclick="document.getElementById('modal-recep').showModal()" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-full border border-dashed border-primary/40 text-primary text-xs font-bold hover:bg-primary/5 transition">
+        <span class="material-symbols-outlined text-base">add</span> Agregar
+      </button>
+    </div>
+  </div>
 </div>
 
-<!-- ============ MODAL CREAR / EDITAR ROL ============ -->
-<dialog id="modal-rol" class="rounded-2xl p-0 backdrop:bg-black/40 backdrop:backdrop-blur-sm shadow-2xl w-full max-w-2xl">
-  <div class="bg-surface-container-lowest w-full flex flex-col overflow-hidden max-h-[88vh]">
-
-    <!-- Header azul -->
-    <div class="bg-[#0044ab] text-white p-5 flex items-start justify-between gap-4 shrink-0">
+<!-- ============ MODAL: ASIGNAR A SEDE ============ -->
+<dialog id="modal-asignar" class="rounded-2xl p-0 backdrop:bg-black/40 backdrop:backdrop-blur-sm shadow-2xl w-full max-w-md">
+  <div class="bg-surface-container-lowest w-full flex flex-col overflow-hidden">
+    <div class="bg-[#0044ab] text-white p-5 flex items-start justify-between gap-4">
       <div>
         <div class="flex items-center gap-2">
-          <span class="material-symbols-outlined">shield</span>
-          <h2 class="text-lg font-bold tracking-tight">Editar rol · Contact Center</h2>
+          <span class="material-symbols-outlined">assignment_ind</span>
+          <h2 class="text-lg font-bold tracking-tight">Asignar a una sede</h2>
         </div>
-        <p class="text-sm text-white/85 mt-1">Define las capacidades y permisos asociados a este rol</p>
+        <p class="text-sm text-white/85 mt-1">Doctores y recepcionistas del roster</p>
       </div>
-      <button onclick="document.getElementById('modal-rol').close()" class="p-2 hover:bg-white/20 rounded-xl transition-colors">
+      <button onclick="document.getElementById('modal-asignar').close()" class="p-2 hover:bg-white/20 rounded-xl transition-colors">
         <span class="material-symbols-outlined">close</span>
       </button>
     </div>
-
-    <!-- Body -->
-    <div class="flex-1 overflow-y-auto p-5 space-y-5 custom-scrollbar">
-
-      <!-- Datos básicos -->
+    <div class="p-5 space-y-4">
+      <div class="inline-flex items-center bg-surface-container-low border border-outline-variant/40 rounded-xl p-1 gap-1">
+        <button class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold bg-primary text-white shadow-md shadow-primary/20">
+          <span class="material-symbols-outlined text-base">monitor_heart</span> Doctor
+        </button>
+        <button class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold text-on-surface-variant hover:bg-surface-container-lowest">
+          <span class="material-symbols-outlined text-base">support_agent</span> Recepcionista
+        </button>
+      </div>
+      <div>
+        <label class="block text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">Doctor</label>
+        <select class="input"><option>— elegir —</option><option selected>Daniel Doy</option><option>Dante Yoplac</option></select>
+      </div>
+      <div>
+        <label class="block text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">Sede</label>
+        <select class="input"><option>— elegir —</option><option selected>One</option><option>Los Olivos</option></select>
+      </div>
       <div class="grid grid-cols-2 gap-3">
         <div>
-          <label class="block text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">Nombre visible</label>
-          <input class="input" value="Contact Center" />
+          <label class="block text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">Desde</label>
+          <input type="date" class="input" value="2026-08-04" />
         </div>
         <div>
-          <label class="block text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">Clave interna</label>
-          <input class="input font-mono bg-surface-container-low" value="contact_center" disabled />
+          <label class="block text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">Hasta <span class="normal-case font-normal text-on-surface-variant/60">(vacío = indef.)</span></label>
+          <input type="date" class="input" />
         </div>
       </div>
       <div>
-        <label class="block text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">Descripción</label>
-        <input class="input" value="Reservas telefónicas: agenda + pacientes + herramientas operativas." />
-      </div>
-
-      <!-- Contador de permisos -->
-      <div class="flex items-center justify-between p-3 rounded-xl bg-primary/5 border border-primary/20">
-        <div class="flex items-center gap-2">
-          <span class="material-symbols-outlined text-primary">tune</span>
-          <span class="text-sm font-bold text-on-surface">5 de 13 permisos activos</span>
-        </div>
-        <div class="w-32 h-2 bg-surface-container rounded-full overflow-hidden">
-          <div class="h-full bg-primary rounded-full" style="width:38%"></div>
-        </div>
-      </div>
-
-      <!-- Grupos de permisos con switches -->
-      <div class="space-y-3">
-
-        <!-- Grupo: Agenda (completo) -->
-        <div class="border border-outline-variant/40 rounded-xl overflow-hidden">
-          <div class="flex items-center justify-between px-4 py-2.5 bg-surface-container-low border-b border-outline-variant/30">
-            <div class="flex items-center gap-2">
-              <span class="material-symbols-outlined text-primary text-lg">calendar_today</span>
-              <span class="text-sm font-bold text-on-surface">Agenda</span>
-              <span class="text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded-full">2/2</span>
-            </div>
-            <button class="text-[11px] font-bold text-red-700 bg-red-50 border border-red-200/70 hover:bg-red-100 px-2 py-0.5 rounded-full uppercase tracking-wider transition">Quitar todos</button>
-          </div>
-          <div class="divide-y divide-outline-variant/20">
-            <label class="flex items-center justify-between px-4 py-2.5 hover:bg-surface-container-low/60 cursor-pointer transition">
-              <div>
-                <p class="text-[13px] font-semibold text-on-surface">Ver agenda</p>
-                <p class="text-[11px] text-on-surface-variant font-mono">agenda.ver</p>
-              </div>
-              <div class="switch"><input type="checkbox" checked><span class="slider"></span></div>
-            </label>
-            <label class="flex items-center justify-between px-4 py-2.5 hover:bg-surface-container-low/60 cursor-pointer transition">
-              <div>
-                <p class="text-[13px] font-semibold text-on-surface">Crear / editar / cancelar citas</p>
-                <p class="text-[11px] text-on-surface-variant font-mono">agenda.editar</p>
-              </div>
-              <div class="switch"><input type="checkbox" checked><span class="slider"></span></div>
-            </label>
-          </div>
-        </div>
-
-        <!-- Grupo: Herramientas (parcial) -->
-        <div class="border border-outline-variant/40 rounded-xl overflow-hidden">
-          <div class="flex items-center justify-between px-4 py-2.5 bg-surface-container-low border-b border-outline-variant/30">
-            <div class="flex items-center gap-2">
-              <span class="material-symbols-outlined text-primary text-lg">home_repair_service</span>
-              <span class="text-sm font-bold text-on-surface">Herramientas</span>
-              <span class="text-[10px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded-full">1/2</span>
-            </div>
-            <button class="text-[11px] font-bold text-primary bg-primary/10 border border-primary/30 hover:bg-primary/20 px-2 py-0.5 rounded-full uppercase tracking-wider transition">Marcar todos</button>
-          </div>
-          <div class="divide-y divide-outline-variant/20">
-            <label class="flex items-center justify-between px-4 py-2.5 hover:bg-surface-container-low/60 cursor-pointer transition">
-              <div class="pr-4">
-                <p class="text-[13px] font-semibold text-on-surface">Operativas</p>
-                <p class="text-[11px] text-on-surface-variant">Lista de citas, Reactivación de Pacientes, Historial de Atenciones</p>
-              </div>
-              <div class="switch shrink-0"><input type="checkbox" checked><span class="slider"></span></div>
-            </label>
-            <label class="flex items-center justify-between px-4 py-2.5 hover:bg-surface-container-low/60 cursor-pointer transition">
-              <div class="pr-4">
-                <p class="text-[13px] font-semibold text-on-surface">Estratégicas</p>
-                <p class="text-[11px] text-on-surface-variant">TODAS (almuerzos, horarios, permisos, canales, confirmación…) + las operativas</p>
-              </div>
-              <div class="switch shrink-0"><input type="checkbox"><span class="slider"></span></div>
-            </label>
-          </div>
-        </div>
-
-        <!-- Grupo: Usuarios y Roles (vacío) -->
-        <div class="border border-outline-variant/40 rounded-xl overflow-hidden">
-          <div class="flex items-center justify-between px-4 py-2.5 bg-surface-container-low border-b border-outline-variant/30">
-            <div class="flex items-center gap-2">
-              <span class="material-symbols-outlined text-primary text-lg">manage_accounts</span>
-              <span class="text-sm font-bold text-on-surface">Usuarios y Roles</span>
-              <span class="text-[10px] font-bold text-on-surface-variant bg-surface-container px-1.5 py-0.5 rounded-full">0/3</span>
-            </div>
-            <button class="text-[11px] font-bold text-primary bg-primary/10 border border-primary/30 hover:bg-primary/20 px-2 py-0.5 rounded-full uppercase tracking-wider transition">Marcar todos</button>
-          </div>
-          <div class="divide-y divide-outline-variant/20">
-            <label class="flex items-center justify-between px-4 py-2.5 hover:bg-surface-container-low/60 cursor-pointer transition">
-              <div>
-                <p class="text-[13px] font-semibold text-on-surface">Ver usuarios del sistema</p>
-                <p class="text-[11px] text-on-surface-variant font-mono">usuarios.ver</p>
-              </div>
-              <div class="switch"><input type="checkbox"><span class="slider"></span></div>
-            </label>
-            <label class="flex items-center justify-between px-4 py-2.5 hover:bg-surface-container-low/60 cursor-pointer transition">
-              <div>
-                <p class="text-[13px] font-semibold text-on-surface">Crear / editar / desactivar usuarios</p>
-                <p class="text-[11px] text-on-surface-variant font-mono">usuarios.editar</p>
-              </div>
-              <div class="switch"><input type="checkbox"><span class="slider"></span></div>
-            </label>
-            <label class="flex items-center justify-between px-4 py-2.5 hover:bg-surface-container-low/60 cursor-pointer transition">
-              <div>
-                <p class="text-[13px] font-semibold text-on-surface">Crear / editar / eliminar roles</p>
-                <p class="text-[11px] text-on-surface-variant font-mono">roles.editar</p>
-              </div>
-              <div class="switch"><input type="checkbox"><span class="slider"></span></div>
-            </label>
-          </div>
-        </div>
-
-        <p class="text-[11px] text-on-surface-variant italic text-center">… (los otros 3 grupos — Pacientes, Movimientos, Administración — siguen el mismo patrón)</p>
+        <label class="block text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">Notas <span class="normal-case font-normal text-on-surface-variant/60">(opcional)</span></label>
+        <input class="input" placeholder="Motivo, referencia…" />
       </div>
     </div>
-
-    <!-- Footer -->
-    <div class="p-4 border-t border-outline-variant/30 flex items-center justify-end gap-2 shrink-0 bg-surface-container-low">
-      <button onclick="document.getElementById('modal-rol').close()" class="px-4 py-2 rounded-xl border border-outline-variant/60 text-on-surface font-bold text-sm hover:bg-surface-container transition">Cancelar</button>
-      <button onclick="document.getElementById('modal-rol').close()" class="px-4 py-2 rounded-xl bg-primary text-white font-bold text-sm shadow-md shadow-primary/20 hover:opacity-90 transition flex items-center gap-1.5">
-        <span class="material-symbols-outlined text-lg">save</span>
-        Guardar cambios
+    <div class="p-4 border-t border-outline-variant/30 flex justify-end gap-2 bg-surface-container-low">
+      <button onclick="document.getElementById('modal-asignar').close()" class="px-4 py-2 rounded-xl border border-outline-variant/60 text-on-surface font-bold text-sm hover:bg-surface-container transition">Cancelar</button>
+      <button onclick="document.getElementById('modal-asignar').close()" class="px-4 py-2 rounded-xl bg-primary text-white font-bold text-sm shadow-md shadow-primary/20 hover:opacity-90 transition flex items-center gap-1.5">
+        <span class="material-symbols-outlined text-lg">add_circle</span> Asignar
       </button>
     </div>
   </div>
 </dialog>
 
-<!-- ============ MODAL ELIMINAR ============ -->
-<dialog id="modal-eliminar" class="rounded-2xl p-0 backdrop:bg-black/40 backdrop:backdrop-blur-sm shadow-2xl w-full max-w-sm">
-  <div class="bg-surface-container-lowest p-6 space-y-4 text-center">
-    <div class="w-14 h-14 rounded-2xl bg-red-100 text-red-600 grid place-items-center mx-auto">
-      <span class="material-symbols-outlined text-3xl">warning</span>
+<!-- ============ MODAL: NUEVA RECEPCIONISTA ============ -->
+<dialog id="modal-recep" class="rounded-2xl p-0 backdrop:bg-black/40 backdrop:backdrop-blur-sm shadow-2xl w-full max-w-sm">
+  <div class="bg-surface-container-lowest w-full flex flex-col overflow-hidden">
+    <div class="bg-[#0044ab] text-white p-5 flex items-start justify-between gap-4">
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="material-symbols-outlined">person_add</span>
+          <h2 class="text-lg font-bold tracking-tight">Nueva recepcionista</h2>
+        </div>
+        <p class="text-sm text-white/85 mt-1">Ficha de personal, sin cuenta de acceso</p>
+      </div>
+      <button onclick="document.getElementById('modal-recep').close()" class="p-2 hover:bg-white/20 rounded-xl transition-colors">
+        <span class="material-symbols-outlined">close</span>
+      </button>
     </div>
-    <div>
-      <h3 class="text-base font-bold text-on-surface">¿Eliminar rol?</h3>
-      <p class="text-xs text-on-surface-variant mt-1.5">
-        ¿Seguro que deseas eliminar <strong>"Contact Center"</strong>? Los <strong>3 usuarios</strong> con este rol
-        perderán sus accesos. Esta acción no se puede deshacer.
-      </p>
+    <div class="p-5">
+      <label class="block text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">Nombre completo</label>
+      <input class="input" placeholder="Ej: Carmen Ríos" autofocus />
     </div>
-    <div class="flex gap-2 pt-1">
-      <button onclick="document.getElementById('modal-eliminar').close()" class="flex-1 px-4 py-2 rounded-xl border border-outline-variant/60 text-on-surface font-bold text-sm hover:bg-surface-container transition">Cancelar</button>
-      <button onclick="document.getElementById('modal-eliminar').close()" class="flex-1 px-4 py-2 rounded-xl bg-red-600 text-white font-bold text-sm shadow-md shadow-red-600/20 hover:opacity-90 transition">Sí, eliminar</button>
+    <div class="p-4 border-t border-outline-variant/30 flex justify-end gap-2 bg-surface-container-low">
+      <button onclick="document.getElementById('modal-recep').close()" class="px-4 py-2 rounded-xl border border-outline-variant/60 text-on-surface font-bold text-sm hover:bg-surface-container transition">Cancelar</button>
+      <button onclick="document.getElementById('modal-recep').close()" class="px-4 py-2 rounded-xl bg-primary text-white font-bold text-sm shadow-md shadow-primary/20 hover:opacity-90 transition">Crear</button>
     </div>
   </div>
 </dialog>
+
+<script>
+  function verTab(t) {
+    document.getElementById('vista-ver').classList.toggle('hidden', t !== 'ver');
+    document.getElementById('vista-roster').classList.toggle('hidden', t !== 'roster');
+  }
+</script>
 
 </body>
 </html>

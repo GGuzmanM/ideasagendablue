@@ -9,6 +9,7 @@ export interface PersonaRoster {
   indefinido: boolean;    // true = asignación sin fecha de fin
   notas?: string | null;
   asignacionId?: string;  // solo doctores/recepcionistas (roster editable)
+  motivo?: string | null; // solo podólogas/fisios: motivo del movimiento (marca COBERTURA)
 }
 export interface SedeComposicion {
   sedeId: string; nombre: string;

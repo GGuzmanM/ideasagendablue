@@ -27,7 +27,7 @@ const parseMes = (mes: string) => {
   return { y: y!, m: m!, monthStart: new Date(Date.UTC(y!, m! - 1, 1)), monthEnd: new Date(Date.UTC(y!, m!, 0)) };
 };
 
-interface PersonaRoster { id: string; nombre: string; desde: string; hasta: string; indefinido: boolean; notas?: string | null; asignacionId?: string }
+interface PersonaRoster { id: string; nombre: string; desde: string; hasta: string; indefinido: boolean; notas?: string | null; asignacionId?: string; motivo?: string | null }
 interface SedeComposicion {
   sedeId: string; nombre: string;
   podologas: PersonaRoster[]; fisioterapeutas: PersonaRoster[]; doctores: PersonaRoster[]; recepcionistas: PersonaRoster[];
@@ -92,7 +92,9 @@ async function construirComposicion(mes: string) {
       // ya está en su sede base (Erika) y hacen aparecer a alguien en una sede que no es la suya
       // (Ivonne, cuya base es Lince, cubrió Los Olivos un día). Igual criterio que esCoberturaUnDia.
       if (a.fechaFin && +a.fechaInicio === +a.fechaFin && a.motivo === 'COBERTURA_EMERGENCIA') continue;
-      const persona: PersonaRoster = { id: a.profesional.id, nombre: nombreCompleto(a.profesional.nombres, a.profesional.apellidos), ...clamp(a.fechaInicio, a.fechaFin) };
+      // `motivo` viaja al frontend para marcar COBERTURAS (movimiento temporal con motivo
+      // específico) en la línea de tiempo — misma semántica que el tablero de Movimientos.
+      const persona: PersonaRoster = { id: a.profesional.id, nombre: nombreCompleto(a.profesional.nombres, a.profesional.apellidos), motivo: a.motivo, ...clamp(a.fechaInicio, a.fechaFin) };
       (a.profesional.tipo === 'podologa' ? comp.podologas : comp.fisioterapeutas).push(persona);
     }
     for (const a of asigAdmin) {
