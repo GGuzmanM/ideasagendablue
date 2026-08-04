@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../db';
 import { requireAuth, requirePermiso } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
+import { registrarAudit } from '../services/audit';
 
 const router = Router();
 
@@ -28,9 +29,18 @@ const crearSchema = rolSchema.extend({
 });
 
 // GET /api/v1/roles — lista todos los roles (cualquier usuario autenticado puede verlos para el formulario)
+// Incluye `usuariosCount`: cuántos usuarios activos tienen cada rol (footer de las cards).
 router.get('/', requireAuth, async (_req, res) => {
-  const roles = await prisma.rol.findMany({ orderBy: { creadoEn: 'asc' } });
-  res.json(roles);
+  const [roles, conteos] = await Promise.all([
+    prisma.rol.findMany({ orderBy: { creadoEn: 'asc' } }),
+    prisma.usuario.groupBy({
+      by: ['rol'],
+      where: { deletedAt: null, activo: true },
+      _count: { _all: true },
+    }),
+  ]);
+  const countMap = new Map(conteos.map(c => [c.rol, c._count._all]));
+  res.json(roles.map(r => ({ ...r, usuariosCount: countMap.get(r.nombre) ?? 0 })));
 });
 
 // GET /api/v1/roles/permisos — lista de permisos disponibles
@@ -73,6 +83,11 @@ router.post('/', requireAuth, requirePermiso('roles.editar'), async (req, res) =
   const existe = await prisma.rol.findUnique({ where: { nombre: data.nombre } });
   if (existe) throw new AppError('Ya existe un rol con ese nombre interno', 409);
   const rol = await prisma.rol.create({ data: { ...data, esSistema: false, creadoPor: req.user?.userId } });
+  void registrarAudit({
+    usuarioId: req.user?.userId, accion: 'crear', entidad: 'rol', entidadId: rol.id,
+    despues: { nombre: rol.nombre, label: rol.label, descripcion: rol.descripcion, permisos: rol.permisos },
+    ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
+  });
   res.status(201).json(rol);
 });
 
@@ -82,6 +97,12 @@ router.put('/:id', requireAuth, requirePermiso('roles.editar'), async (req, res)
   const rol = await prisma.rol.findUnique({ where: { id: req.params.id } });
   if (!rol) throw new AppError('Rol no encontrado', 404);
   const actualizado = await prisma.rol.update({ where: { id: req.params.id }, data });
+  void registrarAudit({
+    usuarioId: req.user?.userId, accion: 'editar', entidad: 'rol', entidadId: rol.id,
+    antes: { label: rol.label, descripcion: rol.descripcion, permisos: rol.permisos },
+    despues: { label: actualizado.label, descripcion: actualizado.descripcion, permisos: actualizado.permisos },
+    ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
+  });
   res.json(actualizado);
 });
 
@@ -93,6 +114,12 @@ router.delete('/:id', requireAuth, requirePermiso('roles.editar'), async (req, r
   const enUso = await prisma.usuario.count({ where: { rol: rol.nombre, deletedAt: null } });
   if (enUso > 0) throw new AppError(`Este rol está asignado a ${enUso} usuario(s). Reasígnalos primero.`, 400);
   await prisma.rol.delete({ where: { id: req.params.id } });
+  void registrarAudit({
+    usuarioId: req.user?.userId, accion: 'eliminar', entidad: 'rol', entidadId: rol.id,
+    antes: { nombre: rol.nombre, label: rol.label, descripcion: rol.descripcion, permisos: rol.permisos },
+    despues: { eliminado: true },
+    ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
+  });
   res.json({ success: true });
 });
 

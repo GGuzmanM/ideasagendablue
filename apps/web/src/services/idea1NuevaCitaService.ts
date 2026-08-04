@@ -372,12 +372,16 @@ export function useIdea1NuevaCitaForm({
     enabled: Boolean(pacienteSeleccionado?.id),
   });
 
-  // Membresías / Paquetes ACTIVOS unificados del paciente
+  // Membresías / Paquetes ACTIVOS unificados del paciente (con filtro por SEDE: candado de sede)
   const membresiasActivas = useMemo(() => {
     const map = new Map<string, any>();
     const fCitaStr = (fechaCita || '').split('T')[0];
 
     (saldosPaciente ?? []).forEach((s: any) => {
+      if (s.tipo !== 'MEMBRESIA') return; // solo membresías en el selector de membresías
+      const sSedeId = s.sede?.id ?? s.sedeId;
+      if (sSedeId && sSedeId !== sedeId) return; // candado de sede
+
       const inicioStr = s.vigenciaInicio ? s.vigenciaInicio.split('T')[0] : null;
       const finStr = s.vigenciaFin ? s.vigenciaFin.split('T')[0] : null;
       if (inicioStr && fCitaStr < inicioStr) return;
@@ -385,16 +389,21 @@ export function useIdea1NuevaCitaForm({
       if (s.estado === 'ACTIVO' || (s.saldo && s.saldo > 0) || (s.sesionesTotal && s.sesionesTotal > s.consumidas)) {
         map.set(s.id, {
           id: s.id,
-          nombre: s.nombre || s.paquete?.nombre || 'Membresía / Paquete',
+          nombre: s.nombre || s.paquete?.nombre || 'Membresía',
           saldo: s.saldo ?? Math.max((s.sesionesTotal || 0) - (s.consumidas || 0), 0),
           sesionesTotal: s.sesionesTotal || 1,
           consumidas: s.consumidas || 0,
           composicion: s.composicion,
+          sedeId: sSedeId,
         });
       }
     });
 
     (paquetesPacienteRaw ?? []).forEach((p: any) => {
+      if (p.tipo !== 'MEMBRESIA') return;
+      const pSedeId = p.sede?.id ?? p.sedeId;
+      if (pSedeId && pSedeId !== sedeId) return; // candado de sede
+
       if (!map.has(p.id)) {
         const total = p.sesionesTotal || 1;
         const usadas = p.sesionesUsadas || (p.citas ? p.citas.length : 0);
@@ -402,28 +411,39 @@ export function useIdea1NuevaCitaForm({
         if (p.activo !== false && (p.estado === 'ACTIVO' || p.estado === undefined || saldo > 0)) {
           map.set(p.id, {
             id: p.id,
-            nombre: p.paquete?.nombre || 'Paquete / Membresía',
+            nombre: p.paquete?.nombre || 'Membresía',
             saldo,
             sesionesTotal: total,
             consumidas: usadas,
             composicion: p.composicion,
+            sedeId: pSedeId,
           });
         }
       }
     });
 
     return Array.from(map.values());
-  }, [saldosPaciente, paquetesPacienteRaw, fechaCita]);
+  }, [saldosPaciente, paquetesPacienteRaw, fechaCita, sedeId]);
 
   const paquetesPaciente = useMemo(() => {
-    return membresiasActivas.map((m: any) => ({
-      id: m.id,
-      sesionesTotal: m.sesionesTotal,
-      sesionesUsadas: m.consumidas,
-      saldo: m.saldo,
-      paquete: { nombre: m.nombre },
-    }));
-  }, [membresiasActivas]);
+    // Paquetes normales (no membresías) activos del paciente para esta sede
+    const map = new Map<string, any>();
+    (saldosPaciente ?? []).forEach((s: any) => {
+      if (s.tipo === 'MEMBRESIA') return;
+      const sSedeId = s.sede?.id ?? s.sedeId;
+      if (sSedeId && sSedeId !== sedeId) return;
+      if (s.estado === 'ACTIVO' || (s.saldo && s.saldo > 0)) {
+        map.set(s.id, {
+          id: s.id,
+          sesionesTotal: s.sesionesTotal || 1,
+          sesionesUsadas: s.consumidas || 0,
+          saldo: s.saldo ?? Math.max((s.sesionesTotal || 0) - (s.consumidas || 0), 0),
+          paquete: { nombre: s.nombre || 'Paquete' },
+        });
+      }
+    });
+    return Array.from(map.values());
+  }, [saldosPaciente, sedeId]);
 
   // Plantillas de Membresías vendibles
   const { data: membresiasTpl = [] } = useQuery({

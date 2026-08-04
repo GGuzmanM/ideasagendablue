@@ -113,6 +113,9 @@ export async function procesarEnvioReserva(citaId: string): Promise<'enviado' | 
   try {
     const { to, id } = await enviarCorreoReserva(citaId);
     await prisma.recordatorioCita.update({ where: { id: rec.id }, data: { estado: 'ENVIADO', resendEmailId: id, enviadoAt: new Date(), intentos: { increment: 1 } } });
+    // Marca la cita como "correo enviado" también en el envío AUTOMÁTICO — el badge
+    // del modal (confirmacionEnviadaEn) debe reflejar igual el envío manual y el auto.
+    await prisma.cita.update({ where: { id: citaId }, data: { confirmacionEnviadaEn: new Date() } }).catch(() => {});
     await registrarAudit({ citaId, accion: 'recordatorio_reserva_enviado', entidad: 'cita', entidadId: citaId, sedeId: cita.sedeId, despues: { tipo: 'reserva', destinatario: to, resendEmailId: id } });
     return 'enviado';
   } catch (err) {
@@ -177,6 +180,9 @@ export async function procesarEnvioRecordatorio(citaId: string, tipo: 'auto' | '
       urlReprogramar: `${apiBase()}/api/v1/citas/reprogramar/${tokenReprogramar}`,
     });
     await prisma.recordatorioCita.update({ where: { id: rec.id }, data: { estado: 'ENVIADO', resendEmailId: id, enviadoAt: new Date(), intentos: { increment: 1 } } });
+    // El correo con botones Confirmar/Reprogramar ES el de confirmación: marca la cita
+    // igual que el envío manual, para que el badge del modal quede consistente.
+    await prisma.cita.update({ where: { id: citaId }, data: { confirmacionEnviadaEn: new Date() } }).catch(() => {});
     await registrarAudit({ citaId, accion: 'recordatorio_enviado', entidad: 'cita', entidadId: citaId, sedeId: cita.sedeId, despues: { tipo: 'recordatorio', destinatario: to, resendEmailId: id } });
     return 'enviado';
   } catch (err) {

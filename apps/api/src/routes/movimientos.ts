@@ -37,7 +37,8 @@ const editarSchema = z.object({
 const INCLUDE_COMPLETO = {
   profesional: {
     select: {
-      id: true, nombres: true, apellidos: true, colorAvatar: true,
+      id: true, nombres: true, apellidos: true, colorAvatar: true, tipo: true,
+      unidadNegocio: { select: { id: true, nombre: true } },
     },
   },
   sede: { select: { id: true, nombre: true, color: true } },

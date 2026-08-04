@@ -1,5 +1,7 @@
 export { api } from './client';
 export { citasApi } from './citas';
+export { usersApi, type Usuario, type CrearUsuarioPayload, type EditarUsuarioPayload } from './users';
+export { rolesApi, type Rol, type GruposPermisos, type PermisoItem, type CrearRolPayload, type EditarRolPayload } from './roles';
 
 import { api } from './client';
 import type { AlertaPaciente } from '../components/pacientes/RomboAlerta';

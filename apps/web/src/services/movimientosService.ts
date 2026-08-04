@@ -45,6 +45,20 @@ export const cuentaRegresiva = (m: Movimiento) => {
 export const iniciales = (p: { nombres: string; apellidos: string }) =>
   `${p.nombres[0] ?? ''}${p.apellidos[0] ?? ''}`.toUpperCase();
 
+/** Profesionales de Baropodometría son fijos de cada sede y no se mueven. */
+export function esProfesionalBaro(p?: { tipo?: string; unidadNegocio?: { nombre: string } | null; nombres?: string; apellidos?: string } | null): boolean {
+  if (!p) return false;
+  if (p.tipo === 'medico') return true;
+  if (p.unidadNegocio?.nombre?.toLowerCase().includes('baro')) return true;
+  if (p.nombres?.toLowerCase().includes('baro')) return true;
+  if (p.apellidos?.toLowerCase().includes('baro')) return true;
+  return false;
+}
+
+/** Profesionales que NO se pueden mover ni deben figurar en el tablero de movimientos (Adicional o Baropodometría). */
+export const esProfesionalNoMovible = (p?: { tipo?: string; unidadNegocio?: { nombre: string } | null; nombres?: string; apellidos?: string } | null) =>
+  !p || !p.nombres || p.nombres.trim().toLowerCase() === 'adicional' || esProfesionalBaro(p);
+
 // ── Hook principal: agrupa data + mutations + filtros + estado de vista ──────
 export function useMovimientosData() {
   const qc = useQueryClient();
@@ -149,7 +163,7 @@ export function useMovimientosData() {
     (!m.fechaFin || m.fechaFin.slice(0, 10) >= fechaVista);
 
   const tableroMovs = useMemo(
-    () => todas.filter(enFecha).filter(coincide),
+    () => todas.filter(enFecha).filter(m => !esProfesionalNoMovible(m.profesional)).filter(coincide),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [todas, fechaVista, query],
   );
@@ -158,7 +172,7 @@ export function useMovimientosData() {
   const cambiosPorSede = useMemo(
     () =>
       todas
-        .filter(m => m.activa && m.fechaInicio.slice(0, 10) > fechaVista)
+        .filter(m => m.activa && m.fechaInicio.slice(0, 10) > fechaVista && !esProfesionalNoMovible(m.profesional))
         .reduce<Record<string, number>>((acc, m) => {
           acc[m.sedeId] = (acc[m.sedeId] ?? 0) + 1;
           return acc;
@@ -167,12 +181,12 @@ export function useMovimientosData() {
   );
 
   const proximos = useMemo(
-    () => (proximosQ.data ?? []).filter(coincide).sort((a, b) => a.fechaInicio.localeCompare(b.fechaInicio)),
+    () => (proximosQ.data ?? []).filter(m => !esProfesionalNoMovible(m.profesional)).filter(coincide).sort((a, b) => a.fechaInicio.localeCompare(b.fechaInicio)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [proximosQ.data, query],
   );
   const historial = useMemo(
-    () => (historialQ.data ?? []).filter(coincide).sort((a, b) => b.fechaInicio.localeCompare(a.fechaInicio)),
+    () => (historialQ.data ?? []).filter(m => !esProfesionalNoMovible(m.profesional)).filter(coincide).sort((a, b) => b.fechaInicio.localeCompare(a.fechaInicio)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [historialQ.data, query],
   );

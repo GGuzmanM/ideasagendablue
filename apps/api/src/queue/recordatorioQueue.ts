@@ -8,11 +8,15 @@ export const JOB_ENVIAR = 'enviar-recordatorio';
 export const JOB_RESERVA = 'enviar-reserva';
 
 // BullMQ exige una conexión con maxRetriesPerRequest = null.
+// OJO: la offline queue queda HABILITADA (default): con enableOfflineQueue:false, el
+// primer encolado tras el arranque llegaba mientras la conexión aún se establecía y
+// explotaba ("Stream isn't writeable") → el catch lo tragaba → recordatorio huérfano
+// (fila PROGRAMADO con jobId null que jamás dispara). Con la cola offline, el comando
+// espera a que la conexión esté lista.
 export function crearConexionBull(): ConnectionOptions {
   return new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
     maxRetriesPerRequest: null,
-    enableOfflineQueue: false,
-    retryStrategy: (times) => (times > 3 ? null : Math.min(times * 100, 1000)),
+    retryStrategy: (times) => Math.min(times * 200, 5_000), // reintenta siempre (Redis puede tardar en subir)
   }) as unknown as ConnectionOptions;
 }
 

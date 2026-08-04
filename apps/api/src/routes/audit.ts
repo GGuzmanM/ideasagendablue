@@ -91,7 +91,7 @@ router.get('/', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (r
 type TipoEntidad =
   | 'sede' | 'paciente' | 'profesional' | 'servicio'
   | 'unidadNegocio' | 'usuario' | 'promocion' | 'paquete'
-  | 'paquetePaciente' | 'canal' | 'subcategoria';
+  | 'paquetePaciente' | 'canal' | 'subcategoria' | 'rol';
 
 const CAMPO_A_MODELO: Record<string, TipoEntidad> = {
   sedeId: 'sede',
@@ -133,6 +133,7 @@ const ENTIDAD_A_TIPO: Record<string, TipoEntidad> = {
   canal: 'canal',
   subcategoria: 'subcategoria',
   unidad_negocio: 'unidadNegocio',
+  rol: 'rol',
 };
 
 async function resolverNombres(logs: { entidad: string; entidadId: string; antes: unknown; despues: unknown }[]): Promise<Record<string, string>> {
@@ -173,6 +174,7 @@ async function resolverNombres(logs: { entidad: string; entidadId: string; antes
   if (idsPorTipo.paquetePaciente) push(prisma.paquetePaciente.findMany({ where: { id: { in: [...idsPorTipo.paquetePaciente] } }, select: { id: true, paquete: { select: { nombre: true } } } }), r => r.paquete?.nombre ?? 'Paquete');
   if (idsPorTipo.canal)    push(prisma.canal.findMany({ where: { id: { in: [...idsPorTipo.canal] } }, select: { id: true, etiqueta: true } }), r => r.etiqueta);
   if (idsPorTipo.subcategoria) push(prisma.subcategoriaServicio.findMany({ where: { id: { in: [...idsPorTipo.subcategoria] } }, select: { id: true, nombre: true } }), r => r.nombre);
+  if (idsPorTipo.rol)      push(prisma.rol.findMany({ where: { id: { in: [...idsPorTipo.rol] } }, select: { id: true, label: true } }), r => r.label);
 
   await Promise.all(tareas);
   return nombres;

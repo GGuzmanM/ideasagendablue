@@ -40,9 +40,13 @@ function fechaLabel(d: Date): string {
   return d.toLocaleDateString('es-PE', { timeZone: 'UTC', day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-// Los profesionales "Adicional" (capacidad extra fija de cada sede) NUNCA se mueven.
-export function esProfesionalFijo(nombres: string): boolean {
-  return nombres.trim().toLowerCase() === 'adicional';
+// Los profesionales "Adicional" y los de Baropodometría son fijos de cada sede y NUNCA se mueven.
+export function esProfesionalFijo(nombres: string, tipo?: string, unidadNegocioNombre?: string): boolean {
+  if (nombres.trim().toLowerCase() === 'adicional') return true;
+  if (tipo === 'medico') return true;
+  if (unidadNegocioNombre?.toLowerCase().includes('baro')) return true;
+  if (nombres.toLowerCase().includes('baro')) return true;
+  return false;
 }
 
 // ─── Coordinación Movimientos ↔ Vacaciones (que las tablas "se hablen") ──────────
@@ -85,10 +89,13 @@ export async function crearMovimientoEnTx(tx: Prisma.TransactionClient, data: Cr
     throw new AppError('Las vacaciones se registran en Permisos → Vacaciones, no en Movimientos.', 400, 'MOTIVO_VACACIONES_NO_PERMITIDO');
   }
 
-  // Guard: los "Adicional" son fijos de su sede y no pueden moverse.
-  const prof = await tx.profesional.findUnique({ where: { id: data.profesionalId }, select: { nombres: true, apellidos: true } });
-  if (prof && esProfesionalFijo(prof.nombres)) {
-    throw new AppError('Los profesionales "Adicional" son fijos de su sede y no pueden moverse.', 400, 'PROFESIONAL_FIJO');
+  // Guard: los profesionales "Adicional" y de Baropodometría son fijos de su sede y no pueden moverse.
+  const prof = await tx.profesional.findUnique({
+    where: { id: data.profesionalId },
+    select: { nombres: true, apellidos: true, tipo: true, unidadNegocio: { select: { nombre: true } } },
+  });
+  if (prof && esProfesionalFijo(prof.nombres, prof.tipo, prof.unidadNegocio?.nombre)) {
+    throw new AppError('Los profesionales "Adicional" y de Baropodometría son fijos de su sede y no pueden moverse.', 400, 'PROFESIONAL_FIJO');
   }
 
   const nuevaFechaInicio = toDate(data.fechaInicio);

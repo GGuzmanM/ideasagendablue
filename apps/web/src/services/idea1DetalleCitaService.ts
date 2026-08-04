@@ -42,6 +42,25 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
     setCitaActiva(citaProp);
   }, [citaProp.id]);
 
+  // El prop `cita` es un SNAPSHOT del momento en que se abrió el modal. Los procesos
+  // automáticos (correo de confirmación enviado por el worker, confirmación del
+  // paciente desde el mail) cambian la cita en el server sin que el modal se entere.
+  // Este refetch liviano mantiene el modal al día; se mergea preservando los extras
+  // del listado (alerta/familiares) que GET /citas/:id no incluye.
+  const { data: citaFresca } = useQuery({
+    queryKey: ['cita-detalle', citaProp.id],
+    queryFn: () => citasApi.obtener(citaProp.id),
+    refetchInterval: 10_000,
+  });
+  useEffect(() => {
+    if (!citaFresca) return;
+    setCitaActiva(prev => ({
+      ...prev,
+      ...citaFresca,
+      paciente: { ...prev.paciente, ...citaFresca.paciente },
+    }));
+  }, [citaFresca]);
+
   const cita = citaActiva;
   const estadoNorm = (cita.estado || '').toLowerCase().replace(/\s+/g, '_');
 
@@ -259,8 +278,12 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
   const confirmarMailMutation = useMutation({
     mutationFn: () => citasApi.confirmarPorCorreo(cita.id),
     onSuccess: ({ to }) => {
+      // Marca inmediata en el modal (sin esperar el refetch): el badge pasa a
+      // "Correo enviado" al instante.
+      setCitaActiva(prev => ({ ...prev, confirmacionEnviadaEn: new Date().toISOString() }));
       qc.invalidateQueries({ queryKey: ['citas'] });
       qc.invalidateQueries({ queryKey: ['idea1-citas'] });
+      qc.invalidateQueries({ queryKey: ['cita-detalle', cita.id] });
       toast.success(`Correo de confirmación enviado a ${to}`);
     },
     onError: (e: Error) => toast.error(e.message),

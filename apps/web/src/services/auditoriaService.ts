@@ -138,6 +138,7 @@ export const ENTIDAD_LABEL: Record<string, string> = {
   competencia: 'Competencia',
   excepcion_horario: 'Excepción de horario',
   horario_sede: 'Horario de sede',
+  rol: 'Rol',
 };
 
 /** Etiqueta amigable de la entidad ("Movimiento", "Almuerzo"…) o la cruda si no está mapeada. */

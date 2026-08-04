@@ -30,7 +30,14 @@ export interface Movimiento {
   notas: string | null;
   reemplazaA: string | null;
   estadoCalc: 'activo' | 'proximo' | 'futuro' | 'historial';
-  profesional: { id: string; nombres: string; apellidos: string; colorAvatar: string };
+  profesional: {
+    id: string;
+    nombres: string;
+    apellidos: string;
+    colorAvatar: string;
+    tipo?: string;
+    unidadNegocio?: { id: string; nombre: string } | null;
+  };
   sede: { id: string; nombre: string; color: string };
   reemplazaProfesional: { id: string; nombres: string; apellidos: string } | null;
   creadoPorUsuario: { id: string; nombre: string } | null;

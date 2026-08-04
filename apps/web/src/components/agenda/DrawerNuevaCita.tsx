@@ -278,6 +278,8 @@ export function DrawerNuevaCita({
   // (consumirDeCita) revalida saldo por ítem y vigencia al llegar.
   const cubrePaquete = (pp: NonNullable<typeof paquetesPaciente>[number], srvId: string, subId: string | null) => {
     if (!pp.activo) return false;
+    const pSedeId = (pp as { sedeId?: string; sede?: { id: string } }).sede?.id ?? (pp as { sedeId?: string }).sedeId;
+    if (pSedeId && pSedeId !== sedeId) return false;
     if (pp.vigenciaInicio && fechaStr < pp.vigenciaInicio) return false;
     if (pp.vigenciaFin && fechaStr > pp.vigenciaFin) return false;
     const comp = pp.composicion ?? [];
@@ -319,7 +321,7 @@ export function DrawerNuevaCita({
   // ── Flujo "membresía primero": datos derivados ─────────────────────────────
   // Membresías ACTIVAS y VIGENTES del paciente en ESTA sede (candado de sede), de los saldos.
   const membresiasActivas = (saldosPaciente ?? []).filter(p =>
-    p.tipo === 'MEMBRESIA' && p.estado === 'ACTIVO' && p.sede?.id === sedeId &&
+    p.tipo === 'MEMBRESIA' && p.estado === 'ACTIVO' && (p.sede?.id === sedeId) &&
     (!p.vigenciaInicio || fechaStr >= p.vigenciaInicio) && (!p.vigenciaFin || fechaStr <= p.vigenciaFin));
   // Plantillas de membresía activas y habilitadas en la sede (para ACTIVAR una nueva).
   const tplsActivas = (membresiasTpl ?? []).filter(t =>

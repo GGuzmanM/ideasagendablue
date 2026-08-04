@@ -266,6 +266,29 @@ router.post('/:id/vender', requireAuth, async (req, res) => {
   const paciente = await prisma.paciente.findFirst({ where: { id: data.pacienteId, deletedAt: null } });
   if (!paciente) throw new AppError('Paciente no encontrado', 404);
 
+  // Control: no vender/activar otra membresía de la MISMA promoción si el paciente ya tiene una
+  // ACTIVA en la misma sede con sesiones disponibles.
+  const activaExistente = await prisma.paquetePaciente.findFirst({
+    where: {
+      pacienteId: data.pacienteId,
+      promocionId: promo.id,
+      sedeId: data.sedeId,
+      estado: 'ACTIVO',
+      deletedAt: null,
+      tipo: 'MEMBRESIA',
+    },
+    include: {
+      consumos: { where: { deletedAt: null }, select: { id: true } },
+    },
+  });
+
+  if (activaExistente && activaExistente.consumos.length < activaExistente.sesionesTotal) {
+    // Idempotencia: si ya tiene la membresía activa en esta sede con sesiones disponibles,
+    // devolver la membresía existente para no crear compras duplicadas al reintentar o hacer clic.
+    res.status(200).json(activaExistente);
+    return;
+  }
+
   const inicio = data.fechaVenta ?? format(new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Lima' })), 'yyyy-MM-dd');
   // Fin de vigencia: el que se indique (fechas abiertas) o, por defecto, inicio + duración.
   const fin = data.fechaFin ?? format(addMonths(new Date(inicio + 'T12:00:00'), plantilla.duracionMeses ?? 12), 'yyyy-MM-dd');

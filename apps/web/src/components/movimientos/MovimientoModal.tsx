@@ -6,6 +6,7 @@ import toast from 'react-hot-toast';
 import { cn } from '../../utils/cn';
 import { sedesApi, profesionalesApi } from '../../api';
 import { movimientosApi, MOTIVO_LABELS, type MotivoMovimiento, type Movimiento, type CitaPendiente, type VerificarCitasResult } from '../../api/movimientos';
+import { esProfesionalNoMovible } from '../../services/movimientosService';
 
 interface Props {
   onClose: () => void;
@@ -437,8 +438,8 @@ export function MovimientoModal({ onClose, movimientoEditar, prefillSedeId }: Pr
                 className="input w-full text-sm"
               >
                 <option value="">Seleccionar podóloga...</option>
-                {/* Los "Adicional" son fijos de su sede → no aparecen como movibles. */}
-                {profesionales?.filter(p => p.nombres.trim().toLowerCase() !== 'adicional').map(p => (
+                {/* Los "Adicional" y Baropodometría son fijos de su sede → no aparecen como movibles. */}
+                {profesionales?.filter(p => !esProfesionalNoMovible(p)).map(p => (
                   <option key={p.id} value={p.id}>
                     {p.nombres} {p.apellidos}
                     {p.sedeActual ? ` — ${p.sedeActual.nombre}` : ' — Sin sede'}
@@ -550,7 +551,7 @@ export function MovimientoModal({ onClose, movimientoEditar, prefillSedeId }: Pr
                 >
                   <option value="">Sin reemplazo específico</option>
                   {profesionalesSede
-                    ?.filter(p => p.id !== profesionalId)
+                    ?.filter(p => p.id !== profesionalId && !esProfesionalNoMovible(p))
                     .map(p => (
                       <option key={p.id} value={p.id}>
                         {p.nombres} {p.apellidos}
