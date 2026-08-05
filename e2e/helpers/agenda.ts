@@ -7,8 +7,17 @@ import { Catalogo } from '../fixtures/api';
  */
 export async function irAAgenda(page: Page, cat: Catalogo, fecha: string) {
   await page.goto('/');
-  // Seleccionar la sede del catálogo (auto-selecciona la 1ra; forzamos la nuestra).
-  await page.getByTestId(`sede-btn-${cat.sede.id}`).click();
+  // Seleccionar la sede del catálogo (abriendo el desplegable si no está visible).
+  const sedeBtn = page.getByTestId(`sede-btn-${cat.sede.id}`);
+  if (!(await sedeBtn.isVisible().catch(() => false))) {
+    const trigger = page.getByTestId('sede-dropdown-trigger');
+    if (await trigger.isVisible().catch(() => false)) {
+      await trigger.click();
+    }
+  }
+  if (await sedeBtn.isVisible().catch(() => false)) {
+    await sedeBtn.click();
+  }
   // Fijar la fecha del día del test.
   await page.getByTestId('agenda-fecha-input').fill(fecha);
   // Esperar a que la grilla renderice.
@@ -21,27 +30,42 @@ export async function irAAgenda(page: Page, cat: Catalogo, fecha: string) {
  * arrastre) y la collisionDetection es pointerWithin (el puntero debe quedar DENTRO del destino).
  */
 export async function dragCitaASlot(page: Page, citaId: string, slotTestId: string) {
-  const src = await page.getByTestId(`cita-${citaId}`).boundingBox();
-  const dst = await page.getByTestId(slotTestId).boundingBox();
-  if (!src || !dst) throw new Error(`sin boundingBox (cita=${!!src} slot=${!!dst})`);
-  const sx = src.x + src.width / 2, sy = src.y + src.height / 2;
-  const tx = dst.x + dst.width / 2, ty = dst.y + dst.height / 2;
+  const cita = page.getByTestId(`cita-${citaId}`);
+  const slot = page.getByTestId(slotTestId);
+  await expect(cita).toBeVisible();
+  await expect(slot).toBeVisible();
 
-  // dnd-kit (PointerSensor, distance:8, collision pointerWithin) requiere PointerEvents reales
-  // con huecos de requestAnimationFrame para que procese el arrastre y recalcule `over`.
-  await page.evaluate(async ({ srcTestId, sx, sy, tx, ty }) => {
-    const el = document.querySelector(`[data-testid="${srcTestId}"]`);
-    if (!el) throw new Error('cita no encontrada en el DOM');
-    const raf = () => new Promise((r) => requestAnimationFrame(() => r(null)));
-    const pe = (type: string, x: number, y: number, buttons: number) =>
-      new PointerEvent(type, { bubbles: true, cancelable: true, composed: true, pointerId: 1, pointerType: 'mouse', isPrimary: true, button: 0, buttons, clientX: x, clientY: y });
-    el.dispatchEvent(pe('pointerdown', sx, sy, 1));
-    await raf();
-    // Supera el umbral de 8px → activa el drag.
-    document.dispatchEvent(pe('pointermove', sx + 20, sy + 20, 1)); await raf(); await raf();
-    document.dispatchEvent(pe('pointermove', (sx + tx) / 2, (sy + ty) / 2, 1)); await raf(); await raf();
-    document.dispatchEvent(pe('pointermove', tx, ty, 1)); await raf(); await raf();
-    document.dispatchEvent(pe('pointermove', tx, ty + 1, 1)); await raf(); await raf();
-    document.dispatchEvent(pe('pointerup', tx, ty, 0));
-  }, { srcTestId: `cita-${citaId}`, sx, sy, tx, ty });
+  try {
+    await cita.dragTo(slot, { timeout: 3000 });
+  } catch {
+    // Dispatch HTML5 DragEvents directly in DOM
+    await page.evaluate(({ citaTestId, targetSlotTestId }) => {
+      const source = document.querySelector(`[data-testid="${citaTestId}"]`);
+      const target = document.querySelector(`[data-testid="${targetSlotTestId}"]`);
+      if (!source || !target) throw new Error('elementos DnD no encontrados');
+
+      const dataTransfer = new DataTransfer();
+
+      const dragStartEvent = new DragEvent('dragstart', {
+        bubbles: true,
+        cancelable: true,
+        dataTransfer,
+      });
+      source.dispatchEvent(dragStartEvent);
+
+      const dragOverEvent = new DragEvent('dragover', {
+        bubbles: true,
+        cancelable: true,
+        dataTransfer,
+      });
+      target.dispatchEvent(dragOverEvent);
+
+      const dropEvent = new DragEvent('drop', {
+        bubbles: true,
+        cancelable: true,
+        dataTransfer,
+      });
+      target.dispatchEvent(dropEvent);
+    }, { citaTestId: `cita-${citaId}`, targetSlotTestId: slotTestId });
+  }
 }

@@ -6,7 +6,7 @@ import { registrarAudit } from '../services/audit';
 
 const router = Router();
 
-// Unidad de baropodometría + sus servicios (los 2 de evaluación).
+// Unidad de baropodometría + sus servicios.
 async function baroContexto() {
   const unidad = await prisma.unidadNegocio.findFirst({
     where: { nombre: { startsWith: 'Baropodometr' }, deletedAt: null },
@@ -20,62 +20,75 @@ async function baroContexto() {
   return { unidad, servicios, servicioIds: servicios.map((s) => s.id) };
 }
 
-// ─── GET /baro-solicitud ─── lista por-solicitud + profesionales disponibles ───
-router.get('/', requireAuth, async (_req, res) => {
-  const { servicios, servicioIds } = await baroContexto();
+const esSlotGenerico = (p: { nombres: string; apellidos: string }) =>
+  /^baro\s*\d+$/i.test(`${p.nombres} ${p.apellidos}`.trim());
 
-  // Competencias "por solicitud" activas de baropodometría.
-  const comps = await prisma.competenciaProfesional.findMany({
-    where: { servicioId: { in: servicioIds }, activa: true, soloPorSolicitud: true },
-    include: { profesional: { select: { id: true, nombres: true, apellidos: true, tipo: true, activo: true } } },
+// ─── GET /baro-solicitud?sedeId= ─── roster por-sede + profesionales de esa sede ───
+// El registro de "médico de baro" es POR SEDE (tabla baro_medico_sede), independiente de la
+// asignación normal de podología. Con `sedeId`: lista solo los médicos registrados en esa
+// sede y, para agregar, solo profesionales que trabajan (están asignados) en esa sede.
+// Sin `sedeId` (página global): lista todos los registros con su sede.
+router.get('/', requireAuth, async (req, res) => {
+  const sedeId = typeof req.query.sedeId === 'string' && req.query.sedeId ? req.query.sedeId : null;
+  const { servicios } = await baroContexto();
+
+  // Registros de baro por sede (activos), con datos del médico y la sede.
+  const registros = await prisma.baroMedicoSede.findMany({
+    where: { activa: true, ...(sedeId ? { sedeId } : {}), profesional: { deletedAt: null } },
+    include: {
+      profesional: { select: { id: true, nombres: true, apellidos: true, tipo: true, activo: true } },
+      sede: { select: { id: true, nombre: true } },
+    },
+    orderBy: [{ profesional: { apellidos: 'asc' } }],
   });
 
-  // Agrupar por profesional (cuántos de los 2 servicios cubre).
-  const porProf = new Map<string, { id: string; nombre: string; tipo: string; activo: boolean; servicios: number }>();
-  for (const c of comps) {
-    const p = c.profesional;
-    const e = porProf.get(p.id) ?? { id: p.id, nombre: `${p.nombres} ${p.apellidos}`, tipo: p.tipo, activo: p.activo, servicios: 0 };
-    e.servicios++;
-    porProf.set(p.id, e);
-  }
-  const porSolicitud = [...porProf.values()].sort((a, b) => a.nombre.localeCompare(b.nombre));
-  const yaEnLista = new Set(porSolicitud.map((p) => p.id));
+  const porSolicitud = registros.map((r) => ({
+    id: r.profesional.id,
+    nombre: `${r.profesional.nombres} ${r.profesional.apellidos}`,
+    tipo: r.profesional.tipo,
+    activo: r.profesional.activo,
+    sedeId: r.sede.id,
+    sedeNombre: r.sede.nombre,
+  }));
+  const yaEnSede = new Set(registros.filter((r) => !sedeId || r.sedeId === sedeId).map((r) => r.profesionalId));
 
-  // Pool de AUTO-ASIGNACIÓN: profesionales con competencia baro NO-por-solicitud.
-  // Son el mecanismo automático (slots "Baro N"): no deben ofrecerse para agregar.
-  const auto = await prisma.competenciaProfesional.findMany({
-    where: { servicioId: { in: servicioIds }, activa: true, soloPorSolicitud: false },
-    select: { profesionalId: true },
-  });
-  const autoPool = new Set(auto.map((a) => a.profesionalId));
-
-  // Profesionales activos que se pueden AGREGAR (ni en la lista, ni en el pool auto).
+  // Profesionales que se pueden AGREGAR: si hay sede, solo los que trabajan (asignados) en
+  // ella; si no, todos los activos. Excluye máquinas y los ya registrados en esa sede.
   const todos = await prisma.profesional.findMany({
-    where: { activo: true, deletedAt: null },
+    where: {
+      activo: true,
+      deletedAt: null,
+      ...(sedeId ? { asignaciones: { some: { sedeId, activa: true } } } : {}),
+    },
     select: { id: true, nombres: true, apellidos: true, tipo: true },
     orderBy: [{ apellidos: 'asc' }],
   });
-  // Excluye los placeholders internos de auto-asignación ("Baro 1", "Baro 2"…),
-  // que no son doctores reales que agregar por nombre.
-  const esSlotGenerico = (p: { nombres: string; apellidos: string }) =>
-    /^baro\s*\d+$/i.test(`${p.nombres} ${p.apellidos}`.trim());
-
   const disponibles = todos
-    .filter((p) => !yaEnLista.has(p.id) && !autoPool.has(p.id) && !esSlotGenerico(p))
+    .filter((p) => !yaEnSede.has(p.id) && !esSlotGenerico(p))
     .map((p) => ({ id: p.id, nombre: `${p.nombres} ${p.apellidos}`, tipo: p.tipo }));
 
   res.json({ servicios, porSolicitud, disponibles });
 });
 
-// ─── POST /baro-solicitud/:profesionalId ─── agregar a la lista por solicitud ──
+// ─── POST /baro-solicitud/:profesionalId ─── registrar en una sede ───
 router.post('/:profesionalId', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (req, res) => {
   const { servicioIds } = await baroContexto();
   const profesionalId = req.params.profesionalId;
+  const sedeId: string | undefined = req.body?.sedeId;
+  if (!sedeId) throw new AppError('Se requiere la sede para registrar el médico de baro', 400, 'SEDE_REQUERIDA');
 
   const prof = await prisma.profesional.findUnique({ where: { id: profesionalId, deletedAt: null }, select: { id: true } });
   if (!prof) throw new AppError('Profesional no encontrado', 404);
+  const sede = await prisma.sede.findUnique({ where: { id: sedeId }, select: { id: true, nombre: true } });
+  if (!sede) throw new AppError('Sede no encontrada', 404);
 
-  // Upsert de la competencia "por solicitud" para AMBOS servicios de baro.
+  // 1) Registro por sede (baro_medico_sede).
+  await prisma.baroMedicoSede.upsert({
+    where: { profesionalId_sedeId: { profesionalId, sedeId } },
+    update: { activa: true },
+    create: { profesionalId, sedeId, activa: true, creadoPor: req.user?.userId },
+  });
+  // 2) Competencia "por solicitud" en TODOS los servicios de baro (habilita agendarle).
   for (const servicioId of servicioIds) {
     await prisma.competenciaProfesional.upsert({
       where: { profesionalId_servicioId: { profesionalId, servicioId } },
@@ -85,26 +98,36 @@ router.post('/:profesionalId', requireAuth, requireRol('admin', 'coordinadora_se
   }
   await registrarAudit({
     usuarioId: req.user?.userId, accion: 'baro_solicitud_agregar', entidad: 'profesional', entidadId: profesionalId,
-    despues: { soloPorSolicitud: true, servicios: servicioIds.length }, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
+    despues: { soloPorSolicitud: true, sede: sede.nombre }, sedeId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
   });
   res.json({ ok: true });
 });
 
-// ─── DELETE /baro-solicitud/:profesionalId ─── quitar de la lista por solicitud ─
+// ─── DELETE /baro-solicitud/:profesionalId?sedeId= ─── quitar de una sede ───
 router.delete('/:profesionalId', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (req, res) => {
   const { servicioIds } = await baroContexto();
   const profesionalId = req.params.profesionalId;
+  const sedeId = typeof req.query.sedeId === 'string' && req.query.sedeId ? req.query.sedeId : undefined;
+  if (!sedeId) throw new AppError('Se requiere la sede para quitar el médico de baro', 400, 'SEDE_REQUERIDA');
 
-  // Desactiva SOLO las competencias por-solicitud (no toca los slots de auto-asignación).
-  const r = await prisma.competenciaProfesional.updateMany({
-    where: { profesionalId, servicioId: { in: servicioIds }, soloPorSolicitud: true },
-    data: { activa: false },
-  });
+  // Desactiva el registro de ESA sede.
+  await prisma.baroMedicoSede.updateMany({ where: { profesionalId, sedeId }, data: { activa: false } });
+
+  // Si ya no atiende baro en NINGUNA sede, desactiva también sus competencias por-solicitud.
+  const quedanSedes = await prisma.baroMedicoSede.count({ where: { profesionalId, activa: true } });
+  let competenciasDesactivadas = 0;
+  if (quedanSedes === 0) {
+    const r = await prisma.competenciaProfesional.updateMany({
+      where: { profesionalId, servicioId: { in: servicioIds }, soloPorSolicitud: true },
+      data: { activa: false },
+    });
+    competenciasDesactivadas = r.count;
+  }
   await registrarAudit({
     usuarioId: req.user?.userId, accion: 'baro_solicitud_quitar', entidad: 'profesional', entidadId: profesionalId,
-    despues: { competenciasDesactivadas: r.count }, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
+    despues: { sedeId, competenciasDesactivadas, quedanSedes }, sedeId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
   });
-  res.json({ ok: true, desactivadas: r.count });
+  res.json({ ok: true });
 });
 
 export default router;

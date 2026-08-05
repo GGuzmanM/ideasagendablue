@@ -81,6 +81,7 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
     slotsAgendables,
     diasRapidos,
     profActual,
+    equipoBaro,
     totalConsultorios,
     SLOTS,
   } = useIdea1DetalleCita(props);
@@ -92,6 +93,7 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
         onClick={onClose}
       >
         <div
+          data-testid="popover-cita"
           className="bg-surface-container-lowest w-full max-w-[540px] max-h-[90vh] rounded-2xl flex flex-col overflow-hidden custom-shadow border border-outline-variant/30 animate-in zoom-in-95 duration-200"
           onClick={(e) => e.stopPropagation()}
         >
@@ -110,7 +112,7 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                 <div>
                   <h2 className="font-headline-sm text-headline-sm text-on-surface leading-tight font-bold flex items-center gap-2">
                     <RomboAlerta alerta={cita.paciente.alerta ?? datosPaciente?.alerta} size={15} />
-                    <span className="truncate max-w-[280px]" title={nombrePaciente}>
+                    <span data-testid="popover-cita-nombre" className="truncate max-w-[280px]" title={nombrePaciente}>
                       {nombrePaciente}
                     </span>
                   </h2>
@@ -149,6 +151,19 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
               >
                 {estadoNorm === 'llego' ? 'LLEGÓ' : cita.estado}
               </span>
+
+              {estadoNorm !== 'llego' && estadoNorm !== 'completada' && (
+                <button
+                  type="button"
+                  data-testid="popover-cita-btn-llego"
+                  onClick={() => estadoMutation.mutate({ estado: 'llego' })}
+                  disabled={estadoMutation.isPending}
+                  className="px-3 py-1 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition-colors shadow-xs cursor-pointer flex items-center gap-1"
+                >
+                  <span className="material-symbols-outlined text-sm">check_circle</span>
+                  <span>Marcar Llegó</span>
+                </button>
+              )}
 
               <BadgeAsistencia alerta={cita.paciente.alerta ?? datosPaciente?.alerta} />
 
@@ -281,11 +296,12 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                 )}
               </div>
 
-              {cita.solicitadoProfesional && (
+              {equipoBaro && (
                 <>
-                  <div className="font-label-caps text-label-caps text-on-surface-variant/70 uppercase tracking-wider">Solicitado</div>
-                  <div className="text-xs font-bold text-amber-800 bg-amber-50 border border-amber-300 rounded-lg px-2.5 py-1 inline-flex items-center gap-1">
-                    <span>🙋 Solo {cita.solicitadoProfesional.nombres}</span>
+                  <div className="font-label-caps text-label-caps text-on-surface-variant/70 uppercase tracking-wider">Equipo</div>
+                  <div className="text-xs font-bold text-on-surface-variant bg-surface-container border border-outline-variant/30 rounded-lg px-2.5 py-1 inline-flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-sm text-primary">monitor_heart</span>
+                    <span>{equipoBaro}</span>
                   </div>
                 </>
               )}

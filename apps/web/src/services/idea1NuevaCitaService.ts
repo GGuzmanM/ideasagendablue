@@ -18,6 +18,7 @@ import {
   api,
 } from '../api';
 import { citasApi, type CrearCitaInput, type CrearCitaCombinadaInput } from '../api/citas';
+import { baroSolicitudApi } from '../api/baroSolicitud';
 import { calcularEdad } from './pacientesService';
 import { combinacionesApi } from '../api/combinaciones';
 import { usePaquetesPaciente } from '../api/paquetesSesiones';
@@ -181,6 +182,24 @@ export function useIdea1NuevaCitaForm({
 
   const sedeActualSel = sedesDisponibles.find((s) => s.id === sedeId);
   const unidadesDeSede = sedeActualSel?.unidadesNegocio ?? [];
+
+  // ── Baropodometría: la cita ocupa una máquina y el MÉDICO que atiende (por solicitud) se
+  // elige aquí. El roster de médicos habilitados se gestiona en /herramientas/baro-solicitud
+  // (también desde un modal en este formulario). ──
+  const esBaro = /baropodometr/i.test(unidadesDeSede.find((u) => u.id === unidadNegocioId)?.nombre ?? '');
+  const puedeGestionarBaro = useAuthStore((s) => s.isCoordinadora()); // admin + coordinadora_sedes
+  const { data: baroRoster } = useQuery({
+    queryKey: ['baro-solicitud', sedeId],
+    queryFn: () => baroSolicitudApi.obtener(sedeId),
+    enabled: esBaro && Boolean(sedeId),
+  });
+  const medicosBaro = baroRoster?.porSolicitud ?? [];
+  const [medicoBaroId, setMedicoBaroId] = useState('');
+  // Si hay exactamente un médico en el roster, se preselecciona; al salir de baro se limpia.
+  useEffect(() => {
+    if (!esBaro) { if (medicoBaroId) setMedicoBaroId(''); return; }
+    if (!medicoBaroId && medicosBaro.length === 1) setMedicoBaroId(medicosBaro[0].id);
+  }, [esBaro, medicosBaro, medicoBaroId]);
 
   // Al cambiar de sede, seleccionar Podología (o la primera unidad) por defecto.
   useEffect(() => {
@@ -547,24 +566,68 @@ export function useIdea1NuevaCitaForm({
   });
   const sedeCerradaEseDia = horarioEf?.efectivo?.abierto === false;
 
-  // Opciones de horas (reales si hay disponibilidad, o fallback completo)
+  // Turnos de profesionales en la fecha
+  const { data: turnosProfMap } = useQuery({
+    queryKey: ['turnos-profesionales', sedeId, fechaCita],
+    queryFn: () => horariosApi.turnosProfesionales(sedeId, fechaCita),
+    enabled: Boolean(sedeId) && Boolean(fechaCita),
+  });
+
+  // Opciones de horas acotadas por apertura/cierre de sede y horario del profesional
   const opcionesHoras = useMemo(() => {
-    if (dispo?.slots && dispo.slots.length > 0) {
-      const horasDispo = [...new Set(dispo.slots.map((s: any) => s.horaInicio))].sort();
-      if (!horasDispo.includes(horaCita)) {
-        // asegurar que la hora inicial seleccionada esté en la lista
-        return [horaCita, ...horasDispo].sort();
+    if (sedeCerradaEseDia) return [];
+
+    const aperturaSede = horarioEf?.efectivo?.apertura || '08:00';
+    const cierreSede = horarioEf?.efectivo?.cierre || '20:00';
+
+    let profIni = aperturaSede;
+    let profFin = cierreSede;
+
+    if (profesionalId && turnosProfMap) {
+      const turno = turnosProfMap[profesionalId];
+      if (turno === null) {
+        // El profesional no atiende ese día
+        return [];
       }
-      return horasDispo;
+      if (turno) {
+        profIni = turno.horaInicio > aperturaSede ? turno.horaInicio : aperturaSede;
+        profFin = turno.horaFin < cierreSede ? turno.horaFin : cierreSede;
+      }
     }
+
+    if (dispo?.slots && dispo.slots.length > 0) {
+      const horasDispo = [...new Set(dispo.slots.map((s: any) => s.horaInicio))]
+        .filter((h) => h >= profIni && h < profFin)
+        .sort();
+
+      if (horasDispo.length > 0) {
+        if (!horasDispo.includes(horaCita) && horaCita >= profIni && horaCita < profFin) {
+          return [horaCita, ...horasDispo].sort();
+        }
+        return horasDispo;
+      }
+    }
+
+    // Fallback acotado a las horas laborables efectivas
     const horasFallback: string[] = [];
-    for (let h = 8; h <= 20; h++) {
+    const iniMin = parseInt(profIni.split(':')[0]!, 10);
+    const finMin = parseInt(profFin.split(':')[0]!, 10);
+
+    for (let h = iniMin; h <= finMin; h++) {
       const hh = String(h).padStart(2, '0');
-      horasFallback.push(`${hh}:00`);
-      if (h < 20) horasFallback.push(`${hh}:30`);
+      const h0 = `${hh}:00`;
+      const h30 = `${hh}:30`;
+      if (h0 >= profIni && h0 < profFin) horasFallback.push(h0);
+      if (h30 >= profIni && h30 < profFin) horasFallback.push(h30);
     }
+
+    if (horaCita && !horasFallback.includes(horaCita) && horaCita >= profIni && horaCita < profFin) {
+      horasFallback.push(horaCita);
+      horasFallback.sort();
+    }
+
     return horasFallback;
-  }, [dispo, horaCita]);
+  }, [dispo, horaCita, sedeCerradaEseDia, horarioEf, profesionalId, turnosProfMap]);
 
   // Configuración de combinaciones
   const { data: configCombi } = useQuery({
@@ -635,6 +698,8 @@ export function useIdea1NuevaCitaForm({
           servicioId,
           subcategoriaId: subcategoriaId || undefined,
           profesionalId: profesionalId || undefined,
+          // Baro: el médico elegido (por solicitud) para esta cita. La máquina la asigna el back.
+          solicitadoProfesionalId: esBaro ? (medicoBaroId || undefined) : undefined,
           fecha: fechaCita,
           horaInicio: horaCita,
           canal,
@@ -693,6 +758,10 @@ export function useIdea1NuevaCitaForm({
       toast.error('Selecciona un servicio');
       return;
     }
+    if (sedeCerradaEseDia) {
+      toast.error('La sede seleccionada se encuentra CERRADA en esta fecha.');
+      return;
+    }
     if (subcategorias.length > 0 && !subcategoriaId) {
       toast.error('Selecciona una opción/subcategoría del servicio');
       return;
@@ -700,6 +769,26 @@ export function useIdea1NuevaCitaForm({
     if (!fechaCita || !horaCita) {
       toast.error('Selecciona fecha y hora');
       return;
+    }
+    if (profesionalId && turnosProfMap) {
+      const turno = turnosProfMap[profesionalId];
+      if (turno === null) {
+        toast.error('El profesional seleccionado no labora en la fecha elegida.');
+        return;
+      }
+      if (turno && (horaCita < turno.horaInicio || horaCita >= turno.horaFin)) {
+        toast.error(`La hora ${horaCita} está fuera del turno del profesional (${turno.horaInicio}–${turno.horaFin}).`);
+        return;
+      }
+    }
+    // Baro: el médico elegido no puede estar ocupado a esa hora (ya tiene cita en podología o baro).
+    if (esBaro && medicoBaroId) {
+      const ocup = profesionalesOcupados?.get(medicoBaroId);
+      if (ocup) {
+        const nom = medicosBaro.find((m) => m.id === medicoBaroId)?.nombre ?? 'El médico';
+        toast.error(`${nom} ya está ocupado a las ${ocup.hora} en ${ocup.unidad}. Elige otro horario u otro médico.`);
+        return;
+      }
     }
 
     try {
@@ -738,6 +827,13 @@ export function useIdea1NuevaCitaForm({
     sedesDisponibles,
     unidadesDeSede,
     permitirCambiarSede,
+
+    // Baropodometría: médico por solicitud + gestión del roster
+    esBaro,
+    medicosBaro,
+    medicoBaroId,
+    setMedicoBaroId,
+    puedeGestionarBaro,
 
     // Form States
     modoPaciente,

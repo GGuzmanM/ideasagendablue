@@ -58,6 +58,9 @@ async function resolverSubcategoria(servicioId: string, subcategoriaId?: string 
 const crearCitaSchema = z.object({
   pacienteId: z.string().uuid(),
   profesionalId: z.string().uuid().nullable().optional(),
+  // Baropodometría: médico "por solicitud" que atiende ESTA cita (la columna sigue siendo la
+  // máquina Baro 1/2). Si no viene y hay un único médico de baro, se adjunta ese automáticamente.
+  solicitadoProfesionalId: z.string().uuid().nullable().optional(),
   sedeId: z.string().uuid(),
   unidadNegocioId: z.string().uuid(),
   servicioId: z.string().uuid(),
@@ -185,6 +188,39 @@ const comentariosInclude = {
   orderBy: { creadoEn: 'asc' },
   select: { id: true, texto: true, creadoEn: true, autorEtiqueta: true, autor: { select: { id: true, nombre: true } } },
 } as const;
+
+// ─── Helper: médico "solo por solicitud" de baro EN UNA SEDE ──────────────────
+// En baropodometría la cita ocupa una máquina (Baro 1/2) y el médico que la atiende se
+// guarda en solicitadoProfesionalId. Ese médico es quien está registrado para baro en ESA
+// sede (baro_medico_sede) y tiene competencia por-solicitud en el servicio. Si hay
+// exactamente uno, lo devuelve; si hay 0 ó >1, devuelve null (no adjunta médico).
+async function medicoDeSolicitud(servicioId: string, sedeId: string): Promise<string | null> {
+  const registros = await prisma.baroMedicoSede.findMany({
+    where: {
+      sedeId,
+      activa: true,
+      profesional: {
+        activo: true,
+        deletedAt: null,
+        competencias: { some: { servicioId, activa: true, soloPorSolicitud: true } },
+      },
+    },
+    select: { profesionalId: true },
+  });
+  return registros.length === 1 ? registros[0].profesionalId : null;
+}
+
+// ¿El médico está registrado para atender baro en esta sede (y habilitado en el servicio)?
+async function medicoAtiendeBaroEnSede(profesionalId: string, servicioId: string, sedeId: string): Promise<boolean> {
+  const reg = await prisma.baroMedicoSede.findFirst({
+    where: {
+      profesionalId, sedeId, activa: true,
+      profesional: { activo: true, deletedAt: null, competencias: { some: { servicioId, activa: true, soloPorSolicitud: true } } },
+    },
+    select: { id: true },
+  });
+  return !!reg;
+}
 
 // ─── Helper: el profesional no puede estar en dos lados a la vez ──────────────
 // Una persona ocupa su tiempo aunque la cita esté en otra unidad: cuenta tanto las
@@ -840,12 +876,24 @@ router.post('/', requireAuth, requireScope('appointments:write'), async (req: Re
   let origenAsignacion: 'elegida_por_paciente' | 'asignada_automaticamente' | null = null;
 
   if (unidad.modoReserva === 'sin_eleccion') {
-    // Baropodometría: siempre asignación automática
+    // Baropodometría: la cita ocupa una MÁQUINA libre (Baro 1/2) asignada automáticamente…
     profesionalId = await seleccionarProfesionalOptimo(
       data.sedeId, data.unidadNegocioId, data.servicioId, data.fecha, data.horaInicio
     );
-    if (!profesionalId) throw new AppError('No hay profesionales disponibles para este slot', 409, 'NO_DISPONIBLE');
+    if (!profesionalId) throw new AppError('No hay máquina disponible para este slot', 409, 'NO_DISPONIBLE');
     origenAsignacion = 'asignada_automaticamente';
+    // …y el MÉDICO que atiende (baro es "solo por solicitud": p.ej. Daniel) se guarda en
+    // solicitadoProfesionalId para que quede registrado quién atendió y para que su tiempo
+    // quede ocupado también en su columna de podología (anti doble-booking bidireccional).
+    // Recepción puede ELEGIR el médico (si el roster de la sede tiene varios); si no, se
+    // adjunta el único registrado en esa sede. El médico debe atender baro EN ESA SEDE.
+    if (data.solicitadoProfesionalId) {
+      const ok = await medicoAtiendeBaroEnSede(data.solicitadoProfesionalId, data.servicioId, data.sedeId);
+      if (!ok) throw new AppError('El médico elegido no atiende baropodometría en esta sede', 400, 'MEDICO_BARO_INVALIDO');
+      solicitadoProfesionalId = data.solicitadoProfesionalId;
+    } else {
+      solicitadoProfesionalId = await medicoDeSolicitud(data.servicioId, data.sedeId);
+    }
   } else if (unidad.modoReserva === 'preferencia_opcional') {
     if (!profesionalId) {
       // Sin preferencia: asignación automática

@@ -5,8 +5,10 @@ import {
 } from '../../services/idea1NuevaCitaService';
 import { RomboAlerta } from '../pacientes/RomboAlerta';
 import { VisorHistorialGenexis } from '../pacientes/HistorialGenexis';
+import { BaroSolicitudModal } from './BaroSolicitudModal';
 
 export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
+  const [mostrarBaroRoster, setMostrarBaroRoster] = useState(false);
   const {
     sedeId,
     setSedeId,
@@ -15,6 +17,11 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
     sedesDisponibles,
     unidadesDeSede,
     permitirCambiarSede,
+    esBaro,
+    medicosBaro,
+    medicoBaroId,
+    setMedicoBaroId,
+    puedeGestionarBaro,
     modoPaciente,
     setModoPaciente,
     pacienteQuery,
@@ -112,6 +119,17 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
   const [isDragging, setIsDragging] = useState(false);
 
   return (
+    <>
+    {mostrarBaroRoster && (
+      <BaroSolicitudModal
+        onClose={() => setMostrarBaroRoster(false)}
+        puedeGestionar={puedeGestionarBaro}
+        sedeId={sedeId}
+        sedeNombre={sedesDisponibles.find((s) => s.id === sedeId)?.nombre}
+        hora={horaCita}
+        ocupados={profesionalesOcupados}
+      />
+    )}
     <div className="fixed inset-0 bg-inverse-surface/40 backdrop-blur-[2px] z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
       <div className="bg-surface-container-lowest w-full max-w-[640px] max-h-[90vh] rounded-2xl flex flex-col overflow-hidden custom-shadow animate-in zoom-in-95 duration-200">
         
@@ -204,6 +222,7 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
             <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
+                data-testid="drawer-paciente-existente"
                 onClick={() => setModoPaciente('existente')}
                 className={`flex flex-col items-center justify-center p-4 border-2 rounded-xl transition-all duration-200 cursor-pointer ${
                   modoPaciente === 'existente'
@@ -276,6 +295,7 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
                     </span>
                     <input
                       type="text"
+                      data-testid="drawer-paciente-buscar"
                       value={pacienteQuery}
                       onChange={(e) => setPacienteQuery(e.target.value)}
                       placeholder="Buscar por DNI, Nombre o Apellidos..."
@@ -296,6 +316,7 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
                             <button
                               key={pac.id}
                               type="button"
+                              data-testid={`drawer-paciente-result-${pac.id}`}
                               onClick={() => {
                                 setPacienteSeleccionado({
                                   id: pac.id,
@@ -585,6 +606,7 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
             <div className="relative">
               <select
                 value={servicioId}
+                data-testid="drawer-servicio"
                 onChange={(e) => {
                   setServicioId(e.target.value);
                   setSubcategoriaId('');
@@ -750,53 +772,123 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
           </div>
 
           {/* Selección de Profesional */}
-          <div className="space-y-2">
-            <label className="font-label-caps text-label-caps text-on-surface-variant text-[11px] font-bold">
-              PROFESIONAL
-            </label>
-            <div className="relative">
-              <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none flex items-center gap-2">
-                <span className="material-symbols-outlined text-amber-500 text-lg" style={{ fontVariationSettings: "'FILL' 1" }}>
-                  star
+          {esBaro ? (
+            /* Baropodometría: la máquina la asigna el sistema; aquí se elige el MÉDICO (por solicitud). */
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="font-label-caps text-label-caps text-on-surface-variant text-[11px] font-bold">
+                  MÉDICO (POR SOLICITUD)
+                </label>
+                <button
+                  type="button"
+                  data-testid="baro-gestionar-btn"
+                  onClick={() => setMostrarBaroRoster(true)}
+                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary hover:underline"
+                >
+                  <span className="material-symbols-outlined text-sm">tune</span>
+                  Gestionar
+                </button>
+              </div>
+              <div className="relative">
+                <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none">
+                  <span className="material-symbols-outlined text-primary text-lg" style={{ fontVariationSettings: "'FILL' 1" }}>monitor_heart</span>
+                </div>
+                <select
+                  data-testid="baro-medico-select"
+                  value={medicoBaroId}
+                  onChange={(e) => setMedicoBaroId(e.target.value)}
+                  className="w-full appearance-none bg-surface-container-low border border-outline-variant rounded-xl pl-11 pr-4 py-3 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all font-medium text-on-surface"
+                >
+                  <option value="">Sin médico específico</option>
+                  {medicosBaro.map((m) => {
+                    const ocup = profesionalesOcupados?.get(m.id);
+                    return (
+                      <option key={m.id} value={m.id} disabled={!!ocup}>
+                        {m.nombre}
+                        {ocup ? ` — OCUPADO ${ocup.hora} en ${ocup.unidad}` : ''}
+                      </option>
+                    );
+                  })}
+                </select>
+                <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-outline">
+                  expand_more
                 </span>
               </div>
-              <select
-                value={profesionalId}
-                onChange={(e) => setProfesionalId(e.target.value)}
-                className="w-full appearance-none bg-surface-container-low border border-outline-variant rounded-xl pl-11 pr-4 py-3 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all font-medium text-on-surface"
-              >
-                <option value="">Sin preferencia (asignación automática)</option>
-                {profesionales.map((p) => {
-                  const ocup = profesionalesOcupados?.get(p.id);
-                  return (
-                    <option key={p.id} value={p.id} disabled={!!ocup}>
-                      {p.nombres} {p.apellidos} ({p.tipo})
-                      {ocup ? ` — OCUPADO ${ocup.hora} en ${ocup.unidad}` : ''}
-                    </option>
-                  );
-                })}
-              </select>
-              <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-outline">
-                expand_more
-              </span>
+
+              {medicoBaroId && (
+                profesionalesOcupados?.get(medicoBaroId) ? (
+                  <div className="flex items-center gap-2 p-2.5 bg-red-50 border border-red-200 rounded-xl">
+                    <span className="material-symbols-outlined text-red-600 text-lg">block</span>
+                    <p className="text-xs font-semibold text-red-800">
+                      Ocupado a las {profesionalesOcupados.get(medicoBaroId)!.hora} en{' '}
+                      {profesionalesOcupados.get(medicoBaroId)!.unidad}. No puede atender en dos lugares a la vez — elige otro horario u otro médico.
+                    </p>
+                  </div>
+                ) : horaCita ? (
+                  <div className="flex items-center gap-2 p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl">
+                    <span className="material-symbols-outlined text-emerald-600 text-lg">check_circle</span>
+                    <p className="text-xs font-semibold text-emerald-800">
+                      Libre a las {horaCita} — se puede agendar.
+                    </p>
+                  </div>
+                ) : null
+              )}
+
+              <p className="font-body-md text-xs text-on-surface-variant/70 italic">
+                {medicosBaro.length === 0
+                  ? 'No hay médicos en la lista por solicitud. Usa “Gestionar” para agregar quién atiende baropodometría.'
+                  : 'La máquina (Baro 1/2) se asigna automáticamente. Elige el médico que atenderá esta cita.'}
+              </p>
             </div>
-
-            {/* Aviso si el profesional elegido ya está ocupado a esa hora en otra unidad */}
-            {profesionalId && profesionalesOcupados?.get(profesionalId) && (
-              <div className="flex items-center gap-2 p-2.5 bg-red-50 border border-red-200 rounded-xl">
-                <span className="material-symbols-outlined text-red-600 text-lg">block</span>
-                <p className="text-xs font-semibold text-red-800">
-                  Este profesional ya está ocupado a las {profesionalesOcupados.get(profesionalId)!.hora} en{' '}
-                  {profesionalesOcupados.get(profesionalId)!.unidad}. No puede atender en dos lugares a la vez — elige otro
-                  horario o profesional.
-                </p>
+          ) : (
+            <div className="space-y-2">
+              <label className="font-label-caps text-label-caps text-on-surface-variant text-[11px] font-bold">
+                PROFESIONAL
+              </label>
+              <div className="relative">
+                <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none flex items-center gap-2">
+                  <span className="material-symbols-outlined text-amber-500 text-lg" style={{ fontVariationSettings: "'FILL' 1" }}>
+                    star
+                  </span>
+                </div>
+                <select
+                  value={profesionalId}
+                  onChange={(e) => setProfesionalId(e.target.value)}
+                  className="w-full appearance-none bg-surface-container-low border border-outline-variant rounded-xl pl-11 pr-4 py-3 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all font-medium text-on-surface"
+                >
+                  <option value="">Sin preferencia (asignación automática)</option>
+                  {profesionales.map((p) => {
+                    const ocup = profesionalesOcupados?.get(p.id);
+                    return (
+                      <option key={p.id} value={p.id} disabled={!!ocup}>
+                        {p.nombres} {p.apellidos} ({p.tipo})
+                        {ocup ? ` — OCUPADO ${ocup.hora} en ${ocup.unidad}` : ''}
+                      </option>
+                    );
+                  })}
+                </select>
+                <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-outline">
+                  expand_more
+                </span>
               </div>
-            )}
 
-            <p className="font-body-md text-xs text-on-surface-variant/70 italic">
-              Por defecto se asigna automáticamente. Elige un médico o especialista solo si el paciente lo pidió expresamente.
-            </p>
-          </div>
+              {/* Aviso si el profesional elegido ya está ocupado a esa hora en otra unidad */}
+              {profesionalId && profesionalesOcupados?.get(profesionalId) && (
+                <div className="flex items-center gap-2 p-2.5 bg-red-50 border border-red-200 rounded-xl">
+                  <span className="material-symbols-outlined text-red-600 text-lg">block</span>
+                  <p className="text-xs font-semibold text-red-800">
+                    Este profesional ya está ocupado a las {profesionalesOcupados.get(profesionalId)!.hora} en{' '}
+                    {profesionalesOcupados.get(profesionalId)!.unidad}. No puede atender en dos lugares a la vez — elige otro
+                    horario o profesional.
+                  </p>
+                </div>
+              )}
+
+              <p className="font-body-md text-xs text-on-surface-variant/70 italic">
+                Por defecto se asigna automáticamente. Elige un médico o especialista solo si el paciente lo pidió expresamente.
+              </p>
+            </div>
+          )}
 
           {/* Fecha y Hora */}
           <div className="grid grid-cols-2 gap-4">
@@ -821,14 +913,19 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
               <div className="relative">
                 <select
                   value={horaCita}
+                  data-testid="drawer-hora"
                   onChange={(e) => setHoraCita(e.target.value)}
                   className="w-full appearance-none bg-surface-container-low border border-outline-variant rounded-xl px-4 py-3 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all font-medium text-on-surface font-mono"
                 >
-                  {opcionesHoras.map((h) => (
-                    <option key={h} value={h}>
-                      {h} hs
-                    </option>
-                  ))}
+                  {opcionesHoras.length === 0 ? (
+                    <option value="">No hay horarios laborables en esta fecha</option>
+                  ) : (
+                    opcionesHoras.map((h) => (
+                      <option key={h} value={h}>
+                        {h} hs
+                      </option>
+                    ))
+                  )}
                 </select>
                 <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-outline">
                   schedule
@@ -957,6 +1054,7 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
           </button>
           <button
             type="button"
+            data-testid="drawer-submit"
             onClick={handleAgendar}
             disabled={isPending}
             className="flex-1 px-5 py-2.5 bg-primary text-white rounded-xl font-bold text-sm shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30 active:scale-[0.98] transition-all disabled:opacity-50 cursor-pointer"
@@ -967,5 +1065,6 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
 
       </div>
     </div>
+    </>
   );
 }

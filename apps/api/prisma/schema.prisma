@@ -179,6 +179,7 @@ model Sede {
   notificaciones  NotificacionSede[]
   bloqueos        BloqueoAgenda[]
   paquetesPaciente PaquetePaciente[]
+  baroMedicos     BaroMedicoSede[]
 
   creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
@@ -281,6 +282,9 @@ model Profesional {
   citasSolicitadas Cita[]                   @relation("CitaSolicitado")
   agregados        AgregadoDiario[]
   entradas         EntradaPodologa[]
+  // Sedes donde este médico atiende baropodometría "por solicitud" (independiente de su
+  // asignación normal de podología). Solo se muestra/ofrece en esas sedes al reservar baro.
+  baroSedes        BaroMedicoSede[]
 
   creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
@@ -325,6 +329,28 @@ model AsignacionSede {
   @@index([sedeId, activa])
   @@index([fechaInicio, fechaFin])
   @@map("asignaciones_sede")
+}
+
+// ─── BaroMedicoSede ───────────────────────────────────────────────────────────
+// Registro POR SEDE de qué médico atiende baropodometría "por solicitud" en cada sede.
+// Es independiente de AsignacionSede (que rige columnas de podología): un médico puede
+// hacer baro por solicitud en una sede sin estar asignado a ella para podología. El
+// selector de médico al reservar baro y el auto-adjuntar solo consideran esta tabla.
+model BaroMedicoSede {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  profesionalId String   @db.Uuid
+  sedeId        String   @db.Uuid
+  activa        Boolean  @default(true)
+  creadoPor     String?  @db.Uuid
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  profesional Profesional @relation(fields: [profesionalId], references: [id])
+  sede        Sede        @relation(fields: [sedeId], references: [id])
+
+  @@unique([profesionalId, sedeId])
+  @@index([sedeId, activa])
+  @@map("baro_medico_sede")
 }
 
 // ─── Recepcionista ────────────────────────────────────────────────────────────

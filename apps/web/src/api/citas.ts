@@ -71,6 +71,7 @@ export interface CitaResumen {
 export interface CrearCitaInput {
   pacienteId: string;
   profesionalId?: string | null;
+  solicitadoProfesionalId?: string | null; // baro: médico "por solicitud" que atiende esta cita
   sedeId: string;
   unidadNegocioId: string;
   servicioId: string;

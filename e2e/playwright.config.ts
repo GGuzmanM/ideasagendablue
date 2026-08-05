@@ -36,7 +36,7 @@ export default defineConfig({
   webServer: [
     {
       // API compilada en caliente con ts-node, cargando .env.e2e (aislado, worker off).
-      command: 'npx ts-node --transpile-only src/index.ts',
+      command: 'npx cross-env ENV_FILE=.env.e2e npx ts-node --transpile-only src/index.ts',
       cwd: path.join(REPO, 'apps/api'),
       env: { ENV_FILE: '.env.e2e' },
       url: 'http://localhost:3003/api/docs',

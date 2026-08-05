@@ -6,6 +6,8 @@ export interface ProfBaro {
   tipo: string;
   activo?: boolean;
   servicios?: number;
+  sedeId?: string;
+  sedeNombre?: string;
 }
 
 export interface BaroSolicitudData {
@@ -15,7 +17,8 @@ export interface BaroSolicitudData {
 }
 
 export const baroSolicitudApi = {
-  obtener: () => api.get<BaroSolicitudData>('/baro-solicitud'),
-  agregar: (profesionalId: string) => api.post<{ ok: boolean }>(`/baro-solicitud/${profesionalId}`, {}),
-  quitar: (profesionalId: string) => api.delete<{ ok: boolean; desactivadas: number }>(`/baro-solicitud/${profesionalId}`),
+  // `sedeId` filtra el roster y los candidatos a esa sede (registro de baro es por sede).
+  obtener: (sedeId?: string) => api.get<BaroSolicitudData>('/baro-solicitud', sedeId ? { sedeId } : undefined),
+  agregar: (profesionalId: string, sedeId: string) => api.post<{ ok: boolean }>(`/baro-solicitud/${profesionalId}`, { sedeId }),
+  quitar: (profesionalId: string, sedeId: string) => api.delete<{ ok: boolean }>(`/baro-solicitud/${profesionalId}?sedeId=${encodeURIComponent(sedeId)}`),
 };

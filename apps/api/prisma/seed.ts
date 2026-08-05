@@ -1,3 +1,6 @@
+import dotenv from 'dotenv';
+dotenv.config(process.env.ENV_FILE ? { path: process.env.ENV_FILE } : undefined);
+
 import { PrismaClient, TipoProfesional, EstadoCita, CanalReserva, OrigenAsignacion } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { subDays, format } from 'date-fns';
@@ -96,6 +99,8 @@ const PODOLOGAS_POR_SEDE: Record<string, { nombres: string; apellidos: string }[
     { nombres: 'Sarai Abigail',        apellidos: 'Diaz Vergara'             },
     { nombres: 'Erika Shabell',        apellidos: 'Chamorro Pacheco'         },
     { nombres: 'Fiorella Estephany',   apellidos: 'Bouisson Carbajal'        },
+    { nombres: 'Daniel',               apellidos: 'Doy'                      },
+    { nombres: 'Yasica',               apellidos: 'Doy'                      },
   ],
 };
 
@@ -143,10 +148,12 @@ async function main() {
   await prisma.webhookSubscription.deleteMany();
   await prisma.agregadoDiario.deleteMany();
   // Hijos de Cita con onDelete: Restrict — borrar antes que las citas.
+  await prisma.videoEnvioLog.deleteMany();
   await prisma.recordatorioCita.deleteMany();
   await prisma.tokenAccionCita.deleteMany();
   await prisma.comentarioCita.deleteMany();
   await prisma.cita.deleteMany();
+  await prisma.consumoSesion.deleteMany();
   await prisma.paquetePaciente.deleteMany();
   await prisma.paquete.deleteMany();
   await prisma.competenciaProfesional.deleteMany();
@@ -156,6 +163,8 @@ async function main() {
   await prisma.combinacionPermitida.deleteMany(); // FK → servicio: borrar antes
   await prisma.configuracionSistema.deleteMany(); // FK → servicio: borrar antes
   await prisma.promocion.deleteMany(); // citas (FK→promocion) ya borradas arriba
+  await prisma.servicioVideo.deleteMany();
+  await prisma.subcategoriaServicio.deleteMany();
   await prisma.servicio.deleteMany();
   await prisma.apiKey.deleteMany();
   await prisma.usuarioSede.deleteMany();
@@ -164,12 +173,14 @@ async function main() {
   await prisma.notificacionSede.deleteMany();
   await prisma.notificacion.deleteMany();
   await prisma.usuario.deleteMany();
+  await prisma.conciliacionApertura.deleteMany();
   await prisma.paciente.deleteMany();
   await prisma.entradaPodologa.deleteMany(); // FK → profesional
   await prisma.profesional.deleteMany();
   await prisma.excepcionHorario.deleteMany();
   await prisma.sedeUnidadNegocio.deleteMany();
   await prisma.unidadNegocio.deleteMany();
+  await prisma.asignacionAdministrativa.deleteMany();
   await prisma.sede.deleteMany();
 
   // ── Unidades de Negocio ─────────────────────────────────────────────────────

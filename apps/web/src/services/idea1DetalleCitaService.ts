@@ -327,9 +327,20 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
 
   const diasRapidos = Array.from({ length: 7 }, (_, i) => addDays(new Date(), i));
 
-  const profActual = cita.profesional
-    ? `${cita.profesional.nombres.split(' ')[0]} ${cita.profesional.apellidos.split(' ')[0]}`
+  // Baro: la columna de la cita es una MÁQUINA (Baro 1/2) y el médico que atiende va en
+  // `solicitadoProfesional`. En ese caso el "Profesional" mostrado debe ser el médico, y la
+  // máquina se muestra aparte como "Equipo".
+  const nombreCorto = (p: { nombres: string; apellidos: string }) =>
+    `${p.nombres.split(' ')[0]} ${p.apellidos.split(' ')[0]}`;
+  const profActual = cita.solicitadoProfesional
+    ? nombreCorto(cita.solicitadoProfesional)
+    : cita.profesional
+    ? nombreCorto(cita.profesional)
     : 'Sin asignar';
+  // Nombre de la máquina/equipo (solo cuando hay médico solicitado sobre una columna-máquina).
+  const equipoBaro = cita.solicitadoProfesional && cita.profesional
+    ? `${cita.profesional.nombres} ${cita.profesional.apellidos}`.trim()
+    : null;
 
   const totalConsultorios = CONSULTORIOS_POR_SEDE[cita.sede?.nombre || ''] ?? 6;
 
@@ -407,6 +418,7 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
     slotsAgendables,
     diasRapidos,
     profActual,
+    equipoBaro,
     totalConsultorios,
     SLOTS,
   };

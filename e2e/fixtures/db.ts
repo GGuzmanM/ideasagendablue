@@ -32,8 +32,12 @@ const REDIS = 'limablue_redis';
 
 /** Ejecuta SQL contra la BD e2e y devuelve stdout crudo (psql -tAc). */
 export function psql(query: string): string {
-  const q = query.replace(/"/g, '\\"');
-  return execSync(`docker exec ${PG} psql -U limablue -d ${E2E_DB_NAME} -tAc "${q}"`).toString().trim();
+  const dbUrl = leerEnv('DATABASE_URL');
+  try {
+    return execSync(`psql "${dbUrl}" -t -A`, { input: query, stdio: ['pipe', 'pipe', 'ignore'] }).toString().trim();
+  } catch {
+    return execSync(`docker exec -i ${PG} psql -U limablue -d ${E2E_DB_NAME} -t -A`, { input: query }).toString().trim();
+  }
 }
 
 /** Filas como arrays de columnas (separador '|'). */

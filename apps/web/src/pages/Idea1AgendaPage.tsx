@@ -152,6 +152,7 @@ export function Idea1AgendaPage() {
             <div className="relative hidden md:block" ref={sedeDropdownRef}>
               <button
                 type="button"
+                data-testid="sede-dropdown-trigger"
                 onClick={() => setIsSedeOpen((prev) => !prev)}
                 className="flex items-center gap-2.5 px-4 py-2 bg-surface-container-lowest hover:bg-surface-container-low border border-outline-variant/50 rounded-xl text-on-surface font-semibold text-sm transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
               >
@@ -181,6 +182,7 @@ export function Idea1AgendaPage() {
                       return (
                         <button
                           key={sede.id}
+                          data-testid={`sede-btn-${sede.id}`}
                           onClick={() => {
                             setSedeId(sede.id);
                             setIsSedeOpen(false);
@@ -243,6 +245,7 @@ export function Idea1AgendaPage() {
 
           <div className="flex items-center gap-4">
             <button
+              data-testid="btn-nueva-cita"
               onClick={() => handleAbrirNuevaCita()}
               className="bg-primary text-white px-4 py-2 rounded-lg font-body-md font-semibold hover:opacity-90 active:scale-95 transition-all shadow-md shadow-primary/20 flex items-center gap-2 cursor-pointer"
             >
@@ -293,6 +296,7 @@ export function Idea1AgendaPage() {
                     </span>
                     <input
                       type="date"
+                      data-testid="agenda-fecha-input"
                       value={fechaStr()}
                       onChange={(e) => {
                         if (e.target.value) {
@@ -451,6 +455,7 @@ export function Idea1AgendaPage() {
                       return (
                         <div
                           key={doc.id}
+                          data-testid={`agenda-columna-${doc.id}`}
                           className={`py-2 px-1 md:py-3 md:px-1.5 text-center min-w-0 transition-all ${
                             doc.enVacaciones ? 'bg-amber-500/5' : 'bg-surface-container-lowest'
                           } ${idx < doctores.length - 1 ? 'border-r border-outline-variant/20' : ''}`}
@@ -506,7 +511,7 @@ export function Idea1AgendaPage() {
                 </div>
 
                 {/* GRID CONTENT ROWS */}
-                <div className="relative min-w-full z-[5]">
+                <div data-testid="agenda-grid" className="relative min-w-full z-[5]">
                   {horarios.map((slot) => {
                     const isMediaHora = slot.esMediaHora;
                     return (
@@ -560,6 +565,7 @@ export function Idea1AgendaPage() {
                           return (
                             <div
                               key={doc.id}
+                              data-testid={`slot-${doc.id}-${slot.hora}`}
                               onClick={() => {
                                 if (!isBloqueado) {
                                   handleAbrirNuevaCita({ horaInicio: slot.hora, profesionalId: doc.id });
@@ -874,6 +880,7 @@ export function Idea1AgendaPage() {
                             return (
                               <div
                                 key={cita.id}
+                                data-testid={`cita-${cita.id}`}
                                 draggable={esDraggable}
                                 onClick={() => { if (!esCancelada) setCitaSeleccionada(cita.raw); }}
                                 onDragStart={(e) => {
