@@ -1,11 +1,13 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
 import { AdminHeaderNav } from './AdminHeaderNav';
 import {
   useRolesData,
   type FormRolState,
 } from '../../services/rolesService';
 import { cn } from '../../utils/cn';
-import { type Rol, type GruposPermisos } from '../../api';
+import { usersApi, type Rol, type GruposPermisos } from '../../api';
 
 // ── Apariencia por rol (franja + ícono) ──────────────────────────────────────
 // Roles del sistema con identidad fija; personalizados toman un color determinista.
@@ -62,17 +64,24 @@ function KpiCard({ icon, label, value, tint, iconColor }: {
 // ── Toggle switch (Tailwind puro, sin CSS extra) ─────────────────────────────
 function Switch({ checked, onChange }: { checked: boolean; onChange: () => void }) {
   return (
-    <span className="relative inline-flex items-center shrink-0">
-      <input type="checkbox" checked={checked} onChange={onChange} className="sr-only peer" />
+    <label
+      className="relative inline-flex items-center shrink-0 cursor-pointer"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={() => onChange()}
+        className="sr-only peer"
+      />
       <span
         className={cn(
-          'w-9 h-5 rounded-full transition-colors cursor-pointer',
+          'w-9 h-5 rounded-full transition-colors',
           "after:content-[''] after:absolute after:left-0.5 after:top-0.5 after:w-4 after:h-4 after:bg-white after:rounded-full after:shadow after:transition-transform",
           checked ? 'bg-primary after:translate-x-4' : 'bg-slate-300',
         )}
-        onClick={onChange}
       />
-    </span>
+    </label>
   );
 }
 
@@ -341,13 +350,249 @@ function FormularioRolModal({ editing, gruposPermisos, totalPermisosCount, onSav
   );
 }
 
+// ── Modal "Usuarios con este rol" ─────────────────────────────────────────────
+function UsuariosDelRolModal({
+  rol,
+  todosLosRoles,
+  onClose,
+}: {
+  rol: Rol;
+  todosLosRoles: Rol[];
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const [qUser, setQUser] = useState('');
+
+  const { data: todosLosUsuarios = [], isLoading } = useQuery({
+    queryKey: ['users'],
+    queryFn: () => usersApi.listar(),
+  });
+
+  const toggleActivoMut = useMutation({
+    mutationFn: ({ id, activo }: { id: string; activo: boolean }) =>
+      usersApi.actualizar(id, { activo }),
+    onSuccess: (updated) => {
+      qc.invalidateQueries({ queryKey: ['users'] });
+      qc.invalidateQueries({ queryKey: ['roles'] });
+      toast.success(
+        updated.activo
+          ? `Usuario ${updated.nombre} reactivado`
+          : `Usuario ${updated.nombre} dado de baja (inactivo)`,
+      );
+    },
+    onError: (e: Error) => toast.error(e.message || 'Error al cambiar estado'),
+  });
+
+  const cambiarRolMut = useMutation({
+    mutationFn: ({ id, nuevoRol }: { id: string; nuevoRol: string }) =>
+      usersApi.actualizar(id, { rol: nuevoRol }),
+    onSuccess: (updated) => {
+      qc.invalidateQueries({ queryKey: ['users'] });
+      qc.invalidateQueries({ queryKey: ['roles'] });
+      toast.success(`Rol de ${updated.nombre} cambiado a ${updated.rol}`);
+    },
+    onError: (e: Error) => toast.error(e.message || 'Error al reasignar rol'),
+  });
+
+  const usuariosDelRol = useMemo(() => {
+    return todosLosUsuarios.filter((u) => u.rol === rol.nombre);
+  }, [todosLosUsuarios, rol.nombre]);
+
+  const usuariosFiltrados = useMemo(() => {
+    const term = qUser.trim().toLowerCase();
+    if (!term) return usuariosDelRol;
+    return usuariosDelRol.filter(
+      (u) =>
+        u.nombre.toLowerCase().includes(term) ||
+        u.email.toLowerCase().includes(term),
+    );
+  }, [usuariosDelRol, qUser]);
+
+  const activosCount = usuariosDelRol.filter((u) => u.activo).length;
+  const inactivosCount = usuariosDelRol.length - activosCount;
+  const ap = aparienciaDeRol(rol.nombre);
+
+  return (
+    <div
+      className="fixed inset-0 bg-inverse-surface/40 backdrop-blur-[2px] z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200"
+      onClick={onClose}
+    >
+      <div
+        className="bg-surface-container-lowest w-full max-w-2xl max-h-[85vh] rounded-2xl flex flex-col overflow-hidden custom-shadow animate-in zoom-in-95 duration-200"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="bg-[#0044ab] text-white p-5 flex items-start justify-between gap-4 shrink-0 shadow-md">
+          <div className="min-w-0 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl grid place-items-center shrink-0 bg-white/15">
+              <span className="material-symbols-outlined text-white text-2xl">{ap.icon}</span>
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-bold tracking-tight truncate">
+                  Usuarios con el rol: {rol.label}
+                </h2>
+                <code className="text-xs font-mono bg-white/20 px-2 py-0.5 rounded text-white font-semibold">
+                  {rol.nombre}
+                </code>
+              </div>
+              <p className="text-xs text-white/85 mt-0.5">
+                {usuariosDelRol.length} registrado(s) · {activosCount} activo(s) · {inactivosCount} inactivo(s)
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 hover:bg-white/20 rounded-xl transition-colors shrink-0 cursor-pointer"
+          >
+            <span className="material-symbols-outlined">close</span>
+          </button>
+        </div>
+
+        {/* Search bar */}
+        <div className="p-4 bg-surface-container-low border-b border-outline-variant/30 flex items-center justify-between gap-3">
+          <div className="relative flex-1">
+            <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-lg pointer-events-none">
+              search
+            </span>
+            <input
+              type="text"
+              value={qUser}
+              onChange={(e) => setQUser(e.target.value)}
+              placeholder="Buscar por nombre o correo en este rol..."
+              className="input pl-9 text-xs w-full"
+            />
+          </div>
+          <span className="text-xs text-slate-500 font-semibold shrink-0">
+            {usuariosFiltrados.length} usuario(s)
+          </span>
+        </div>
+
+        {/* Users list */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center py-12 space-y-2">
+              <div className="w-7 h-7 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
+              <p className="text-xs text-slate-500">Cargando lista de usuarios...</p>
+            </div>
+          ) : usuariosFiltrados.length === 0 ? (
+            <div className="text-center py-12 px-4">
+              <span className="material-symbols-outlined text-4xl text-slate-300 mb-2">
+                group_off
+              </span>
+              <p className="text-sm font-bold text-slate-700">
+                {qUser ? 'No hay usuarios que coincidan con la búsqueda' : 'No hay usuarios asignados a este rol'}
+              </p>
+              <p className="text-xs text-slate-400 mt-1">
+                {qUser ? 'Prueba con otro término' : 'Puedes asignar usuarios a este rol desde la pantalla de Usuarios'}
+              </p>
+            </div>
+          ) : (
+            usuariosFiltrados.map((u) => {
+              const iniciales = u.nombre
+                .split(' ')
+                .slice(0, 2)
+                .map((n) => n[0])
+                .join('')
+                .toUpperCase();
+
+              return (
+                <div
+                  key={u.id}
+                  className={cn(
+                    'flex items-center justify-between gap-3 p-3 rounded-xl border transition-all',
+                    u.activo
+                      ? 'bg-white border-slate-200 hover:border-slate-300'
+                      : 'bg-slate-50 border-slate-200/80 opacity-75',
+                  )}
+                >
+                  {/* User info */}
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className={cn('w-9 h-9 rounded-full font-bold text-xs grid place-items-center shrink-0', ap.iconBg, ap.iconColor)}>
+                      {iniciales}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-bold text-slate-900 truncate">{u.nombre}</p>
+                        {!u.activo && (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-700 uppercase tracking-wider shrink-0">
+                            De baja / Inactivo
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-500 truncate">{u.email}</p>
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex items-center gap-3 shrink-0">
+                    {/* Reassign role dropdown */}
+                    <div className="flex items-center gap-1">
+                      <span className="text-[11px] font-medium text-slate-400">Rol:</span>
+                      <select
+                        value={u.rol}
+                        onChange={(e) =>
+                          cambiarRolMut.mutate({ id: u.id, nuevoRol: e.target.value })
+                        }
+                        disabled={cambiarRolMut.isPending}
+                        className="input text-xs py-1 px-2 text-slate-700 font-medium max-w-[150px]"
+                        title="Reasignar rol a este usuario"
+                      >
+                        {todosLosRoles.map((r) => (
+                          <option key={r.id} value={r.nombre}>
+                            {r.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Toggle Activo / Dar de baja */}
+                    <div className="flex items-center gap-1.5 pl-2 border-l border-slate-200">
+                      <span className={cn('text-[11px] font-bold', u.activo ? 'text-emerald-700' : 'text-slate-400')}>
+                        {u.activo ? 'Activo' : 'De baja'}
+                      </span>
+                      <Switch
+                        checked={u.activo}
+                        onChange={() =>
+                          toggleActivoMut.mutate({ id: u.id, activo: !u.activo })
+                        }
+                      />
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="p-3 bg-surface-container-low border-t border-outline-variant/30 flex items-center justify-between text-xs text-slate-500">
+          <span className="flex items-center gap-1">
+            <span className="material-symbols-outlined text-sm text-primary">info</span>
+            Los cambios de estado o rol se aplican al instante
+          </span>
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-1.5 bg-slate-200 hover:bg-slate-300 font-bold text-slate-800 rounded-lg transition cursor-pointer"
+          >
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Card de rol ───────────────────────────────────────────────────────────────
-function RolCard({ rol, gruposPermisos, totalPermisosCount, onEditar, onEliminar }: {
+function RolCard({ rol, gruposPermisos, totalPermisosCount, onEditar, onEliminar, onVerUsuarios }: {
   rol: Rol;
   gruposPermisos: GruposPermisos;
   totalPermisosCount: number;
   onEditar: () => void;
   onEliminar: () => void;
+  onVerUsuarios: () => void;
 }) {
   const ap = aparienciaDeRol(rol.nombre);
   const tieneTodos = rol.permisos.length === totalPermisosCount && totalPermisosCount > 0;
@@ -444,10 +689,16 @@ function RolCard({ rol, gruposPermisos, totalPermisosCount, onEditar, onEliminar
             <span className="material-symbols-outlined text-sm">edit_note</span> Rol personalizado
           </span>
         )}
-        <span className="text-[11px] font-semibold text-on-surface-variant flex items-center gap-1">
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onVerUsuarios(); }}
+          className="text-[11px] font-bold text-primary hover:text-primary-dark bg-primary/10 hover:bg-primary/20 border border-primary/20 px-2.5 py-1 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer"
+          title="Ver y gestionar los usuarios asignados a este rol"
+        >
           <span className="material-symbols-outlined text-sm">group</span>
           {usuarios === 1 ? '1 usuario' : `${usuarios} usuarios`}
-        </span>
+          <span className="material-symbols-outlined text-xs">visibility</span>
+        </button>
       </div>
     </div>
   );
@@ -457,6 +708,7 @@ function RolCard({ rol, gruposPermisos, totalPermisosCount, onEditar, onEliminar
 export function RolesPage() {
   const {
     roles,
+    todosLosRoles,
     gruposPermisos,
     totalPermisosCount,
     isLoading,
@@ -473,6 +725,7 @@ export function RolesPage() {
   } = useRolesData();
 
   const [rolAEliminar, setRolAEliminar] = useState<Rol | null>(null);
+  const [rolVerUsuarios, setRolVerUsuarios] = useState<Rol | null>(null);
 
   const handleSaveRole = (formData: FormRolState) => {
     if (rolEditando) {
@@ -569,6 +822,7 @@ export function RolesPage() {
                   totalPermisosCount={totalPermisosCount}
                   onEditar={() => abrirModalEditar(r)}
                   onEliminar={() => setRolAEliminar(r)}
+                  onVerUsuarios={() => setRolVerUsuarios(r)}
                 />
               ))}
             </div>
@@ -579,6 +833,15 @@ export function RolesPage() {
           </>
         )}
       </div>
+
+      {/* Modal ver usuarios del rol */}
+      {rolVerUsuarios && (
+        <UsuariosDelRolModal
+          rol={rolVerUsuarios}
+          todosLosRoles={todosLosRoles}
+          onClose={() => setRolVerUsuarios(null)}
+        />
+      )}
 
       {/* Modal crear / editar */}
       {modalOpen && (

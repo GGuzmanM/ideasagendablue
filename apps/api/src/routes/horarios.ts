@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db';
-import { requireAuth } from '../middleware/auth';
+import { requireAuth, requirePermiso } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { fechaDb } from '../utils/fechaLima';
 import { timeToMinutes as toMin } from '@limablue/shared';
@@ -101,7 +101,7 @@ const excepcionSchema = z.object({
   nota:         z.string().max(200).optional().nullable(),
 });
 
-router.post('/:sedeId/excepciones', requireAuth, async (req, res) => {
+router.post('/:sedeId/excepciones', requireAuth, requirePermiso('horarios.editar'), async (req, res) => {
   const { sedeId } = req.params;
   const body = excepcionSchema.parse(req.body);
 
@@ -147,7 +147,7 @@ router.post('/:sedeId/excepciones', requireAuth, async (req, res) => {
 });
 
 // DELETE /horarios/:sedeId/excepciones/:fecha — elimina excepción (vuelve al horario normal)
-router.delete('/:sedeId/excepciones/:fecha', requireAuth, async (req, res) => {
+router.delete('/:sedeId/excepciones/:fecha', requireAuth, requirePermiso('horarios.editar'), async (req, res) => {
   const { sedeId, fecha } = req.params;
 
   // Capturar la excepción antes de borrarla para dejar rastro de qué se quitó.

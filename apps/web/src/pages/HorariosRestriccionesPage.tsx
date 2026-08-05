@@ -12,7 +12,7 @@ import { useAuthStore } from '../stores/authStore';
 import { cn } from '../utils/cn';
 
 export function HorariosRestriccionesPage() {
-  const puedeGestionarPersonal = useAuthStore((s) => s.isCoordinadora());
+  const puedeGestionarPersonal = useAuthStore((s) => s.tiene('horarios.editar'));
 
   const { data: sedes = [] } = useQuery({
     queryKey: ['sedes'],

@@ -12,13 +12,10 @@ export interface NavItem {
 export const idea1NavItems: NavItem[] = [
   { to: '/idea1', label: 'Agenda', icon: 'calendar_today', permiso: 'agenda.ver' },
   { to: '/pacientes', label: 'Pacientes', icon: 'groups', permiso: 'pacientes.ver' },
-  { to: '/horarios', label: 'Horarios y Restricciones', icon: 'schedule', permiso: ['agenda.ver', 'horarios.ver', 'sedes.editar', 'admin.ver'] },
+  { to: '/horarios', label: 'Horarios y Restricciones', icon: 'schedule', permiso: 'horarios.ver' },
   { to: '/herramientas', label: 'Herramientas', icon: 'home_repair_service', permiso: ['herramientas.operativas', 'herramientas.estrategicas'] },
   { to: '/movimientos', label: 'Movimientos', icon: 'sync_alt', permiso: 'movimientos.ver' },
-  { to: '/admin', label: 'Administración', icon: 'admin_panel_settings', permiso: 'admin.ver' },
-  { to: '/admin/usuarios', label: 'Usuarios', icon: 'manage_accounts', permiso: 'usuarios.ver' },
-  { to: '/admin/roles', label: 'Roles', icon: 'shield', permiso: 'roles.editar' },
-  { to: '/admin/notificaciones', label: 'Notificaciones', icon: 'notifications', permiso: 'notificaciones.ver' },
+  { to: '/admin', label: 'Administración', icon: 'admin_panel_settings', permiso: ['admin.ver', 'usuarios.ver', 'roles.editar', 'notificaciones.ver'] },
   { to: '/analytics', label: 'Analytics', icon: 'analytics', permiso: 'analytics.ver' },
 ];
 

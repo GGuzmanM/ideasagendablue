@@ -10,6 +10,7 @@ const router = Router();
 const PERMISOS_VALIDOS = [
   'agenda.ver', 'agenda.editar',
   'pacientes.ver', 'pacientes.editar',
+  'horarios.ver', 'horarios.editar',
   'herramientas.operativas', 'herramientas.estrategicas',
   'movimientos.ver', 'movimientos.editar',
   'admin.ver', 'analytics.ver', 'analytics.agentes',
@@ -53,6 +54,10 @@ router.get('/permisos', requireAuth, async (_req, res) => {
     'Pacientes': [
       { id: 'pacientes.ver', label: 'Ver pacientes' },
       { id: 'pacientes.editar', label: 'Crear / editar pacientes' },
+    ],
+    'Horarios y Restricciones': [
+      { id: 'horarios.ver', label: 'Ver horarios de sede, ausencias y restricciones' },
+      { id: 'horarios.editar', label: 'Gestionar horarios base, excepciones, almuerzos y permisos/ausencias' },
     ],
     'Herramientas': [
       { id: 'herramientas.operativas', label: 'Operativas: Lista de citas, Reactivación de Pacientes, Historial de Atenciones' },

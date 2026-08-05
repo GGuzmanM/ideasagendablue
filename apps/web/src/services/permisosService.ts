@@ -30,8 +30,8 @@ export const tipoLabel = (t: string) =>
 
 export function usePermisosData(overrideSedeId?: string) {
   const qc = useQueryClient();
-  const { usuario, puedeAccederSede, isCoordinadora } = useAuthStore();
-  const puedeGestionar = isCoordinadora();
+  const { usuario, puedeAccederSede, tiene } = useAuthStore();
+  const puedeGestionar = tiene('horarios.editar');
 
   const [sedeSelId, setSedeSelId] = useState(overrideSedeId ?? '');
 

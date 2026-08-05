@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db';
-import { requireAuth, requireRol } from '../middleware/auth';
+import { requireAuth, requirePermiso } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { invalidateDisponibilidadCache } from '../redis';
 import { sincronizarReunionOutlook } from '../services/outlookCalendarService';
@@ -168,7 +168,7 @@ router.get('/', requireAuth, async (req, res) => {
 });
 
 // ─── POST /permisos ──────────────────────────────────────────────────────────
-router.post('/', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (req, res) => {
+router.post('/', requireAuth, requirePermiso('horarios.editar'), async (req, res) => {
   const data = z.object({
     profesionalId: z.string().uuid(),
     sedeId: z.string().uuid(),
@@ -277,7 +277,7 @@ router.post('/', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (
 // los libres se bloquean. Resultado: { creados, conflictos } para que el frontend
 // muestre a quiénes sí y a quiénes no (y por qué). Regla dura: nunca se bloquea a
 // alguien con pacientes agendados.
-router.post('/multiple', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (req, res) => {
+router.post('/multiple', requireAuth, requirePermiso('horarios.editar'), async (req, res) => {
   const data = z.object({
     profesionalIds: z.array(z.string().uuid()).min(1).max(60),
     sedeId: z.string().uuid(),
@@ -346,7 +346,7 @@ router.post('/multiple', requireAuth, requireRol('admin', 'coordinadora_sedes'),
 // ─── POST /permisos/reunion ───────────────────────────────────────────────────
 // Reunión administrativa de Daniel y/o Yasica Doy: bloquea el mismo rango en su(s) agenda(s)
 // con el texto indicado. `destinatario` define los 3 escenarios: solo Daniel, solo Yasica, o ambos.
-router.post('/reunion', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (req, res) => {
+router.post('/reunion', requireAuth, requirePermiso('horarios.editar'), async (req, res) => {
   const data = z.object({
     fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     horaInicio: z.string().regex(/^\d{2}:\d{2}$/),
@@ -491,7 +491,7 @@ async function analizarVacaciones(profIds: string[], sedeId: string, fechaInicio
 // ─── POST /permisos/vacaciones/preview ──────────────────────────────────────────
 // Dry-run: NO crea nada. Devuelve por profesional si está limpio (verde) o con citas (rojo),
 // para anticipar al usuario antes de bloquear.
-router.post('/vacaciones/preview', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (req, res) => {
+router.post('/vacaciones/preview', requireAuth, requirePermiso('horarios.editar'), async (req, res) => {
   const data = vacacionesSchema.parse(req.body);
   if (data.fechaFin < data.fechaInicio) throw new AppError('La fecha de fin no puede ser anterior a la de inicio', 400);
 
@@ -512,7 +512,7 @@ router.post('/vacaciones/preview', requireAuth, requireRol('admin', 'coordinador
 // Todo-o-nada: si CUALQUIER profesional tiene citas en el rango, no se crea NADA y se reporta
 // (hay que reprogramarlas primero). Si todo está limpio, crea un PERMISO de día completo por
 // cada día × profesional, en una transacción, con esVacaciones=true.
-router.post('/vacaciones', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (req, res) => {
+router.post('/vacaciones', requireAuth, requirePermiso('horarios.editar'), async (req, res) => {
   const data = z.object({
     ...vacacionesSchema.shape,
     motivo: z.string().min(3).max(200),
@@ -643,7 +643,7 @@ router.get('/vacaciones', requireAuth, async (req, res) => {
 });
 
 // ─── POST /permisos/vacaciones/eliminar — borra una VACACIÓN COMPLETA (todas sus filas) ──
-router.post('/vacaciones/eliminar', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (req, res) => {
+router.post('/vacaciones/eliminar', requireAuth, requirePermiso('horarios.editar'), async (req, res) => {
   const { ids } = z.object({ ids: z.array(z.string().uuid()).min(1).max(400) }).parse(req.body);
   const rows = await prisma.bloqueoAgenda.findMany({
     where: { id: { in: ids }, tipo: 'PERMISO', esVacaciones: true, deletedAt: null },
@@ -668,7 +668,7 @@ router.post('/vacaciones/eliminar', requireAuth, requireRol('admin', 'coordinado
 
 // ─── PATCH /permisos/vacaciones — EDITA el rango de una vacación (borra viejo + crea nuevo) ──
 // Atómico: soft-delete de las filas viejas + createMany del nuevo rango, tras validar citas.
-router.patch('/vacaciones', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (req, res) => {
+router.patch('/vacaciones', requireAuth, requirePermiso('horarios.editar'), async (req, res) => {
   const data = z.object({
     ids: z.array(z.string().uuid()).min(1).max(400),
     sedeId: z.string().uuid(),
@@ -723,7 +723,7 @@ router.patch('/vacaciones', requireAuth, requireRol('admin', 'coordinadora_sedes
 });
 
 // ─── DELETE /permisos/:id ─────────────────────────────────────────────────────
-router.delete('/:id', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (req, res) => {
+router.delete('/:id', requireAuth, requirePermiso('horarios.editar'), async (req, res) => {
   const b = await prisma.bloqueoAgenda.findUnique({ where: { id: req.params.id } });
   if (!b || b.deletedAt) throw new AppError('Permiso no encontrado', 404);
   if (b.tipo !== 'PERMISO') throw new AppError('Solo se pueden eliminar permisos aquí', 400);

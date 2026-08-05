@@ -21,7 +21,7 @@ type TabId = typeof TABS[number]['id'];
 
 export function HorariosPage({ hideHeader = false }: { hideHeader?: boolean }) {
   const navigate = useNavigate();
-  const puedeGestionar = useAuthStore(s => s.isCoordinadora()); // admin + coordinadora_sedes
+  const puedeGestionar = useAuthStore(s => s.tiene('horarios.editar'));
   const [params, setParams] = useSearchParams();
   const [localTab, setLocalTab] = useState<TabId>('semana');
 

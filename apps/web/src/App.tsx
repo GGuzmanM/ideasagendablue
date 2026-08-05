@@ -80,7 +80,7 @@ export default function App() {
         <Route path="/agenda-vieja" element={<AgendaPage />} />
         <Route path="/pacientes" element={<RequirePermiso permiso="pacientes.ver"><PacientesPage /></RequirePermiso>} />
         <Route path="/pacientes/:id" element={<RequirePermiso permiso="pacientes.ver"><FichaPacientePage /></RequirePermiso>} />
-        <Route path="/horarios" element={<RequirePermiso permiso={['agenda.ver', 'horarios.ver', 'sedes.editar', 'admin.ver']}><HorariosRestriccionesPage /></RequirePermiso>} />
+        <Route path="/horarios" element={<RequirePermiso permiso="horarios.ver"><HorariosRestriccionesPage /></RequirePermiso>} />
         <Route path="/herramientas" element={<RequirePermiso permiso={['herramientas.operativas', 'herramientas.estrategicas']}><HerramientasPage /></RequirePermiso>} />
         <Route path="/herramientas/almuerzos" element={<RequirePermiso permiso={['herramientas.operativas', 'herramientas.estrategicas']}><AlmuerzosPage /></RequirePermiso>} />
         <Route path="/herramientas/confirmacion-mail" element={<RequirePermiso permiso={['herramientas.operativas', 'herramientas.estrategicas']}><ConfirmacionMailPage /></RequirePermiso>} />
@@ -101,7 +101,7 @@ export default function App() {
         <Route path="/herramientas/composicion-sede" element={<RequirePermiso permiso={['herramientas.operativas', 'herramientas.estrategicas']}><ComposicionSedePage /></RequirePermiso>} />
         <Route path="/herramientas/horarios-personal" element={<Navigate to="/herramientas/horarios?tab=semana" replace />} />
         <Route path="/movimientos" element={<RequirePermiso permiso="movimientos.ver"><MovimientosPage /></RequirePermiso>} />
-        <Route path="/admin" element={<RequirePermiso permiso="admin.ver"><AdminPage /></RequirePermiso>} />
+        <Route path="/admin" element={<RequirePermiso permiso={['admin.ver', 'usuarios.ver', 'roles.editar', 'notificaciones.ver']}><AdminPage /></RequirePermiso>} />
         <Route path="/admin/competencias" element={<RequirePermiso permiso="admin.ver"><CompetenciasPage /></RequirePermiso>} />
         <Route path="/admin/paquetes" element={<RequirePermiso permiso="admin.ver"><PaquetesPage /></RequirePermiso>} />
         <Route path="/admin/podologas" element={<RequirePermiso permiso="admin.ver"><PodologasPage /></RequirePermiso>} />
