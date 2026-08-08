@@ -27,7 +27,7 @@ import { getServicioAnclaId, esCombinacionPermitida } from '../services/combinac
 import { enviarCorreoReserva } from '../services/emailService';
 import { verificarTokenConfirmacion } from '../utils/confirmToken';
 import { fechaDb } from '../utils/fechaLima';
-import { horaInicioValidaParaDuracion, timeToMinutes } from '@limablue/shared';
+import { horaInicioValidaParaDuracion, timeToMinutes, minutesToTime } from '@limablue/shared';
 
 const router = Router();
 
@@ -970,6 +970,17 @@ router.post('/', requireAuth, requireScope('appointments:write'), async (req: Re
         'SLOT_FUERA_HORARIO',
       );
     }
+    // La cita COMPLETA debe terminar dentro del turno (no pasar la hora de salida). Antes esto
+    // lo garantizaba la regla de hora-entera; ahora que las citas de 1h pueden empezar en :30,
+    // hay que verificar el fin explícitamente.
+    const finSlot = timeToMinutes(data.horaInicio) + servicio.duracionMinutos;
+    if (finSlot > timeToMinutes(horario.horaFin)) {
+      throw new AppError(
+        `La cita terminaría ${minutesToTime(finSlot)}, después del fin de turno del profesional (${horario.horaFin}).`,
+        400,
+        'SLOT_EXCEDE_TURNO',
+      );
+    }
 
     // Verificar que el slot no choca con un bloqueo del profesional (permiso, almuerzo, etc.)
     await validarSinBloqueo(profesionalId!, data.fecha, data.horaInicio, servicio.duracionMinutos);
@@ -1243,6 +1254,11 @@ async function validarLegBloque(opts: {
   if (!horario) throw new AppError('El profesional no atiende ese día', 400, 'SIN_HORARIO');
   if (opts.horaInicio < horario.horaInicio || opts.horaInicio >= horario.horaFin) {
     throw new AppError(`El slot ${opts.horaInicio} está fuera del horario del profesional (${horario.horaInicio}–${horario.horaFin})`, 400, 'SLOT_FUERA_HORARIO');
+  }
+  // El bloque completo (1 h) debe terminar dentro del turno (no pasar la hora de salida).
+  const finSlot = timeToMinutes(opts.horaInicio) + opts.duracionSlot;
+  if (finSlot > timeToMinutes(horario.horaFin)) {
+    throw new AppError(`El bloque terminaría ${minutesToTime(finSlot)}, después del fin de turno del profesional (${horario.horaFin}).`, 400, 'SLOT_EXCEDE_TURNO');
   }
 
   await validarSinBloqueo(opts.profesionalId, opts.fecha, opts.horaInicio, opts.duracionSlot);

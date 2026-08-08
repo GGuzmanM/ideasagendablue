@@ -259,14 +259,15 @@ export async function calcularDisponibilidad(params: DisponibilidadParams): Prom
     const todosLosSlots = generarSlotsDelDia(horario.horaInicio, horario.horaFin, 30);
 
     for (const slot of todosLosSlots) {
-      // Servicios de 1 hora (múltiplos de 60 min) solo se ofrecen en hora entera.
+      // Regla de hora-entera desactivada (ver requiereHoraEntera): las citas de 1 h se
+      // ofrecen en cualquier slot de 30 min. Sigue siendo passthrough por si se reactiva.
       if (!horaInicioValidaParaDuracion(slot, duracion)) continue;
 
       const slotMinutos = timeToMinutes(slot);
       const finMinutos = slotMinutos + duracion;
       const horaFinHorario = timeToMinutes(horario.horaFin);
 
-      // El slot completo debe caber dentro del horario
+      // El slot completo debe caber dentro del horario (no pasar la hora de salida).
       if (finMinutos > horaFinHorario) continue;
 
       // Verificar que todos los sub-slots estén libres

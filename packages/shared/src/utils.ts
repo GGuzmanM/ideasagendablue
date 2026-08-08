@@ -55,9 +55,20 @@ export function generarSlotsDelDia(
 // media hora (08:30). Los servicios de 30 min sí pueden iniciar en cualquier media
 // hora. Usar SIEMPRE estos helpers — no duplicar la lógica con comparaciones sueltas.
 
-/** ¿Este servicio (por su duración) solo puede empezar en hora entera? */
-export function requiereHoraEntera(duracionMinutos: number): boolean {
-  return duracionMinutos > 0 && duracionMinutos % 60 === 0;
+/**
+ * ¿Este servicio (por su duración) solo puede empezar en hora entera?
+ *
+ * DECISIÓN DE NEGOCIO (2026-08): las citas de 1 hora YA NO se restringen a hora entera.
+ * Pueden empezar en cualquier slot de 30 min (09:00, 09:30, 10:00…). La disponibilidad
+ * solo ofrece un slot si toda la hora está libre (sin choque) y cabe antes del cierre; y
+ * la creación valida el solape por intervalo (validarProfesionalLibre) y que la cita
+ * termine dentro del turno. Por eso esta regla queda desactivada (siempre false).
+ *
+ * Punto único de control: si en el futuro se quiere volver a exigir hora entera para
+ * algún servicio (p.ej. baropodometría), reactivar aquí la condición por duración.
+ */
+export function requiereHoraEntera(_duracionMinutos: number): boolean {
+  return false;
 }
 
 /** ¿La hora de inicio "HH:mm" es válida para un servicio de esta duración? */
