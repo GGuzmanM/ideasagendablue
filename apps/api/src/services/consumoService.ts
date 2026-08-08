@@ -132,6 +132,58 @@ async function saldoItemComposicion(tx: Tx, paqueteId: string, servicioId: strin
   return item.cantidad - usados;
 }
 
+/**
+ * Cupo POR-ÍTEM al AGENDAR (reserva anticipada). Regla del negocio: si una membresía
+ * incluye N sesiones de un tipo (ej. 1 Profilaxis Premium), NO se pueden tener más de N
+ * citas de ese tipo contra la membresía a la vez — aunque las citas estén solo "agendadas"
+ * y todavía no se hayan consumido. Cuenta consumos vivos del ítem (subcategoría-aware) +
+ * citas activas del mismo ítem que aún no consumen; si ya no queda cupo, lanza AppError.
+ *
+ * Solo aplica a paquetes con COMPOSICIÓN (membresías multi-ítem). Los paquetes simples se
+ * siguen rigiendo por el tope global `sesionesTotal` (check aparte en la ruta). Debe correr
+ * DENTRO de la transacción Serializable de creación para ser seguro ante registro simultáneo.
+ */
+export async function validarCupoItemAlAgendar(
+  tx: Tx,
+  paquetePacienteId: string,
+  servicioId: string,
+  subcategoriaId: string | null,
+  citaIdExcluir?: string,
+): Promise<void> {
+  const pp = await tx.paquetePaciente.findUnique({
+    where: { id: paquetePacienteId },
+    select: { composicion: true },
+  });
+  const comp = (pp?.composicion as ItemComposicion[] | null) ?? [];
+  if (comp.length === 0) return; // paquete simple → lo cubre el tope global de sesionesTotal
+  const item = comp.find((i) => itemCoincide(i, servicioId, subcategoriaId));
+  if (!item) return; // el servicio no es de la composición → lo maneja el check de "corresponde"
+
+  // Saldo del ítem tras consumos vivos (subcategoría-aware).
+  const saldoItem = await saldoItemComposicion(tx, paquetePacienteId, servicioId, subcategoriaId, comp);
+  // Citas activas del MISMO ítem que reservaron cupo pero aún NO consumieron (las consumidas
+  // ya están descontadas en saldoItem). Cada una "gastará" una sesión del ítem al llegar.
+  const agendadasItem = await tx.cita.count({
+    where: {
+      paquetePacienteId,
+      servicioId,
+      ...(item.subcategoriaId ? { subcategoriaId: item.subcategoriaId } : {}),
+      estado: { in: ['agendada', 'confirmada', 'llego', 'en_atencion'] },
+      sesionConsumida: false,
+      deletedAt: null,
+      ...(citaIdExcluir ? { NOT: { id: citaIdExcluir } } : {}),
+    },
+  });
+  if (agendadasItem >= saldoItem) {
+    const etiqueta = item.subcategoriaEtiqueta ? `${item.etiqueta} ${item.subcategoriaEtiqueta}` : item.etiqueta;
+    throw new AppError(
+      `La membresía ya tiene reservadas todas las sesiones de ${etiqueta} (${item.cantidad}/${item.cantidad}, contando citas agendadas). Anula o reprograma una para agendar otra.`,
+      409,
+      'ITEM_SIN_CUPO',
+    );
+  }
+}
+
 interface ConsumirCitaParams {
   citaId: string;
   paquetePacienteId: string;

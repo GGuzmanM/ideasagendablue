@@ -22,7 +22,7 @@ import { programarRecordatoriosDeCita, cancelarRecordatoriosDeCita, reprogramarR
 import { sincronizarVideosDeCita, cancelarVideosDeCita } from '../services/videoEnvioService';
 import { consumirTokenAccion } from '../services/tokenAccionCita';
 import { sincronizarSesionPaquete } from '../services/paqueteSesionService';
-import { recalcularPaquete } from '../services/consumoService';
+import { recalcularPaquete, validarCupoItemAlAgendar } from '../services/consumoService';
 import { getServicioAnclaId, esCombinacionPermitida } from '../services/combinacionService';
 import { enviarCorreoReserva } from '../services/emailService';
 import { verificarTokenConfirmacion } from '../utils/confirmToken';
@@ -1114,6 +1114,12 @@ router.post('/', requireAuth, requireScope('appointments:write'), async (req: Re
           despues: { aperturaConsumidas: reanclajeGenexis.objetivoApertura, sesionAdjudicada: reanclajeGenexis.sesionElegida },
         });
       }
+      // Cupo POR-ÍTEM de membresía (Premium ≠ Regular): dentro de la tx Serializable para
+      // que dos reservas simultáneas del mismo tipo no se cuelen. Reserva al AGENDAR, no
+      // solo al consumir → no deja agendar 2 Premium cuando la membresía incluye 1.
+      if (data.paquetePacienteId) {
+        await validarCupoItemAlAgendar(tx, data.paquetePacienteId, data.servicioId, subcategoriaId ?? null);
+      }
       const c = await tx.cita.create({
         data: {
           pacienteId: data.pacienteId,
@@ -1377,6 +1383,9 @@ router.post('/combinada', requireAuth, requireScope('appointments:write'), async
       citas = await prisma.$transaction(async (tx) => {
         const sesionAncla = data.paquetePacienteId ? await calcularSesionNumeroTx(tx, data.paquetePacienteId, data.sedeId) : null;
         const sesionExtra = data.extra.paquetePacienteId ? await calcularSesionNumeroTx(tx, data.extra.paquetePacienteId, data.sedeId) : null;
+        // Cupo por-ítem de membresía (Premium ≠ Regular) para cada mitad del bloque.
+        if (data.paquetePacienteId) await validarCupoItemAlAgendar(tx, data.paquetePacienteId, data.servicioId, subcategoriaAncla ?? null);
+        if (data.extra.paquetePacienteId) await validarCupoItemAlAgendar(tx, data.extra.paquetePacienteId, data.extra.servicioId, subcategoriaExtra ?? null);
 
         const ancla = await tx.cita.create({
           data: {

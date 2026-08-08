@@ -487,6 +487,37 @@ export function useIdea1NuevaCitaForm({
     );
   }, [membresiasTpl, sedeId]);
 
+  // Servicios que el profesional seleccionado SÍ realiza (por competencia). Vacío/undefined
+  // cuando no hay profesional elegido → no se filtra nada.
+  const serviciosDelProfesional = useMemo(() => {
+    if (!profesionalId || competencias.length === 0) return null;
+    return new Set(
+      competencias
+        .filter((c: any) => c.profesional?.id === profesionalId && c.activa)
+        .map((c: any) => c.servicio?.id),
+    );
+  }, [profesionalId, competencias]);
+
+  // Bloque combinado: profesionales que SÍ realizan el SERVICIO EXTRA (por competencia),
+  // para poder indicar en el selector quiénes pueden hacerlo. Deduplicado por id.
+  const profesionalesExtra = useMemo(() => {
+    if (!extraServicioId || competencias.length === 0) return [] as { id: string; nombres: string; apellidos: string }[];
+    const vistos = new Set<string>();
+    return competencias
+      .filter((c: any) => c.servicio?.id === extraServicioId && c.activa && c.profesional?.activo !== false)
+      .map((c: any) => c.profesional)
+      .filter((p: any) => p && !vistos.has(p.id) && vistos.add(p.id));
+  }, [extraServicioId, competencias]);
+
+  // ¿El profesional del ancla también realiza el servicio extra? null = no aplica
+  // (no hay ancla fijo o no hay extra elegido) → no se muestra indicador.
+  const anclaHaceExtra = useMemo(() => {
+    if (!extraServicioId || !profesionalId || competencias.length === 0) return null;
+    return competencias.some(
+      (c: any) => c.servicio?.id === extraServicioId && c.profesional?.id === profesionalId && c.activa,
+    );
+  }, [extraServicioId, profesionalId, competencias]);
+
   // Composición de la membresía seleccionada
   const membComposicion = useMemo(() => {
     const serviciosUnidadSet = new Set(serviciosData.map((s) => s.id));
@@ -497,7 +528,10 @@ export function useIdea1NuevaCitaForm({
       subcategoriaEtiqueta?: string;
       total: number;
       quedan: number;
+      puedeProfesional: boolean; // ¿el profesional elegido realiza este servicio?
     }[] = [];
+
+    const puede = (servicioId: string) => !serviciosDelProfesional || serviciosDelProfesional.has(servicioId);
 
     if (membSel.startsWith('inst:')) {
       const pp = membresiasActivas.find((p) => `inst:${p.id}` === membSel);
@@ -508,6 +542,7 @@ export function useIdea1NuevaCitaForm({
         subcategoriaEtiqueta: i.subcategoriaEtiqueta,
         total: i.cantidad,
         quedan: Math.max(0, i.cantidad - i.consumidas),
+        puedeProfesional: puede(i.servicioId),
       }));
     } else if (membSel.startsWith('tpl:')) {
       const t = tplsMembresiaActivas.find((x: any) => `tpl:${x.id}` === membSel);
@@ -518,17 +553,26 @@ export function useIdea1NuevaCitaForm({
         subcategoriaEtiqueta: i.subcategoriaEtiqueta,
         total: i.cantidad,
         quedan: i.cantidad,
+        puedeProfesional: puede(i.servicioId),
       }));
     }
 
     return items.filter((i) => serviciosUnidadSet.has(i.servicioId));
-  }, [membSel, membresiasActivas, tplsMembresiaActivas, serviciosData]);
+  }, [membSel, membresiasActivas, tplsMembresiaActivas, serviciosData, serviciosDelProfesional]);
 
-  // Al elegir un servicio dentro de una membresía, fija servicio y subcategoría automáticamente
+  // Al elegir un servicio dentro de una membresía, fija servicio y subcategoría automáticamente.
+  // Si el ítem seleccionado NO lo realiza el profesional elegido (p.ej. tras cambiar de
+  // profesional), se limpia la selección para no arrastrar un servicio en conflicto.
   useEffect(() => {
     if (!membSel || membItem === '') return;
     const item = membComposicion[Number(membItem)];
     if (!item) return;
+    if (!item.puedeProfesional) {
+      setMembItem('');
+      setServicioId('');
+      setSubcategoriaId('');
+      return;
+    }
     setServicioId(item.servicioId);
     setSubcategoriaId(item.subcategoriaId ?? '');
     setPaquetePacienteId(membSel.startsWith('inst:') ? membSel.slice(5) : '');
@@ -918,6 +962,8 @@ export function useIdea1NuevaCitaForm({
     subcategorias,
     profesionales,
     profesionalesOcupados,
+    profesionalesExtra,
+    anclaHaceExtra,
     resultadosPacientes,
     buscandoPacientes,
     canales,

@@ -23,6 +23,7 @@ import { redis } from './redis';
 import { initSocket } from './socket';
 import { corsOrigin } from './cors';
 import { iniciarRecordatorioWorker } from './queue/recordatorioWorker';
+import { recuperarRecordatoriosProgramados } from './services/recordatorioService';
 import { iniciarVideoWorker, programarBarridoVideos } from './queue/videoQueue';
 import { outlookConfigurado, reintentarOutlookFallidos } from './services/outlookCalendarService';
 import { errorHandler } from './middleware/errorHandler';
@@ -162,6 +163,9 @@ initSocket(server);
 if (process.env.RECORDATORIOS_WORKER_INLINE !== 'false') {
   iniciarRecordatorioWorker();
   iniciarVideoWorker();
+  // Self-healing: si Redis estuvo caído, re-encola los recordatorios PROGRAMADO
+  // huérfanos (jobId null) para que las confirmaciones pendientes salgan al volver.
+  void recuperarRecordatoriosProgramados();
 }
 // Registra el job repetible del barrido de videos (cada 5 min). Idempotente: limpia
 // repeticiones previas. Se registra aunque el worker corra aparte (el worker lo procesa).

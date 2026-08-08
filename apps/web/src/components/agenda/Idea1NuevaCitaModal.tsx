@@ -95,6 +95,8 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
     subcategorias,
     profesionales,
     profesionalesOcupados,
+    profesionalesExtra,
+    anclaHaceExtra,
     resultadosPacientes,
     buscandoPacientes,
     canales,
@@ -117,6 +119,23 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
   } = useIdea1NuevaCitaForm(props);
 
   const [isDragging, setIsDragging] = useState(false);
+
+  // Si el ítem de membresía elegido fija una subcategoría (ej. Profilaxis Premium/Regular),
+  // la subcategoría NO se puede cambiar: la membresía da ESE tipo. Se muestra bloqueada.
+  const itemMembSel: any = membSel && membItem !== '' ? membComposicion[Number(membItem)] : undefined;
+  const subcatFijadaMemb = itemMembSel?.subcategoriaId
+    ? {
+        id: itemMembSel.subcategoriaId as string,
+        etiqueta:
+          itemMembSel.subcategoriaEtiqueta ||
+          (subcategorias as any[]).find((s) => s.id === itemMembSel.subcategoriaId)?.nombre ||
+          'Definida',
+      }
+    : null;
+
+  // Nombre del profesional del ancla (para el selector del servicio extra combinado).
+  const anclaProf = (profesionales as any[]).find((p) => p.id === profesionalId);
+  const anclaNombre = anclaProf ? `${anclaProf.nombres} ${anclaProf.apellidos}` : '';
 
   return (
     <>
@@ -588,11 +607,18 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
                   >
                     <option value="">Seleccionar servicio de membresía...</option>
                     {membComposicion.map((item, idx) => (
-                      <option key={idx} value={String(idx)}>
+                      <option key={idx} value={String(idx)} disabled={!item.puedeProfesional}>
                         {item.etiqueta} {item.subcategoriaEtiqueta ? `(${item.subcategoriaEtiqueta})` : ''} — Quedan {item.quedan} de {item.total}
+                        {item.puedeProfesional ? '' : ' — el profesional no lo realiza'}
                       </option>
                     ))}
                   </select>
+                  {membComposicion.some((i) => !i.puedeProfesional) && (
+                    <p className="text-[10px] text-amber-700 flex items-center gap-1">
+                      <span className="material-symbols-outlined text-xs">info</span>
+                      Algunos servicios están deshabilitados porque el profesional seleccionado no los realiza.
+                    </p>
+                  )}
                 </div>
               )}
             </div>
@@ -629,23 +655,32 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
             {subcategorias.length > 0 && (
               <div className="mt-2 space-y-1">
                 <label className="text-xs font-bold text-primary block">OPCIÓN / SUBCATEGORÍA *</label>
-                <div className="relative">
-                  <select
-                    value={subcategoriaId}
-                    onChange={(e) => setSubcategoriaId(e.target.value)}
-                    className="w-full appearance-none bg-primary/5 border border-primary/30 rounded-xl px-4 py-2.5 text-sm font-semibold text-primary outline-none focus:ring-2 focus:ring-primary/20"
-                  >
-                    <option value="">Seleccionar opción...</option>
-                    {subcategorias.map((sc) => (
-                      <option key={sc.id} value={sc.id}>
-                        {sc.nombre} {sc.precioReferencial ? `(S/ ${sc.precioReferencial})` : ''}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-primary">
-                    expand_more
-                  </span>
-                </div>
+                {subcatFijadaMemb ? (
+                  // Bloqueada: la membresía otorga ESTE tipo → no se puede cambiar.
+                  <div className="w-full bg-primary/5 border border-primary/30 rounded-xl px-4 py-2.5 text-sm font-semibold text-primary flex items-center gap-2">
+                    <span className="material-symbols-outlined text-base">lock</span>
+                    <span>{subcatFijadaMemb.etiqueta}</span>
+                    <span className="ml-auto text-[11px] font-medium text-on-surface-variant">definida por la membresía</span>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <select
+                      value={subcategoriaId}
+                      onChange={(e) => setSubcategoriaId(e.target.value)}
+                      className="w-full appearance-none bg-primary/5 border border-primary/30 rounded-xl px-4 py-2.5 text-sm font-semibold text-primary outline-none focus:ring-2 focus:ring-primary/20"
+                    >
+                      <option value="">Seleccionar opción...</option>
+                      {subcategorias.map((sc) => (
+                        <option key={sc.id} value={sc.id}>
+                          {sc.nombre} {sc.precioReferencial ? `(S/ ${sc.precioReferencial})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-primary">
+                      expand_more
+                    </span>
+                  </div>
+                )}
               </div>
             )}
 
@@ -710,13 +745,39 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
                       onChange={(e) => setExtraProfesionalId(e.target.value)}
                       className="w-full bg-white border border-indigo-300 rounded-lg px-3 py-2 text-xs text-indigo-950 outline-none"
                     >
-                      <option value="">Mismo profesional del ancla</option>
-                      {profesionales.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.nombres} {p.apellidos}
-                        </option>
-                      ))}
+                      {/* "Mismo profesional del ancla" — indica si ESA especialista realiza el extra */}
+                      <option value="">
+                        {anclaNombre
+                          ? anclaHaceExtra === false
+                            ? `Mismo profesional (${anclaNombre}) · no realiza este servicio`
+                            : `Mismo profesional (${anclaNombre})${anclaHaceExtra ? ' · sí lo realiza' : ''}`
+                          : 'Mismo profesional del ancla'}
+                      </option>
+                      {/* Especialistas que SÍ realizan el servicio extra (excluye al ancla, ya cubierto arriba) */}
+                      {(profesionalesExtra as any[])
+                        .filter((p) => p.id !== profesionalId)
+                        .map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.nombres} {p.apellidos}
+                          </option>
+                        ))}
                     </select>
+                    {/* Avisos según competencia del servicio extra elegido */}
+                    {extraServicioId && (profesionalesExtra as any[]).length === 0 ? (
+                      <p className="mt-1 text-[10px] font-semibold text-red-700 flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[13px]">error</span>
+                        Ningún especialista tiene habilitado este servicio en esta sede.
+                      </p>
+                    ) : extraServicioId && !extraProfesionalId && anclaHaceExtra === false ? (
+                      <p className="mt-1 text-[10px] font-semibold text-amber-700 flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[13px]">warning</span>
+                        {anclaNombre || 'El profesional del ancla'} no realiza este servicio — elige un especialista de la lista.
+                      </p>
+                    ) : extraServicioId ? (
+                      <p className="mt-1 text-[10px] font-medium text-indigo-700/80">
+                        {(profesionalesExtra as any[]).length} especialista(s) realizan este servicio.
+                      </p>
+                    ) : null}
                   </div>
                 </div>
               )}

@@ -146,9 +146,12 @@ async function upsertLog(args: {
   pacienteEmail: string;
   scheduledFor: Date;
   ahora: Date;
+  // Reserva de última hora: fuerza PENDIENTE aunque scheduledFor ya sea "ahora", para que
+  // el barrido lo envíe de inmediato en vez de descartarlo como "fuera de ventana".
+  forzarPendiente?: boolean;
 }): Promise<void> {
-  const { citaId, servicioVideoId, pacienteEmail, scheduledFor, ahora } = args;
-  const fueraVentana = scheduledFor.getTime() <= ahora.getTime();
+  const { citaId, servicioVideoId, pacienteEmail, scheduledFor, ahora, forzarPendiente } = args;
+  const fueraVentana = !forzarPendiente && scheduledFor.getTime() <= ahora.getTime();
   const estado = fueraVentana ? 'CANCELADO' : 'PENDIENTE';
   const motivoCancelacion = fueraVentana ? MOTIVO.FUERA_VENTANA : null;
 
@@ -235,14 +238,26 @@ export async function sincronizarVideosDeCita(citaId: string): Promise<void> {
       select: { id: true, servicioId: true, momento: true, offsetValor: true, offsetUnidad: true },
     });
     const ahora = new Date();
+    let hayEnvioInmediato = false;
     for (const v of videos) {
       if (v.momento === 'DESPUES') {
         await sincronizarDespuesPaciente(v, cita.pacienteId, ahora);
       } else {
-        const scheduledFor = calcularScheduledFor(cita.fecha, cita.horaInicio, v.momento, v.offsetValor, v.offsetUnidad);
-        await upsertLog({ citaId, servicioVideoId: v.id, pacienteEmail: cita.paciente.email!, scheduledFor, ahora });
+        let scheduledFor = calcularScheduledFor(cita.fecha, cita.horaInicio, v.momento, v.offsetValor, v.offsetUnidad);
+        // Reserva de última hora: si el momento ideal del video ANTES (inicio − offset) ya
+        // pasó pero la cita AÚN no ocurre, no lo descartamos por "fuera de ventana": lo
+        // enviamos de una vez (junto con los correos de reserva/confirmación).
+        let forzarPendiente = false;
+        if (scheduledFor.getTime() <= ahora.getTime()) {
+          const inicio = citaInicioUtc(cita.fecha, cita.horaInicio);
+          if (inicio.getTime() > ahora.getTime()) { scheduledFor = ahora; forzarPendiente = true; hayEnvioInmediato = true; }
+        }
+        await upsertLog({ citaId, servicioVideoId: v.id, pacienteEmail: cita.paciente.email!, scheduledFor, ahora, forzarPendiente });
       }
     }
+    // Si programamos un video para "ahora", dispara el barrido de una vez (fire-and-forget)
+    // en lugar de esperar al ciclo de 5 min. Idempotente: el barrido solo toma lo vencido.
+    if (hayEnvioInmediato) void procesarBarridoVideos().catch(() => {});
   } catch (err) {
     console.warn(`[video] No se pudo sincronizar (cita ${citaId}):`, err instanceof Error ? err.message : err);
   }

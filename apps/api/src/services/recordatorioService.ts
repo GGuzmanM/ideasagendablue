@@ -5,20 +5,23 @@ import { programarJobRecordatorio, cancelarJobRecordatorio, programarJobReserva 
 import { registrarAudit } from './audit';
 import { asegurarCupoEnvio, QuotaExcedidaError, proximaVentanaEnvio } from './mailQuota';
 import { citaInicioUtc } from '../utils/fechaLima';
+import type { EstadoCita } from '@prisma/client';
 
 const ESTADOS_INACTIVOS = ['cancelada', 'no_show', 'reprogramada'];
 const MAX_INTENTOS = 3;
 
 /**
  * Regla unificada de tiempo de envío del recordatorio (Correo 2):
- *  - Normal: cita − 2h.  - Reserva tardía (<2h): cita − 1h.  - <1h: ya.
+ *  - Cita a ≥2h: se programa para cita − 2h.
+ *  - Reserva de última hora (registrada a <2h de la cita): se envía YA, junto con el
+ *    correo de reserva (el paciente prefiere recibir el correo con botones de
+ *    confirmar/reprogramar de inmediato antes que casi no recibirlo).
  */
 export function calcularProgramadoPara(fecha: Date, horaInicio: string, ahora: Date = new Date()): Date {
   const inicio = citaInicioUtc(fecha, horaInicio);
   const minFalta = (inicio.getTime() - ahora.getTime()) / 60000;
-  if (minFalta < 60) return new Date(ahora.getTime());
-  if (minFalta < 120) return new Date(inicio.getTime() - 60 * 60_000);
-  return new Date(inicio.getTime() - 120 * 60_000);
+  if (minFalta < 120) return new Date(ahora.getTime()); // <2h → de una vez
+  return new Date(inicio.getTime() - 120 * 60_000);     // ≥2h → 2h antes
 }
 
 function apiBase(): string {
@@ -240,5 +243,43 @@ export async function reprogramarRecordatorioDeCita(citaId: string): Promise<voi
     await prisma.recordatorioCita.update({ where: { id: rec.id }, data: { programadoPara, jobId, estado: 'PROGRAMADO' } });
   } catch (err) {
     console.warn(`[recordatorio] No se pudo reprogramar (cita ${citaId}):`, err instanceof Error ? err.message : err);
+  }
+}
+
+/**
+ * Recuperación al arranque (self-healing tras caída de Redis).
+ *
+ * Si Redis/BullMQ estuvo caído, los recordatorios se crean en la BD como
+ * PROGRAMADO pero SIN job encolado (jobId null) → nunca disparan y quedan
+ * huérfanos. Al iniciar el worker (con Redis ya arriba) re-encolamos todos los
+ * PROGRAMADO vivos de citas activas. Es idempotente: el jobId es determinístico
+ * (`recordatorio-<id>` / `reserva-<id>`), así que re-encolar reemplaza el job
+ * previo sin duplicar. Los ya vencidos disparan de inmediato (delay 0).
+ */
+export async function recuperarRecordatoriosProgramados(): Promise<{ reencolados: number }> {
+  try {
+    const pendientes = await prisma.recordatorioCita.findMany({
+      where: {
+        deletedAt: null,
+        estado: 'PROGRAMADO',
+        cita: { deletedAt: null, estado: { notIn: ESTADOS_INACTIVOS as EstadoCita[] } },
+      },
+      select: { id: true, citaId: true, tipo: true, programadoPara: true },
+    });
+    let reencolados = 0;
+    for (const rec of pendientes) {
+      const jobId = rec.tipo === 'RESERVA'
+        ? await programarJobReserva(rec.citaId, rec.programadoPara)
+        : await programarJobRecordatorio(rec.citaId, rec.programadoPara);
+      if (jobId) {
+        await prisma.recordatorioCita.update({ where: { id: rec.id }, data: { jobId } }).catch(() => {});
+        reencolados++;
+      }
+    }
+    if (reencolados) console.log(`🔁 Recordatorios re-encolados al arranque: ${reencolados}`);
+    return { reencolados };
+  } catch (err) {
+    console.warn('[recordatorio] Recuperación al arranque falló:', err instanceof Error ? err.message : err);
+    return { reencolados: 0 };
   }
 }
