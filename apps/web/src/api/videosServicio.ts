@@ -46,6 +46,38 @@ export interface HistorialEnvio {
   sede: string | null;
 }
 
+// ── Tracking por cita ────────────────────────────────────────────────────────
+export interface TrackingVideoEntry {
+  logId: string;
+  servicioVideoId: string;
+  titulo: string;
+  youtubeVideoId: string;
+  offsetValor: number;
+  offsetUnidad: UnidadOffset;
+  estado: EstadoEnvioVideo;
+  veces: number;
+  sentAt: string | null;
+  scheduledFor: string;
+  error: string | null;
+  motivoCancelacion: string | null;
+}
+export interface TrackingCita {
+  citaId: string;
+  paciente: string;
+  email: string | null;
+  servicio: string;
+  fecha: string;
+  horaInicio: string;
+  sede: string;
+  antes: TrackingVideoEntry[];
+  despues: TrackingVideoEntry[];
+}
+export interface ResultadoEnvioManual {
+  ok: boolean;
+  enviados: { servicioVideoId: string; logId: string; vecesEnviado: number }[];
+  errores: { titulo: string; motivo: string }[];
+}
+
 export interface VideoInput {
   servicioId: string;
   youtubeUrl: string;
@@ -91,6 +123,14 @@ export const videosServicioApi = {
 
   historial: (params: Record<string, string>) =>
     api.get<HistorialEnvio[]>('/servicio-videos/historial', params),
+
+  // Tracking por cita (pestaña "Envíos por cita").
+  tracking: (params: Record<string, string>) =>
+    api.get<TrackingCita[]>('/servicio-videos/tracking', params),
+
+  // Envío manual al paciente: momentos = ['ANTES'], ['DESPUES'] o ambos.
+  enviarManual: (citaId: string, momentos: MomentoVideo[]) =>
+    api.post<ResultadoEnvioManual>('/servicio-videos/enviar', { citaId, momentos }),
 
   // Lista de exclusión de videos educativos (no afecta los correos de confirmación).
   listarSupresiones: () => api.get<VideoSupresion[]>('/servicio-videos/supresiones'),

@@ -26,8 +26,9 @@ import {
 import {
   esShort,
   urlPublicaYoutube,
-  thumbnailVertical,
+  thumbnailCorreo,
 } from '../utils/youtube';
+import { urlBajaVideos } from '../utils/bajaVideosToken';
 import { citaInicioUtc } from '../utils/fechaLima';
 import { registrarAudit } from './audit';
 import type { MomentoVideo, UnidadOffset, ServicioVideo } from '@prisma/client';
@@ -434,7 +435,7 @@ interface DatosVideoParaCorreo {
  */
 export function construirCorreoVideo(
   v: DatosVideoParaCorreo,
-  destinatario: { nombrePaciente: string; primerNombre: string; servicio: string; fecha: string },
+  destinatario: { nombrePaciente: string; primerNombre: string; servicio: string; fecha: string; email?: string },
 ): { subject: string; html: string } {
   const vars = { paciente: destinatario.primerNombre, servicio: destinatario.servicio, fecha: destinatario.fecha };
   const short = esShort(v.youtubeUrl);
@@ -442,8 +443,11 @@ export function construirCorreoVideo(
     nombrePaciente: destinatario.nombrePaciente,
     tituloVideo: aplicarVariablesVideo(v.tituloVideo, vars),
     cuerpoTexto: aplicarVariablesVideo(v.cuerpoTexto, vars),
-    thumbnailUrl: thumbnailVertical(v.youtubeVideoId),
+    thumbnailUrl: thumbnailCorreo(v.youtubeVideoId, short),
     urlVideo: urlPublicaYoutube(v.youtubeVideoId, short),
+    short,
+    // El enlace de baja solo va cuando hay un correo real (no en la previsualización).
+    urlBaja: destinatario.email ? urlBajaVideos(destinatario.email) : undefined,
   });
   return { subject: aplicarVariablesVideo(v.asunto, vars), html };
 }
@@ -480,11 +484,109 @@ async function enviarLog(log: LogConRelaciones): Promise<string | null> {
       primerNombre: c.paciente.nombres,
       servicio: c.servicio.nombre,
       fecha: capitalizar(formatFechaLargaEs(c.fecha)),
+      email: c.paciente.email!,
     },
   );
   const res = await enviarEmail({ to: c.paciente.email!, subject, html });
   return res?.id ?? null;
 }
+
+// ─── Envío MANUAL desde el tracking (reenvío dirigido al paciente) ────────────
+export interface ResultadoEnvioManual {
+  enviados: { servicioVideoId: string; logId: string; vecesEnviado: number }[];
+  errores: { titulo: string; motivo: string }[];
+}
+
+/**
+ * Envía AHORA los videos de una cita para los momentos pedidos (ANTES/DESPUES),
+ * dirigidos al paciente real. Reutiliza el mismo motor de correo que el barrido.
+ * A diferencia del automático, ignora la ventana horaria (es un reenvío manual a pedido).
+ * Cada envío exitoso incrementa `vecesEnviado` y reutiliza la fila del log (no duplica).
+ */
+export async function enviarVideoManual(args: {
+  citaId: string;
+  momentos: MomentoVideo[];
+  usuarioId?: string;
+  ip?: string;
+  userAgent?: string;
+}): Promise<ResultadoEnvioManual> {
+  const { citaId, momentos, usuarioId, ip, userAgent } = args;
+  const out: ResultadoEnvioManual = { enviados: [], errores: [] };
+  if (!resendConfigurado()) throw new Error('RESEND_API_KEY ausente en el servidor');
+
+  const cita = await prisma.cita.findUnique({
+    where: { id: citaId, deletedAt: null },
+    select: {
+      id: true, fecha: true, horaInicio: true, servicioId: true, sedeId: true, estado: true,
+      servicio: { select: { nombre: true } },
+      paciente: { select: { nombres: true, apellidoPaterno: true, email: true, emailInvalido: true } },
+    },
+  });
+  if (!cita) throw new Error('Cita no encontrada');
+  if (!emailEnviable(cita.paciente)) throw new Error('El paciente no tiene un correo válido');
+  if (await estaSuprimido(cita.paciente.email)) throw new Error('El correo del paciente está en la lista de exclusión de videos');
+
+  const videos = await prisma.servicioVideo.findMany({
+    where: { servicioId: cita.servicioId, activo: true, deletedAt: null, momento: { in: momentos } },
+    select: videoParaEnvioSelect,
+    orderBy: [{ orden: 'asc' }, { creadoEn: 'asc' }],
+  });
+  if (videos.length === 0) return out;
+
+  const destinatario = {
+    nombrePaciente: `${cita.paciente.nombres} ${cita.paciente.apellidoPaterno}`,
+    primerNombre: cita.paciente.nombres,
+    servicio: cita.servicio.nombre,
+    fecha: capitalizar(formatFechaLargaEs(cita.fecha)),
+    email: cita.paciente.email!,
+  };
+
+  for (const v of videos) {
+    try {
+      const { subject, html } = construirCorreoVideo(
+        { asunto: v.asunto, tituloVideo: v.tituloVideo, cuerpoTexto: v.cuerpoTexto, youtubeVideoId: v.youtubeVideoId, youtubeUrl: v.youtubeUrl },
+        destinatario,
+      );
+      const res = await enviarEmail({ to: cita.paciente.email!, subject, html });
+
+      // Reutiliza el log del par (cita, video) si existe; si no, lo crea.
+      const existente = await prisma.videoEnvioLog.findFirst({ where: { citaId, servicioVideoId: v.id, deletedAt: null }, select: { id: true } });
+      const log = existente
+        ? await prisma.videoEnvioLog.update({
+            where: { id: existente.id },
+            data: {
+              estado: 'ENVIADO', sentAt: new Date(), resendEmailId: res?.id ?? null,
+              vecesEnviado: { increment: 1 }, intentos: { increment: 1 },
+              enviadoManualPor: usuarioId ?? null, errorDetalle: null, motivoCancelacion: null,
+            },
+            select: { id: true, vecesEnviado: true },
+          })
+        : await prisma.videoEnvioLog.create({
+            data: {
+              citaId, servicioVideoId: v.id, pacienteEmail: cita.paciente.email!,
+              scheduledFor: calcularScheduledFor(cita.fecha, cita.horaInicio, v.momento, v.offsetValor, v.offsetUnidad),
+              estado: 'ENVIADO', sentAt: new Date(), resendEmailId: res?.id ?? null,
+              vecesEnviado: 1, intentos: 1, enviadoManualPor: usuarioId ?? null,
+            },
+            select: { id: true, vecesEnviado: true },
+          });
+
+      await registrarAudit({
+        usuarioId, citaId, accion: 'video_enviado_manual', entidad: 'video_envio_log', entidadId: log.id, sedeId: cita.sedeId, ip, userAgent,
+        despues: { servicioVideoId: v.id, momento: v.momento, destinatario: cita.paciente.email, resendEmailId: res?.id ?? null, vecesEnviado: log.vecesEnviado },
+      });
+      out.enviados.push({ servicioVideoId: v.id, logId: log.id, vecesEnviado: log.vecesEnviado });
+    } catch (err) {
+      out.errores.push({ titulo: v.tituloVideo, motivo: err instanceof Error ? err.message : 'error de envío' });
+    }
+  }
+  return out;
+}
+
+const videoParaEnvioSelect = {
+  id: true, momento: true, offsetValor: true, offsetUnidad: true,
+  asunto: true, tituloVideo: true, cuerpoTexto: true, youtubeVideoId: true, youtubeUrl: true,
+} as const;
 
 /**
  * Barrido de envíos vencidos. Busca PENDIENTES con scheduledFor <= ahora, revalida cada
@@ -551,7 +653,7 @@ export async function procesarBarridoVideos(): Promise<{ enviados: number; cance
       const resendEmailId = await enviarLog(log);
       await prisma.videoEnvioLog.update({
         where: { id: log.id },
-        data: { estado: 'ENVIADO', sentAt: new Date(), resendEmailId, intentos: { increment: 1 }, errorDetalle: null },
+        data: { estado: 'ENVIADO', sentAt: new Date(), resendEmailId, intentos: { increment: 1 }, vecesEnviado: { increment: 1 }, errorDetalle: null },
       });
       await registrarAudit({
         citaId: c.id, accion: 'video_enviado', entidad: 'video_envio_log', entidadId: log.id, sedeId: c.sedeId,

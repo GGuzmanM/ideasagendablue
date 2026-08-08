@@ -28,6 +28,7 @@ import { PermisosPage } from './pages/herramientas/PermisosPage';
 import { CanalesPage } from './pages/herramientas/CanalesPage';
 import { PromocionesPage } from './pages/herramientas/PromocionesPage';
 import { MembresiasPage } from './pages/herramientas/MembresiasPage';
+import { MembresiasVendidasPage } from './pages/herramientas/MembresiasVendidasPage';
 import { DiasEspecialesPage } from './pages/herramientas/DiasEspecialesPage';
 import { ConciliacionPage } from './pages/herramientas/ConciliacionPage';
 import { RecordatoriosPanel } from './pages/herramientas/RecordatoriosPanel';
@@ -91,6 +92,7 @@ export default function App() {
         <Route path="/herramientas/canales" element={<RequirePermiso permiso={['herramientas.operativas', 'herramientas.estrategicas']}><CanalesPage /></RequirePermiso>} />
         <Route path="/herramientas/promociones" element={<RequirePermiso permiso={['herramientas.operativas', 'herramientas.estrategicas']}><PromocionesPage /></RequirePermiso>} />
         <Route path="/herramientas/membresias" element={<RequirePermiso permiso={['herramientas.operativas', 'herramientas.estrategicas']}><MembresiasPage /></RequirePermiso>} />
+        <Route path="/herramientas/membresias-vendidas" element={<RequirePermiso permiso={['herramientas.operativas', 'herramientas.estrategicas']}><MembresiasVendidasPage /></RequirePermiso>} />
         <Route path="/herramientas/dias-especiales" element={<RequirePermiso permiso={['herramientas.operativas', 'herramientas.estrategicas']}><DiasEspecialesPage /></RequirePermiso>} />
         <Route path="/herramientas/conciliacion" element={<RequirePermiso permiso={['herramientas.operativas', 'herramientas.estrategicas']}><ConciliacionPage /></RequirePermiso>} />
         <Route path="/herramientas/recordatorios" element={<RequirePermiso permiso={['herramientas.operativas', 'herramientas.estrategicas']}><RecordatoriosPanel /></RequirePermiso>} />

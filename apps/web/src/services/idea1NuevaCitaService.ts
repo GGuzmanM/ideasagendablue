@@ -19,6 +19,7 @@ import {
 } from '../api';
 import { citasApi, type CrearCitaInput, type CrearCitaCombinadaInput } from '../api/citas';
 import { baroSolicitudApi } from '../api/baroSolicitud';
+import { imprimirContratoMembresia } from '../api/membresias';
 import { calcularEdad } from './pacientesService';
 import { combinacionesApi } from '../api/combinaciones';
 import { usePaquetesPaciente } from '../api/paquetesSesiones';
@@ -96,6 +97,7 @@ export function useIdea1NuevaCitaForm({
   const { promociones } = usePromociones();
 
   const idempotencyKeyRef = useRef(uuidv4());
+  const contratoImprimirRef = useRef<{ promoId: string; pacienteId: string } | null>(null);
 
   // Sede / Unidad de negocio: estado interno (inicializado desde props). Cuando se abre
   // desde la ficha del paciente (permitirCambiarSede), se pueden cambiar con un selector.
@@ -665,6 +667,8 @@ export function useIdea1NuevaCitaForm({
             : {}),
         });
         finalPaqueteId = resVenta.id;
+        // Si esa membresía tiene contrato, se imprimirá pre-llenado al terminar (onSuccess).
+        contratoImprimirRef.current = { promoId, pacienteId: input.pacienteId };
       } else if (!finalPaqueteId && membSel.startsWith('inst:')) {
         finalPaqueteId = membSel.slice(5);
       }
@@ -725,6 +729,10 @@ export function useIdea1NuevaCitaForm({
       qc.invalidateQueries({ queryKey: ['citas'] });
       qc.invalidateQueries({ queryKey: ['paquetes-paciente'] });
       qc.invalidateQueries({ queryKey: ['paquetes-sesiones'] });
+      // Auto-imprimir el contrato de la membresía recién vendida (si tiene uno configurado).
+      const contrato = contratoImprimirRef.current;
+      contratoImprimirRef.current = null;
+      if (contrato) imprimirContratoMembresia(contrato.promoId, contrato.pacienteId).catch(() => { /* sin contrato o error: silencioso */ });
       if (onSuccess) onSuccess();
       onClose();
     },

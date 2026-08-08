@@ -13,7 +13,10 @@ import {
   type UnidadOffset,
   type VideoInput,
   type VideoSupresion,
+  type TrackingCita,
+  type TrackingVideoEntry,
 } from '../../api/videosServicio';
+import { sedesApi } from '../../api';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const RE_ID = /(?:youtu\.be\/|shorts\/|embed\/|v=|\/v\/|live\/)([A-Za-z0-9_-]{11})|^([A-Za-z0-9_-]{11})$/;
@@ -27,8 +30,10 @@ const HORAS_POR_UNIDAD: Record<UnidadOffset, number> = { HORAS: 1, DIAS: 24, MES
 function offsetHoras(v: { offsetValor: number; offsetUnidad: UnidadOffset }): number {
   return v.offsetValor * HORAS_POR_UNIDAD[v.offsetUnidad];
 }
+// Miniatura real 16:9: maxresdefault (alta, si existe) con fallback a hqdefault (siempre existe).
+// NO usar `oardefault` (vertical, solo Shorts): en videos normales devuelve un gris genérico.
 function thumb(id: string): string {
-  return `https://i.ytimg.com/vi/${id}/oardefault.jpg`;
+  return `https://i.ytimg.com/vi/${id}/maxresdefault.jpg`;
 }
 function thumbFallback(id: string): string {
   return `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
@@ -156,7 +161,7 @@ export function VideosServicioPage() {
         {/* Tabs */}
         <div className="flex bg-slate-100 rounded-lg p-0.5 text-xs font-semibold">
           <button onClick={() => setTab('timeline')} className={`px-3 py-1.5 rounded-md transition-all ${tab === 'timeline' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Configuración</button>
-          <button onClick={() => setTab('historial')} className={`px-3 py-1.5 rounded-md transition-all ${tab === 'historial' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Historial de envíos</button>
+          <button onClick={() => setTab('historial')} className={`px-3 py-1.5 rounded-md transition-all ${tab === 'historial' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Envíos por cita</button>
           <button onClick={() => setTab('exclusiones')} className={`px-3 py-1.5 rounded-md transition-all ${tab === 'exclusiones' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Correos excluidos</button>
         </div>
       </div>
@@ -205,7 +210,7 @@ export function VideosServicioPage() {
           )}
         </div>
       ) : tab === 'historial' ? (
-        <Historial resumen={resumen} />
+        <TrackingPorCita resumen={resumen} />
       ) : (
         <Exclusiones />
       )}
@@ -626,42 +631,87 @@ function ConfirmarEliminar({ video, eliminando, onCancelar, onConfirmar }: { vid
   );
 }
 
-// ── Historial de envíos (CAPA 4) ──────────────────────────────────────────────
+// ── Envíos por cita (tracking) ────────────────────────────────────────────────
 const ESTADO_STYLE: Record<string, string> = {
   PENDIENTE: 'bg-sky-100 text-sky-700',
   ENVIADO: 'bg-emerald-100 text-emerald-700',
   CANCELADO: 'bg-slate-100 text-slate-500',
   ERROR: 'bg-red-100 text-red-700',
 };
+const ESTADO_LABEL: Record<string, string> = { PENDIENTE: 'Pendiente', ENVIADO: 'Enviado', CANCELADO: 'Cancelado', ERROR: 'Error' };
 
-function Historial({ resumen }: { resumen: ServicioResumen[] }) {
+const fmtFechaHora = (iso: string | null) =>
+  iso ? new Date(iso).toLocaleString('es-PE', { timeZone: 'America/Lima', dateStyle: 'short', timeStyle: 'short' }) : '—';
+const inicialesDe = (nombre: string) => nombre.split(' ').filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+
+/** Celda de estado de un momento (antes/después) en la tabla: chip + contador ×N. */
+function CeldaMomento({ entry }: { entry: TrackingVideoEntry | undefined }) {
+  if (!entry) return <span className="text-xxs text-slate-300">— sin video —</span>;
+  return (
+    <div className="inline-flex items-center gap-1.5">
+      <span className={`text-xxs font-bold px-2 py-0.5 rounded-full ${ESTADO_STYLE[entry.estado] ?? 'bg-slate-100 text-slate-500'}`}>{ESTADO_LABEL[entry.estado] ?? entry.estado}</span>
+      {entry.veces > 0 && <span className="text-[10px] font-bold text-slate-500 bg-slate-100 rounded px-1.5 py-0.5">×{entry.veces}</span>}
+    </div>
+  );
+}
+
+function TrackingPorCita({ resumen }: { resumen: ServicioResumen[] }) {
+  const [q, setQ] = useState('');
   const [servicioId, setServicioId] = useState('');
   const [estado, setEstado] = useState('');
+  const [sedeId, setSedeId] = useState('');
   const [desde, setDesde] = useState('');
   const [hasta, setHasta] = useState('');
+  const [citaSel, setCitaSel] = useState<TrackingCita | null>(null);
+
+  const { data: sedes = [] } = useQuery({ queryKey: ['sedes'], queryFn: () => sedesApi.listar() });
 
   const params = useMemo(() => {
     const p: Record<string, string> = {};
+    if (q.trim()) p.q = q.trim();
     if (servicioId) p.servicioId = servicioId;
     if (estado) p.estado = estado;
+    if (sedeId) p.sedeId = sedeId;
     if (desde) p.desde = desde;
     if (hasta) p.hasta = hasta;
     return p;
-  }, [servicioId, estado, desde, hasta]);
+  }, [q, servicioId, estado, sedeId, desde, hasta]);
 
-  const { data: filas = [], isLoading } = useQuery({
-    queryKey: ['videos-historial', params],
-    queryFn: () => videosServicioApi.historial(params),
+  const { data: citas = [], isLoading } = useQuery({
+    queryKey: ['videos-tracking', params],
+    queryFn: () => videosServicioApi.tracking(params),
   });
 
-  const fmt = (iso: string | null) => (iso ? new Date(iso).toLocaleString('es-PE', { timeZone: 'America/Lima', dateStyle: 'short', timeStyle: 'short' }) : '—');
+  // Resumen (sobre lo cargado): citas, enviados, pendientes, con error.
+  const stats = useMemo(() => {
+    let enviados = 0, pendientes = 0, errores = 0;
+    for (const c of citas) for (const e of [...c.antes, ...c.despues]) {
+      if (e.estado === 'ENVIADO') enviados++;
+      else if (e.estado === 'PENDIENTE') pendientes++;
+      else if (e.estado === 'ERROR') errores++;
+    }
+    return { citas: citas.length, enviados, pendientes, errores };
+  }, [citas]);
 
   return (
     <div className="flex-1 p-6 max-w-6xl w-full mx-auto">
+      {/* Resumen */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+        <Tarjeta label="Citas con video" valor={stats.citas} clase="text-slate-900" />
+        <Tarjeta label="Enviados" valor={stats.enviados} clase="text-emerald-600" />
+        <Tarjeta label="Pendientes" valor={stats.pendientes} clase="text-amber-600" />
+        <Tarjeta label="Con error" valor={stats.errores} clase="text-red-600" />
+      </div>
+
       {/* Filtros */}
       <div className="flex flex-wrap items-end gap-3 mb-4">
+        <div className="flex-1 min-w-[200px]">
+          <label className="block text-xxs font-semibold text-slate-500 uppercase tracking-wide mb-1">Buscar</label>
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Paciente por nombre o DNI…" className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 focus:border-limablue-400 outline-none" />
+        </div>
         <FiltroSelect label="Servicio" value={servicioId} onChange={setServicioId} options={[{ v: '', t: 'Todos' }, ...resumen.map((s) => ({ v: s.id, t: s.nombre }))]} />
         <FiltroSelect label="Estado" value={estado} onChange={setEstado} options={[{ v: '', t: 'Todos' }, { v: 'PENDIENTE', t: 'Pendiente' }, { v: 'ENVIADO', t: 'Enviado' }, { v: 'CANCELADO', t: 'Cancelado' }, { v: 'ERROR', t: 'Error' }]} />
+        <FiltroSelect label="Sede" value={sedeId} onChange={setSedeId} options={[{ v: '', t: 'Todas' }, ...sedes.map((s: { id: string; nombre: string }) => ({ v: s.id, t: s.nombre }))]} />
         <div><label className="block text-xxs font-semibold text-slate-500 uppercase tracking-wide mb-1">Desde</label><input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} className="px-3 py-2 text-sm rounded-lg border border-slate-200 focus:border-limablue-400 outline-none" /></div>
         <div><label className="block text-xxs font-semibold text-slate-500 uppercase tracking-wide mb-1">Hasta</label><input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} className="px-3 py-2 text-sm rounded-lg border border-slate-200 focus:border-limablue-400 outline-none" /></div>
       </div>
@@ -671,31 +721,153 @@ function Historial({ resumen }: { resumen: ServicioResumen[] }) {
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-slate-50 text-left text-xxs font-bold text-slate-500 uppercase tracking-wide">
-                <th className="px-4 py-3">Paciente</th><th className="px-4 py-3">Video</th><th className="px-4 py-3">Servicio</th>
-                <th className="px-4 py-3">Programado</th><th className="px-4 py-3">Estado</th><th className="px-4 py-3">Enviado / Detalle</th>
+                <th className="px-4 py-3">Paciente</th><th className="px-4 py-3">Servicio · cita</th>
+                <th className="px-4 py-3 text-center">Video antes</th><th className="px-4 py-3 text-center">Video después</th><th className="px-4 py-3 w-8"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
-                <tr><td colSpan={6} className="px-4 py-10 text-center"><span className="inline-block w-6 h-6 border-2 border-limablue-300 border-t-limablue-600 rounded-full animate-spin" /></td></tr>
-              ) : filas.length === 0 ? (
-                <tr><td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-400">No hay envíos que coincidan con los filtros.</td></tr>
-              ) : filas.map((f) => (
-                <tr key={f.id} className="hover:bg-slate-50/60">
-                  <td className="px-4 py-3"><div className="font-medium text-slate-800">{f.paciente ?? '—'}</div><div className="text-xxs text-slate-400">{f.email}</div></td>
-                  <td className="px-4 py-3 text-slate-600 max-w-[12rem] truncate" title={f.video ?? ''}>{f.video ?? '—'}</td>
-                  <td className="px-4 py-3 text-slate-500">{f.servicio ?? '—'}</td>
-                  <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{fmt(f.scheduledFor)}</td>
-                  <td className="px-4 py-3"><span className={`text-xxs font-bold px-2 py-0.5 rounded-full ${ESTADO_STYLE[f.estado] ?? 'bg-slate-100 text-slate-500'}`}>{f.estado}</span></td>
-                  <td className="px-4 py-3 text-xxs text-slate-500">
-                    {f.estado === 'ENVIADO' ? fmt(f.sentAt) : f.estado === 'CANCELADO' ? (f.motivoCancelacion ?? '—') : f.error ?? '—'}
+                <tr><td colSpan={5} className="px-4 py-10 text-center"><span className="inline-block w-6 h-6 border-2 border-limablue-300 border-t-limablue-600 rounded-full animate-spin" /></td></tr>
+              ) : citas.length === 0 ? (
+                <tr><td colSpan={5} className="px-4 py-10 text-center text-sm text-slate-400">No hay citas con videos que coincidan con los filtros.</td></tr>
+              ) : citas.map((c) => (
+                <tr key={c.citaId} onClick={() => setCitaSel(c)} className="hover:bg-slate-50/60 cursor-pointer">
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-full bg-limablue-100 text-limablue-700 grid place-items-center text-[11px] font-bold shrink-0">{inicialesDe(c.paciente)}</div>
+                      <div><div className="font-medium text-slate-800 leading-tight">{c.paciente}</div><div className="text-xxs text-slate-400">{c.sede}</div></div>
+                    </div>
                   </td>
+                  <td className="px-4 py-3"><div className="text-slate-700">{c.servicio}</div><div className="text-xxs text-slate-400">{fmtFechaHora(c.fecha)?.split(',')[0]} · {c.horaInicio}</div></td>
+                  <td className="px-4 py-3 text-center"><CeldaMomento entry={c.antes[0]} /></td>
+                  <td className="px-4 py-3 text-center"><CeldaMomento entry={c.despues[0]} /></td>
+                  <td className="px-4 py-3 text-slate-300"><span className="material-symbols-outlined align-middle">chevron_right</span></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       </div>
+      <p className="text-xxs text-slate-400 mt-3">Clic en una fila para ver el detalle y enviar manualmente. El envío automático corre cada 5 min.</p>
+
+      {citaSel && <VideoEnviosCitaModal cita={citaSel} onCerrar={() => setCitaSel(null)} />}
+    </div>
+  );
+}
+
+function Tarjeta({ label, valor, clase }: { label: string; valor: number; clase: string }) {
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+      <p className="text-xxs font-semibold text-slate-400 uppercase tracking-wide">{label}</p>
+      <p className={`text-2xl font-extrabold mt-1 ${clase}`}>{valor}</p>
+    </div>
+  );
+}
+
+// ── Modal: envíos de UNA cita (antes · cita · después) con envío manual ────────
+function VideoEnviosCitaModal({ cita, onCerrar }: { cita: TrackingCita; onCerrar: () => void }) {
+  const qc = useQueryClient();
+  const antes = cita.antes[0];
+  const despues = cita.despues[0];
+
+  const enviarMut = useMutation({
+    mutationFn: (momentos: MomentoVideo[]) => videosServicioApi.enviarManual(cita.citaId, momentos),
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: ['videos-tracking'] });
+      if (r.errores.length) toast.error(`No se pudo enviar: ${r.errores[0].motivo}`);
+      else toast.success(r.enviados.length > 1 ? 'Videos enviados al paciente' : 'Video enviado al paciente');
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const enviando = enviarMut.isPending;
+  const momentoEnviando = enviando ? (enviarMut.variables as MomentoVideo[]) : null;
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-[2px] z-50 flex items-center justify-center p-4" onClick={onCerrar}>
+      <div className="bg-white w-full max-w-[720px] max-h-[92vh] rounded-2xl flex flex-col overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        {/* Header */}
+        <div className="bg-limablue-600 px-6 py-5 flex items-start justify-between shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-full bg-white/15 grid place-items-center text-white font-bold text-lg">{inicialesDe(cita.paciente)}</div>
+            <div>
+              <h2 className="text-white font-bold text-lg leading-tight">{cita.paciente}</h2>
+              <p className="text-white/75 text-xs mt-0.5">{cita.servicio} · {fmtFechaHora(cita.fecha)?.split(',')[0]} {cita.horaInicio} · Sede {cita.sede}</p>
+            </div>
+          </div>
+          <button onClick={onCerrar} className="material-symbols-outlined text-white/80 hover:text-white p-1 rounded-full transition">close</button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6">
+          <div className="grid grid-cols-[1fr_auto_1fr] gap-4 items-stretch">
+            <LadoVideo lado="ANTES" entry={antes} enviando={!!momentoEnviando?.includes('ANTES')} onEnviar={() => enviarMut.mutate(['ANTES'])} />
+            {/* Centro: la cita */}
+            <div className="flex flex-col items-center justify-center px-1">
+              <div className="w-px flex-1 bg-slate-200"></div>
+              <div className="w-11 h-11 rounded-full bg-limablue-600 grid place-items-center text-white shadow-md my-1 shrink-0"><span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>event_available</span></div>
+              <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400 text-center leading-tight">La cita<br />(sin video)</span>
+              <div className="w-px flex-1 bg-slate-200"></div>
+            </div>
+            <LadoVideo lado="DESPUES" entry={despues} enviando={!!momentoEnviando?.includes('DESPUES')} onEnviar={() => enviarMut.mutate(['DESPUES'])} />
+          </div>
+
+          <div className="mt-4 flex items-center gap-2 text-xs text-slate-500 bg-slate-50 rounded-xl px-3 py-2">
+            <span className="material-symbols-outlined text-base text-slate-400">mail</span>
+            Se enviará al correo del paciente: <b className="text-slate-700">{cita.email ?? 'sin correo'}</b>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="border-t border-slate-200 px-6 py-4 flex items-center justify-between gap-3 shrink-0">
+          <p className="text-[11px] text-slate-400">El reenvío queda registrado y suma al contador de veces enviado.</p>
+          <div className="flex items-center gap-2">
+            <button onClick={onCerrar} className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-bold text-sm hover:bg-slate-50 transition">Cerrar</button>
+            <button
+              onClick={() => enviarMut.mutate(['ANTES', 'DESPUES'])}
+              disabled={enviando || (!antes && !despues) || !cita.email}
+              className="px-5 py-2.5 rounded-xl bg-limablue-600 text-white font-bold text-sm shadow-md hover:bg-limablue-700 active:scale-95 transition flex items-center gap-2 disabled:opacity-40"
+            >
+              <span className="material-symbols-outlined text-lg">send</span>
+              {momentoEnviando && momentoEnviando.length === 2 ? 'Enviando…' : 'Enviar ambos'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LadoVideo({ lado, entry, enviando, onEnviar }: { lado: MomentoVideo; entry: TrackingVideoEntry | undefined; enviando: boolean; onEnviar: () => void }) {
+  const titulo = lado === 'ANTES' ? 'Antes' : 'Después';
+  if (!entry) {
+    return (
+      <div className="rounded-2xl border border-dashed border-slate-300 p-4 flex flex-col items-center justify-center text-center min-h-[220px]">
+        <span className="material-symbols-outlined text-slate-300 text-3xl">videocam_off</span>
+        <p className="text-xs text-slate-400 mt-2">Sin video de “{titulo.toLowerCase()}” configurado para este servicio.</p>
+      </div>
+    );
+  }
+  const info = entry.estado === 'ENVIADO'
+    ? `Enviado ${entry.veces} ${entry.veces === 1 ? 'vez' : 'veces'} · última ${fmtFechaHora(entry.sentAt)}`
+    : entry.estado === 'ERROR' ? `Error: ${entry.error ?? 'envío fallido'}`
+    : entry.estado === 'CANCELADO' ? `Cancelado: ${entry.motivoCancelacion ?? '—'}`
+    : `Pendiente · programado ${fmtFechaHora(entry.scheduledFor)}`;
+  return (
+    <div className="rounded-2xl border border-slate-200 p-4 flex flex-col">
+      <div className="flex items-center gap-1.5 mb-2">
+        <span className="material-symbols-outlined text-limablue-600 text-base">schedule</span>
+        <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{titulo} · {etiquetaMomento(lado, entry.offsetValor, entry.offsetUnidad)}</span>
+      </div>
+      <img src={thumb(entry.youtubeVideoId)} onError={(e) => { (e.currentTarget as HTMLImageElement).src = thumbFallback(entry.youtubeVideoId); }} alt="" className="rounded-xl aspect-video object-cover bg-slate-800 mb-3" />
+      <p className="text-sm font-semibold text-slate-800 leading-tight">{entry.titulo}</p>
+      <div className="mt-2 flex items-center gap-1.5">
+        <span className={`text-xxs font-bold px-2 py-0.5 rounded-full ${ESTADO_STYLE[entry.estado] ?? 'bg-slate-100 text-slate-500'}`}>{ESTADO_LABEL[entry.estado] ?? entry.estado}</span>
+        {entry.veces > 0 && <span className="text-[10px] font-bold text-slate-500 bg-slate-100 rounded px-1.5 py-0.5">×{entry.veces}</span>}
+      </div>
+      <p className="text-[11px] text-slate-500 mt-1.5 leading-snug">{info}</p>
+      <button onClick={onEnviar} disabled={enviando} className="mt-3 w-full py-2 rounded-xl border border-limablue-300 text-limablue-700 font-bold text-xs hover:bg-limablue-50 transition flex items-center justify-center gap-1.5 disabled:opacity-40">
+        <span className="material-symbols-outlined text-base">send</span>
+        {enviando ? 'Enviando…' : entry.veces > 0 ? `Reenviar ${titulo.toLowerCase()}` : `Enviar ${titulo.toLowerCase()}`}
+      </button>
     </div>
   );
 }

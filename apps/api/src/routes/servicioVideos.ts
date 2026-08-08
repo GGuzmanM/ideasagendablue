@@ -15,6 +15,7 @@ import {
   construirCorreoVideo,
   muestraDestinatario,
   cancelarVideosPorCorreo,
+  enviarVideoManual,
   MOTIVO,
 } from '../services/videoEnvioService';
 
@@ -118,6 +119,100 @@ router.get('/historial', async (req, res) => {
     citaHora: l.cita?.horaInicio ?? null,
     sede: l.cita?.sede.nombre ?? null,
   })));
+});
+
+// ─── GET /servicio-videos/tracking — envíos agrupados POR CITA (pestaña tracking) ──
+// Una fila por cita, con sus videos "antes" y "después" (estado + veces enviado). Filtros:
+// estado, servicioId, sedeId, desde/hasta (por fecha de cita), q (nombre/DNI del paciente).
+router.get('/tracking', async (req, res) => {
+  const q = req.query as Record<string, string | undefined>;
+  const whereCita: Record<string, unknown> = { deletedAt: null };
+  if (q.servicioId) whereCita.servicioId = q.servicioId;
+  if (q.sedeId) whereCita.sedeId = q.sedeId;
+  if (q.desde || q.hasta) {
+    whereCita.fecha = {
+      ...(q.desde ? { gte: new Date(`${q.desde}T00:00:00.000Z`) } : {}),
+      ...(q.hasta ? { lte: new Date(`${q.hasta}T23:59:59.999Z`) } : {}),
+    };
+  }
+  if (q.q) {
+    const t = q.q.trim();
+    whereCita.paciente = { OR: [
+      { nombres: { contains: t, mode: 'insensitive' } },
+      { apellidoPaterno: { contains: t, mode: 'insensitive' } },
+      { apellidoMaterno: { contains: t, mode: 'insensitive' } },
+      { numeroDocumento: { contains: t, mode: 'insensitive' } },
+    ] };
+  }
+
+  const logs = await prisma.videoEnvioLog.findMany({
+    where: { deletedAt: null, ...(q.estado ? { estado: q.estado as never } : {}), cita: whereCita },
+    orderBy: [{ cita: { fecha: 'desc' } }, { cita: { horaInicio: 'desc' } }],
+    take: 1200,
+    select: {
+      id: true, estado: true, scheduledFor: true, sentAt: true, errorDetalle: true,
+      motivoCancelacion: true, vecesEnviado: true,
+      servicioVideo: { select: { id: true, momento: true, tituloVideo: true, youtubeVideoId: true, offsetValor: true, offsetUnidad: true } },
+      cita: {
+        select: {
+          id: true, fecha: true, horaInicio: true,
+          paciente: { select: { nombres: true, apellidoPaterno: true, apellidoMaterno: true, email: true } },
+          servicio: { select: { nombre: true } },
+          sede: { select: { nombre: true } },
+        },
+      },
+    },
+  });
+
+  // Agrupa por cita, separando antes/después.
+  const porCita = new Map<string, any>();
+  for (const l of logs) {
+    if (!l.cita || !l.servicioVideo) continue;
+    const c = l.cita;
+    let row = porCita.get(c.id);
+    if (!row) {
+      row = {
+        citaId: c.id,
+        paciente: `${c.paciente.nombres} ${c.paciente.apellidoPaterno} ${c.paciente.apellidoMaterno}`.trim(),
+        email: c.paciente.email,
+        servicio: c.servicio.nombre,
+        fecha: c.fecha, horaInicio: c.horaInicio,
+        sede: c.sede.nombre,
+        antes: [], despues: [],
+      };
+      porCita.set(c.id, row);
+    }
+    const entry = {
+      logId: l.id, servicioVideoId: l.servicioVideo.id, titulo: l.servicioVideo.tituloVideo,
+      youtubeVideoId: l.servicioVideo.youtubeVideoId,
+      offsetValor: l.servicioVideo.offsetValor, offsetUnidad: l.servicioVideo.offsetUnidad,
+      estado: l.estado, veces: l.vecesEnviado, sentAt: l.sentAt, scheduledFor: l.scheduledFor,
+      error: l.errorDetalle, motivoCancelacion: l.motivoCancelacion,
+    };
+    if (l.servicioVideo.momento === 'ANTES') row.antes.push(entry);
+    else row.despues.push(entry);
+  }
+  res.json([...porCita.values()]);
+});
+
+// ─── POST /servicio-videos/enviar — envío MANUAL a un paciente (antes/después/ambos) ──
+const enviarSchema = z.object({
+  citaId: z.string().uuid(),
+  momentos: z.array(z.enum(['ANTES', 'DESPUES'])).min(1, 'Indica al menos un momento'),
+});
+router.post('/enviar', async (req, res) => {
+  const { citaId, momentos } = enviarSchema.parse(req.body);
+  if (!resendConfigurado()) throw new AppError('RESEND_API_KEY ausente en el servidor — no se puede enviar', 400, 'RESEND_NO_CONFIGURADO');
+  try {
+    const r = await enviarVideoManual({ citaId, momentos: [...new Set(momentos)], usuarioId: req.user?.userId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined });
+    if (r.enviados.length === 0 && r.errores.length === 0) {
+      throw new AppError('No hay videos activos configurados para ese momento en este servicio', 404, 'SIN_VIDEOS');
+    }
+    res.json({ ok: r.errores.length === 0, ...r });
+  } catch (err) {
+    if (err instanceof AppError) throw err;
+    throw new AppError(err instanceof Error ? err.message : 'No se pudo enviar', 502, 'ENVIO_FALLIDO');
+  }
 });
 
 // ─── POST /servicio-videos/preview — HTML renderizado del correo (mismo motor) ─

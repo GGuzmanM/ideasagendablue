@@ -90,6 +90,23 @@ export function thumbnailFallback(videoId: string): string {
   return `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
 }
 
+/**
+ * Thumbnail HORIZONTAL 16:9 para videos normales en el correo: `mqdefault.jpg` (320×180).
+ * Es el frame real del video, limpio (sin barras negras) y SIEMPRE existe — a diferencia de
+ * `oardefault` (vertical, solo Shorts) que devuelve un gris genérico para videos normales.
+ */
+export function thumbnail16x9(videoId: string): string {
+  return `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`;
+}
+
+/**
+ * Thumbnail correcto para el CORREO según el tipo de video: horizontal 16:9 (mqdefault) para
+ * videos normales; vertical 9:16 (oardefault) para Shorts.
+ */
+export function thumbnailCorreo(videoId: string, short: boolean): string {
+  return short ? thumbnailVertical(videoId) : thumbnail16x9(videoId);
+}
+
 /** URL de embed para el iframe de PREVISUALIZACIÓN en el módulo admin (no en el correo). */
 export function urlEmbedNocookie(videoId: string): string {
   return `https://www.youtube-nocookie.com/embed/${videoId}?fs=1`;

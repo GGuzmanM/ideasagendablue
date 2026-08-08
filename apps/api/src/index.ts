@@ -64,6 +64,7 @@ import conciliacionRouter from './routes/conciliacion';
 import consumosRouter from './routes/consumos';
 import reportesRouter from './routes/reportes';
 import servicioVideosRouter from './routes/servicioVideos';
+import videosPublicoRouter from './routes/videosPublico';
 
 const app = express();
 const server = http.createServer(app);
@@ -147,6 +148,7 @@ app.use(`${v1}/conciliacion`, conciliacionRouter);
 app.use(`${v1}/consumos`, consumosRouter);
 app.use(`${v1}/reportes`, reportesRouter);
 app.use(`${v1}/servicio-videos`, servicioVideosRouter);
+app.use(`${v1}/videos`, videosPublicoRouter); // PÚBLICO (sin login): baja/reactivar desde el correo
 
 // ─── Error handler ────────────────────────────────────────────────────────────
 app.use(errorHandler);

@@ -91,7 +91,7 @@ router.get('/', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (r
 type TipoEntidad =
   | 'sede' | 'paciente' | 'profesional' | 'servicio'
   | 'unidadNegocio' | 'usuario' | 'promocion' | 'paquete'
-  | 'paquetePaciente' | 'canal' | 'subcategoria' | 'rol';
+  | 'paquetePaciente' | 'canal' | 'subcategoria' | 'rol' | 'servicioVideo';
 
 const CAMPO_A_MODELO: Record<string, TipoEntidad> = {
   sedeId: 'sede',
@@ -103,6 +103,7 @@ const CAMPO_A_MODELO: Record<string, TipoEntidad> = {
   usuarioId: 'usuario',
   autorId: 'usuario',
   creadoPorUsuarioId: 'usuario',
+  enviadoManualPor: 'usuario',
   servicioId: 'servicio',
   unidadNegocioId: 'unidadNegocio',
   promocionId: 'promocion',
@@ -110,6 +111,7 @@ const CAMPO_A_MODELO: Record<string, TipoEntidad> = {
   paqueteId: 'paquete',
   canalId: 'canal',
   subcategoriaId: 'subcategoria',
+  servicioVideoId: 'servicioVideo',
 };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -134,6 +136,7 @@ const ENTIDAD_A_TIPO: Record<string, TipoEntidad> = {
   subcategoria: 'subcategoria',
   unidad_negocio: 'unidadNegocio',
   rol: 'rol',
+  servicio_video: 'servicioVideo', // el entidadId de un video ES el servicioVideoId
 };
 
 async function resolverNombres(logs: { entidad: string; entidadId: string; antes: unknown; despues: unknown }[]): Promise<Record<string, string>> {
@@ -175,6 +178,7 @@ async function resolverNombres(logs: { entidad: string; entidadId: string; antes
   if (idsPorTipo.canal)    push(prisma.canal.findMany({ where: { id: { in: [...idsPorTipo.canal] } }, select: { id: true, etiqueta: true } }), r => r.etiqueta);
   if (idsPorTipo.subcategoria) push(prisma.subcategoriaServicio.findMany({ where: { id: { in: [...idsPorTipo.subcategoria] } }, select: { id: true, nombre: true } }), r => r.nombre);
   if (idsPorTipo.rol)      push(prisma.rol.findMany({ where: { id: { in: [...idsPorTipo.rol] } }, select: { id: true, label: true } }), r => r.label);
+  if (idsPorTipo.servicioVideo) push(prisma.servicioVideo.findMany({ where: { id: { in: [...idsPorTipo.servicioVideo] } }, select: { id: true, tituloVideo: true } }), r => r.tituloVideo);
 
   await Promise.all(tareas);
   return nombres;

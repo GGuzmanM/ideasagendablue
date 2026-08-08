@@ -486,10 +486,14 @@ export interface DatosPlantillaVideo {
   tituloVideo: string;
   /** Texto corto del correo (ya con variables sustituidas). */
   cuerpoTexto: string;
-  /** URL del thumbnail vertical 9:16 (oardefault) del video. */
+  /** URL del thumbnail del video (16:9 mqdefault para videos normales, vertical para Shorts). */
   thumbnailUrl: string;
   /** Enlace público de YouTube al que abre el thumbnail (shorts/ o watch?v=). */
   urlVideo: string;
+  /** ¿Es un Short? → miniatura vertical 9:16; si no, horizontal 16:9. */
+  short?: boolean;
+  /** Enlace de baja ("No deseo recibir estos videos"). Si falta, no se muestra (preview). */
+  urlBaja?: string;
 }
 
 /**
@@ -503,8 +507,9 @@ export interface DatosPlantillaVideo {
  * imagen no carga.
  */
 export function renderPlantillaVideo(d: DatosPlantillaVideo): string {
-  const W = 280;               // ancho del thumbnail
-  const H = Math.round((W * 16) / 9); // 9:16 → 498
+  // Miniatura: horizontal 16:9 para videos normales; vertical 9:16 solo para Shorts.
+  const W = d.short ? 280 : 352;
+  const H = d.short ? Math.round((W * 16) / 9) : Math.round((W * 9) / 16); // 9:16 → 498 · 16:9 → 198
   return `<!DOCTYPE html>
 <html lang="es"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/></head>
 <body style="margin:0;padding:0;background:#e7e5df;">
@@ -553,11 +558,26 @@ export function renderPlantillaVideo(d: DatosPlantillaVideo): string {
           <!-- botón secundario (fallback si el thumbnail no carga) -->
           <a href="${d.urlVideo}" target="_blank" style="display:block;margin-top:20px;background:#1e3a8a;color:#ffffff;text-decoration:none;text-align:center;font-size:15px;font-weight:700;padding:14px;border-radius:10px;">▶ Ver video</a>
         </td></tr>
-        ${pieNuevo()}
+        ${pieVideo(d.urlBaja)}
       </table>
     </td></tr>
   </table>
 </body></html>`;
+}
+
+/**
+ * Pie del correo de video: aviso + enlace de baja autoservicio ("No deseo recibir estos
+ * mensajes"). Si no hay urlBaja (previsualización), se omite el enlace. Este correo es
+ * informativo y NO afecta el correo de confirmación de la cita (eso se aclara aquí).
+ */
+function pieVideo(urlBaja?: string): string {
+  // Sin correo real (previsualización) → sin pie. Con correo → SOLO el enlace de baja.
+  if (!urlBaja) return '';
+  return `
+    <tr><td style="padding:16px 32px 22px;border-top:1px solid #eef1f6;text-align:center;font-family:'Manrope',Arial,Helvetica,sans-serif;">
+      <div style="font-size:12px;line-height:1.6;color:#aab2c0;">¿No deseas recibir estos videos?
+        <a href="${urlBaja}" style="color:#1e3a8a;font-weight:700;text-decoration:underline;">No deseo recibir este tipo de mensajes</a>.</div>
+    </td></tr>`;
 }
 
 /** Correo de prueba simple para validar la conexión. */

@@ -67,6 +67,12 @@ export interface AccionStyle {
 
 const ACCION_MATCHERS: { match: RegExp; style: AccionStyle }[] = [
   { match: /login|inicio_sesion/i, style: { label: 'Login',           icon: 'login',        bg: 'bg-emerald-100', text: 'text-emerald-800', border: 'border-emerald-200/70', circleBg: 'bg-emerald-600' } },
+  // Videos por servicio (van antes de los genéricos crear/editar/correo para ganar el match).
+  { match: /video_enviado/i,       style: { label: 'Video enviado',   icon: 'smart_display', bg: 'bg-violet-100', text: 'text-violet-800',  border: 'border-violet-200/70',  circleBg: 'bg-violet-600' } },
+  { match: /pausar/i,              style: { label: 'Pausar',          icon: 'pause_circle', bg: 'bg-amber-100',   text: 'text-amber-800',   border: 'border-amber-200/70',   circleBg: 'bg-amber-600' } },
+  { match: /activar/i,             style: { label: 'Activar',         icon: 'play_circle',  bg: 'bg-emerald-100', text: 'text-emerald-800', border: 'border-emerald-200/70', circleBg: 'bg-emerald-600' } },
+  { match: /excluir/i,             style: { label: 'Excluir correo',  icon: 'unsubscribe',  bg: 'bg-red-100',     text: 'text-red-800',     border: 'border-red-200/70',     circleBg: 'bg-red-600' } },
+  { match: /reactivar/i,           style: { label: 'Reactivar correo', icon: 'mark_email_read', bg: 'bg-emerald-100', text: 'text-emerald-800', border: 'border-emerald-200/70', circleBg: 'bg-emerald-600' } },
   { match: /crear|registrar/i,     style: { label: 'Crear',           icon: 'add_circle',   bg: 'bg-emerald-100', text: 'text-emerald-800', border: 'border-emerald-200/70', circleBg: 'bg-emerald-600' } },
   { match: /mover|reprogramar/i,   style: { label: 'Mover',           icon: 'swap_horiz',   bg: 'bg-blue-100',    text: 'text-blue-800',    border: 'border-blue-200/70',    circleBg: 'bg-blue-600' } },
   { match: /cambiar_estado/i,      style: { label: 'Cambiar estado',  icon: 'autorenew',    bg: 'bg-amber-100',   text: 'text-amber-800',   border: 'border-amber-200/70',   circleBg: 'bg-amber-600' } },
@@ -139,11 +145,29 @@ export const ENTIDAD_LABEL: Record<string, string> = {
   excepcion_horario: 'Excepción de horario',
   horario_sede: 'Horario de sede',
   rol: 'Rol',
+  servicio_video: 'Video de servicio',
+  video_supresion: 'Correo excluido de videos',
+  video_envio_log: 'Envío de video',
 };
 
 /** Etiqueta amigable de la entidad ("Movimiento", "Almuerzo"…) o la cruda si no está mapeada. */
 export function etiquetaEntidad(entidad: string): string {
   return ENTIDAD_LABEL[entidad] ?? entidad.replace(/_/g, ' ');
+}
+
+// Valores enum traducidos para el diff (momento/unidad de los videos, etc.).
+const VALOR_LABEL: Record<string, string> = {
+  ANTES: 'Antes', DESPUES: 'Después',
+  HORAS: 'Horas', DIAS: 'Días', MESES: 'Meses', ANIOS: 'Años',
+};
+
+const UNIDAD_PALABRA: Record<string, string> = { HORAS: 'h', DIAS: 'días', MESES: 'meses', ANIOS: 'años' };
+/** "Antes · 24 h", "Después · 2 días" — para el resumen de un video. */
+function etiquetaMomentoAudit(momento?: string, valor?: number, unidad?: string): string | undefined {
+  if (!momento) return undefined;
+  const m = momento === 'ANTES' ? 'Antes' : 'Después';
+  if (valor && unidad) return `${m} · ${valor} ${UNIDAD_PALABRA[unidad] ?? unidad.toLowerCase()}`;
+  return m;
 }
 
 /**
@@ -215,6 +239,33 @@ export function resumenLog(log: AuditLog, nombresPorId: Record<string, string> =
     return {
       titulo: profNombre ? `Movimiento de ${profNombre}` : 'Movimiento',
       subtitulo: sedeNombre ? `→ ${sedeNombre}` : (contexto.motivo as string | undefined),
+    };
+  }
+
+  // Video de servicio (crear/editar/pausar/activar/eliminar).
+  if (log.entidad === 'servicio_video') {
+    const titulo = nombresPorId[log.entidadId] || (contexto.tituloVideo as string) || 'Video';
+    const servicioNombre = contexto.servicioId ? nombresPorId[contexto.servicioId as string] : undefined;
+    const mom = etiquetaMomentoAudit(contexto.momento as string | undefined, contexto.offsetValor as number | undefined, contexto.offsetUnidad as string | undefined);
+    return { titulo: `Video · ${titulo}`, subtitulo: [servicioNombre, mom].filter(Boolean).join(' · ') || undefined };
+  }
+
+  // Correo excluido / reactivado de la lista de videos.
+  if (log.entidad === 'video_supresion') {
+    const email = (contexto.email as string) || nombresPorId[log.entidadId] || 'correo';
+    const reactivado = log.accion.toLowerCase().includes('reactivar');
+    return { titulo: `${reactivado ? 'Correo reactivado' : 'Correo excluido'} · ${email}`, subtitulo: (contexto.motivo as string) || undefined };
+  }
+
+  // Envío de video a un paciente (automático o manual).
+  if (log.entidad === 'video_envio_log') {
+    const nombrePac = log.cita ? `${log.cita.paciente.nombres.split(' ')[0]} ${log.cita.paciente.apellidoPaterno}` : (contexto.destinatario as string) || 'paciente';
+    const manual = log.accion.toLowerCase().includes('manual');
+    const mom = (contexto.momento as string) === 'ANTES' ? 'Antes' : (contexto.momento as string) === 'DESPUES' ? 'Después' : undefined;
+    const veces = contexto.vecesEnviado as number | undefined;
+    return {
+      titulo: `Video enviado a ${nombrePac}`,
+      subtitulo: [mom, manual ? 'envío manual' : 'envío automático', veces ? `${veces}° envío` : undefined].filter(Boolean).join(' · ') || undefined,
     };
   }
 
@@ -336,6 +387,23 @@ export const CAMPO_LABEL: Record<string, string> = {
   orden: 'Orden',
   etiqueta: 'Etiqueta',
   valor: 'Valor',
+  // Videos por servicio
+  servicioVideoId: 'Video',
+  youtubeVideoId: 'ID de YouTube',
+  youtubeUrl: 'Enlace de YouTube',
+  tituloVideo: 'Título del video',
+  titulo: 'Título',
+  asunto: 'Asunto del correo',
+  cuerpoTexto: 'Texto del correo',
+  momento: 'Momento',
+  offsetValor: 'Tiempo (valor)',
+  offsetUnidad: 'Tiempo (unidad)',
+  destinatario: 'Destinatario',
+  resendEmailId: 'ID de correo (Resend)',
+  vecesEnviado: 'Veces enviado',
+  enviadoManualPor: 'Enviado manualmente por',
+  enviosCancelados: 'Envíos cancelados',
+  soloPorSolicitud: 'Solo por solicitud',
 };
 
 /** Devuelve la etiqueta amigable del campo (o una versión limpia en Title Case si no está mapeado). */
@@ -379,6 +447,8 @@ export function renderValor(v: unknown, nombresPorId: Record<string, string>): s
     if (UUID_RE.test(v)) {
       return nombresPorId[v] ?? v;
     }
+    // Enums conocidos (momento/unidad de videos, etc.) → palabra legible.
+    if (VALOR_LABEL[v]) return VALOR_LABEL[v];
     return v;
   }
   if (typeof v === 'number' || typeof v === 'boolean') {

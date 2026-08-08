@@ -13,10 +13,34 @@ import { addMonths, format } from 'date-fns';
 import { prisma } from '../db';
 import { requireAuth, requireRol } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
-import { auditEnTx } from '../services/audit';
+import { auditEnTx, registrarAudit } from '../services/audit';
+import { uploadContrato } from '../middleware/uploadContrato';
+import { generarContratoPdf, guardarContratoGenerado, rutaLocalContrato, type PosicionCampo } from '../services/contratoMembresiaService';
+import fs, { existsSync as fsExiste } from 'fs';
+import { PDFDocument } from 'pdf-lib';
 
 const router = Router();
 const requireGestor = requireRol('admin', 'coordinadora_sedes');
+
+/** URL base pública del API (para armar las URLs de archivos servidos en /uploads). */
+function baseUrlDe(req: { protocol: string; get: (h: string) => string | undefined }): string {
+  return `${req.protocol}://${req.get('host')}`;
+}
+
+/** Datos del paciente listos para estampar en el contrato. */
+async function datosPacienteContrato(pacienteId: string) {
+  const p = await prisma.paciente.findFirst({
+    where: { id: pacienteId, deletedAt: null },
+    select: { nombres: true, apellidoPaterno: true, apellidoMaterno: true, numeroDocumento: true },
+  });
+  if (!p) throw new AppError('Paciente no encontrado', 404);
+  const hoy = format(new Date(), 'dd/MM/yyyy');
+  return {
+    nombreCompleto: `${p.nombres} ${p.apellidoPaterno} ${p.apellidoMaterno}`.replace(/\s+/g, ' ').trim(),
+    documento: p.numeroDocumento,
+    fecha: hoy,
+  };
+}
 
 const itemSchema = z.object({
   servicioId: z.string().uuid(),
@@ -66,6 +90,152 @@ async function plantillaDe(promocionId: string) {
   return plantilla;
 }
 
+// ─── Contrato de membresía (plantilla PDF + posiciones) ───────────────────────
+
+// GET /membresias/:id/contrato-config — plantilla + campos + dimensiones de la página 1.
+router.get('/:id/contrato-config', requireAuth, requireGestor, async (req, res) => {
+  const plantilla = await plantillaDe(req.params.id);
+  let pagina: { width: number; height: number } | null = null;
+  if (plantilla.contratoPlantillaUrl) {
+    try {
+      const ruta = rutaLocalContrato(plantilla.contratoPlantillaUrl);
+      if (fsExiste(ruta)) {
+        const pdf = await PDFDocument.load(fs.readFileSync(ruta));
+        const p = pdf.getPage(0);
+        pagina = { width: p.getWidth(), height: p.getHeight() };
+      }
+    } catch { /* dimensiones opcionales */ }
+  }
+  res.json({ contratoPlantillaUrl: plantilla.contratoPlantillaUrl ?? null, contratoCampos: plantilla.contratoCampos ?? [], pagina });
+});
+
+// POST /membresias/:id/contrato-plantilla — subir el PDF del contrato (admin/coordinadora).
+router.post('/:id/contrato-plantilla', requireAuth, requireGestor, uploadContrato.single('contrato'), async (req, res) => {
+  if (!req.file) throw new AppError('No se recibió el archivo PDF', 400, 'SIN_ARCHIVO');
+  const plantilla = await plantillaDe(req.params.id);
+  const url = `${baseUrlDe(req)}/uploads/contratos/${req.file.filename}`;
+  await prisma.paquete.update({ where: { id: plantilla.id }, data: { contratoPlantillaUrl: url } });
+  await registrarAudit({
+    usuarioId: req.user?.userId, accion: 'subir_contrato_membresia', entidad: 'promocion', entidadId: req.params.id,
+    despues: { contrato: req.file.filename }, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
+  });
+  res.json({ contratoPlantillaUrl: url });
+});
+
+// GET /membresias/:id/contrato-plantilla-archivo — sirve el PDF plantilla (auth, vía proxy)
+// para renderizarlo en el posicionador sin problemas de host/CORS entre 5180 y 3002.
+router.get('/:id/contrato-plantilla-archivo', requireAuth, requireGestor, async (req, res) => {
+  const plantilla = await plantillaDe(req.params.id);
+  if (!plantilla.contratoPlantillaUrl) throw new AppError('Sin plantilla de contrato', 404, 'SIN_CONTRATO');
+  const ruta = rutaLocalContrato(plantilla.contratoPlantillaUrl);
+  if (!fsExiste(ruta)) throw new AppError('Archivo de plantilla no encontrado', 404);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.sendFile(ruta);
+});
+
+// PATCH /membresias/:id/contrato-campos — guardar las posiciones marcadas.
+const campoSchema = z.object({
+  campo: z.enum(['nombre', 'dni', 'fecha']),
+  pagina: z.number().int().min(0).default(0),
+  xPct: z.number().min(0).max(1),
+  yPct: z.number().min(0).max(1),
+  tamanio: z.number().min(6).max(48).optional(),
+  anchoPct: z.number().min(0.05).max(1).optional(),
+});
+router.patch('/:id/contrato-campos', requireAuth, requireGestor, async (req, res) => {
+  const campos = z.array(campoSchema).parse(req.body?.campos ?? req.body);
+  const plantilla = await plantillaDe(req.params.id);
+  await prisma.paquete.update({ where: { id: plantilla.id }, data: { contratoCampos: campos } });
+  await registrarAudit({
+    usuarioId: req.user?.userId, accion: 'configurar_contrato_membresia', entidad: 'promocion', entidadId: req.params.id,
+    despues: { campos: campos.length }, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
+  });
+  res.json({ ok: true, contratoCampos: campos });
+});
+
+// GET /membresias/:id/contrato?pacienteId=  (o ?muestra=1) — genera el contrato pre-llenado.
+// `muestra=1` usa datos de ejemplo para PREVISUALIZAR el posicionado sin un paciente real.
+router.get('/:id/contrato', requireAuth, async (req, res) => {
+  const pacienteId = String(req.query.pacienteId || '');
+  const esMuestra = req.query.muestra === '1' || req.query.muestra === 'true';
+  if (!pacienteId && !esMuestra) throw new AppError('Falta pacienteId', 400);
+  const plantilla = await plantillaDe(req.params.id);
+  if (!plantilla.contratoPlantillaUrl) throw new AppError('Esta membresía no tiene un contrato configurado', 404, 'SIN_CONTRATO');
+
+  const datos = esMuestra
+    ? { nombreCompleto: 'María García Rodríguez (ejemplo)', documento: '12345678', fecha: format(new Date(), 'dd/MM/yyyy') }
+    : await datosPacienteContrato(pacienteId);
+  const bytes = await generarContratoPdf(plantilla.contratoPlantillaUrl, (plantilla.contratoCampos ?? []) as unknown as PosicionCampo[], datos);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="contrato-${datos.documento}.pdf"`);
+  res.send(Buffer.from(bytes));
+});
+
+// ─── Membresías VENDIDAS (gestión por paciente) ───────────────────────────────
+
+// GET /membresias/vendidas?q=&estado= — membresías vendidas (PaquetePaciente tipo MEMBRESIA),
+// buscables por paciente. Para el CRUD de habilitar/deshabilitar + reimprimir contrato.
+router.get('/vendidas', requireAuth, requireGestor, async (req, res) => {
+  const q = String(req.query.q || '').trim();
+  const estado = String(req.query.estado || '').trim();
+  const where: Record<string, unknown> = { tipo: 'MEMBRESIA', deletedAt: null };
+  if (estado) where.estado = estado;
+  if (q) where.paciente = { OR: [
+    { nombres: { contains: q, mode: 'insensitive' } },
+    { apellidoPaterno: { contains: q, mode: 'insensitive' } },
+    { apellidoMaterno: { contains: q, mode: 'insensitive' } },
+    { numeroDocumento: { contains: q, mode: 'insensitive' } },
+  ] };
+
+  const vendidas = await prisma.paquetePaciente.findMany({
+    where,
+    orderBy: [{ creadoEn: 'desc' }],
+    take: 400,
+    select: {
+      id: true, estado: true, activo: true, vigenciaInicio: true, vigenciaFin: true,
+      sesionesTotal: true, sesionesUsadas: true, promocionId: true, contratoUrl: true, creadoEn: true,
+      paciente: { select: { id: true, nombres: true, apellidoPaterno: true, apellidoMaterno: true, numeroDocumento: true } },
+      paquete: { select: { nombre: true, contratoPlantillaUrl: true } },
+      sede: { select: { nombre: true } },
+    },
+  });
+  res.json(vendidas.map((v) => ({
+    id: v.id,
+    paciente: `${v.paciente.nombres} ${v.paciente.apellidoPaterno} ${v.paciente.apellidoMaterno}`.replace(/\s+/g, ' ').trim(),
+    pacienteId: v.paciente.id,
+    documento: v.paciente.numeroDocumento,
+    membresia: v.paquete.nombre,
+    promocionId: v.promocionId,
+    tieneContrato: !!v.paquete.contratoPlantillaUrl,
+    estado: v.estado,
+    activo: v.activo,
+    vigenciaInicio: v.vigenciaInicio,
+    vigenciaFin: v.vigenciaFin,
+    sesionesTotal: v.sesionesTotal,
+    sesionesUsadas: v.sesionesUsadas,
+    sede: v.sede?.nombre ?? null,
+    creadoEn: v.creadoEn,
+  })));
+});
+
+// PATCH /membresias/vendidas/:ppId — habilitar (ACTIVO) o deshabilitar (ANULADO) una venta.
+router.patch('/vendidas/:ppId', requireAuth, requireGestor, async (req, res) => {
+  const habilitar = req.body?.habilitar === true;
+  const pp = await prisma.paquetePaciente.findFirst({ where: { id: req.params.ppId, deletedAt: null }, select: { id: true, estado: true } });
+  if (!pp) throw new AppError('Membresía vendida no encontrada', 404);
+  const actualizado = await prisma.paquetePaciente.update({
+    where: { id: pp.id },
+    data: { activo: habilitar, estado: habilitar ? 'ACTIVO' : 'ANULADO' },
+    select: { id: true, estado: true, activo: true },
+  });
+  await registrarAudit({
+    usuarioId: req.user?.userId, accion: habilitar ? 'habilitar_membresia_vendida' : 'deshabilitar_membresia_vendida',
+    entidad: 'paquete_paciente', entidadId: pp.id, antes: { estado: pp.estado }, despues: { estado: actualizado.estado },
+    ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
+  });
+  res.json(actualizado);
+});
+
 // ─── GET /membresias — lista para el constructor (incl. inactivas) ───────────
 router.get('/', requireAuth, requireGestor, async (_req, res) => {
   const promos = await prisma.promocion.findMany({
@@ -92,6 +262,8 @@ router.get('/', requireAuth, requireGestor, async (_req, res) => {
       composicion: pl?.composicion ?? [],
       totalSesiones: pl?.totalSesiones ?? 0,
       ventas: ventasPor.get(p.id) ?? 0,
+      tieneContrato: !!pl?.contratoPlantillaUrl,
+      contratoCampos: Array.isArray(pl?.contratoCampos) ? (pl!.contratoCampos as unknown[]).length : 0,
     };
   }));
 });
@@ -342,6 +514,20 @@ router.post('/:id/vender', requireAuth, async (req, res) => {
     });
     return creado;
   });
+
+  // Si la membresía tiene contrato configurado, se genera pre-llenado y se guarda en la venta.
+  // (Fire-and-forget suave: nunca rompe la venta; el contrato también se puede regenerar on-demand.)
+  if (plantilla.contratoPlantillaUrl) {
+    try {
+      const datos = await datosPacienteContrato(data.pacienteId);
+      const bytes = await generarContratoPdf(plantilla.contratoPlantillaUrl, (plantilla.contratoCampos ?? []) as unknown as PosicionCampo[], datos);
+      const { url } = guardarContratoGenerado(bytes, baseUrlDe(req));
+      await prisma.paquetePaciente.update({ where: { id: pp.id }, data: { contratoUrl: url } });
+      (pp as { contratoUrl?: string }).contratoUrl = url;
+    } catch (err) {
+      console.warn('[contrato] No se pudo generar el contrato de la venta:', err instanceof Error ? err.message : err);
+    }
+  }
   res.status(201).json(pp);
 });
 

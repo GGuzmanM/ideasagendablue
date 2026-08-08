@@ -323,6 +323,16 @@ export function HerramientasPage() {
               <h3 className="font-bold text-slate-900 text-base mb-1">Catálogo de Membresías</h3>
               <p className="text-xs text-slate-500 leading-relaxed">Crea y edita paquetes de membresías y distribución de sesiones por tratamiento.</p>
             </button>
+            <button
+              onClick={() => navigate('/herramientas/membresias-vendidas')}
+              className="bg-white border border-slate-200 rounded-2xl p-6 text-left hover:shadow-lg transition-all hover:border-violet-300 group"
+            >
+              <div className="w-12 h-12 rounded-xl bg-violet-100 text-violet-700 text-2xl grid place-items-center mb-4 group-hover:scale-105 transition-transform">
+                🧾
+              </div>
+              <h3 className="font-bold text-slate-900 text-base mb-1">Membresías vendidas</h3>
+              <p className="text-xs text-slate-500 leading-relaxed">Ver por paciente, habilitar/deshabilitar y reimprimir el contrato de las membresías vendidas.</p>
+            </button>
           </div>
         </div>
       )}

@@ -857,6 +857,14 @@ model Paquete {
   duracionMeses    Int?
   sedesHabilitadas Json? // lista de sedeIds donde se vende (null = todas)
   promocionId      String? @db.Uuid // membresías viven en el módulo Promociones
+  // ─── Contrato de membresía (PDF pre-llenado) ──────────────────────────────
+  // PDF plantilla subido (contrato para firmar). Se estampan los datos del paciente
+  // en las posiciones de `contratoCampos` al vender/agendar.
+  contratoPlantillaUrl String?
+  // Posiciones marcadas UNA vez sobre la plantilla:
+  // [{ campo: 'nombre'|'dni'|'fecha', pagina: 0, xPct: 0.18, yPct: 0.21, tamanio: 12 }]
+  // Coordenadas en % de la página (independiente de resolución; yPct desde arriba).
+  contratoCampos       Json?
 
   servicio   Servicio          @relation(fields: [servicioId], references: [id])
   promocion  Promocion?        @relation(fields: [promocionId], references: [id])
@@ -905,6 +913,8 @@ model PaquetePaciente {
   // Recalculado SIEMPRE server-side (ACTIVO | AGOTADO | VENCIDO | ANULADO) —
   // nunca aceptado del cliente.
   estado          String  @default("ACTIVO")
+  // Contrato PDF generado (pre-llenado con los datos del paciente) al vender. Registro.
+  contratoUrl     String?
 
   paciente       Paciente               @relation(fields: [pacienteId], references: [id])
   paquete        Paquete                @relation(fields: [paqueteId], references: [id])
@@ -1489,6 +1499,11 @@ model VideoEnvioLog {
   motivoCancelacion  String?
   intentos           Int              @default(0)
   resendEmailId      String? // id del correo en Resend (trazabilidad)
+  // Cuántas veces se ENVIÓ realmente al paciente (automático + reenvíos manuales). El
+  // envío manual desde el tracking incrementa este contador y no crea filas nuevas.
+  vecesEnviado       Int              @default(0)
+  // Usuario que hizo el último envío MANUAL desde el tracking (null = solo automático).
+  enviadoManualPor   String?          @db.Uuid
   deletedAt          DateTime?
 
   cita          Cita          @relation(fields: [citaId], references: [id], onDelete: Restrict)
