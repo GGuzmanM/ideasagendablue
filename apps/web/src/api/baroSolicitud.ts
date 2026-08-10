@@ -14,6 +14,9 @@ export interface BaroSolicitudData {
   servicios: { id: string; nombre: string }[];
   porSolicitud: ProfBaro[];
   disponibles: ProfBaro[];
+  // Solo en la vista GLOBAL (sin sedeId): citas de baro de hoy por médico + total.
+  citasHoyPorMedico?: Record<string, number>;
+  citasHoyTotal?: number;
 }
 
 export const baroSolicitudApi = {

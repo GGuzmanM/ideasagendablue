@@ -5,6 +5,7 @@ import { prisma } from '../db';
 import { signToken, requireAuth, getPermisosRol } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { registrarAudit } from '../services/audit';
+import { loginLimiter } from '../middleware/rateLimits';
 
 const router = Router();
 
@@ -13,7 +14,8 @@ const loginSchema = z.object({
   password: z.string().min(6),
 });
 
-router.post('/login', async (req, res) => {
+// Barrera anti fuerza bruta: máx 5 intentos fallidos por IP cada 15 min (ver rateLimits.ts).
+router.post('/login', loginLimiter, async (req, res) => {
   const { email, password } = loginSchema.parse(req.body);
 
   const usuario = await prisma.usuario.findUnique({

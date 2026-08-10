@@ -30,7 +30,7 @@ const esSlotGenerico = (p: { nombres: string; apellidos: string }) =>
 // Sin `sedeId` (página global): lista todos los registros con su sede.
 router.get('/', requireAuth, async (req, res) => {
   const sedeId = typeof req.query.sedeId === 'string' && req.query.sedeId ? req.query.sedeId : null;
-  const { servicios } = await baroContexto();
+  const { unidad, servicios } = await baroContexto();
 
   // Registros de baro por sede (activos), con datos del médico y la sede.
   const registros = await prisma.baroMedicoSede.findMany({
@@ -67,7 +67,29 @@ router.get('/', requireAuth, async (req, res) => {
     .filter((p) => !yaEnSede.has(p.id) && !esSlotGenerico(p))
     .map((p) => ({ id: p.id, nombre: `${p.nombres} ${p.apellidos}`, tipo: p.tipo }));
 
-  res.json({ servicios, porSolicitud, disponibles });
+  // Citas de baro HOY por médico (solicitado) — solo en la vista GLOBAL (matriz/resumen).
+  // El médico de una cita de baro vive en `solicitadoProfesionalId` (la columna es la máquina).
+  const citasHoyPorMedico: Record<string, number> = {};
+  let citasHoyTotal = 0;
+  if (!sedeId) {
+    const hoyStr = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Lima' })).toISOString().slice(0, 10);
+    const grp = await prisma.cita.groupBy({
+      by: ['solicitadoProfesionalId'],
+      where: {
+        unidadNegocioId: unidad.id,
+        fecha: new Date(`${hoyStr}T00:00:00.000Z`),
+        deletedAt: null,
+        estado: { notIn: ['cancelada', 'no_show', 'reprogramada'] },
+        solicitadoProfesionalId: { not: null },
+      },
+      _count: { _all: true },
+    });
+    for (const g of grp) {
+      if (g.solicitadoProfesionalId) { citasHoyPorMedico[g.solicitadoProfesionalId] = g._count._all; citasHoyTotal += g._count._all; }
+    }
+  }
+
+  res.json({ servicios, porSolicitud, disponibles, citasHoyPorMedico, citasHoyTotal });
 });
 
 // ─── POST /baro-solicitud/:profesionalId ─── registrar en una sede ───
