@@ -53,7 +53,7 @@ function RequirePermiso({ permiso, children }: { permiso: string | string[]; chi
     : perms.includes(permiso);
 
   if (!tiene) {
-    return <Navigate to="/idea1" replace />;
+    return <Navigate to="/AgendaPrincipal" replace />;
   }
 
   return <>{children}</>;
@@ -69,15 +69,17 @@ export default function App() {
 
   return (
     <Routes>
-      <Route path="/login" element={token ? <Navigate to="/idea1" replace /> : <LoginPage />} />
-      {/* Vista principal de la agenda (Diseño Idea 1) */}
-      <Route path="/idea1" element={<Idea1AgendaPage />} />
+      <Route path="/login" element={token ? <Navigate to="/AgendaPrincipal" replace /> : <LoginPage />} />
+      {/* Vista principal de la agenda */}
+      <Route path="/AgendaPrincipal" element={<Idea1AgendaPage />} />
+      {/* Compatibilidad: la URL anterior /idea1 redirige a la nueva (bookmarks) */}
+      <Route path="/idea1" element={<Navigate to="/AgendaPrincipal" replace />} />
       {/* Vista de impresión (sin Layout/sidebar) — matriz A4 horizontal para PDF */}
       <Route path="/imprimir/composicion-sede" element={<ComposicionImprimirPage />} />
       {/* Comprobantes del día en una sola hoja (cierre) */}
       <Route path="/imprimir/comprobantes" element={<ComprobantesImprimirPage />} />
       <Route element={<Layout />}>
-        <Route path="/" element={<Navigate to="/idea1" replace />} />
+        <Route path="/" element={<Navigate to="/AgendaPrincipal" replace />} />
         <Route path="/agenda-vieja" element={<AgendaPage />} />
         <Route path="/pacientes" element={<RequirePermiso permiso="pacientes.ver"><PacientesPage /></RequirePermiso>} />
         <Route path="/pacientes/:id" element={<RequirePermiso permiso="pacientes.ver"><FichaPacientePage /></RequirePermiso>} />
@@ -119,7 +121,7 @@ export default function App() {
         <Route path="/analytics/agentes/:agenteId" element={<RequirePermiso permiso="analytics.ver"><AgenteDetallePage /></RequirePermiso>} />
         <Route path="/analytics/:kpi" element={<RequirePermiso permiso="analytics.ver"><AnalyticsDetallePage /></RequirePermiso>} />
       </Route>
-      <Route path="*" element={<Navigate to="/idea1" replace />} />
+      <Route path="*" element={<Navigate to="/AgendaPrincipal" replace />} />
     </Routes>
   );
 }

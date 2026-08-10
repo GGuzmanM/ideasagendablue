@@ -23,6 +23,7 @@ import { sincronizarVideosDeCita, cancelarVideosDeCita } from '../services/video
 import { consumirTokenAccion } from '../services/tokenAccionCita';
 import { sincronizarSesionPaquete } from '../services/paqueteSesionService';
 import { recalcularPaquete, validarCupoItemAlAgendar } from '../services/consumoService';
+import { precioListaDe, validarYCalcularPromo } from '../services/promocionesService';
 import { getServicioAnclaId, esCombinacionPermitida } from '../services/combinacionService';
 import { enviarCorreoReserva } from '../services/emailService';
 import { verificarTokenConfirmacion } from '../utils/confirmToken';
@@ -74,6 +75,7 @@ const crearCitaSchema = z.object({
   // recepción/contact mira el visor Genexis y elige del desplegable qué sesión toca.
   sesionNumeroManual: z.number().int().min(1).max(99).optional(),
   promocionId: z.string().uuid().nullable().optional(),
+  codigoPromo: z.string().trim().max(60).optional(), // cupón/convenio si la promo lo requiere
   comprobanteUrl: z.string().optional(),
   comprobanteNombre: z.string().optional(),
   comprobanteMimeType: z.string().optional(),
@@ -95,6 +97,7 @@ const crearCombinadaSchema = z.object({
   comentarioRecepcion: z.string().optional(),
   paquetePacienteId: z.string().uuid().optional(),
   promocionId: z.string().uuid().nullable().optional(), // promo del BLOQUE → va en la PRINCIPAL
+  codigoPromo: z.string().trim().max(60).optional(),
   extra: z.object({
     servicioId: z.string().uuid(),
     profesionalId: z.string().uuid().optional(), // default: profesional del ancla
@@ -1079,6 +1082,26 @@ router.post('/', requireAuth, requireScope('appointments:write'), async (req: Re
       }
     }
 
+    // ─── Precio de lista + promoción (snapshot para caja/reportes) ──────────────────
+    // La promo NUNCA se combina con una membresía (regla de negocio). Se revalida estricto
+    // server-side (la promo debe CALIFICAR por servicio/sede/fecha/canal/cupo).
+    const precioLista = await precioListaDe(data.servicioId, subcategoriaId);
+    let montoDescuento: number | null = null;
+    let montoFinal = precioLista;
+    if (data.promocionId) {
+      if (data.paquetePacienteId) {
+        throw new AppError('Una promoción no se combina con una membresía. Elige una u otra.', 409, 'PROMO_CON_MEMBRESIA');
+      }
+      const calc = await validarYCalcularPromo(
+        data.promocionId,
+        { servicioId: data.servicioId, sedeId: data.sedeId, fecha: data.fecha, canal: data.canal, pacienteId: data.pacienteId },
+        precioLista,
+        data.codigoPromo,
+      );
+      montoDescuento = calc.descuento;
+      montoFinal = calc.final;
+    }
+
     // Creación + audit en la MISMA transacción (historial inmutable y atómico).
     // `withDeadlockRetry` + Serializable: bajo alta concurrencia dos INSERT de citas que
     // referencian filas padre compartidas por FK (profesional/sede/servicio/promoción)
@@ -1150,6 +1173,9 @@ router.post('/', requireAuth, requireScope('appointments:write'), async (req: Re
           idempotencyKey: idempotencyKey ?? null,
           paquetePacienteId: data.paquetePacienteId,
           promocionId: data.promocionId ?? null,
+          precioLista,
+          montoDescuento,
+          montoFinal,
           sesionNumero,
           comprobanteUrl:      data.comprobanteUrl      ?? null,
           comprobanteNombre:   data.comprobanteNombre   ?? null,
@@ -1348,6 +1374,25 @@ router.post('/combinada', requireAuth, requireScope('appointments:write'), async
   // create individual): si su servicio tiene subcategorías activas, debe venir una.
   const subcategoriaExtra = await resolverSubcategoria(data.extra.servicioId, data.extra.subcategoriaId);
 
+  // Precio de lista del BLOQUE (ancla + extra) + promoción. La promo vive en la PRINCIPAL y
+  // NO se combina con membresía. Se revalida estricto (debe calificar por el servicio ancla).
+  const precioListaBloque = (await precioListaDe(data.servicioId, subcategoriaAncla)) + (await precioListaDe(data.extra.servicioId, subcategoriaExtra));
+  let montoDescuentoBloque: number | null = null;
+  let montoFinalBloque = precioListaBloque;
+  if (data.promocionId) {
+    if (data.paquetePacienteId || data.extra.paquetePacienteId) {
+      throw new AppError('Una promoción no se combina con una membresía. Elige una u otra.', 409, 'PROMO_CON_MEMBRESIA');
+    }
+    const calc = await validarYCalcularPromo(
+      data.promocionId,
+      { servicioId: data.servicioId, sedeId: data.sedeId, fecha: data.fecha, canal: data.canal, pacienteId: data.pacienteId },
+      precioListaBloque,
+      data.codigoPromo,
+    );
+    montoDescuentoBloque = calc.descuento;
+    montoFinalBloque = calc.final;
+  }
+
   // Profesional del ANCLA: si la recepción no eligió una, se asigna automáticamente
   // (igual que una profilaxis normal "Sin preferencia"). El extra usa la suya o, por
   // defecto, la misma del ancla.
@@ -1412,7 +1457,11 @@ router.post('/combinada', requireAuth, requireScope('appointments:write'), async
             paquetePacienteId: data.paquetePacienteId, sesionNumero: sesionAncla,
             // FUENTE ÚNICA: la promo del bloque vive SOLO aquí (PRINCIPAL/profilaxis); la
             // SECUNDARIO va con promocionId null. Así analytics/conteos nunca duplican.
+            // Igual el precio del bloque (ancla+extra) y su descuento viven en la PRINCIPAL.
             promocionId: data.promocionId ?? null,
+            precioLista: precioListaBloque,
+            montoDescuento: montoDescuentoBloque,
+            montoFinal: montoFinalBloque,
             slotGrupoId, slotRol: 'PRINCIPAL',
           },
         });

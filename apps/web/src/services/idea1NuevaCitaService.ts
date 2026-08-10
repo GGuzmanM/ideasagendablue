@@ -24,11 +24,16 @@ import { calcularEdad } from './pacientesService';
 import { combinacionesApi } from '../api/combinaciones';
 import { usePaquetesPaciente } from '../api/paquetesSesiones';
 import { useCanales } from '../hooks/useCanales';
-import { usePromociones } from '../hooks/usePromociones';
+import { promocionesApi, calcularConPromo, type PromocionElegible } from '../api/promociones';
 import { useAuthStore } from '../stores/authStore';
 
 const toTitleCase = (str: string) =>
   str.replace(/\S+/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+
+// Catálogo/config que casi no cambia en una sesión (servicios, subcategorías, competencias,
+// combinaciones, membresías vendibles). Con staleTime largo, abrir el modal N veces NO vuelve
+// a pedirlos: se sirven de caché. Cualquier edición admin invalida por su propia mutación.
+const STALE_CONFIG = 10 * 60_000; // 10 min
 
 export interface MembresiaTpl {
   id: string;
@@ -94,7 +99,6 @@ export function useIdea1NuevaCitaForm({
   const qc = useQueryClient();
   const token = useAuthStore((s) => s.token);
   const { canales, canalesPaciente } = useCanales();
-  const { promociones } = usePromociones();
 
   const idempotencyKeyRef = useRef(uuidv4());
   const contratoImprimirRef = useRef<{ promoId: string; pacienteId: string } | null>(null);
@@ -136,6 +140,7 @@ export function useIdea1NuevaCitaForm({
   const [paquetePacienteId, setPaquetePacienteId] = useState('');
   const [canal, setCanal] = useState('recepcion');
   const [promocionId, setPromocionId] = useState('');
+  const [codigoPromo, setCodigoPromo] = useState(''); // cupón/convenio si la promo lo requiere
   const [profesionalId, setProfesionalId] = useState(profInicial);
   const [fechaCita, setFechaCita] = useState<string>(format(fecha, 'yyyy-MM-dd'));
   const [horaCita, setHoraCita] = useState<string>(horaInicial);
@@ -305,6 +310,7 @@ export function useIdea1NuevaCitaForm({
     queryKey: ['servicios', unidadNegocioId],
     queryFn: () => serviciosApi.listar({ unidadNegocioId, activo: true }),
     enabled: Boolean(unidadNegocioId),
+    staleTime: STALE_CONFIG,
   });
 
   const { data: subcategorias = [] } = useQuery({
@@ -315,6 +321,7 @@ export function useIdea1NuevaCitaForm({
       return res.filter((sc) => sc.activo);
     },
     enabled: Boolean(servicioId),
+    staleTime: STALE_CONFIG,
   });
 
   // Competencias activas entre profesionales y servicios de esta unidad de negocio
@@ -322,6 +329,7 @@ export function useIdea1NuevaCitaForm({
     queryKey: ['competencias', unidadNegocioId],
     queryFn: () => competenciasApi.listar({ unidadNegocioId }),
     enabled: Boolean(unidadNegocioId),
+    staleTime: STALE_CONFIG,
   });
 
   // Profesionales seleccionables que pueden atender ese servicio en esa fecha/sede
@@ -471,6 +479,7 @@ export function useIdea1NuevaCitaForm({
     queryKey: ['membresias-vendibles'],
     queryFn: () => api.get<MembresiaTpl[]>('/membresias/vendibles'),
     enabled: Boolean(pacienteSeleccionado?.id),
+    staleTime: STALE_CONFIG,
   });
 
   // Historial Genexis existe
@@ -517,6 +526,59 @@ export function useIdea1NuevaCitaForm({
       (c: any) => c.servicio?.id === extraServicioId && c.profesional?.id === profesionalId && c.activa,
     );
   }, [extraServicioId, profesionalId, competencias]);
+
+  // Total ESTIMADO a pagar (informativo). Precio de LISTA: usa el precio de la subcategoría
+  // si el servicio la tiene fijada, si no el del servicio; suma el extra combinado. NO aplica
+  // promociones ni membresía por ahora (se abordarán después). null = sin servicio elegido.
+  const precioListaEstimado = useMemo(() => {
+    if (!servicioId) return null;
+    const precio = (servId: string, subcatId?: string | null): number => {
+      if (subcatId) {
+        const sc = (subcategorias as any[]).find((s) => s.id === subcatId);
+        if (sc?.precioReferencial != null) return Number(sc.precioReferencial) || 0;
+      }
+      const s = (serviciosData as any[]).find((x) => x.id === servId);
+      return s?.precioReferencial != null ? Number(s.precioReferencial) || 0 : 0;
+    };
+    let t = precio(servicioId, subcategoriaId);
+    if (combinar && extraServicioId) t += precio(extraServicioId, null);
+    return t;
+  }, [servicioId, subcategoriaId, combinar, extraServicioId, subcategorias, serviciosData]);
+
+  // ─── Promociones (motor automático) ──────────────────────────────────────────────
+  // Una promo NUNCA se combina con una membresía (regla de negocio).
+  const usandoMembresia = Boolean(paquetePacienteId) || membSel.startsWith('inst:');
+
+  // Promos que CALIFICAN para esta cita (servicio+sede+fecha+canal+paciente). Se recalcula
+  // al cambiar el contexto. El backend revalida estricto al agendar.
+  const { data: promocionesElegibles = [] } = useQuery({
+    queryKey: ['promos-elegibles', servicioId, sedeId, fechaCita, canal, pacienteSeleccionado?.id],
+    queryFn: () => promocionesApi.elegibles({ servicio: servicioId, sede: sedeId, fecha: fechaCita, canal, paciente: pacienteSeleccionado?.id }),
+    enabled: Boolean(servicioId) && Boolean(sedeId) && Boolean(fechaCita) && !usandoMembresia,
+  });
+
+  const promoSeleccionada = useMemo(
+    () => (promocionesElegibles as PromocionElegible[]).find((p) => p.id === promocionId) ?? null,
+    [promocionesElegibles, promocionId],
+  );
+
+  // Limpia la promo si ya no califica (cambió servicio/sede/fecha/canal) o si se usó membresía.
+  useEffect(() => {
+    if (usandoMembresia && (promocionId || codigoPromo)) { setPromocionId(''); setCodigoPromo(''); return; }
+    if (promocionId && !(promocionesElegibles as PromocionElegible[]).some((p) => p.id === promocionId)) {
+      setPromocionId(''); setCodigoPromo('');
+    }
+  }, [usandoMembresia, promocionId, codigoPromo, promocionesElegibles]);
+
+  // Descuento y total FINAL (precio de lista − promo).
+  const descuentoPromo = useMemo(() => {
+    if (precioListaEstimado == null || !promoSeleccionada) return 0;
+    return calcularConPromo(precioListaEstimado, promoSeleccionada.tipo, promoSeleccionada.valor).descuento;
+  }, [precioListaEstimado, promoSeleccionada]);
+
+  const totalEstimado = precioListaEstimado == null
+    ? null
+    : Math.max(0, Math.round((precioListaEstimado - descuentoPromo) * 100) / 100);
 
   // Composición de la membresía seleccionada
   const membComposicion = useMemo(() => {
@@ -679,6 +741,7 @@ export function useIdea1NuevaCitaForm({
   const { data: configCombi } = useQuery({
     queryKey: ['combinaciones-config'],
     queryFn: () => combinacionesApi.config(),
+    staleTime: STALE_CONFIG,
   });
   const esServicioAncla = Boolean(configCombi?.servicioAnclaId) && servicioId === configCombi?.servicioAnclaId;
   const combinablesActivos = configCombi?.combinables ?? [];
@@ -696,11 +759,16 @@ export function useIdea1NuevaCitaForm({
     mutationFn: async (input: { pacienteId: string }) => {
       const key = idempotencyKeyRef.current;
 
-      // 1) Si se eligió activar una nueva membresía (tpl:)
+      // 1) Si se eligió activar una nueva membresía (tpl:). Defensa: solo se vende si el
+      // servicio de la cita AÚN coincide con el ítem elegido de la membresía. Así, si el
+      // usuario cambió de servicio tras elegir la membresía, NO se vende una membresía que
+      // ya no aplica (el front además limpia membSel al cambiar de servicio).
       let finalPaqueteId = paquetePacienteId;
-      if (membSel.startsWith('tpl:') && membItem !== '') {
+      const itemMemb = membItem !== '' ? membComposicion[Number(membItem)] : undefined;
+      const membCoincideServicio = !!itemMemb && itemMemb.servicioId === servicioId;
+      if (membSel.startsWith('tpl:') && membCoincideServicio) {
         const promoId = membSel.slice(4);
-        const item = membComposicion[Number(membItem)];
+        const item = itemMemb!;
         const resVenta = await api.post<{ id: string }>(`/membresias/${promoId}/vender`, {
           pacienteId: input.pacienteId,
           sedeId,
@@ -729,6 +797,7 @@ export function useIdea1NuevaCitaForm({
           horaInicio: horaCita,
           canal,
           promocionId: promocionId || undefined,
+          codigoPromo: promocionId && codigoPromo.trim() ? codigoPromo.trim() : undefined,
           comentarioRecepcion: comentarioRecepcion.trim() || undefined,
           paquetePacienteId: finalPaqueteId || undefined,
           extra: {
@@ -752,6 +821,7 @@ export function useIdea1NuevaCitaForm({
           horaInicio: horaCita,
           canal,
           promocionId: promocionId || undefined,
+          codigoPromo: promocionId && codigoPromo.trim() ? codigoPromo.trim() : undefined,
           comentarioRecepcion: comentarioRecepcion.trim() || undefined,
           paquetePacienteId: finalPaqueteId || undefined,
           comprobanteUrl: comprobante?.url,
@@ -936,6 +1006,13 @@ export function useIdea1NuevaCitaForm({
     setCanal,
     promocionId,
     setPromocionId,
+    codigoPromo,
+    setCodigoPromo,
+    promocionesElegibles,
+    promoSeleccionada,
+    usandoMembresia,
+    precioListaEstimado,
+    descuentoPromo,
     profesionalId,
     setProfesionalId,
     fechaCita,
@@ -964,11 +1041,11 @@ export function useIdea1NuevaCitaForm({
     profesionalesOcupados,
     profesionalesExtra,
     anclaHaceExtra,
+    totalEstimado,
     resultadosPacientes,
     buscandoPacientes,
     canales,
     canalesPaciente,
-    promociones,
     paquetesPaciente,
     membresiasActivas,
     tplsMembresiaActivas,

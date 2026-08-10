@@ -28,7 +28,7 @@ export function useSocket(sedeId: string | null) {
       // disponibilidad de horarios y los bloqueos/permisos. Así cualquier
       // cambio hecho por otro usuario (recepción / contact center) se ve al
       // instante, sin tener que refrescar manualmente.
-      const claves = ['citas', 'stats', 'disponibilidad', 'bloqueos-almuerzo', 'permisos-agenda'];
+      const claves = ['citas', 'stats', 'disponibilidad', 'bloqueos-almuerzo', 'permisos-agenda', 'ocupacion-externa'];
       qc.invalidateQueries({
         predicate: (q) => {
           const k = q.queryKey;

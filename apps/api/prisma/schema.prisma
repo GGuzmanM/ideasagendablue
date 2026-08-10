@@ -39,8 +39,9 @@ enum SlotRol {
 // Tipo de beneficio de una Promoción: precio fijo (S/ N), porcentaje de descuento (N%),
 // u OTRO (sin valor numérico, p. ej. campañas tipo "ARIE SCANNER 3D").
 enum TipoPromocion {
-  PRECIO_FIJO
-  PORCENTAJE
+  PRECIO_FIJO // PRECIO FINAL fijo del servicio/combo (ej. "Profilaxis a S/50")
+  PORCENTAJE // % de descuento sobre el precio de lista
+  MONTO_DESCUENTO // monto fijo de descuento en soles (ej. S/ 20 menos)
   OTRO
   MEMBRESIA // membresía con contabilidad de sesiones (constructor en Herramientas)
 }
@@ -71,9 +72,22 @@ model Promocion {
   nombre        String
   descripcion   String?
   tipo          TipoPromocion @default(OTRO)
-  valor         Decimal?      @db.Decimal(10, 2) // S/ (PRECIO_FIJO) o % (PORCENTAJE); null en OTRO
+  valor         Decimal?      @db.Decimal(10, 2) // precio final (PRECIO_FIJO), % (PORCENTAJE) o S/ descuento (MONTO_DESCUENTO); null en OTRO
   activo        Boolean       @default(true)
   orden         Int           @default(0)
+
+  // ─── Restricciones (Fase 1). En TODAS: null = SIN restricción (aplica a todo). ───────
+  serviciosIds        Json? // lista de servicioIds a los que aplica (null = todos)
+  sedesIds            Json? // lista de sedeIds donde es válida (null = todas)
+  canales             Json? // lista de canales (slug) donde aplica (null = todos)
+  vigenciaInicio      DateTime? @db.Date // válida desde (según la FECHA DE LA CITA)
+  vigenciaFin         DateTime? @db.Date // válida hasta (inclusive)
+  diasSemana          Json? // días habilitados 0=Dom..6=Sáb, ej. [2,3] = Mar/Mié (null = todos)
+  codigo              String? // convenio/cupón que recepción ingresa (null = no requiere)
+  soloPacientesNuevos Boolean   @default(false) // solo pacientes sin citas previas
+  cupoTotal           Int? // máx de usos en total (null = ilimitado)
+  limitePorPaciente   Int? // máx de usos por paciente (null = ilimitado)
+
   deletedAt     DateTime?
   creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime      @default(now())
@@ -743,6 +757,13 @@ model Cita {
   // Promoción aplicada a la cita (opcional). En un bloque combinado vive SOLO en la cita
   // PRINCIPAL (profilaxis); la SECUNDARIO lleva null. FK en Restrict (ver Promocion).
   promocionId             String?           @db.Uuid
+
+  // Snapshot de precio al agendar (caja/reportes). Se calculan server-side: precio de lista
+  // del servicio/combo, descuento aplicado por la promo y monto final a pagar. null = no
+  // calculado (citas viejas o sin precio de referencia).
+  precioLista             Decimal?          @db.Decimal(10, 2)
+  montoDescuento          Decimal?          @db.Decimal(10, 2)
+  montoFinal              Decimal?          @db.Decimal(10, 2)
 
   // Comprobante de pago anticipado (opcional)
   comprobanteUrl       String?

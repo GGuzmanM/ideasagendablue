@@ -65,7 +65,7 @@ export function LoginPage() {
       } catch {
         // Si falla, seguir igualmente sin bloquear acceso
       }
-      navigate('/idea1', { replace: true });
+      navigate('/AgendaPrincipal', { replace: true });
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Error al iniciar sesión');
     } finally {

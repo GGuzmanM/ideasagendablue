@@ -70,6 +70,13 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
     setCanal,
     promocionId,
     setPromocionId,
+    codigoPromo,
+    setCodigoPromo,
+    promocionesElegibles,
+    promoSeleccionada,
+    usandoMembresia,
+    precioListaEstimado,
+    descuentoPromo,
     profesionalId,
     setProfesionalId,
     fechaCita,
@@ -97,11 +104,11 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
     profesionalesOcupados,
     profesionalesExtra,
     anclaHaceExtra,
+    totalEstimado,
     resultadosPacientes,
     buscandoPacientes,
     canales,
     canalesPaciente,
-    promociones,
     paquetesPaciente,
     membresiasActivas,
     tplsMembresiaActivas,
@@ -636,6 +643,10 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
                 onChange={(e) => {
                   setServicioId(e.target.value);
                   setSubcategoriaId('');
+                  // Elegir un servicio a mano DESCARTA la membresía elegida: si no, cambiar de
+                  // servicio dejaba `membSel/membItem` (y el paquete ligado) pegados y se vendía
+                  // /consumía una membresía que el usuario ya no quería al agendar.
+                  if (membSel) { setMembSel(''); setMembItem(''); setPaquetePacienteId(''); }
                 }}
                 className="w-full appearance-none bg-surface-container-low border border-outline-variant rounded-xl px-4 py-3 font-body-md text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all font-medium text-on-surface"
               >
@@ -812,23 +823,41 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
               <label className="font-label-caps text-label-caps text-on-surface-variant text-[11px] font-bold">
                 PROMOCIÓN (OPCIONAL)
               </label>
-              <div className="relative">
-                <select
-                  value={promocionId}
-                  onChange={(e) => setPromocionId(e.target.value)}
-                  className="w-full appearance-none bg-surface-container-low border border-outline-variant rounded-xl px-4 py-3 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all text-on-surface font-medium"
-                >
-                  <option value="">— Ninguna —</option>
-                  {promociones.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.nombre}
-                    </option>
-                  ))}
-                </select>
-                <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-outline">
-                  expand_more
-                </span>
-              </div>
+              {usandoMembresia ? (
+                <div className="w-full bg-surface-container-low border border-outline-variant rounded-xl px-4 py-3 text-xs text-on-surface-variant">
+                  No aplica con membresía.
+                </div>
+              ) : (
+                <>
+                  <div className="relative">
+                    <select
+                      value={promocionId}
+                      onChange={(e) => { setPromocionId(e.target.value); setCodigoPromo(''); }}
+                      className="w-full appearance-none bg-surface-container-low border border-outline-variant rounded-xl px-4 py-3 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all text-on-surface font-medium"
+                    >
+                      <option value="">— Ninguna —</option>
+                      {(promocionesElegibles as any[]).map((p) => (
+                        <option key={p.id} value={p.id}>{p.nombre}</option>
+                      ))}
+                    </select>
+                    <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-outline">
+                      expand_more
+                    </span>
+                  </div>
+                  {(promocionesElegibles as any[]).length === 0 && (
+                    <p className="text-[10px] text-on-surface-variant/70">Sin promociones para este servicio/sede/fecha.</p>
+                  )}
+                  {promoSeleccionada?.requiereCodigo && (
+                    <input
+                      type="text"
+                      value={codigoPromo}
+                      onChange={(e) => setCodigoPromo(e.target.value)}
+                      placeholder="Código / convenio requerido"
+                      className="w-full bg-amber-50 border border-amber-300 rounded-xl px-4 py-2.5 text-sm text-on-surface outline-none focus:border-primary"
+                    />
+                  )}
+                </>
+              )}
             </div>
           </div>
 
@@ -1103,6 +1132,35 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
             />
           )}
         </div>
+
+        {/* Total estimado a pagar (informativo). Refleja el descuento de la promo elegida. */}
+        {totalEstimado != null && (
+          <div className="px-5 pt-3 shrink-0">
+            <div className="rounded-xl border border-primary/20 bg-primary/5 px-4 py-2.5 space-y-1">
+              {descuentoPromo > 0 && precioListaEstimado != null && (
+                <>
+                  <div className="flex items-center justify-between text-xs text-on-surface-variant">
+                    <span>Precio de lista</span>
+                    <span className="line-through">S/ {precioListaEstimado.toFixed(2)}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs font-semibold text-emerald-700">
+                    <span>Descuento {promoSeleccionada?.nombre ? `· ${promoSeleccionada.nombre}` : ''}</span>
+                    <span>− S/ {descuentoPromo.toFixed(2)}</span>
+                  </div>
+                </>
+              )}
+              <div className="flex items-center justify-between">
+                <div className="leading-tight">
+                  <p className="text-[11px] font-bold text-primary uppercase tracking-wide">Total a pagar</p>
+                  <p className="text-[10px] text-on-surface-variant/70">
+                    {usandoMembresia ? 'Precio de lista · la membresía se descuenta aparte' : 'Referencial · precio de lista con la promoción aplicada'}
+                  </p>
+                </div>
+                <span className="text-lg font-bold text-primary whitespace-nowrap">S/ {totalEstimado.toFixed(2)}</span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Footer */}
         <div className="p-5 border-t border-outline-variant/30 flex gap-3 bg-surface-container-low/40 shrink-0">

@@ -115,6 +115,8 @@ export function PopoverCita({ cita, onClose, onReprogramar }: PopoverCitaProps) 
   const citaExon = (esCombo && cita.slotRol === 'PRINCIPAL'
     ? (citasComboDia ?? []).find((c) => c.slotGrupoId === cita.slotGrupoId && c.slotRol === 'SECUNDARIO')
     : null) ?? cita;
+  // "(láser no aplicado)" solo aplica a láser/combo; en otros servicios el texto confunde.
+  const esLaserOCombo = esCombo || /l[áa]ser/i.test(cita.servicio?.nombre ?? '');
 
   const estadoMutation = useMutation({
     mutationFn: ({ estado, comentario }: { estado: string; comentario?: string }) =>
@@ -347,9 +349,9 @@ export function PopoverCita({ cita, onClose, onReprogramar }: PopoverCitaProps) 
             {citaExon.sesionExonerada ? (
               <div className="flex items-center justify-between gap-2 rounded-lg bg-rose-50 border border-rose-200 px-3 py-2">
                 <div className="text-xs text-rose-800 min-w-0">
-                  <span className="font-bold">🚫 Sesión de láser no descontada</span>
+                  <span className="font-bold">🚫 {esLaserOCombo ? 'Sesión de láser no descontada' : 'Sesión no descontada'}</span>
                   {citaExon.sesionExoneradaMotivo && <span className="text-rose-600"> · {citaExon.sesionExoneradaMotivo}</span>}
-                  <span className="block text-[11px] text-rose-500">Láser no aplicado — el paciente conserva la sesión.</span>
+                  <span className="block text-[11px] text-rose-500">{esLaserOCombo ? 'Láser no aplicado — el paciente conserva la sesión.' : 'El paciente conserva la sesión.'}</span>
                 </div>
                 <button
                   onClick={() => exonerarMut.mutate({ exonerar: false })}
@@ -360,14 +362,17 @@ export function PopoverCita({ cita, onClose, onReprogramar }: PopoverCitaProps) 
             ) : (
               <button
                 onClick={() => {
-                  const motivo = window.prompt('Motivo (opcional) — ej. el médico indicó no aplicar el láser:', 'Láser no aplicado');
+                  const ejemplo = esLaserOCombo
+                    ? 'Motivo (opcional) — ej. el médico indicó no aplicar el láser:'
+                    : 'Motivo (opcional) — ej. el servicio no se aplicó:';
+                  const motivo = window.prompt(ejemplo, esLaserOCombo ? 'Láser no aplicado' : '');
                   if (motivo === null) return; // canceló el prompt
                   exonerarMut.mutate({ exonerar: true, motivo: motivo.trim() || undefined });
                 }}
                 disabled={exonerarMut.isPending}
                 data-testid="popover-cita-btn-no-descontar"
                 className="w-full text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg py-2 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 transition-colors disabled:opacity-50"
-              >🚫 No descontar sesión (láser no aplicado)</button>
+              >🚫 {esLaserOCombo ? 'No descontar sesión (láser no aplicado)' : 'No descontar sesión'}</button>
             )}
           </div>
         )}

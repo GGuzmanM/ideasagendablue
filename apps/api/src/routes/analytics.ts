@@ -120,10 +120,32 @@ async function conLockRecalculo<T>(
   }
 }
 
-// PROPUESTA (no implementada — pendiente de aprobación): job programado de madrugada vía BullMQ
-// `repeatable` (p. ej. cron diario 03:00 America/Lima) que dispare el recálculo automáticamente,
-// para que agregados_diarios no dependa de disparos manuales. Reutilizaría este mismo candado
-// (`analytics:recalcular:lock`) para no colisionar con un recálculo manual en curso.
+/**
+ * Recálculo AUTOMÁTICO de agregados sobre una ventana móvil (se llama al arranque y en un
+ * intervalo desde index.ts). Sin esto, `agregados_diarios` solo cubría los días con actividad
+ * por la API (create/cancel/complete/mover), dejando fuera los datos cargados en bloque
+ * (seed/importación) o días sin mutaciones → Analytics mostraba "solo algunos días".
+ *
+ * Cubre pasado reciente + futuro agendado. Usa el MISMO candado que el recálculo manual: si hay
+ * uno en curso, este se salta (silencioso) en vez de colisionar. Nunca lanza.
+ */
+export async function recalcularAgregadosAuto(diasAtras = 180, diasAdelante = 120): Promise<number | null> {
+  const hoy = new Date();
+  const desde = new Date(hoy.getTime() - diasAtras * 86400000);
+  const hasta = new Date(hoy.getTime() + diasAdelante * 86400000);
+  try {
+    return await conLockRecalculo(
+      { accion: 'recalcular_agregados_auto', detalle: { diasAtras, diasAdelante, motivo: 'programado' } },
+      () => agregarRango(new Date(desde.toISOString().slice(0, 10) + 'T00:00:00'), new Date(hasta.toISOString().slice(0, 10) + 'T23:59:59')),
+    );
+  } catch (e) {
+    // 409 (ya en curso) u otro error → no romper el arranque/intervalo.
+    if (!(e instanceof AppError && e.code === 'RECALCULO_EN_CURSO')) {
+      console.warn('[analytics] recálculo automático falló:', e instanceof Error ? e.message : e);
+    }
+    return null;
+  }
+}
 
 router.post('/recalcular', requireAuth, requireCoordinadora, async (req, res) => {
   const { desde, hasta } = z.object({

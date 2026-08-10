@@ -46,7 +46,7 @@ import authRouter from './routes/auth';
 import webhooksRouter from './routes/webhooks';
 import resendWebhookRouter from './routes/resendWebhook';
 import { horariosRouter } from './routes/horarios';
-import analyticsRouter from './routes/analytics';
+import analyticsRouter, { recalcularAgregadosAuto } from './routes/analytics';
 import analyticsAgentesRouter from './routes/analyticsAgentes';
 import exportarRouter from './routes/exportar';
 import composicionSedeRouter from './routes/composicionSede';
@@ -178,6 +178,15 @@ if (outlookConfigurado()) {
     void reintentarOutlookFallidos().then((r) => { if (r.intentadas) console.log('[outlook] reintento:', r); });
   }, 10 * 60_000).unref();
 }
+
+// ─── Recálculo automático de agregados (Analytics) ───────────────────────────
+// agregados_diarios solo se actualizaba al crear/cambiar citas por la API → los datos
+// cargados en bloque (seed/importación) o días sin mutaciones quedaban fuera y Analytics
+// mostraba "solo algunos días". Recalculamos una ventana móvil (pasado reciente + futuro
+// agendado) al arrancar y cada 6 h. Usa el candado del recálculo manual (se salta si hay uno).
+const recalcAgregados = () => void recalcularAgregadosAuto().then((n) => { if (n != null) console.log(`[analytics] agregados recalculados: ${n} grupos`); });
+setTimeout(recalcAgregados, 20_000); // al arrancar (tras BD/redis listos)
+setInterval(recalcAgregados, 6 * 60 * 60_000).unref();
 
 // ─── Auto-completado de citas por tiempo ──────────────────────────────────────
 // Una cita marcada "Llegó" pasa sola a "Completada" tras AUTOCOMPLETAR_MIN (default 90) min.

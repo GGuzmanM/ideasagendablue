@@ -84,6 +84,7 @@ export interface CrearCitaInput {
   // Adjudicación manual de sesión (solo paquetes de origen Genexis)
   sesionNumeroManual?: number;
   promocionId?: string | null;
+  codigoPromo?: string;
   comprobanteUrl?: string;
   comprobanteNombre?: string;
   comprobanteMimeType?: string;
@@ -103,6 +104,7 @@ export interface CrearCitaCombinadaInput {
   comentarioRecepcion?: string;
   paquetePacienteId?: string;
   promocionId?: string | null; // promo del BLOQUE (la guarda el backend en la PRINCIPAL)
+  codigoPromo?: string;
   extra: {
     servicioId: string;
     profesionalId?: string; // default: misma profesional del ancla

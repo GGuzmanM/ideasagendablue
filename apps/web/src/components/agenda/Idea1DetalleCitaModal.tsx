@@ -86,6 +86,10 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
     SLOTS,
   } = useIdea1DetalleCita(props);
 
+  // "No descontar sesión" es genérico, pero la redacción "(láser no aplicado)" solo aplica a
+  // láser/combo. En una Profilaxis suelta el texto de láser confunde → wording context-aware.
+  const esLaserOCombo = esCombo || /l[áa]ser/i.test(cita.servicio?.nombre ?? '');
+
   return (
     <>
       <div
@@ -214,9 +218,11 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                 {citaExon.sesionExonerada ? (
                   <div className="flex items-center justify-between gap-2 rounded-lg bg-rose-50 border border-rose-200 p-2.5">
                     <div className="text-xs text-rose-800 min-w-0">
-                      <span className="font-bold">🚫 Sesión de láser no descontada</span>
+                      <span className="font-bold">🚫 {esLaserOCombo ? 'Sesión de láser no descontada' : 'Sesión no descontada'}</span>
                       {citaExon.sesionExoneradaMotivo && <span className="text-rose-600"> · {citaExon.sesionExoneradaMotivo}</span>}
-                      <span className="block text-[11px] text-rose-500 mt-0.5">Láser no aplicado — el paciente conserva la sesión.</span>
+                      <span className="block text-[11px] text-rose-500 mt-0.5">
+                        {esLaserOCombo ? 'Láser no aplicado — el paciente conserva la sesión.' : 'El paciente conserva la sesión.'}
+                      </span>
                     </div>
                     <button
                       onClick={() => exonerarMut.mutate({ exonerar: false })}
@@ -229,7 +235,10 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                 ) : (
                   <button
                     onClick={() => {
-                      const motivo = window.prompt('Motivo (opcional) — ej. el médico indicó no aplicar el láser:', 'Láser no aplicado');
+                      const ejemplo = esLaserOCombo
+                        ? 'Motivo (opcional) — ej. el médico indicó no aplicar el láser:'
+                        : 'Motivo (opcional) — ej. el servicio no se aplicó:';
+                      const motivo = window.prompt(ejemplo, esLaserOCombo ? 'Láser no aplicado' : '');
                       if (motivo === null) return;
                       exonerarMut.mutate({ exonerar: true, motivo: motivo.trim() || undefined });
                     }}
@@ -237,7 +246,7 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                     className="w-full text-xs font-semibold text-on-surface-variant bg-surface-container-lowest border border-outline-variant/40 rounded-xl py-2 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300 transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
                   >
                     <span className="material-symbols-outlined text-base">block</span>
-                    No descontar sesión (láser no aplicado)
+                    {esLaserOCombo ? 'No descontar sesión (láser no aplicado)' : 'No descontar sesión'}
                   </button>
                 )}
               </div>

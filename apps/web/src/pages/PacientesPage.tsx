@@ -4,6 +4,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Idea1NuevaCitaModal } from '../components/agenda/Idea1NuevaCitaModal';
+import { Idea1DetalleCitaModal } from '../components/agenda/Idea1DetalleCitaModal';
+import type { CitaResumen } from '../api/citas';
 import { useAgendaStore } from '../stores/agendaStore';
 import { RomboAlerta } from '../components/pacientes/RomboAlerta';
 import { CuadroFamiliares } from '../components/pacientes/CuadroFamiliares';
@@ -161,6 +163,9 @@ export function FichaPacientePage() {
   const agendaSedeId = useAgendaStore(s => s.sedeId);
   const agendaUnidadId = useAgendaStore(s => s.unidadNegocioId);
   const [agendarOpen, setAgendarOpen] = useState(false);
+  // Detalle de cita: clic en una cita del historial/próximas → abre el MISMO modal de la
+  // agenda (ver, confirmar, reprogramar, etc.) sin tener que buscarla en la agenda.
+  const [citaDetalle, setCitaDetalle] = useState<CitaResumen | null>(null);
 
   const {
     paciente,
@@ -204,6 +209,18 @@ export function FichaPacientePage() {
 
   const nombreCompleto = `${paciente.nombres} ${paciente.apellidoPaterno} ${paciente.apellidoMaterno}`.trim();
   const iniciales = `${paciente.nombres?.[0] ?? ''}${paciente.apellidoPaterno?.[0] ?? ''}`.toUpperCase();
+
+  // Abre el detalle de una cita (del historial o próximas). El modal refetchea la cita
+  // completa por id; le pasamos el paciente de la ficha para que la cabecera y las
+  // consultas internas tengan `paciente.id`, `sedeId` y `profesionalId` desde el arranque.
+  const abrirDetalle = (c: any) => {
+    setCitaDetalle({
+      ...c,
+      sedeId: c.sedeId ?? c.sede?.id,
+      profesionalId: c.profesionalId ?? c.profesional?.id ?? null,
+      paciente: { ...paciente },
+    } as unknown as CitaResumen);
+  };
 
   return (
     <div className="flex flex-col h-full overflow-hidden bg-background text-on-surface">
@@ -505,7 +522,15 @@ export function FichaPacientePage() {
               </div>
               <div className="divide-y divide-outline-variant/10">
                 {proximas.map(c => (
-                  <div key={c.id} className="flex items-center gap-4 px-8 py-4 hover:bg-primary/5 transition-colors">
+                  <div
+                    key={c.id}
+                    onClick={() => abrirDetalle(c)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); abrirDetalle(c); } }}
+                    title="Ver detalle de la cita"
+                    className="flex items-center gap-4 px-8 py-4 hover:bg-primary/5 transition-colors cursor-pointer"
+                  >
                     <div className="text-center min-w-[56px]">
                       <p className="text-[11px] uppercase text-on-surface-variant">{format(parseFechaLocal(c.fecha), 'EEE', { locale: es })}</p>
                       <p className="font-bold text-on-surface">{format(parseFechaLocal(c.fecha), 'd MMM', { locale: es })}</p>
@@ -552,7 +577,12 @@ export function FichaPacientePage() {
                   </thead>
                   <tbody className="divide-y divide-outline-variant/10">
                     {historial.map(c => (
-                      <tr key={c.id} className="hover:bg-primary/5 transition-colors">
+                      <tr
+                        key={c.id}
+                        onClick={() => abrirDetalle(c)}
+                        title="Ver detalle de la cita"
+                        className="hover:bg-primary/5 transition-colors cursor-pointer"
+                      >
                         <td className="px-8 py-5">
                           <div className="flex flex-col">
                             <span className="font-semibold text-on-surface whitespace-nowrap">{format(parseFechaLocal(c.fecha), 'd MMM yyyy', { locale: es })}</span>
@@ -636,6 +666,14 @@ export function FichaPacientePage() {
           }}
           onClose={() => setAgendarOpen(false)}
           onSuccess={() => qc.invalidateQueries({ queryKey: ['paciente', id] })}
+        />
+      )}
+
+      {/* Detalle de cita (mismo modal de la agenda) al clicar una cita del historial/próximas */}
+      {citaDetalle && (
+        <Idea1DetalleCitaModal
+          cita={citaDetalle}
+          onClose={() => { setCitaDetalle(null); qc.invalidateQueries({ queryKey: ['paciente', id] }); }}
         />
       )}
     </div>

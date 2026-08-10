@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { format, subDays, addDays } from 'date-fns';
 import { Idea1Sidebar } from '../components/layout/Idea1Sidebar';
+import { useSocket } from '../hooks/useSocket';
 import { Idea1NuevaCitaModal } from '../components/agenda/Idea1NuevaCitaModal';
 import { Idea1DetalleCitaModal } from '../components/agenda/Idea1DetalleCitaModal';
 import { Idea1ModalHorarioSemanal } from '../components/agenda/Idea1ModalHorarioSemanal';
@@ -71,6 +72,11 @@ export function Idea1AgendaPage() {
     handleMoverCita,
     isMoving,
   } = useIdea1AgendaData();
+
+  // Tiempo real: escucha eventos socket de la sede (cita creada/movida/cancelada, horario,
+  // movimiento de personal) e invalida las queries afectadas. Reemplaza el polling agresivo
+  // de 5s (que quedó solo como red de seguridad a 60s por si el socket cae).
+  useSocket(sedeId);
 
   // Estado del Modal de Nueva Cita y Detalle de Cita (Estilos Idea 1)
   const [isNuevaCitaOpen, setIsNuevaCitaOpen] = useState(false);

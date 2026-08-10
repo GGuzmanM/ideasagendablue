@@ -259,8 +259,10 @@ export async function calcularDisponibilidad(params: DisponibilidadParams): Prom
     const todosLosSlots = generarSlotsDelDia(horario.horaInicio, horario.horaFin, 30);
 
     for (const slot of todosLosSlots) {
-      // Regla de hora-entera desactivada (ver requiereHoraEntera): las citas de 1 h se
-      // ofrecen en cualquier slot de 30 min. Sigue siendo passthrough por si se reactiva.
+      // Regla de hora-entera desactivada (ver requiereHoraEntera en @limablue/shared): las
+      // citas de 1 h se ofrecen en cualquier slot de 30 min. Passthrough por si se reactiva.
+      // NOTA: el API resuelve @limablue/shared al DIST compilado en runtime → tras editar
+      // packages/shared hay que `npm run build` en packages/shared para que surta efecto.
       if (!horaInicioValidaParaDuracion(slot, duracion)) continue;
 
       const slotMinutos = timeToMinutes(slot);

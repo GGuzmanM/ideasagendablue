@@ -10,7 +10,7 @@ export interface NavItem {
 }
 
 export const idea1NavItems: NavItem[] = [
-  { to: '/idea1', label: 'Agenda', icon: 'calendar_today', permiso: 'agenda.ver' },
+  { to: '/AgendaPrincipal', label: 'Agenda', icon: 'calendar_today', permiso: 'agenda.ver' },
   { to: '/pacientes', label: 'Pacientes', icon: 'groups', permiso: 'pacientes.ver' },
   { to: '/horarios', label: 'Horarios y Restricciones', icon: 'schedule', permiso: 'horarios.ver' },
   { to: '/herramientas', label: 'Herramientas', icon: 'home_repair_service', permiso: ['herramientas.operativas', 'herramientas.estrategicas'] },
@@ -39,7 +39,7 @@ export function Idea1Sidebar() {
     <aside className="h-full sticky top-0 left-0 w-sidebar-expanded bg-[#0e4f9f] border-r border-outline-variant/20 flex flex-col py-6 px-4 z-30 shrink-0 select-none">
       {/* Header / Logo */}
       <div className="mb-6 px-3">
-        <Link to="/idea1" className="flex items-center gap-3 group">
+        <Link to="/AgendaPrincipal" className="flex items-center gap-3 group">
           <div className="w-12 h-12 flex items-center justify-center group-hover:scale-105 transition-transform" title="Limablue Agenda">
             <img src="/logo-login.png" alt="Limablue" className="w-full h-full object-contain" />
           </div>
@@ -57,7 +57,7 @@ export function Idea1Sidebar() {
       {/* Navigation items */}
       <nav className="idea1-sidebar-nav flex-1 space-y-1 overflow-y-auto custom-scrollbar pr-1">
         {items.map((item) => {
-          const isExactOrSub = location.pathname === item.to || (item.to !== '/' && item.to !== '/idea1' && location.pathname.startsWith(item.to + '/'));
+          const isExactOrSub = location.pathname === item.to || (item.to !== '/' && item.to !== '/AgendaPrincipal' && location.pathname.startsWith(item.to + '/'));
           const hasMoreSpecificMatch = items.some(other => other.to !== item.to && other.to.length > item.to.length && (location.pathname === other.to || location.pathname.startsWith(other.to + '/')));
           const isActive = isExactOrSub && !hasMoreSpecificMatch;
 

@@ -663,7 +663,9 @@ export function useIdea1AgendaData() {
         fecha: fechaStr(),
       }),
     enabled: !!sedeId && !!unidadNegocioId,
-    refetchInterval: 5_000,
+    // Tiempo real por socket (useSocket). El polling queda solo como RED DE SEGURIDAD por si
+    // el socket se cae: 60s en vez de 5s → ~12× menos carga por pestaña.
+    refetchInterval: 60_000,
   });
 
   // 3b. Ocupaciones externas (otras unidades) para pintar bloques fantasma.
@@ -678,7 +680,7 @@ export function useIdea1AgendaData() {
         fecha: fechaStr(),
       }),
     enabled: !!sedeId && !!unidadNegocioId,
-    refetchInterval: 5_000,
+    refetchInterval: 60_000, // red de seguridad; el refresco real viene por socket
   });
 
   // 4. Doctores/Profesionales desde la Base de Datos
