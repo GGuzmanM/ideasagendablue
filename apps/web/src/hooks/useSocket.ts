@@ -3,6 +3,7 @@ import { io, Socket } from 'socket.io-client';
 import { useQueryClient } from '@tanstack/react-query';
 import { addDays, format } from 'date-fns';
 import toast from 'react-hot-toast';
+import { useAuthStore } from '../stores/authStore';
 
 let socket: Socket | null = null;
 
@@ -12,7 +13,13 @@ export function useSocket(sedeId: string | null) {
 
   useEffect(() => {
     if (!socket) {
-      socket = io({ path: '/socket.io', transports: ['websocket'] });
+      // El token se pasa como función: socket.io la re-evalúa en cada (re)conexión, así
+      // siempre viaja el token vigente (tras login/refresh) sin recrear el socket.
+      socket = io({
+        path: '/socket.io',
+        transports: ['websocket'],
+        auth: (cb) => cb({ token: useAuthStore.getState().token ?? '' }),
+      });
     }
 
     if (sedeId && sedeId !== sedeRef.current) {

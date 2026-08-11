@@ -1,4 +1,4 @@
-import { Router, Request } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
@@ -9,11 +9,12 @@ import { seleccionarProfesionalOptimo, turnosDelDia } from '../services/disponib
 import { registrarAudit, auditEnTx } from '../services/audit';
 import { dispararWebhooks } from '../services/webhooks';
 import { emitirEventoCita } from '../socket';
-import { requireAuth, requireScope, requireRol } from '../middleware/auth';
+import { requireAuth, requireScope, requireRol, requireAcceso, assertSede, puedeTodasLasSedes } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { withDeadlockRetry, esDeadlockTransitorio, esConflictoDeSlot } from '../utils/dbRetry';
 import { agregarRango } from '../services/agregacion';
 import { uploadComprobante } from '../middleware/uploadComprobante';
+import { limpiarUrlArchivo } from '../middleware/firmaArchivos';
 import { construirIcsDeCita, logoAdjunto } from '../services/emailTemplates';
 import { sincronizarCitaOutlook, reintentarOutlookFallidos } from '../services/outlookCalendarService';
 import { alertasDePacientes } from '../services/alertaPaciente';
@@ -225,6 +226,26 @@ async function medicoAtiendeBaroEnSede(profesionalId: string, servicioId: string
   return !!reg;
 }
 
+// ─── Middleware: autorización por SEDE de una cita existente ──────────────────
+// Para rutas que MODIFICAN una cita por `:id` (o un bloque por `:slotGrupoId`): solo si el
+// usuario puede operar la sede de esa cita. admin/coordinadora → todas; recepción → solo sus
+// sedes; API keys sin restricción. El permiso (agenda.editar) lo exige `requireAcceso` aparte.
+async function guardSedeCita(req: Request, _res: Response, next: NextFunction): Promise<void> {
+  try {
+    if (req.apiKey) return next();
+    let sedeId: string | null = null;
+    if (req.params.id) {
+      const c = await prisma.cita.findUnique({ where: { id: req.params.id }, select: { sedeId: true } });
+      sedeId = c?.sedeId ?? null;
+    } else if (req.params.slotGrupoId) {
+      const c = await prisma.cita.findFirst({ where: { slotGrupoId: req.params.slotGrupoId }, select: { sedeId: true } });
+      sedeId = c?.sedeId ?? null;
+    }
+    if (sedeId) assertSede(req, sedeId);
+    next();
+  } catch (e) { next(e); }
+}
+
 // ─── Helper: el profesional no puede estar en dos lados a la vez ──────────────
 // Una persona ocupa su tiempo aunque la cita esté en otra unidad: cuenta tanto las
 // citas donde es el profesional de columna (profesionalId) como donde fue pedido
@@ -370,7 +391,14 @@ router.get('/', requireAuth, async (req, res) => {
     deletedAt: null,
   };
 
-  if (sedeId) where.sedeId = sedeId;
+  // Autorización por sede: si piden una sede concreta, debe estar permitida. Si NO piden sede
+  // (y no es admin/coordinadora), se acota a las sedes del usuario para no exponer todas.
+  if (sedeId) {
+    assertSede(req, sedeId);
+    where.sedeId = sedeId;
+  } else if (req.user && !puedeTodasLasSedes(req.user)) {
+    where.sedeId = { in: req.user.sedes };
+  }
   if (fecha) where.fecha = fechaDb(fecha);
   if (profesionalId) where.profesionalId = profesionalId;
   if (unidadNegocioId) where.unidadNegocioId = unidadNegocioId;
@@ -431,6 +459,7 @@ router.get('/', requireAuth, async (req, res) => {
 // booking ya existe en el backend (validarProfesionalLibre).
 router.get('/ocupacion-externa', requireAuth, async (req, res) => {
   const { sedeId, fecha, unidadNegocioId } = req.query as Record<string, string>;
+  assertSede(req, sedeId);
   if (!sedeId || !fecha || !unidadNegocioId) {
     throw new AppError('Faltan parámetros: sedeId, fecha, unidadNegocioId', 400);
   }
@@ -495,6 +524,7 @@ router.get('/ocupacion-externa', requireAuth, async (req, res) => {
 router.get('/ocupacion-dia', requireAuth, async (req, res) => {
   const { sedeId, fecha } = req.query as Record<string, string>;
   if (!sedeId || !fecha) throw new AppError('Faltan parámetros: sedeId, fecha', 400);
+  assertSede(req, sedeId);
 
   const citas = await prisma.cita.findMany({
     where: {
@@ -829,7 +859,7 @@ router.get('/:id', requireAuth, async (req, res) => {
 });
 
 // ─── POST /citas (crear cita) ─────────────────────────────────────────────────
-router.post('/', requireAuth, requireScope('appointments:write'), async (req: Request, res) => {
+router.post('/', requireAuth, requireAcceso('appointments:write', 'agenda.editar'), async (req: Request, res) => {
   const idempotencyKey = req.headers['idempotency-key'] as string | undefined;
 
   // Idempotencia: si ya existe una cita con esta key, devolverla
@@ -844,6 +874,7 @@ router.post('/', requireAuth, requireScope('appointments:write'), async (req: Re
   }
 
   const data = crearCitaSchema.parse(req.body);
+  assertSede(req, data.sedeId); // no crear citas en una sede que no te corresponde
   await validarCanal(data.canal);
   const usuarioId = req.user?.userId;
 
@@ -1177,7 +1208,7 @@ router.post('/', requireAuth, requireScope('appointments:write'), async (req: Re
           montoDescuento,
           montoFinal,
           sesionNumero,
-          comprobanteUrl:      data.comprobanteUrl      ?? null,
+          comprobanteUrl:      data.comprobanteUrl ? limpiarUrlArchivo(data.comprobanteUrl) : null,
           comprobanteNombre:   data.comprobanteNombre   ?? null,
           comprobanteMimeType: data.comprobanteMimeType ?? null,
           comprobanteSubidoPor: data.comprobanteUrl ? usuarioId : null,
@@ -1338,8 +1369,9 @@ async function calcularSesionNumeroTx(tx: Prisma.TransactionClient, paquetePacie
 // Crea ATÓMICAMENTE las 2 citas de un bloque combinado (profilaxis ancla + extra)
 // que comparten `slotGrupoId` y el mismo intervalo de 1 h. Anti-doble-booking
 // garantizado por los índices parciales `citas_slot_primario/secundario_unique`.
-router.post('/combinada', requireAuth, requireScope('appointments:write'), async (req: Request, res) => {
+router.post('/combinada', requireAuth, requireAcceso('appointments:write', 'agenda.editar'), async (req: Request, res) => {
   const data = crearCombinadaSchema.parse(req.body);
+  assertSede(req, data.sedeId); // no crear bloques en una sede que no te corresponde
   const usuarioId = req.user?.userId;
   await validarCanal(data.canal);
 
@@ -1526,7 +1558,7 @@ router.post('/combinada', requireAuth, requireScope('appointments:write'), async
 });
 
 // ─── PATCH /citas/:id/estado ──────────────────────────────────────────────────
-router.patch('/:id/estado', requireAuth, async (req, res) => {
+router.patch('/:id/estado', requireAuth, requireAcceso('appointments:write', 'agenda.editar'), guardSedeCita, async (req, res) => {
   const { estado, comentario, motivoCancelacion } = estadoSchema.parse(req.body);
   const usuarioId = req.user?.userId;
 
@@ -1950,7 +1982,7 @@ router.post('/reportar-enfermedad', requireAuth, requireRol('admin', 'coordinado
 });
 
 // ─── PATCH /citas/:id/mover ───────────────────────────────────────────────────
-router.patch('/:id/mover', requireAuth, async (req, res) => {
+router.patch('/:id/mover', requireAuth, requireAcceso('appointments:write', 'agenda.editar'), guardSedeCita, async (req, res) => {
   const data = moverCitaSchema.parse(req.body);
   const usuarioId = req.user?.userId;
 
@@ -2109,7 +2141,7 @@ router.patch('/:id/mover', requireAuth, async (req, res) => {
 // Mueve un BLOQUE COMBINADO completo (ambas citas comparten slot) a otro horario/profesional,
 // de forma atómica. No se puede mover cada mitad por separado: la 2da chocaría con la 1ra ya
 // movida al mismo slot. El chequeo de solape EXCLUYE las citas del propio grupo.
-router.patch('/grupo/:slotGrupoId/mover', requireAuth, async (req, res) => {
+router.patch('/grupo/:slotGrupoId/mover', requireAuth, requireAcceso('appointments:write', 'agenda.editar'), guardSedeCita, async (req, res) => {
   const data = moverCitaSchema.parse(req.body);
   const usuarioId = req.user?.userId;
   const slotGrupoId = req.params.slotGrupoId;
@@ -2208,7 +2240,7 @@ router.patch('/grupo/:slotGrupoId/mover', requireAuth, async (req, res) => {
 });
 
 // ─── DELETE /citas/:id (cancelar — NO pone deletedAt para conservar historial) ─
-router.delete('/:id', requireAuth, async (req, res) => {
+router.delete('/:id', requireAuth, requireAcceso('appointments:write', 'agenda.editar'), guardSedeCita, async (req, res) => {
   const cita = await prisma.cita.findUnique({ where: { id: req.params.id, deletedAt: null } });
   if (!cita) throw new AppError('Cita no encontrada', 404);
   if (ESTADOS_FINALES.includes(cita.estado)) {
@@ -2270,7 +2302,7 @@ const ESTADOS_OCUPAN_CONSULTORIO: Prisma.EnumEstadoCitaFilter = {
   notIn: ['cancelada', 'reprogramada'],
 };
 
-router.patch('/:id/consultorio', requireAuth, async (req, res) => {
+router.patch('/:id/consultorio', requireAuth, requireAcceso('appointments:write', 'agenda.editar'), guardSedeCita, async (req, res) => {
   const { consultorioNumero } = req.body as { consultorioNumero: number | null };
   const cita = await prisma.cita.findUnique({ where: { id: req.params.id, deletedAt: null } });
   if (!cita) throw new AppError('Cita no encontrada', 404);
@@ -2342,7 +2374,7 @@ router.patch('/:id/consultorio', requireAuth, async (req, res) => {
 // AGREGA una entrada al hilo append-only (en cualquier estado). YA NO reemplaza:
 // dos usuarios comentando a la vez generan dos entradas → imposible pisarse (fin de M2).
 // Se mantiene el verbo/ruta para no romper el frontend; internamente es un INSERT.
-router.patch('/:id/comentario', requireAuth, async (req, res) => {
+router.patch('/:id/comentario', requireAuth, requireAcceso('appointments:write', 'agenda.editar'), guardSedeCita, async (req, res) => {
   const { comentario } = z.object({ comentario: z.string().max(2000) }).parse(req.body);
   const cita = await prisma.cita.findUnique({ where: { id: req.params.id, deletedAt: null } });
   if (!cita) throw new AppError('Cita no encontrada', 404);
@@ -2367,7 +2399,7 @@ router.patch('/:id/comentario', requireAuth, async (req, res) => {
 
 // ─── PATCH /citas/:id/canal ───────────────────────────────────────────────────
 // Canal de reserva (de dónde viene el cliente). Editable en cualquier estado.
-router.patch('/:id/canal', requireAuth, async (req, res) => {
+router.patch('/:id/canal', requireAuth, requireAcceso('appointments:write', 'agenda.editar'), guardSedeCita, async (req, res) => {
   const { canal } = z.object({ canal: z.string() }).parse(req.body);
   await validarCanal(canal);
   const cita = await prisma.cita.findUnique({ where: { id: req.params.id, deletedAt: null } });
@@ -2395,7 +2427,7 @@ router.patch('/:id/canal', requireAuth, async (req, res) => {
 // Set/limpiar la promoción de una cita. En un bloque combinado, la promo SIEMPRE se escribe
 // en la cita PORTADORA (PRINCIPAL/profilaxis), aunque se edite desde la secundaria. Emite
 // evento para AMBAS citas del bloque para que la UI refresque.
-router.patch('/:id/promocion', requireAuth, async (req, res) => {
+router.patch('/:id/promocion', requireAuth, requireAcceso('appointments:write', 'agenda.editar'), guardSedeCita, async (req, res) => {
   const { promocionId } = z.object({ promocionId: z.string().uuid().nullable() }).parse(req.body);
   const cita = await prisma.cita.findUnique({
     where: { id: req.params.id, deletedAt: null },
@@ -2432,6 +2464,7 @@ router.patch('/:id/promocion', requireAuth, async (req, res) => {
 
 // ─── GET /citas/sede/:sedeId/stats ─────────────────────────────────────────────
 router.get('/sede/:sedeId/stats', requireAuth, async (req, res) => {
+  assertSede(req, req.params.sedeId);
   const { fecha } = req.query as { fecha?: string };
   const fechaDate = fecha ? fechaDb(fecha) : new Date();
   fechaDate.setHours(0, 0, 0, 0);

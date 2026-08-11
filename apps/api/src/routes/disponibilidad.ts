@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { requireAuth, requireScope } from '../middleware/auth';
+import { requireAuth, requireScope, assertSede } from '../middleware/auth';
 import { calcularDisponibilidad } from '../services/disponibilidad';
 import { AppError } from '../middleware/errorHandler';
 import { prisma } from '../db';
@@ -56,6 +56,7 @@ const querySchema = z.object({
  */
 router.get('/', requireAuth, requireScope('availability:read'), async (req, res) => {
   const params = querySchema.parse(req.query);
+  assertSede(req, params.sede); // recepción no consulta disponibilidad de otra sede
 
   // Validar que la unidad opera en la sede
   const sedeUnidad = await prisma.sedeUnidadNegocio.findUnique({

@@ -11,7 +11,6 @@ process.env.TZ = 'UTC';
 
 import express from 'express';
 import http from 'http';
-import path from 'path';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
@@ -27,6 +26,7 @@ import { recuperarRecordatoriosProgramados } from './services/recordatorioServic
 import { iniciarVideoWorker, programarBarridoVideos } from './queue/videoQueue';
 import { outlookConfigurado, reintentarOutlookFallidos } from './services/outlookCalendarService';
 import { errorHandler } from './middleware/errorHandler';
+import { firmarUrlsRespuesta, servirUploadFirmado } from './middleware/firmaArchivos';
 import { swaggerSpec } from './swagger';
 
 import citasRouter, { autocompletarCitasPorTiempo } from './routes/citas';
@@ -92,8 +92,13 @@ app.use('/api/v1/webhooks/resend', resendWebhookRouter);
 app.use(express.json({ limit: '10mb' }));
 app.use(morgan('combined'));
 
-// ─── Archivos estáticos (comprobantes de pago) ────────────────────────────────
-app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+// Firma las URLs de archivos privados (/uploads) en TODA respuesta JSON (punto único).
+app.use(firmarUrlsRespuesta);
+
+// ─── Archivos privados (comprobantes de pago, contratos) ──────────────────────
+// Ya NO se sirven con express.static público: llevan datos personales. Solo se
+// entregan con una firma HMAC válida y vigente en la URL (ver firmaArchivos.ts).
+app.use('/uploads', servirUploadFirmado);
 
 // ─── Swagger ──────────────────────────────────────────────────────────────────
 app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {

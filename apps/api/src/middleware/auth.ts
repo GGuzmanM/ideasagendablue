@@ -44,6 +44,54 @@ export async function getPermisosRol(rolNombre: string): Promise<string[]> {
   return rol?.permisos ?? [];
 }
 
+// ─── Autorización por SEDE ─────────────────────────────────────────────────────
+// Roles que operan TODAS las sedes (coordinación general). El resto (recepción,
+// contact center) solo puede operar/leer las sedes de su token. Espeja la lógica del
+// frontend (authStore.puedeAccederSede) → cerrar el hueco de la API directa sin romper la UI.
+const ROLES_TODAS_SEDES = ['admin', 'coordinadora_sedes'];
+
+export function puedeTodasLasSedes(user: AuthPayload): boolean {
+  return ROLES_TODAS_SEDES.includes(user.rol);
+}
+
+export function sedeAutorizada(user: AuthPayload, sedeId: string): boolean {
+  if (puedeTodasLasSedes(user)) return true;
+  return user.sedes.includes(sedeId);
+}
+
+/**
+ * Exige que el request pueda operar/leer la sede indicada. Las API keys (integraciones) NO
+ * se restringen por sede. Los usuarios: admin/coordinadora → todas; resto → solo sus sedes.
+ * `sedeId` vacío/undefined → no aplica (ruta sin sede específica).
+ */
+export function assertSede(req: Request, sedeId: string | null | undefined): void {
+  if (req.apiKey) return;
+  if (!req.user) throw new AppError('No autenticado', 401, 'UNAUTHORIZED');
+  if (!sedeId) return;
+  if (!sedeAutorizada(req.user, sedeId)) {
+    throw new AppError('No tienes acceso a esa sede', 403, 'SEDE_NO_AUTORIZADA');
+  }
+}
+
+/**
+ * Guard de acceso combinado: las API keys pasan por SCOPE; los usuarios por PERMISO real.
+ * Reemplaza a `requireScope` en rutas de escritura, donde `requireScope` dejaba pasar a
+ * CUALQUIER usuario logueado (no validaba el permiso).
+ */
+export function requireAcceso(scope: string, permiso: string) {
+  return (req: Request, _res: Response, next: NextFunction) => {
+    if (req.apiKey) {
+      if (req.apiKey.scopes.includes(scope)) return next();
+      throw new AppError(`Scope requerido: ${scope}`, 403, 'FORBIDDEN');
+    }
+    if (req.user) {
+      if (req.user.permisos?.includes(permiso)) return next();
+      throw new AppError(`Necesitas el permiso "${permiso}" para esta acción`, 403, 'SIN_PERMISO');
+    }
+    throw new AppError('No autenticado', 401, 'UNAUTHORIZED');
+  };
+}
+
 export async function requireAuth(req: Request, _res: Response, next: NextFunction): Promise<void> {
   const authHeader = req.headers.authorization;
 

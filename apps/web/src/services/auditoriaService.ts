@@ -134,6 +134,7 @@ export const ENTIDAD_LABEL: Record<string, string> = {
   paquete_paciente: 'Paquete del paciente',
   sede: 'Sede',
   usuario: 'Usuario',
+  auth: 'Autenticación',
   promocion: 'Promoción',
   canal: 'Canal',
   subcategoria: 'Subcategoría',
@@ -177,6 +178,18 @@ function etiquetaMomentoAudit(momento?: string, valor?: number, unidad?: string)
 export function resumenLog(log: AuditLog, nombresPorId: Record<string, string> = {}): { titulo: string; subtitulo?: string } {
   const contexto = (log.despues || log.antes || {}) as Record<string, unknown>;
   const etiqueta = etiquetaEntidad(log.entidad);
+
+  // Intento de sesión FALLIDO (fuerza bruta / credencial equivocada)
+  if (log.accion.toUpperCase() === 'LOGIN_FALLIDO') {
+    const email = (contexto.email as string) || log.usuario?.email || '—';
+    const motivos: Record<string, string> = {
+      usuario_inexistente: 'correo no registrado',
+      usuario_inactivo: 'cuenta inactiva',
+      password_incorrecto: 'contraseña incorrecta',
+    };
+    const motivo = motivos[contexto.motivo as string] ?? (contexto.motivo as string) ?? 'credenciales inválidas';
+    return { titulo: `Intento de sesión fallido · ${email}`, subtitulo: motivo };
+  }
 
   // Login / Inicio de sesión
   if (log.accion.toLowerCase().includes('login') || (log.entidad === 'usuario' && log.accion.toUpperCase() === 'LOGIN')) {
