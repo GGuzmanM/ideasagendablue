@@ -1,20 +1,37 @@
 version: '3.9'
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Infraestructura de Limablue Agenda: Postgres + Redis.
+#
+# CANÓNICO (producción y este compose): base = "Agendav2", usuario = "postgres".
+# Antes este archivo declaraba limablue/limablue_agenda@5432 (la BD VIEJA que ya no se
+# usa). La BD real con TODOS los datos y migraciones nuevas es "Agendav2". El `.env`
+# (DATABASE_URL) debe apuntar aquí.
+#
+# ⚠️ En la máquina de desarrollo actual, Postgres corre NATIVO (PG18, puerto 5433) por
+#    pgAdmin — NO este contenedor. Este compose es para el SERVIDOR de producción (o para
+#    quien quiera levantar todo con Docker). Si lo usas, ajusta el puerto del .env a 5432.
+#
+# La contraseña de abajo es un PLACEHOLDER: cámbiala en el servidor por una fuerte y pon
+# la misma en DATABASE_URL del .env. En un volumen NUEVO, POSTGRES_DB/USER/PASSWORD solo
+# se aplican en la PRIMERA inicialización (con datos ya existentes no se reescriben).
+# ─────────────────────────────────────────────────────────────────────────────
+
 services:
   postgres:
     image: postgres:16-alpine
     container_name: limablue_postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: limablue
-      POSTGRES_PASSWORD: limablue2025
-      POSTGRES_DB: limablue_agenda
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-CAMBIA_ESTA_CLAVE}
+      POSTGRES_DB: ${POSTGRES_DB:-Agendav2}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - limablue_pg_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U limablue -d limablue_agenda"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-Agendav2}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -24,7 +41,7 @@ services:
     container_name: limablue_redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s

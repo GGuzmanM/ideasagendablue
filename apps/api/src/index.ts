@@ -184,6 +184,14 @@ if (outlookConfigurado()) {
   }, 10 * 60_000).unref();
 }
 
+// ─── Conexión temprana a Redis ────────────────────────────────────────────────
+// Con `lazyConnect: true` el cliente no conecta hasta el primer comando. Como en dev
+// nada más toca Redis al arrancar, ese primer comando sería el recálculo de agregados de
+// abajo, cuyo SET salía a un socket a medio conectar y —con `enableOfflineQueue: false`—
+// fallaba con "Stream isn't writeable" (cosmético: caía en fail-open). Conectando aquí,
+// el socket ya está listo cuando corre el recalc. Si Redis no está, se ignora en silencio.
+void redis.connect().catch(() => { /* Redis no disponible al arrancar: se opera en fail-open */ });
+
 // ─── Recálculo automático de agregados (Analytics) ───────────────────────────
 // agregados_diarios solo se actualizaba al crear/cambiar citas por la API → los datos
 // cargados en bloque (seed/importación) o días sin mutaciones quedaban fuera y Analytics
