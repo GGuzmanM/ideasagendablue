@@ -23,11 +23,17 @@ function FormularioProfesional({
   const [tipo, setTipo] = useState(inicial?.tipo ?? 'podologa');
   const [unidadNegocioId, setUnidadNegocioId] = useState(inicial?.unidadNegocioId ?? '');
   const [colegiatura, setColegiatura] = useState(inicial?.colegiatura ?? '');
+  const [emailAgenda, setEmailAgenda] = useState(inicial?.emailAgenda ?? '');
   const [colorAvatar, setColorAvatar] = useState(inicial?.colorAvatar ?? AVATAR_COLORES[0]);
 
   const submit = () => {
     if (!nombres.trim() || !apellidos.trim() || !unidadNegocioId) {
       toast.error('Completa nombres, apellidos y área');
+      return;
+    }
+    const correo = emailAgenda.trim();
+    if (correo && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo)) {
+      toast.error('El correo de agenda no es válido');
       return;
     }
     onGuardar({
@@ -36,6 +42,7 @@ function FormularioProfesional({
       tipo,
       unidadNegocioId,
       colegiatura: colegiatura.trim() || undefined,
+      emailAgenda: correo, // '' → el backend lo normaliza a null (quita la sincronización)
       colorAvatar,
     });
   };
@@ -85,6 +92,22 @@ function FormularioProfesional({
                 onChange={e => setColegiatura(e.target.value)}
                 placeholder="Ej: CMP 12345, COP 9876, CTMP 4567..."
               />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-semibold text-slate-500 mb-1">
+                Correo de agenda / calendario (Opcional)
+              </label>
+              <input
+                type="email"
+                className="input w-full text-sm"
+                value={emailAgenda}
+                onChange={e => setEmailAgenda(e.target.value)}
+                placeholder="Ej: nombre@limablue.com"
+              />
+              <p className="text-[11px] text-slate-400 mt-1 leading-snug">
+                Si lo defines, cada cita que se le agende se enviará automáticamente a ese
+                calendario (invitación que Google/Outlook agregan solos). Déjalo vacío para no sincronizar.
+              </p>
             </div>
             <div className="col-span-2">
               <label className="block text-xs font-semibold text-slate-500 mb-1.5">Color de avatar</label>
@@ -279,6 +302,7 @@ export function PodologasPage() {
             tipo: profEditando.tipo,
             unidadNegocioId: profEditando.unidadNegocio.id,
             colegiatura: profEditando.colegiatura ?? '',
+            emailAgenda: profEditando.emailAgenda ?? '',
             colorAvatar: profEditando.colorAvatar,
           } : undefined}
           unidades={unidades}

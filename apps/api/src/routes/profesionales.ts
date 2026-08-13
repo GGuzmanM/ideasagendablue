@@ -126,6 +126,7 @@ router.get('/', requireAuth, async (req, res) => {
     apellidos: p.apellidos,
     tipo: p.tipo,
     colegiatura: p.colegiatura ?? null,
+    emailAgenda: p.emailAgenda ?? null,
     colorAvatar: p.colorAvatar,
     activo: p.activo,
     unidadNegocio: p.unidadNegocio,
@@ -276,12 +277,16 @@ const profesionalSchema = z.object({
   tipo: z.enum(['podologa', 'medico', 'fisioterapeuta']),
   unidadNegocioId: z.string().uuid(),
   colegiatura: z.string().optional().nullable(),
+  // Correo de agenda personal del profesional. Si está definido, sus citas se sincronizan a
+  // su calendario (invitación .ics; ver outlookCalendarService). '' se normaliza a null abajo.
+  emailAgenda: z.string().email('Correo de agenda inválido').or(z.literal('')).nullable().optional(),
   colorAvatar: z.string().optional(),
   activo: z.boolean().optional(),
 });
 
 router.post('/', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (req, res) => {
   const data = profesionalSchema.parse(req.body);
+  if (data.emailAgenda === '') data.emailAgenda = null; // vacío = sin sincronización de calendario
   const profesional = await prisma.profesional.create({
     data: { ...data, creadoPor: req.user?.userId },
     include: { unidadNegocio: { select: { id: true, nombre: true, color: true, modoReserva: true } } },
@@ -296,6 +301,7 @@ router.post('/', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (
 
 router.patch('/:id', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (req, res) => {
   const data = profesionalSchema.partial().parse(req.body);
+  if (data.emailAgenda === '') data.emailAgenda = null; // vacío = quitar la sincronización
   // Capturar el estado ANTES para diffear en auditoría.
   const antes = await prisma.profesional.findUnique({
     where: { id: req.params.id, deletedAt: null },

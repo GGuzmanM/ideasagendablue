@@ -2,7 +2,7 @@
 
 Guía para poner el sistema en producción en un **servidor Windows** desde cero, migrando la
 BD real (`Agendav2`) y la historia de Genexis. Adapta el runbook original (`DEPLOY.md`, escrito
-para macOS/launchd) a Windows.
+para macOS/launchd) a Windows.x
 
 > **Fuente de verdad de los datos:** la BD `Agendav2` (PostgreSQL local del equipo de desarrollo,
 > puerto 5433). La BD vieja del puerto 5432 (`limablue_agenda`) **NO se usa**.

@@ -194,6 +194,25 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
 
           {/* SCROLLABLE CONTENT */}
           <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6">
+            {/* Banner de reprogramación (solo lectura): de qué día/hora a cuál y por quién */}
+            {cita.reprogramacion && (
+              <div className="flex items-start gap-2.5 rounded-xl bg-indigo-50 border border-indigo-200 px-3.5 py-2.5">
+                <span className="material-symbols-outlined text-indigo-600 text-lg shrink-0">event_repeat</span>
+                <div className="text-xs text-indigo-900 min-w-0">
+                  <p className="font-bold">Cita reprogramada</p>
+                  <p className="text-indigo-700 mt-0.5">
+                    Del <b>{format(new Date(cita.reprogramacion.deFecha + 'T12:00:00'), "EEEE d 'de' MMMM", { locale: es })}</b>
+                    {cita.reprogramacion.deHora ? ` · ${cita.reprogramacion.deHora}` : ''} al{' '}
+                    <b>{format(new Date(cita.reprogramacion.aFecha + 'T12:00:00'), "EEEE d 'de' MMMM", { locale: es })}</b>
+                    {cita.reprogramacion.aHora ? ` · ${cita.reprogramacion.aHora}` : ''}
+                  </p>
+                  <p className="text-[11px] text-indigo-500 mt-0.5">
+                    Reprogramada por {cita.reprogramacion.por} · {fmtComentario(cita.reprogramacion.en)}
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Paquetes y Membresías Activas */}
             {paquetesPac && paquetesPac.some((p) => p.estado === 'ACTIVO') && (
               <div className="bg-surface-container-low/60 rounded-xl p-3 border border-outline-variant/20 space-y-1">
@@ -478,6 +497,17 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                   </button>
                 )}
               </div>
+            )}
+
+            {/* REPROGRAMAR — solo AGENDADAS: enviar a otro día/hora con validación de disponibilidad */}
+            {estadoNorm === 'agendada' && !reprogramando && (
+              <button
+                onClick={() => setReprogramando(true)}
+                className="w-full flex items-center justify-center gap-2 p-3 border border-primary/40 text-primary bg-primary/5 hover:bg-primary/10 rounded-2xl transition-all font-bold text-sm cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-lg">event_repeat</span>
+                Reprogramar cita (otro día)
+              </button>
             )}
 
             {/* SELECCIÓN DE CONSULTORIO */}

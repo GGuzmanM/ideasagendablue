@@ -20,6 +20,7 @@ export interface FormProfesional {
   tipo: string;
   unidadNegocioId: string;
   colegiatura?: string;
+  emailAgenda?: string;
   colorAvatar: string;
 }
 

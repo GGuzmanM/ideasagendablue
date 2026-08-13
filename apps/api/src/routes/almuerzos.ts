@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../db';
 import { requireAuth } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
-import { crearAlmuerzo, esDomingo } from '../services/almuerzoService';
+import { crearAlmuerzo, esFinDeSemana } from '../services/almuerzoService';
 import { registrarAudit } from '../services/audit';
 
 const router = Router();
@@ -21,7 +21,7 @@ router.get('/', requireAuth, async (req, res) => {
     : new Date().toISOString().split('T')[0]!;
   const fechaStart = new Date(`${fechaIso}T00:00:00.000Z`);
   const fechaEnd = new Date(`${fechaIso}T23:59:59.999Z`);
-  const esDom = esDomingo(fechaIso);
+  const esFinde = esFinDeSemana(fechaIso); // sáb/dom: solo aplican almuerzos puntuales
 
   const bloqueos = await prisma.bloqueoAgenda.findMany({
     where: {
@@ -30,7 +30,7 @@ router.get('/', requireAuth, async (req, res) => {
       deletedAt: null,
       fechaInicio: { lte: fechaEnd },
       fechaFin: { gte: fechaStart },
-      ...(esDom ? { esRecurrente: false } : {}),
+      ...(esFinde ? { esRecurrente: false } : {}),
     },
     include: {
       profesional: {
@@ -54,7 +54,7 @@ router.get('/profesional/:profesionalId', requireAuth, async (req, res) => {
     : new Date().toISOString().split('T')[0]!;
   const fechaStart = new Date(`${fechaIso}T00:00:00.000Z`);
   const fechaEnd = new Date(`${fechaIso}T23:59:59.999Z`);
-  const esDom = esDomingo(fechaIso);
+  const esFinde = esFinDeSemana(fechaIso); // sáb/dom: solo aplican almuerzos puntuales
 
   const bloqueo = await prisma.bloqueoAgenda.findFirst({
     where: {
@@ -64,7 +64,7 @@ router.get('/profesional/:profesionalId', requireAuth, async (req, res) => {
       deletedAt: null,
       fechaInicio: { lte: fechaEnd },
       fechaFin: { gte: fechaStart },
-      ...(esDom ? { esRecurrente: false } : {}),
+      ...(esFinde ? { esRecurrente: false } : {}),
     },
     include: {
       creadoPorUsuario: { select: { id: true, nombre: true } },

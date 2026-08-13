@@ -13,13 +13,25 @@ export function esDomingo(fechaStr: string): boolean {
   return date.getUTCDay() === 0;
 }
 
+/**
+ * true si la fecha (YYYY-MM-DD) cae en FIN DE SEMANA (sábado o domingo). Los almuerzos
+ * RECURRENTES no aplican en fin de semana: los sábados se trabaja hasta las 14:00 SIN
+ * almuerzo, y el domingo la sede está cerrada (salvo excepción). Los consumidores usan
+ * esto para que un almuerzo recurrente no se pinte en sábado ni domingo.
+ */
+export function esFinDeSemana(fechaStr: string): boolean {
+  const [y, m, d] = fechaStr.split('-').map(Number);
+  const dow = new Date(Date.UTC(y!, m! - 1, d!)).getUTCDay();
+  return dow === 0 || dow === 6;
+}
+
 export async function tieneAlmuerzoEnSede(
   profesionalId: string,
   sedeId: string,
   fecha?: string,
 ): Promise<boolean> {
   const f = getFechaIso(fecha);
-  if (esDomingo(f)) return false;
+  if (esFinDeSemana(f)) return false; // sábados y domingos no llevan almuerzo recurrente
 
   const ini = new Date(`${f}T00:00:00.000Z`);
   const fin = new Date(`${f}T23:59:59.999Z`);

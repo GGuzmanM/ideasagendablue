@@ -61,6 +61,7 @@ export interface Profesional {
   apellidos: string;
   tipo: string;
   colegiatura?: string | null;
+  emailAgenda?: string | null;
   colorAvatar: string;
   activo: boolean;
   iniciales: string;
@@ -172,10 +173,10 @@ export const profesionalesApi = {
   setDiaEspecial: (data: { profesionalId: string; sedeId: string; fechas: string[]; viene: boolean; horaInicio?: '08:00' | '09:00' }) =>
     api.post<{ resultados: { fecha: string; accion: string }[]; errores: { fecha: string; error: string }[] }>('/profesionales/dia-especial/set', data),
 
-  crear: (data: { nombres: string; apellidos: string; tipo: string; unidadNegocioId: string; colorAvatar?: string }) =>
+  crear: (data: { nombres: string; apellidos: string; tipo: string; unidadNegocioId: string; colorAvatar?: string; colegiatura?: string; emailAgenda?: string }) =>
     api.post<Profesional>('/profesionales', data),
 
-  editar: (id: string, data: Partial<{ nombres: string; apellidos: string; tipo: string; unidadNegocioId: string; colorAvatar: string; activo: boolean }>) =>
+  editar: (id: string, data: Partial<{ nombres: string; apellidos: string; tipo: string; unidadNegocioId: string; colorAvatar: string; activo: boolean; colegiatura: string; emailAgenda: string }>) =>
     api.patch<Profesional>(`/profesionales/${id}`, data),
 };
 

@@ -162,8 +162,8 @@ async function validarSinBloqueo(profesionalId: string, fecha: string, horaInici
     }
   }
 
-  // Almuerzos vigentes en la fecha (los domingos solo aplican los almuerzos puntuales de esa fecha).
-  const esDom = fechaPunto.getUTCDay() === 0;
+  // Almuerzos vigentes en la fecha (en fin de semana solo aplican los almuerzos puntuales de esa fecha).
+  const esFinde = [0, 6].includes(fechaPunto.getUTCDay());
   const almuerzos = await prisma.bloqueoAgenda.findMany({
     where: {
       profesionalId,
@@ -171,7 +171,7 @@ async function validarSinBloqueo(profesionalId: string, fecha: string, horaInici
       tipo: 'ALMUERZO',
       fechaInicio: { lte: fechaPunto },
       fechaFin: { gte: fechaPunto },
-      ...(esDom ? { esRecurrente: false } : {}),
+      ...(esFinde ? { esRecurrente: false } : {}),
     },
     select: { horaInicio: true, horaFin: true },
   });
@@ -330,7 +330,42 @@ async function getCitaCompleta(id: string) {
     },
   });
   if (!cita) return cita;
-  return { ...cita, promocionHeredada: await promoHeredadaDe(cita) };
+  return { ...cita, promocionHeredada: await promoHeredadaDe(cita), reprogramacion: await reprogramacionDeCita(cita.id) };
+}
+
+// ─── Reprogramación (para el banner del modal) ────────────────────────────────
+// La última vez que ESTA cita se movió a OTRO día, derivada del audit del `mover`
+// (que se escribe DENTRO de la transacción → garantizado, no best-effort). Devuelve
+// de qué día/hora a qué día/hora y quién lo hizo, para mostrar "Reprogramada del … al …".
+async function reprogramacionDeCita(citaId: string): Promise<
+  { deFecha: string; deHora: string | null; aFecha: string; aHora: string | null; por: string; en: Date } | null
+> {
+  const logs = await prisma.auditLog.findMany({
+    where: { citaId, accion: 'mover', entidad: 'cita' },
+    orderBy: { creadoEn: 'desc' },
+    take: 10,
+    select: { antes: true, despues: true, usuarioId: true, creadoEn: true },
+  });
+  for (const log of logs) {
+    const antes = log.antes as { fecha?: string; horaInicio?: string } | null;
+    const despues = log.despues as { fecha?: string; horaInicio?: string } | null;
+    const deFecha = typeof antes?.fecha === 'string' ? antes.fecha.slice(0, 10) : null;
+    const aFecha = typeof despues?.fecha === 'string' ? despues.fecha.slice(0, 10) : null;
+    if (deFecha && aFecha && deFecha !== aFecha) {
+      const u = log.usuarioId
+        ? await prisma.usuario.findUnique({ where: { id: log.usuarioId }, select: { nombre: true } })
+        : null;
+      return {
+        deFecha,
+        deHora: antes?.horaInicio ?? null,
+        aFecha,
+        aHora: despues?.horaInicio ?? null,
+        por: u?.nombre ?? 'Sistema',
+        en: log.creadoEn,
+      };
+    }
+  }
+  return null;
 }
 
 // Crea una ENTRADA del hilo append-only + su audit, DENTRO de una transacción.

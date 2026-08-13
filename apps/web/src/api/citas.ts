@@ -50,6 +50,8 @@ export interface CitaResumen {
   // SECUNDARIO la recibe como `promocionHeredada` (solo lectura).
   promocion: { id: string; nombre: string; tipo: 'PRECIO_FIJO' | 'PORCENTAJE' | 'OTRO'; valor: number | null } | null;
   promocionHeredada?: { id: string; nombre: string; tipo: 'PRECIO_FIJO' | 'PORCENTAJE' | 'OTRO'; valor: number | null } | null;
+  // Última reprogramación a OTRO día (derivada del audit del `mover`), para el banner del modal.
+  reprogramacion?: { deFecha: string; deHora: string | null; aFecha: string; aHora: string | null; por: string; en: string } | null;
   sesionNumero: number | null;
   sesionConsumida?: boolean;
   // "No aplicar / no descontar" (ej. láser no aplicado): la cita no consume su sesión.
