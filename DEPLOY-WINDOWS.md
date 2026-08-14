@@ -154,7 +154,7 @@ Register-ScheduledTask -TaskName 'LimablueBackupDB' -Action $acc -Trigger $trg -
 ```
 
 Genera 7 diarios + 4 semanales + 3 mensuales verificados en `apps/api/backups/postgres/`.
-**Pendiente (recomendado):** copia off-site (nube/disco externo), cifrada. Ver `DEPLOY.md` §Notas.
+**Pendiente (recomendado):** copia off-site (nube/disco externo), cifrada con `age`/`gpg`.
 
 ---
 

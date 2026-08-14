@@ -110,35 +110,38 @@ npm run dev
 
 ## Replicar en otro entorno (con datos)
 
-Este repo trae **código**, **migraciones** (estructura de la BD) y el **respaldo de la BD cifrado**
-(`limablue_dump.sql.gz.enc`). Los **secretos NO están en el repo** (`.env`, clave de descifrado):
-por seguridad se copian aparte. Para levantar una réplica idéntica con datos:
+Este repo trae el **código** y las **migraciones** (estructura de la BD). Los **datos** y los
+**secretos** NO están en el repo — van aparte, por seguridad:
+- **Datos** → en un **dump** (`apps/api/backups/*.dump`, generado con
+  `apps/api/scripts/backup-db-windows.ps1` en Windows, o `backup-postgres.sh` en Linux).
+- **Secretos** → `apps/api/.env` se copia por un canal privado (nunca por git).
+
+Runbook completo en **`DEPLOY-WINDOWS.md`** (o **`DEPLOY-CLOUD.md`**). Resumen:
 
 ```bash
-# 1) Clonar y dependencias
-git clone git@github.com:jm7u7/Agenda-lb.git && cd Agenda-lb
-npm install
+# 1) Clonar + dependencias
+git clone <repo> && cd Agenda-lb && npm install
 
-# 2) Config: copia el .env real a apps/api/.env (o parte de la plantilla)
-cp apps/api/.env.example apps/api/.env   # y completa los valores (o copia tu .env real)
+# 2) Config: copia tu .env real a apps/api/.env (o parte de la plantilla)
+cp apps/api/.env.example apps/api/.env   # y completa los valores
 
-# 3) Levantar Postgres + Redis (Docker) con el contenedor esperado
-docker run -d --name limablue_postgres -e POSTGRES_USER=limablue -e POSTGRES_PASSWORD=<pass> \
-  -e POSTGRES_DB=limablue_agenda -p 5432:5432 postgres:16
-docker run -d --name limablue_redis -p 6379:6379 redis:7
+# 3) Levantar Postgres + Redis (Docker)
+docker compose up -d
 
-# 4) Restaurar los DATOS desde el respaldo cifrado (necesitas la CLAVE, que copiaste aparte):
-./restaurar-bd.sh /ruta/a/limablue-backup-key.txt
+# 4) Estructura (migraciones) + datos (restaurar el dump)
+npm run build
+npm run db:migrate:prod -w apps/api          # crea la ESTRUCTURA
+#   restaurar los DATOS desde el .dump con pg_restore (ver DEPLOY-WINDOWS.md §6)
 
 # 5) Arrancar
-npm run dev
+npm run dev                                  # o pm2 en producción (ver runbook)
 ```
 
-> **Dos archivos secretos** que debes llevar al nuevo entorno por un canal privado (NO por git):
-> `apps/api/.env` (config: DB, JWT, Resend, etc.) y `~/limablue-backup-key.txt` (clave para
-> descifrar el respaldo). Sin la clave, el respaldo cifrado es irrecuperable.
+> El único archivo secreto a llevar por canal privado (NO por git) es **`apps/api/.env`**
+> (DB, JWT, Resend, etc.).
 >
-> Si prefieres empezar **sin datos** (BD vacía): omite el paso 4 y corre
+> Recuerda: las **migraciones crean la estructura vacía**; los **datos** vienen del dump. Para
+> empezar **sin datos** (BD vacía): omite el restore y corre
 > `npm run db:migrate:prod && npm run db:seed` (estructura + datos base).
 
 ---

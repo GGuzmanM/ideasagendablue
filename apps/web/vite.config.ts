@@ -17,8 +17,8 @@ export default defineConfig({
     port: Number(process.env.PORT) || 5180,
     strictPort: false,
     proxy: {
-      // Target configurable (VITE_PROXY_TARGET) para que el dev server pueda apuntar a la
-      // API de e2e en :3003; por defecto la API local en :3002.
+      // Target configurable (VITE_PROXY_TARGET) para apuntar el dev server a otra API
+      // (staging u otra instancia); por defecto la API local en :3002.
       // `xfwd: true` propaga X-Forwarded-For/Host/Proto al backend con la IP REAL del
       // cliente que hizo la request al Vite — sin esto el backend siempre ve ::1
       // (la IP de Vite localmente) y todos los audit_logs salen con la misma IP.

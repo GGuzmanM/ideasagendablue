@@ -1,7 +1,7 @@
 import 'express-async-errors';
 import dotenv from 'dotenv';
-// Por defecto carga `.env` (producción). Con ENV_FILE=.env.e2e (u otro) carga ese archivo:
-// lo usa el entorno de pruebas E2E aislado. Prod-neutral: sin ENV_FILE, comportamiento idéntico.
+// Por defecto carga `.env` (producción). Con ENV_FILE=<archivo> carga ese archivo en su lugar
+// (útil para instancias aisladas). Prod-neutral: sin ENV_FILE, comportamiento idéntico.
 dotenv.config(process.env.ENV_FILE ? { path: process.env.ENV_FILE } : undefined);
 
 // Zona horaria del PROCESO fija a UTC: toda fecha @db.Date se ancla a UTC (mediodía

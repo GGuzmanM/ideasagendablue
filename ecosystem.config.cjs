@@ -1,4 +1,4 @@
-// pm2 — proceso de producción de Limablue Agenda. Ver runbook en DEPLOY.md.
+// pm2 — proceso de producción de Limablue Agenda. Ver runbook en DEPLOY-WINDOWS.md.
 //
 // Dos procesos:
 //  - limablue-api: la API compilada (dist), con el worker de recordatorios IN-PROCESS
