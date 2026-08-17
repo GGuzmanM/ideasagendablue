@@ -815,26 +815,31 @@ export function Idea1AgendaPage() {
                             const topPx = ((ini - startMinGrid) / 60) * ROW_HEIGHT;
                             const heightPx = Math.max(((fin - ini) / 60) * ROW_HEIGHT - 4, 40);
                             const isCompact = heightPx < 58;
+                            // Baropodometría: el doctor está OPERANDO la máquina. Se marca con el
+                            // color de la unidad y etiqueta propia (no un "ocupado" genérico gris).
+                            const uniColor = oc.unidadNegocio.color || '#64748b';
+                            const esBaroOc = /baropodometr/i.test(oc.unidadNegocio.nombre);
                             return (
                               <div
                                 key={`ocup-${oc.citaId}-${doc.id}`}
                                 onClick={() => handleVerOcupacionExterna(oc.citaId)}
-                                title={`Ocupado en ${oc.unidadNegocio.nombre} (${oc.enColumna}) · ${oc.pacienteNombre} · ${oc.servicioNombre}\nClic para ver el detalle`}
+                                title={`${esBaroOc ? 'Opera' : 'Ocupado en'} ${oc.unidadNegocio.nombre} (${oc.enColumna}) · ${oc.pacienteNombre} · ${oc.servicioNombre}\nClic para ver el detalle`}
                                 style={{
                                   position: 'absolute',
                                   top: `${topPx}px`,
                                   height: `${heightPx}px`,
                                   left: '3px',
                                   right: '3px',
-                                  backgroundColor: '#f1f5f9',
+                                  backgroundColor: `${uniColor}14`,
                                   backgroundImage:
-                                    'repeating-linear-gradient(135deg, rgba(100,116,139,0.18) 0, rgba(100,116,139,0.18) 6px, transparent 6px, transparent 13px)',
+                                    `repeating-linear-gradient(135deg, ${uniColor}30 0, ${uniColor}30 6px, transparent 6px, transparent 13px)`,
+                                  borderColor: `${uniColor}99`,
                                 }}
-                                className="pointer-events-auto cursor-pointer rounded-xl px-2 py-1.5 flex flex-col justify-center border-2 border-dashed border-slate-400/70 text-slate-700 overflow-hidden select-none z-15 hover:border-slate-500 transition-colors shadow-xs"
+                                className="pointer-events-auto cursor-pointer rounded-xl px-2 py-1.5 flex flex-col justify-center border-2 border-dashed text-slate-700 overflow-hidden select-none z-15 hover:brightness-95 transition-all shadow-xs"
                               >
-                                <div className="flex items-center gap-1 font-bold text-[11px] text-slate-700 truncate">
-                                  <span className="material-symbols-outlined text-sm shrink-0">block</span>
-                                  <span className="truncate">Ocupado · {oc.unidadNegocio.nombre}</span>
+                                <div className="flex items-center gap-1 font-bold text-[11px] truncate" style={{ color: uniColor }}>
+                                  <span className="material-symbols-outlined text-sm shrink-0">{esBaroOc ? 'footprint' : 'block'}</span>
+                                  <span className="truncate">{oc.unidadNegocio.nombre}</span>
                                 </div>
                                 {!isCompact && (
                                   <div className="flex flex-col gap-0.5 mt-0.5 min-w-0">
@@ -842,7 +847,7 @@ export function Idea1AgendaPage() {
                                       {oc.pacienteNombre}
                                     </span>
                                     <span className="text-[10px] text-slate-500 truncate">
-                                      {oc.servicioNombre} · {oc.enColumna}
+                                      {esBaroOc ? `Opera ${oc.enColumna}` : `${oc.servicioNombre} · ${oc.enColumna}`}
                                     </span>
                                     <span className="text-[9px] font-mono text-slate-500">{oc.horaInicio}</span>
                                   </div>

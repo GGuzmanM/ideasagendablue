@@ -54,7 +54,7 @@ async function obtenerToken(): Promise<string> {
   return cachedToken.value;
 }
 
-async function graph(method: 'POST' | 'PATCH' | 'DELETE', path: string, payload?: unknown): Promise<any> {
+async function graph(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: string, payload?: unknown): Promise<any> {
   const token = await obtenerToken();
   const res = await fetch(`https://graph.microsoft.com/v1.0${path}`, {
     method,
@@ -63,6 +63,53 @@ async function graph(method: 'POST' | 'PATCH' | 'DELETE', path: string, payload?
   });
   if (!res.ok) throw new Error(`Graph ${method} ${path} → ${res.status}: ${await res.text()}`);
   return res.status === 204 ? null : res.json();
+}
+
+// ── Lectura del calendario (sincronización INVERSA: Outlook → Limablue) ─────────
+// Buzón del tenant a leer para un profesional: su emailAgenda si es @limablue.com, o el
+// mapeo por nombre (Daniel). Graph solo puede leer buzones DENTRO del tenant; un Gmail/
+// Hotmail externo (p.ej. Yasica) devuelve null → no se lee (no se puede).
+export function emailTenantDeProfesional(nombres: string, apellidos: string, emailAgenda: string | null): string | null {
+  if (emailAgenda && /@limablue\.com$/i.test(emailAgenda.trim())) return emailAgenda.trim();
+  return emailOutlookDeProfesional(nombres, apellidos); // Daniel Doy (aunque no tenga emailAgenda)
+}
+
+export interface EventoCalendarioExterno {
+  id: string;
+  subject: string;
+  inicioUtc: Date;
+  finUtc: Date;
+  isAllDay: boolean;
+  showAs: string; // free | tentative | busy | oof | workingElsewhere | unknown
+}
+
+// Lee los eventos del calendario del buzón en [inicioIso, finIso). Usa `calendarView`, que
+// EXPANDE las recurrencias en instancias concretas (a diferencia de /events). Devuelve tiempos
+// en UTC. Sigue `@odata.nextLink` hasta un tope de páginas por seguridad.
+export async function listarEventosCalendario(userEmail: string, inicioIso: string, finIso: string): Promise<EventoCalendarioExterno[]> {
+  const base = `/users/${encodeURIComponent(userEmail)}/calendarView`
+    + `?startDateTime=${encodeURIComponent(inicioIso)}&endDateTime=${encodeURIComponent(finIso)}`
+    + `&$select=id,subject,start,end,isAllDay,showAs&$top=200&$orderby=start/dateTime`;
+  const out: EventoCalendarioExterno[] = [];
+  let path: string | null = base;
+  for (let pagina = 0; path && pagina < 10; pagina++) {
+    // El nextLink viene como URL absoluta; graph() antepone el host → recortarlo.
+    const rel: string = path.startsWith('http') ? path.replace('https://graph.microsoft.com/v1.0', '') : path;
+    const data = await graph('GET', rel);
+    for (const e of (data?.value ?? []) as any[]) {
+      // start/end.dateTime vienen en UTC sin sufijo 'Z' → se lo añadimos para parsear.
+      out.push({
+        id: e.id,
+        subject: e.subject ?? '',
+        inicioUtc: new Date(`${e.start.dateTime}Z`),
+        finUtc: new Date(`${e.end.dateTime}Z`),
+        isAllDay: !!e.isAllDay,
+        showAs: e.showAs ?? 'unknown',
+      });
+    }
+    path = (data?.['@odata.nextLink'] as string | undefined) ?? null;
+  }
+  return out;
 }
 
 // ── Construcción del evento Graph ───────────────────────────────────────────────
@@ -123,19 +170,24 @@ export async function sincronizarCitaOutlook(accion: Accion, citaId: string): Pr
     // persona. Sin esto, las baro "Solo Daniel/Yasica" nunca llegaban a su celular.
     const persona = cita.solicitadoProfesional ?? cita.profesional;
 
-    // Profesional cuyo buzón NO es accesible por Graph (p. ej. Yasica Doy) → se
-    // notifica por correo con invitación (.ics) a su dirección configurada en BD
-    // (Profesional.emailAgenda). Graph no puede escribir en un buzón externo.
+    // Ruteo del canal según el buzón de la persona (Profesional.emailAgenda):
+    //  - Buzón del tenant (@limablue.com) + Azure configurado → Microsoft Graph
+    //    (escritura DIRECTA al calendario, aparece en 1-3 s). Es el canal rápido.
+    //  - Buzón externo (Gmail/Hotmail), o Azure sin configurar → invitación .ics por
+    //    correo (Graph no puede escribir un buzón fuera del tenant). Canal lento pero
+    //    universal; también el fallback si aún no hay credenciales Azure.
     const destinoAgenda = persona.emailAgenda;
-    if (destinoAgenda) {
+    const esBuzonTenant = !!destinoAgenda && /@limablue\.com$/i.test(destinoAgenda);
+    if (destinoAgenda && !(esBuzonTenant && outlookConfigurado())) {
       await notificarCitaGmailProfesional(accion, cita, destinoAgenda);
       return;
     }
 
-    // Daniel Doy → buzón Outlook vía Microsoft Graph (requiere credenciales Azure).
+    // Canal Graph (requiere credenciales Azure). Buzón a escribir: el emailAgenda del
+    // tenant si lo hay, o el mapeo por nombre (compat. Daniel Doy sin emailAgenda).
     if (!outlookConfigurado()) return; // inerte si no hay credenciales Azure
-    const email = emailOutlookDeProfesional(persona.nombres, persona.apellidos);
-    if (!email) return; // solo Daniel Doy
+    const email = esBuzonTenant ? destinoAgenda! : emailOutlookDeProfesional(persona.nombres, persona.apellidos);
+    if (!email) return;
 
     // Cancelar: borrar el evento si existe y limpiar el id.
     if (accion === 'cancelar') {
@@ -203,16 +255,18 @@ export async function sincronizarReunionOutlook(accion: Accion, bloqueoId: strin
     if (!b || !b.profesional || !b.esReunion || !b.horaInicio || !b.horaFin) return;
     const fecha = b.fechaInicio.toISOString().slice(0, 10);
 
-    // Profesional notificado por correo + .ics (Profesional.emailAgenda en BD).
+    // Mismo ruteo que las citas: buzón del tenant + Azure → Graph directo; externo o
+    // sin Azure → invitación .ics por correo.
     const destinoAgenda = b.profesional.emailAgenda;
-    if (destinoAgenda) {
+    const esBuzonTenant = !!destinoAgenda && /@limablue\.com$/i.test(destinoAgenda);
+    if (destinoAgenda && !(esBuzonTenant && outlookConfigurado())) {
       await notificarReunionGmailProfesional(accion, { id: b.id, fechaInicio: b.fechaInicio, horaInicio: b.horaInicio, horaFin: b.horaFin, motivo: b.motivo }, destinoAgenda);
       return;
     }
 
-    // Daniel Doy → buzón Outlook vía Microsoft Graph.
+    // Canal Graph (requiere credenciales Azure).
     if (!outlookConfigurado()) return;
-    const email = emailOutlookDeProfesional(b.profesional.nombres, b.profesional.apellidos);
+    const email = esBuzonTenant ? destinoAgenda! : emailOutlookDeProfesional(b.profesional.nombres, b.profesional.apellidos);
     if (!email) return;
     const r: ReunionParaOutlook = { motivo: b.motivo, fecha, horaInicio: b.horaInicio, horaFin: b.horaFin };
 

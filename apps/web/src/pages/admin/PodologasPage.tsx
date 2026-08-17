@@ -149,6 +149,94 @@ function FormularioProfesional({
   );
 }
 
+// Ícono y orden por área (para separar la lista en secciones).
+function iconoArea(nombre: string): string {
+  const n = nombre.toLowerCase();
+  if (n.includes('baropodometr')) return 'footprint';
+  if (n.includes('fisio')) return 'exercise';
+  if (n.includes('podolog')) return 'medical_services';
+  return 'groups';
+}
+function prioridadArea(nombre: string): number {
+  const n = nombre.toLowerCase();
+  if (n.includes('podolog')) return 0;
+  if (n.includes('baropodometr')) return 1;
+  if (n.includes('fisio')) return 2;
+  return 3;
+}
+
+// Una fila de profesional (reutilizada en cada sección de área).
+function FilaProfesional({ prof, onEditar, onToggle }: {
+  prof: ReturnType<typeof usePodologasData>['profsFiltrados'][number];
+  onEditar: () => void;
+  onToggle: () => void;
+}) {
+  return (
+    <div
+      className={cn(
+        'bg-surface-container-lowest rounded-xl px-4 py-2.5 shadow-2xs border border-slate-200 flex items-center justify-between hover:border-slate-300 transition-colors group',
+        !prof.activo && 'opacity-60 bg-slate-50/50'
+      )}
+    >
+      <div className="flex items-center gap-3 min-w-0">
+        <Avatar iniciales={prof.iniciales} color={prof.colorAvatar} size="sm" />
+        <div className="min-w-0 flex-1">
+          <h4 className="font-semibold text-slate-800 text-[13px] truncate leading-tight">
+            {prof.nombres} {prof.apellidos}
+          </h4>
+          <div className="flex items-center gap-2 mt-0.5 flex-wrap text-xxs text-slate-500">
+            <span className="font-medium text-slate-700">{TIPO_LABELS[prof.tipo] ?? prof.tipo}</span>
+            {prof.colegiatura && (
+              <>
+                <span className="text-slate-300">•</span>
+                <span className="bg-slate-100 text-slate-700 font-mono px-1.5 py-0.5 rounded text-[10px] font-semibold border border-slate-200/80">
+                  Col: {prof.colegiatura}
+                </span>
+              </>
+            )}
+            <span className="text-slate-300">•</span>
+            {prof.sedeActual ? (
+              <span className="flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ backgroundColor: prof.sedeActual.color }} />
+                <span className="font-medium text-slate-700">{prof.sedeActual.nombre}</span>
+              </span>
+            ) : (
+              <span className="text-slate-400">Sin sede asignada</span>
+            )}
+            <span className="text-slate-300">•</span>
+            <span className={cn(
+              'px-1.5 py-0.2 rounded-full font-medium',
+              prof.activo ? 'bg-green-100 text-green-700' : 'bg-slate-200 text-slate-600'
+            )}>
+              {prof.activo ? 'Activa' : 'Inactiva'}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-1.5 shrink-0 opacity-90 group-hover:opacity-100 transition-opacity ml-3">
+        <button
+          onClick={onEditar}
+          className="px-2.5 py-1 border border-slate-200 rounded-md text-xs font-medium text-slate-600 hover:bg-slate-100 transition-colors"
+        >
+          Editar
+        </button>
+        <button
+          onClick={onToggle}
+          className={cn(
+            'px-2.5 py-1 rounded-md text-xs font-medium border transition-colors',
+            prof.activo
+              ? 'border-red-200 text-red-600 hover:bg-red-50'
+              : 'border-green-200 text-green-600 hover:bg-green-50'
+          )}
+        >
+          {prof.activo ? 'Desactivar' : 'Reactivar'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function PodologasPage() {
   const {
     isLoading,
@@ -168,6 +256,23 @@ export function PodologasPage() {
   } = usePodologasData();
 
   const profEditando = editandoId ? profsFiltrados.find(p => p.id === editandoId) : null;
+
+  // Agrupar por área (Podología / Baropodometría / Fisioterapia) para separar la lista.
+  const gruposPorArea = Object.values(
+    profsFiltrados.reduce<Record<string, { unidad: { id: string; nombre: string }; items: typeof profsFiltrados }>>((acc, p) => {
+      (acc[p.unidadNegocio.id] ??= { unidad: p.unidadNegocio, items: [] }).items.push(p);
+      return acc;
+    }, {}),
+  ).sort((a, b) => prioridadArea(a.unidad.nombre) - prioridadArea(b.unidad.nombre) || a.unidad.nombre.localeCompare(b.unidad.nombre));
+
+  // Filtro por área (chips): 'todas' o el id de una unidad.
+  const [areaFiltro, setAreaFiltro] = useState<string>('todas');
+  const unidadesOrdenadas = [...unidades].sort(
+    (a, b) => prioridadArea(a.nombre) - prioridadArea(b.nombre) || a.nombre.localeCompare(b.nombre),
+  );
+  const gruposVisibles = areaFiltro === 'todas'
+    ? gruposPorArea
+    : gruposPorArea.filter(g => g.unidad.id === areaFiltro);
 
   return (
     <div className="flex flex-col h-full overflow-hidden relative bg-background">
@@ -204,6 +309,25 @@ export function PodologasPage() {
           </button>
         </div>
 
+        {/* Filtro por área (chips): Todas / Podología / Baropodometría / Fisioterapia */}
+        <div className="flex flex-wrap gap-1.5 max-w-5xl">
+          {[{ id: 'todas', nombre: 'Todas' }, ...unidadesOrdenadas].map(a => (
+            <button
+              key={a.id}
+              onClick={() => setAreaFiltro(a.id)}
+              className={cn(
+                'px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors flex items-center gap-1.5',
+                areaFiltro === a.id
+                  ? 'bg-primary text-white border-primary shadow-sm'
+                  : 'bg-surface-container-lowest text-slate-600 border-slate-200 hover:bg-slate-100'
+              )}
+            >
+              {a.id !== 'todas' && <span className="material-symbols-outlined text-[15px]">{iconoArea(a.nombre)}</span>}
+              {a.nombre}
+            </button>
+          ))}
+        </div>
+
         {/* Lista en formato Cards compactas */}
         {isLoading ? (
           <div className="flex items-center justify-center py-16">
@@ -215,74 +339,33 @@ export function PodologasPage() {
             <p className="font-medium text-slate-800 text-sm">Sin resultados</p>
             <p className="text-xs mt-1 text-slate-500">Ajusta los filtros o crea una nueva profesional</p>
           </div>
+        ) : gruposVisibles.length === 0 ? (
+          <div className="bg-surface-container-lowest rounded-xl border border-dashed border-outline-variant p-10 text-center text-on-surface-variant max-w-5xl">
+            <p className="font-medium text-slate-800 text-sm">Sin resultados en esta área</p>
+            <p className="text-xs mt-1 text-slate-500">Prueba con otra área o ajusta los filtros</p>
+          </div>
         ) : (
-          <div className="space-y-2.5 max-w-5xl">
-            {profsFiltrados.map(prof => (
-              <div
-                key={prof.id}
-                className={cn(
-                  'bg-surface-container-lowest rounded-xl px-4 py-2.5 shadow-2xs border border-slate-200 flex items-center justify-between hover:border-slate-300 transition-colors group',
-                  !prof.activo && 'opacity-60 bg-slate-50/50'
-                )}
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <Avatar iniciales={prof.iniciales} color={prof.colorAvatar} size="sm" />
-                  <div className="min-w-0 flex-1">
-                    <h4 className="font-semibold text-slate-800 text-[13px] truncate leading-tight">
-                      {prof.nombres} {prof.apellidos}
-                    </h4>
-                    <div className="flex items-center gap-2 mt-0.5 flex-wrap text-xxs text-slate-500">
-                      <span className="font-medium text-slate-700">{TIPO_LABELS[prof.tipo] ?? prof.tipo}</span>
-                      {prof.colegiatura && (
-                        <>
-                          <span className="text-slate-300">•</span>
-                          <span className="bg-slate-100 text-slate-700 font-mono px-1.5 py-0.5 rounded text-[10px] font-semibold border border-slate-200/80">
-                            Col: {prof.colegiatura}
-                          </span>
-                        </>
-                      )}
-                      <span className="text-slate-300">•</span>
-                      <span>{prof.unidadNegocio.nombre}</span>
-                      <span className="text-slate-300">•</span>
-                      {prof.sedeActual ? (
-                        <span className="flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ backgroundColor: prof.sedeActual.color }} />
-                          <span className="font-medium text-slate-700">{prof.sedeActual.nombre}</span>
-                        </span>
-                      ) : (
-                        <span className="text-slate-400">Sin sede asignada</span>
-                      )}
-                      <span className="text-slate-300">•</span>
-                      <span className={cn(
-                        'px-1.5 py-0.2 rounded-full font-medium',
-                        prof.activo ? 'bg-green-100 text-green-700' : 'bg-slate-200 text-slate-600'
-                      )}>
-                        {prof.activo ? 'Activa' : 'Inactiva'}
-                      </span>
-                    </div>
-                  </div>
+          <div className="space-y-6 max-w-5xl">
+            {gruposVisibles.map(grupo => (
+              <section key={grupo.unidad.id}>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="material-symbols-outlined text-[18px] text-slate-500">{iconoArea(grupo.unidad.nombre)}</span>
+                  <h3 className="text-sm font-bold text-slate-800">{grupo.unidad.nombre}</h3>
+                  <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 border border-slate-200 rounded-full px-2 py-0.5">
+                    {grupo.items.length}
+                  </span>
                 </div>
-
-                <div className="flex items-center gap-1.5 shrink-0 opacity-90 group-hover:opacity-100 transition-opacity ml-3">
-                  <button
-                    onClick={() => { setEditandoId(prof.id); setCreando(false); }}
-                    className="px-2.5 py-1 border border-slate-200 rounded-md text-xs font-medium text-slate-600 hover:bg-slate-100 transition-colors"
-                  >
-                    Editar
-                  </button>
-                  <button
-                    onClick={() => toggleActivo(prof)}
-                    className={cn(
-                      'px-2.5 py-1 rounded-md text-xs font-medium border transition-colors',
-                      prof.activo
-                        ? 'border-red-200 text-red-600 hover:bg-red-50'
-                        : 'border-green-200 text-green-600 hover:bg-green-50'
-                    )}
-                  >
-                    {prof.activo ? 'Desactivar' : 'Reactivar'}
-                  </button>
+                <div className="space-y-2.5">
+                  {grupo.items.map(prof => (
+                    <FilaProfesional
+                      key={prof.id}
+                      prof={prof}
+                      onEditar={() => { setEditandoId(prof.id); setCreando(false); }}
+                      onToggle={() => toggleActivo(prof)}
+                    />
+                  ))}
                 </div>
-              </div>
+              </section>
             ))}
           </div>
         )}

@@ -25,6 +25,7 @@ import { iniciarRecordatorioWorker } from './queue/recordatorioWorker';
 import { recuperarRecordatoriosProgramados } from './services/recordatorioService';
 import { iniciarVideoWorker, programarBarridoVideos } from './queue/videoQueue';
 import { outlookConfigurado, reintentarOutlookFallidos } from './services/outlookCalendarService';
+import { importarOcupacionOutlookTodos } from './services/importarOcupacionOutlook';
 import { errorHandler } from './middleware/errorHandler';
 import { firmarUrlsRespuesta, servirUploadFirmado } from './middleware/firmaArchivos';
 import { swaggerSpec } from './swagger';
@@ -182,6 +183,18 @@ if (outlookConfigurado()) {
   setInterval(() => {
     void reintentarOutlookFallidos().then((r) => { if (r.intentadas) console.log('[outlook] reintento:', r); });
   }, 10 * 60_000).unref();
+}
+
+// ─── Sincronización INVERSA: ocupación de Outlook → bloqueos en Limablue ───────
+// Solo si Azure está configurado. Cada 5 min lee el calendario de los profesionales del
+// tenant y refleja sus eventos "Ocupado/Fuera de oficina" como bloqueos de agenda. Una
+// corrida al arrancar (tras BD/redis listos). No bloqueante.
+if (outlookConfigurado()) {
+  const importarOcupacion = () => void importarOcupacionOutlookTodos()
+    .then((r) => { if (r.creados || r.actualizados || r.borrados) console.log('[outlook-inverso] ocupación importada:', r); })
+    .catch((e) => console.error('[outlook-inverso] error:', e));
+  setTimeout(importarOcupacion, 25_000);
+  setInterval(importarOcupacion, 5 * 60_000).unref();
 }
 
 // ─── Conexión temprana a Redis ────────────────────────────────────────────────

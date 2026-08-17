@@ -22,7 +22,15 @@ router.get('/', requireAuth, async (req, res) => {
   const idsConCita = new Set<string>();
   // Pertenece a la unidad O tiene competencia a un servicio activo de esa unidad
   // (permite que un profesional aparezca en otra unidad, p.ej. Daniel Doy en Baropodometría).
+  //
+  // ¿La unidad es "por máquina" (sin elección de médico, p.ej. Baropodometría → modoReserva
+  // 'sin_eleccion')? Entonces la columna fija es la MÁQUINA (los slots que PERTENECEN a la
+  // unidad). Ningún doctor real debe ser columna fija de baro aunque tenga una competencia mal
+  // puesta como NORMAL — solo aparece si efectivamente OPERA una cita ese día (bajo demanda).
+  let esUnidadMaquina = false;
   if (unidadNegocioId) {
+    const uni = await prisma.unidadNegocio.findUnique({ where: { id: unidadNegocioId }, select: { modoReserva: true } });
+    esUnidadMaquina = uni?.modoReserva === 'sin_eleccion';
     where.OR = [
       { unidadNegocioId },
       { competencias: { some: { activa: true, servicio: { unidadNegocioId, activo: true, deletedAt: null } } } },
@@ -43,12 +51,15 @@ router.get('/', requireAuth, async (req, res) => {
         sedeId,
         fechaInicio: { lte: fechaDate },
         OR: [{ fechaFin: null }, { fechaFin: { gte: fechaDate } }],
-        profesional: unidadNegocioId ? {
-          // Columna fija = tiene una competencia NORMAL (no solo-por-solicitud) a esta unidad.
-          // Así Daniel sale como columna en Podología (competencia normal) pero NO en
-          // Baropodometría (esa competencia es solo-por-solicitud → solo aparece si tiene cita).
-          competencias: { some: { activa: true, soloPorSolicitud: false, servicio: { unidadNegocioId, activo: true, deletedAt: null } } },
-        } : {},
+        profesional: unidadNegocioId ? (
+          esUnidadMaquina
+            // Unidad por máquina (baro): la columna fija es SOLO la máquina (los slots que
+            // pertenecen a la unidad). Un doctor real nunca es columna fija aquí.
+            ? { unidadNegocioId }
+            // Resto de unidades: columna fija = competencia NORMAL (no solo-por-solicitud) a la
+            // unidad. Así Daniel sale como columna en Podología pero NO en Baro (allí es por-solicitud).
+            : { competencias: { some: { activa: true, soloPorSolicitud: false, servicio: { unidadNegocioId, activo: true, deletedAt: null } } } }
+        ) : {},
       },
       select: { profesionalId: true },
     });

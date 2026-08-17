@@ -17,6 +17,7 @@ import { uploadComprobante } from '../middleware/uploadComprobante';
 import { limpiarUrlArchivo } from '../middleware/firmaArchivos';
 import { construirIcsDeCita, logoAdjunto } from '../services/emailTemplates';
 import { sincronizarCitaOutlook, reintentarOutlookFallidos } from '../services/outlookCalendarService';
+import { importarOcupacionOutlookTodos } from '../services/importarOcupacionOutlook';
 import { alertasDePacientes } from '../services/alertaPaciente';
 import { familiaresDePacientes } from '../services/familiaresPaciente';
 import { programarRecordatoriosDeCita, cancelarRecordatoriosDeCita, reprogramarRecordatorioDeCita, forzarEnvioRecordatorioAhora } from '../services/recordatorioService';
@@ -640,6 +641,15 @@ function detalleCita(c: { servicio: { nombre: string }; fecha: Date; horaInicio:
 // ─── POST /citas/outlook/reintentar ──── (reprocesa sincronizaciones fallidas) ─
 router.post('/outlook/reintentar', requireAuth, requireRol('admin'), async (_req, res) => {
   const resultado = await reintentarOutlookFallidos();
+  res.json(resultado);
+});
+
+// ─── POST /citas/outlook/importar-ocupacion ─ (sync INVERSA: Outlook → bloqueos) ─
+// Fuerza AHORA la lectura del calendario de los profesionales del tenant y refleja su
+// ocupación como bloqueos de agenda. La misma tarea corre sola cada 5 min si Azure está
+// configurado; este endpoint es para dispararla a demanda (verificación/ops).
+router.post('/outlook/importar-ocupacion', requireAuth, requireRol('admin'), async (_req, res) => {
+  const resultado = await importarOcupacionOutlookTodos();
   res.json(resultado);
 });
 
