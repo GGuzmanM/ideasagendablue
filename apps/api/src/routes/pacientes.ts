@@ -226,7 +226,40 @@ router.get('/:id', requireAuth, requireScope('patients:read'), async (req, res) 
     familiaresDePaciente(req.params.id),
   ]);
 
-  res.json({ ...paciente, alerta, familiares, historial, totalCitas, resumenServicios, proximas, datosFaltantes: datosFaltantes(paciente) });
+  // Marca las citas que fueron REPROGRAMADAS a OTRO día (derivado del audit del `mover`, que
+  // se escribe dentro de la transacción → garantizado). Una sola consulta para todas las citas
+  // mostradas → badge "Reprogramada" en el historial/próximas, además del banner del modal.
+  const idsCitas = [...historial.map(c => c.id), ...proximas.map(c => c.id)];
+  const reprogDe = new Map<string, { deFecha: string; deHora: string | null }>();
+  if (idsCitas.length) {
+    const movers = await prisma.auditLog.findMany({
+      where: { citaId: { in: idsCitas }, accion: 'mover', entidad: 'cita' },
+      orderBy: { creadoEn: 'desc' },
+      select: { citaId: true, antes: true, despues: true },
+    });
+    for (const m of movers) {
+      if (!m.citaId || reprogDe.has(m.citaId)) continue; // conserva la reprogramación más reciente
+      const antes = m.antes as { fecha?: string; horaInicio?: string } | null;
+      const despues = m.despues as { fecha?: string; horaInicio?: string } | null;
+      const de = typeof antes?.fecha === 'string' ? antes.fecha.slice(0, 10) : null;
+      const a = typeof despues?.fecha === 'string' ? despues.fecha.slice(0, 10) : null;
+      // Cuenta como reprogramación si cambió el DÍA o la HORA (mover a otra hora el mismo día también).
+      const cambioHora = !!(antes?.horaInicio && despues?.horaInicio && antes.horaInicio !== despues.horaInicio);
+      if (de && a && (de !== a || cambioHora)) reprogDe.set(m.citaId, { deFecha: de, deHora: antes?.horaInicio ?? null });
+    }
+  }
+  const marcarReprog = <T extends { id: string }>(c: T) => {
+    const r = reprogDe.get(c.id);
+    return { ...c, reprogramada: !!r, reprogramadaDe: r?.deFecha ?? null, reprogramadaDeHora: r?.deHora ?? null };
+  };
+
+  res.json({
+    ...paciente, alerta, familiares,
+    historial: historial.map(marcarReprog),
+    totalCitas, resumenServicios,
+    proximas: proximas.map(marcarReprog),
+    datosFaltantes: datosFaltantes(paciente),
+  });
 });
 
 // ─── GET /pacientes/:id/paquetes — ENDPOINT ÚNICO de saldos (módulo Sesiones) ──
@@ -312,6 +345,45 @@ router.get('/:id/paquetes', requireAuth, requireScope('patients:read'), async (r
   // ACTIVO → AGOTADO/VENCIDO/ANULADO al final (trazabilidad colapsada en la ficha)
   data.sort((a, b) => (a.estado === 'ACTIVO' ? 0 : 1) - (b.estado === 'ACTIVO' ? 0 : 1));
   res.json(data);
+});
+
+// ─── GET /pacientes/:id/estadisticas ──────────────────────────────────────────
+// Resumen de asistencia del paciente para la tarjeta de "Nueva Cita": combina las citas
+// de Limablue (por estado) con la historia congelada de Genexis (por `llegoPaciente`).
+router.get('/:id/estadisticas', requireAuth, requireScope('patients:read'), async (req, res) => {
+  const pacienteId = req.params.id;
+  const [porEstado, porGenexis] = await Promise.all([
+    prisma.cita.groupBy({ by: ['estado'], where: { pacienteId, deletedAt: null }, _count: { _all: true } }),
+    prisma.historialGenexis.groupBy({ by: ['llegoPaciente'], where: { pacienteId }, _count: { _all: true } }),
+  ]);
+
+  // Limablue: llegó/en atención/completada = asistió; cancelada / no_show por separado.
+  let asistio = 0, canceladas = 0, noShow = 0, otras = 0;
+  for (const r of porEstado) {
+    const n = r._count._all;
+    if (['llego', 'en_atencion', 'completada'].includes(r.estado)) asistio += n;
+    else if (r.estado === 'cancelada') canceladas += n;
+    else if (r.estado === 'no_show') noShow += n;
+    else otras += n; // agendada / confirmada / reprogramada
+  }
+  const totalLimablue = asistio + canceladas + noShow + otras;
+
+  // Genexis: `llegoPaciente` "Si"/"No" (normalizado). Sí → asistió; No → no vino.
+  let gxAsistio = 0, gxNo = 0, gxTotal = 0;
+  for (const r of porGenexis) {
+    const n = r._count._all; gxTotal += n;
+    const v = (r.llegoPaciente ?? '').trim().toLowerCase();
+    if (v === 'si' || v === 'sí' || v === 's' || v === '1') gxAsistio += n;
+    else gxNo += n; // "No" y cualquier otro valor/desconocido cuentan como "no vino"
+  }
+
+  const asistencias = asistio + gxAsistio;
+  const noVino = canceladas + noShow + gxNo;
+  const total = totalLimablue + gxTotal;
+  const resueltas = asistencias + noVino; // base del % (excluye futuras/agendadas sin desenlace)
+  const porcentajeAsistencia = resueltas > 0 ? Math.round((asistencias / resueltas) * 1000) / 10 : null;
+
+  res.json({ total, asistencias, canceladas, noShow, noVino, porcentajeAsistencia });
 });
 
 // ─── GET /pacientes/:id/historial-genexis/existe ──────────────────────────────

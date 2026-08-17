@@ -334,8 +334,8 @@ async function getCitaCompleta(id: string) {
 }
 
 // ─── Reprogramación (para el banner del modal) ────────────────────────────────
-// La última vez que ESTA cita se movió a OTRO día, derivada del audit del `mover`
-// (que se escribe DENTRO de la transacción → garantizado, no best-effort). Devuelve
+// La última vez que ESTA cita se movió a otro día U otra hora, derivada del audit del
+// `mover` (que se escribe DENTRO de la transacción → garantizado, no best-effort). Devuelve
 // de qué día/hora a qué día/hora y quién lo hizo, para mostrar "Reprogramada del … al …".
 async function reprogramacionDeCita(citaId: string): Promise<
   { deFecha: string; deHora: string | null; aFecha: string; aHora: string | null; por: string; en: Date } | null
@@ -351,7 +351,10 @@ async function reprogramacionDeCita(citaId: string): Promise<
     const despues = log.despues as { fecha?: string; horaInicio?: string } | null;
     const deFecha = typeof antes?.fecha === 'string' ? antes.fecha.slice(0, 10) : null;
     const aFecha = typeof despues?.fecha === 'string' ? despues.fecha.slice(0, 10) : null;
-    if (deFecha && aFecha && deFecha !== aFecha) {
+    // Cuenta como reprogramación si cambió el DÍA o la HORA (mover a otra hora el mismo día
+    // también es reprogramar). Un "mover" sin cambios reales queda excluido.
+    const cambioHora = !!(antes?.horaInicio && despues?.horaInicio && antes.horaInicio !== despues.horaInicio);
+    if (deFecha && aFecha && (deFecha !== aFecha || cambioHora)) {
       const u = log.usuarioId
         ? await prisma.usuario.findUnique({ where: { id: log.usuarioId }, select: { nombre: true } })
         : null;

@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { pacientesApi } from '../../api';
 import {
   useIdea1NuevaCitaForm,
   type UseIdea1NuevaCitaFormProps,
@@ -127,6 +129,14 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
 
   const [isDragging, setIsDragging] = useState(false);
 
+  // Estadísticas de asistencia del paciente seleccionado (Limablue + Genexis) para la tarjeta.
+  const { data: estadisticasPaciente } = useQuery({
+    queryKey: ['paciente-estadisticas', pacienteSeleccionado?.id],
+    queryFn: () => pacientesApi.estadisticas(pacienteSeleccionado!.id),
+    enabled: !!pacienteSeleccionado?.id,
+    staleTime: 60_000,
+  });
+
   // Si el ítem de membresía elegido fija una subcategoría (ej. Profilaxis Premium/Regular),
   // la subcategoría NO se puede cambiar: la membresía da ESE tipo. Se muestra bloqueada.
   const itemMembSel: any = membSel && membItem !== '' ? membComposicion[Number(membItem)] : undefined;
@@ -165,7 +175,7 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
             <h2 className="font-headline-md text-headline-md font-bold text-white tracking-tight">Nueva Cita</h2>
             <p className="font-body-md text-body-md text-white/90 mt-1 flex items-center gap-2 text-sm font-medium">
               <span className="material-symbols-outlined text-base">event</span>
-              <span className="capitalize">{fechaHeader}</span> · <span className="font-mono font-bold">{horaCita}</span>
+              <span className="capitalize">{fechaHeader}</span> · <span className="font-mono font-bold">{horaCita || 'Escoger hora'}</span>
             </p>
           </div>
           <button
@@ -293,6 +303,34 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
                         <p className="text-xs text-on-surface-variant">
                           Doc: {pacienteSeleccionado.numeroDocumento || 'Sin doc'} · Tel: {pacienteSeleccionado.telefono}
                         </p>
+                        {estadisticasPaciente && estadisticasPaciente.total > 0 && (
+                          <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                            {estadisticasPaciente.porcentajeAsistencia != null && (
+                              <span
+                                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                                  estadisticasPaciente.porcentajeAsistencia >= 80
+                                    ? 'bg-green-500/10 text-green-700 border-green-500/30'
+                                    : estadisticasPaciente.porcentajeAsistencia >= 50
+                                    ? 'bg-amber-500/10 text-amber-700 border-amber-500/30'
+                                    : 'bg-error/10 text-error border-error/30'
+                                }`}
+                                title="Porcentaje de asistencia (Limablue + Genexis)"
+                              >
+                                <span className="material-symbols-outlined text-[12px] leading-none">check_circle</span>
+                                {estadisticasPaciente.porcentajeAsistencia}% asistencia
+                              </span>
+                            )}
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-surface-container text-on-surface-variant text-[10px] font-semibold border border-outline-variant/30" title="Citas totales (histórico)">
+                              {estadisticasPaciente.total} citas
+                            </span>
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-green-500/5 text-green-700 text-[10px] font-semibold border border-green-500/20" title="Asistencias">
+                              {estadisticasPaciente.asistencias} asistió
+                            </span>
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-error/5 text-error text-[10px] font-semibold border border-error/20" title="Canceladas">
+                              {estadisticasPaciente.canceladas} cancel.
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
@@ -1010,11 +1048,14 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
                   {opcionesHoras.length === 0 ? (
                     <option value="">No hay horarios laborables en esta fecha</option>
                   ) : (
-                    opcionesHoras.map((h) => (
-                      <option key={h} value={h}>
-                        {h} hs
-                      </option>
-                    ))
+                    <>
+                      <option value="">Escoger hora…</option>
+                      {opcionesHoras.map((h) => (
+                        <option key={h} value={h}>
+                          {h} hs
+                        </option>
+                      ))}
+                    </>
                   )}
                 </select>
                 <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-outline">

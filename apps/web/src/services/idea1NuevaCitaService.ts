@@ -89,7 +89,7 @@ export function useIdea1NuevaCitaForm({
   sedeId: sedeIdProp,
   unidadNegocioId: unidadNegocioIdProp,
   fecha,
-  horaInicio: horaInicial = '08:30',
+  horaInicio: horaInicial = '', // sin slot elegido → vacío ("Escoger hora"), evita agendar al 08:30 por descuido
   profesionalId: profInicial = '',
   onClose,
   onSuccess,

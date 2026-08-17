@@ -21,6 +21,7 @@ import {
   type PaquetePacienteSaldo,
 } from '../../api/paquetesSesiones';
 import { VisorHistorialGenexis } from './HistorialGenexis';
+import { ExplorarProgramasModal } from './ExplorarProgramasModal';
 
 const fmtFecha = (f: string) => format(new Date(f + 'T12:00:00'), 'd MMM yyyy', { locale: es });
 
@@ -58,6 +59,7 @@ interface SaldoPaquetesProps {
 
 export function SaldoPaquetes({ pacienteId, variante, servicioActualId, sedeActualId, onChipClick, nombrePaciente, documento }: SaldoPaquetesProps) {
   const { data: paquetes, isLoading, isError, refetch } = usePaquetesPaciente(pacienteId);
+  const [explorarProgramas, setExplorarProgramas] = useState(false);
 
   if (isLoading) {
     return variante === 'detalle' ? <Skeleton className="h-24 w-full" /> : <span className="text-[10px] text-slate-300">…</span>;
@@ -131,15 +133,22 @@ export function SaldoPaquetes({ pacienteId, variante, servicioActualId, sedeActu
             <h3 className="font-headline-sm text-headline-sm text-on-surface font-bold">Paquetes y membresías</h3>
             <p className="text-on-surface-variant mt-0.5">Este paciente aún no cuenta con planes de salud activos.</p>
           </div>
-          {/* Estético por ahora (sin acción): más adelante llevará a vender/asignar membresía */}
           <button
             type="button"
+            onClick={() => setExplorarProgramas(true)}
             className="z-10 px-6 py-2 border-2 border-primary text-primary font-bold rounded-xl hover:bg-primary hover:text-on-primary transition-all shrink-0"
-            title="Próximamente"
           >
             Explorar Programas
           </button>
         </div>
+      )}
+      {explorarProgramas && (
+        <ExplorarProgramasModal
+          pacienteId={pacienteId}
+          nombrePaciente={nombrePaciente ?? ''}
+          onCerrar={() => setExplorarProgramas(false)}
+          onVendida={() => { setExplorarProgramas(false); refetch(); }}
+        />
       )}
       {historicos.length > 0 && (
         <details className="group">

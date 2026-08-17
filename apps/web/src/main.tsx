@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import App from './App';
+import './utils/toastDedupe'; // deduplica toasts por mensaje (no se apilan al repetir)
 import './index.css';
 
 const queryClient = new QueryClient({

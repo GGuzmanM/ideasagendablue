@@ -258,15 +258,6 @@ export function Idea1AgendaPage() {
               <span className="material-symbols-outlined text-lg">add_circle</span>
               Nueva Cita
             </button>
-            <div className="flex items-center gap-2 px-4 border-l border-outline-variant/30 ml-2">
-              <button className="w-10 h-10 flex items-center justify-center text-on-surface-variant hover:bg-surface-container rounded-full transition-colors relative">
-                <span className="material-symbols-outlined">notifications</span>
-                <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-error rounded-full border-2 border-surface"></span>
-              </button>
-              <button className="w-10 h-10 flex items-center justify-center text-on-surface-variant hover:bg-surface-container rounded-full transition-colors">
-                <span className="material-symbols-outlined">apps</span>
-              </button>
-            </div>
           </div>
         </header>
 
@@ -864,7 +855,12 @@ export function Idea1AgendaPage() {
                             const citaStart = timeToMinutes(cita.horaInicio);
                             const topPx = ((citaStart - startMinGrid) / 60) * ROW_HEIGHT;
                             const duracion = cita.duracionMinutos || 30;
-                            const heightPx = Math.max((duracion / 60) * ROW_HEIGHT - 4, 40);
+                            // La tarjeta cubre el slot COMPLETO (antes tenía `-4`, dejando un hueco de
+                            // 4px al fondo). Ese hueco caía a la celda de fondo (capa `pointer-events-none`
+                            // con la tarjeta `pointer-events-auto`), y al clicar la parte inferior de una
+                            // cita se abría "Nueva cita" a esa hora en vez de seleccionar la cita. Sin el
+                            // hueco no hay zona muerta; la separación visual la dan el borde y la grilla.
+                            const heightPx = Math.max((duracion / 60) * ROW_HEIGHT, 40);
                             const isCompact = heightPx < 60;
                             const isMicro = heightPx < 42;
                             const esDraggable =
@@ -916,8 +912,10 @@ export function Idea1AgendaPage() {
                                   position: 'absolute',
                                   top: `${topPx}px`,
                                   height: `${heightPx}px`,
-                                  left: '3px',
-                                  right: '3px',
+                                  // Cubre TODO el ancho de la columna (antes 3px por lado): esos 3px
+                                  // laterales también caían a la celda de agendar → mismo bug en los costados.
+                                  left: '0px',
+                                  right: '0px',
                                   ...canceladaBgStyle,
                                 }}
                                 className={`group appointment-card pointer-events-auto rounded-xl p-2 flex flex-col justify-between transition-all border overflow-hidden relative ${

@@ -576,7 +576,7 @@ export function FichaPacientePage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-outline-variant/10">
-                    {historial.map(c => (
+                    {historial.map(c => ([
                       <tr
                         key={c.id}
                         onClick={() => abrirDetalle(c)}
@@ -636,8 +636,28 @@ export function FichaPacientePage() {
                             : <span className="text-on-surface-variant/50">—</span>}
                         </td>
                         <td className="px-4 py-5"><EstadoPill estado={c.estado} /></td>
-                      </tr>
-                    ))}
+                      </tr>,
+                      c.reprogramada ? (
+                        <tr key={`${c.id}-reprog`} className="bg-indigo-50/40 border-l-2 border-indigo-300">
+                          <td className="px-8 py-3">
+                            <div className="flex flex-col">
+                              <span className="font-semibold text-indigo-700 whitespace-nowrap flex items-center gap-1">
+                                <span className="material-symbols-outlined text-[15px]">event_repeat</span>
+                                {c.reprogramadaDe ? format(parseFechaLocal(c.reprogramadaDe), 'd MMM yyyy', { locale: es }) : format(parseFechaLocal(c.fecha), 'd MMM yyyy', { locale: es })}
+                              </span>
+                              <span className="text-xs text-indigo-400">{c.reprogramadaDeHora ?? c.horaInicio}</span>
+                            </div>
+                          </td>
+                          <td className="px-8 py-3" colSpan={3}>
+                            <span className="text-indigo-500 text-body-md">{c.servicio.nombre} · <span className="italic">se reprogramó a {format(parseFechaLocal(c.fecha), 'd MMM', { locale: es })} · {c.horaInicio}</span></span>
+                          </td>
+                          <td className="px-4 py-3" />
+                          <td className="px-4 py-3">
+                            <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-bold uppercase whitespace-nowrap">Reprogramada</span>
+                          </td>
+                        </tr>
+                      ) : null,
+                    ]))}
                   </tbody>
                 </table>
               </div>

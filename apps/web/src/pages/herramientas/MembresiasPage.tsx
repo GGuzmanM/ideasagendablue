@@ -15,7 +15,7 @@ import { ContratoMembresiaModal } from '../../components/membresias/ContratoMemb
 import { imprimirContratoMembresia, verContratoMembresia } from '../../api/membresias';
 
 interface ItemComp { servicioId: string; cantidad: number; etiqueta?: string; subcategoriaId?: string | null; subcategoriaEtiqueta?: string }
-interface Membresia {
+export interface Membresia {
   id: string;
   nombre: string;
   descripcion: string | null;
@@ -305,14 +305,16 @@ function FormMembresia({ membresia, sedes, servicios, onCerrar, onGuardado }: {
 
 // ─── Vender a un paciente ─────────────────────────────────────────────────────
 
-function VenderMembresia({ membresia, sedes, onCerrar, onVendida }: {
+export function VenderMembresia({ membresia, sedes, onCerrar, onVendida, pacienteInicial }: {
   membresia: Membresia;
   sedes: { id: string; nombre: string }[];
   onCerrar: () => void;
   onVendida: () => void;
+  /** Si viene, el paciente ya está fijado (venta desde su ficha) → no se busca. */
+  pacienteInicial?: { id: string; nombre: string };
 }) {
   const [q, setQ] = useState('');
-  const [pacienteId, setPacienteId] = useState('');
+  const [pacienteId, setPacienteId] = useState(pacienteInicial?.id ?? '');
   const [sedeId, setSedeId] = useState('');
   // Vigencia editable (fechas abiertas): inicio + fin. El fin se sugiere por la duración,
   // pero se puede cambiar. La membresía solo sirve para agendar dentro de [inicio, fin].
@@ -361,14 +363,23 @@ function VenderMembresia({ membresia, sedes, onCerrar, onVendida }: {
           <button onClick={onCerrar} className="material-symbols-outlined text-white/80 hover:text-white">close</button>
         </div>
         <div className="p-5 space-y-3 overflow-y-auto custom-scrollbar">
-        <input className="input text-sm" placeholder="Buscar paciente (nombre o DNI)…" value={q} onChange={(e) => { setQ(e.target.value); setPacienteId(''); }} />
-        <div className="max-h-36 overflow-y-auto space-y-1">
-          {resultados?.map((p) => (
-            <button key={p.id} onClick={() => setPacienteId(p.id)} className={cn('w-full text-left px-2 py-1.5 rounded-lg text-xs border', pacienteId === p.id ? 'border-primary bg-primary/5' : 'border-outline-variant/20 hover:bg-surface-container-low')}>
-              {p.nombreCompleto} · {p.numeroDocumento}
-            </button>
-          ))}
-        </div>
+        {pacienteInicial ? (
+          <div className="px-3 py-2 rounded-lg text-sm border border-primary bg-primary/5 font-semibold text-on-surface flex items-center gap-2">
+            <span className="material-symbols-outlined text-primary text-base">person</span>
+            {pacienteInicial.nombre}
+          </div>
+        ) : (
+          <>
+            <input className="input text-sm" placeholder="Buscar paciente (nombre o DNI)…" value={q} onChange={(e) => { setQ(e.target.value); setPacienteId(''); }} />
+            <div className="max-h-36 overflow-y-auto space-y-1">
+              {resultados?.map((p) => (
+                <button key={p.id} onClick={() => setPacienteId(p.id)} className={cn('w-full text-left px-2 py-1.5 rounded-lg text-xs border', pacienteId === p.id ? 'border-primary bg-primary/5' : 'border-outline-variant/20 hover:bg-surface-container-low')}>
+                  {p.nombreCompleto} · {p.numeroDocumento}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
         <label className="block text-xs text-on-surface-variant">Sede (donde se vende = donde se atiende)
           <select className="input text-sm" value={sedeId} onChange={(e) => setSedeId(e.target.value)}>
             <option value="">— sede —</option>

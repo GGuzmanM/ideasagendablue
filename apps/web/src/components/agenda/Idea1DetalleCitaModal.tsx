@@ -200,12 +200,18 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                 <span className="material-symbols-outlined text-indigo-600 text-lg shrink-0">event_repeat</span>
                 <div className="text-xs text-indigo-900 min-w-0">
                   <p className="font-bold">Cita reprogramada</p>
-                  <p className="text-indigo-700 mt-0.5">
-                    Del <b>{format(new Date(cita.reprogramacion.deFecha + 'T12:00:00'), "EEEE d 'de' MMMM", { locale: es })}</b>
-                    {cita.reprogramacion.deHora ? ` · ${cita.reprogramacion.deHora}` : ''} al{' '}
-                    <b>{format(new Date(cita.reprogramacion.aFecha + 'T12:00:00'), "EEEE d 'de' MMMM", { locale: es })}</b>
-                    {cita.reprogramacion.aHora ? ` · ${cita.reprogramacion.aHora}` : ''}
-                  </p>
+                  {cita.reprogramacion.deFecha === cita.reprogramacion.aFecha ? (
+                    <p className="text-indigo-700 mt-0.5">
+                      El <b>{format(new Date(cita.reprogramacion.aFecha + 'T12:00:00'), "EEEE d 'de' MMMM", { locale: es })}</b>: de las <b>{cita.reprogramacion.deHora}</b> a las <b>{cita.reprogramacion.aHora}</b>
+                    </p>
+                  ) : (
+                    <p className="text-indigo-700 mt-0.5">
+                      Del <b>{format(new Date(cita.reprogramacion.deFecha + 'T12:00:00'), "EEEE d 'de' MMMM", { locale: es })}</b>
+                      {cita.reprogramacion.deHora ? ` · ${cita.reprogramacion.deHora}` : ''} al{' '}
+                      <b>{format(new Date(cita.reprogramacion.aFecha + 'T12:00:00'), "EEEE d 'de' MMMM", { locale: es })}</b>
+                      {cita.reprogramacion.aHora ? ` · ${cita.reprogramacion.aHora}` : ''}
+                    </p>
+                  )}
                   <p className="text-[11px] text-indigo-500 mt-0.5">
                     Reprogramada por {cita.reprogramacion.por} · {fmtComentario(cita.reprogramacion.en)}
                   </p>
@@ -802,35 +808,56 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                         const esCitaActual = h.id === cita.id;
                         const fecha = new Date(h.fecha.slice(0, 10) + 'T12:00:00');
                         return (
-                          <div
-                            key={h.id}
-                            onClick={() => seleccionarCitaPorId(h.id)}
-                            title="Haz clic para seleccionar esta cita y gestionar su estado"
-                            className={`p-3 rounded-xl border text-xs space-y-1 transition-all cursor-pointer hover:border-primary ${
-                              esCitaActual
-                                ? 'bg-primary/5 border-primary/30 shadow-xs'
-                                : 'bg-surface-container-lowest border-outline-variant/20 hover:bg-surface-container-low'
-                            }`}
-                          >
-                            <div className="flex justify-between items-center gap-2">
-                              <span className="font-bold text-on-surface truncate flex items-center gap-1">
-                                <span>{h.servicio.nombre}</span>
-                                {esCitaActual && (
-                                  <span className="text-[10px] text-primary font-bold">(Seleccionada)</span>
-                                )}
-                              </span>
-                              <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-surface-container text-on-surface-variant uppercase">
-                                {h.estado}
-                              </span>
+                          <React.Fragment key={h.id}>
+                            <div
+                              onClick={() => seleccionarCitaPorId(h.id)}
+                              title="Haz clic para seleccionar esta cita y gestionar su estado"
+                              className={`p-3 rounded-xl border text-xs space-y-1 transition-all cursor-pointer hover:border-primary ${
+                                esCitaActual
+                                  ? 'bg-primary/5 border-primary/30 shadow-xs'
+                                  : 'bg-surface-container-lowest border-outline-variant/20 hover:bg-surface-container-low'
+                              }`}
+                            >
+                              <div className="flex justify-between items-center gap-2">
+                                <span className="font-bold text-on-surface truncate flex items-center gap-1">
+                                  <span>{h.servicio.nombre}</span>
+                                  {esCitaActual && (
+                                    <span className="text-[10px] text-primary font-bold">(Seleccionada)</span>
+                                  )}
+                                </span>
+                                <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-surface-container text-on-surface-variant uppercase">
+                                  {h.estado}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2 text-[11px] text-on-surface-variant">
+                                <span>{format(fecha, "d 'de' MMM, yyyy", { locale: es })}</span>
+                                <span>·</span>
+                                <span>{h.horaInicio}</span>
+                                <span>·</span>
+                                <span>{h.sede.nombre}</span>
+                              </div>
                             </div>
-                            <div className="flex items-center gap-2 text-[11px] text-on-surface-variant">
-                              <span>{format(fecha, "d 'de' MMM, yyyy", { locale: es })}</span>
-                              <span>·</span>
-                              <span>{h.horaInicio}</span>
-                              <span>·</span>
-                              <span>{h.sede.nombre}</span>
-                            </div>
-                          </div>
+                            {/* Registro de reprogramación (solo lectura): el slot ORIGINAL de donde salió */}
+                            {h.reprogramada && (
+                              <div className="p-3 rounded-xl border border-dashed border-indigo-200 bg-indigo-50/40 text-xs space-y-1">
+                                <div className="flex justify-between items-center gap-2">
+                                  <span className="font-bold text-indigo-900 truncate flex items-center gap-1">
+                                    <span className="material-symbols-outlined text-[13px]">event_repeat</span>
+                                    <span>{h.servicio.nombre}</span>
+                                  </span>
+                                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-indigo-100 text-indigo-700 uppercase">
+                                    Reprogramada
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2 text-[11px] text-indigo-500">
+                                  <span>{h.reprogramadaDe ? format(new Date(h.reprogramadaDe + 'T12:00:00'), "d 'de' MMM, yyyy", { locale: es }) : format(fecha, "d 'de' MMM, yyyy", { locale: es })}</span>
+                                  {h.reprogramadaDeHora && (<><span>·</span><span>{h.reprogramadaDeHora}</span></>)}
+                                  <span>·</span>
+                                  <span>{h.sede.nombre}</span>
+                                </div>
+                              </div>
+                            )}
+                          </React.Fragment>
                         );
                       })}
                     </div>

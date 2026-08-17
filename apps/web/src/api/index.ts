@@ -268,6 +268,10 @@ export interface HistorialCita {
   horaInicio: string;
   duracionMinutos: number;
   estado: string;
+  // Reprogramación: true si esta cita fue movida a otro día u hora. `reprogramadaDe`/`Hora` = origen.
+  reprogramada?: boolean;
+  reprogramadaDe?: string | null;
+  reprogramadaDeHora?: string | null;
   comentarios: { id: string; texto: string; creadoEn: string; autorEtiqueta: string | null; autor: { nombre: string } | null }[];
   sesionNumero: number | null;
   // Badge "Sesión x/total · paquete" (módulo Sesiones)
@@ -332,6 +336,10 @@ export const pacientesApi = {
   obtener: (id: string) => api.get<PacienteDetalle>(`/pacientes/${id}`),
   crear: (data: Partial<Paciente>) => api.post<Paciente>('/pacientes', data),
   actualizar: (id: string, data: Partial<Paciente>) => api.patch<Paciente>(`/pacientes/${id}`, data),
+  // Resumen de asistencia (Limablue + Genexis) para la tarjeta de Nueva Cita.
+  estadisticas: (id: string) =>
+    api.get<{ total: number; asistencias: number; canceladas: number; noShow: number; noVino: number; porcentajeAsistencia: number | null }>(
+      `/pacientes/${id}/estadisticas`),
 };
 
 // ─── Historial Genexis (sistema anterior — congelado, SOLO lectura) ───────────
