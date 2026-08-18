@@ -47,6 +47,7 @@ export function CompetenciasPage() {
     pendientes,
     toggle,
     tieneCompetencia,
+    celdaPermitida,
     profsFiltrados,
     unidades,
     servsFiltrados,
@@ -146,13 +147,15 @@ export function CompetenciasPage() {
 
                 <tbody>
                   {profsFiltrados.map(prof => {
-                    const count = servsFiltrados.filter(s => tieneCompetencia(prof.id, s.id)).length;
+                    // Solo cuentan los servicios de SU área (categoría permitida).
+                    const servsArea = servsFiltrados.filter(s => celdaPermitida(prof, s));
+                    const count = servsArea.filter(s => tieneCompetencia(prof.id, s.id)).length;
                     const nombreCorto = `${prof.nombres.split(' ')[0]} ${prof.apellidos.split(' ')[0]}`;
                     const enVacaciones = (prof as unknown as { enVacaciones?: boolean }).enVacaciones ?? false;
 
                     // Color del chip contador según cobertura del profesional
                     const chipCount =
-                      count === servsFiltrados.length && count > 0
+                      count === servsArea.length && count > 0
                         ? 'bg-primary/10 text-primary'
                         : count > 0
                         ? 'bg-amber-100 text-amber-800'
@@ -199,7 +202,7 @@ export function CompetenciasPage() {
                                   </span>
                                 )}
                                 <span className={cn('text-[10px] font-bold px-1.5 py-0.5 rounded-full', chipCount)}>
-                                  {count}/{servsFiltrados.length}
+                                  {count}/{servsArea.length}
                                 </span>
                               </div>
                             </div>
@@ -208,9 +211,25 @@ export function CompetenciasPage() {
 
                         {/* Celdas de competencia */}
                         {servsFiltrados.map(srv => {
-                          const activa = tieneCompetencia(prof.id, srv.id);
+                          const permitida = celdaPermitida(prof, srv);
+                          const activa = permitida && tieneCompetencia(prof.id, srv.id);
                           const key = `${prof.id}::${srv.id}`;
                           const isPending = !!pendientes[key];
+
+                          // Celda de OTRA categoría: no aplica (el profesional no puede atender ese
+                          // servicio). Se muestra bloqueada. El baro por solicitud se asigna en Movimientos.
+                          if (!permitida) {
+                            return (
+                              <td key={srv.id} className="border-b border-outline-variant/20 text-center py-2.5 px-2 bg-slate-50/60">
+                                <div
+                                  className="w-9 h-9 rounded-full grid place-items-center mx-auto text-slate-300 cursor-not-allowed"
+                                  title={`${srv.nombre} no corresponde al área de ${nombreCorto}`}
+                                >
+                                  <span className="material-symbols-outlined text-base">block</span>
+                                </div>
+                              </td>
+                            );
+                          }
 
                           return (
                             <td key={srv.id} className="border-b border-outline-variant/20 text-center py-2.5 px-2">

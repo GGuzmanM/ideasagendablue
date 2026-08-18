@@ -2,9 +2,23 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db';
 import { requireAuth, requireRol } from '../middleware/auth';
+import { AppError } from '../middleware/errorHandler';
 import { registrarAudit } from '../services/audit';
 
 const router = Router();
+
+// Categoría de un servicio según su unidad de negocio.
+function catDeUnidad(nombre: string): 'podo' | 'baro' | 'fisio' | null {
+  const n = (nombre ?? '').toLowerCase();
+  if (n.includes('baropodometr')) return 'baro';
+  if (n.includes('fisio')) return 'fisio';
+  if (n.includes('podolog')) return 'podo';
+  return null;
+}
+// Categoría "propia" de un profesional según su tipo.
+function catDeTipo(tipo: string): 'podo' | 'baro' | 'fisio' | null {
+  return tipo === 'podologa' ? 'podo' : tipo === 'fisioterapeuta' ? 'fisio' : tipo === 'medico' ? 'baro' : null;
+}
 
 // Matriz completa de competencias
 router.get('/', requireAuth, async (req, res) => {
@@ -52,6 +66,21 @@ const toggleSchema = z.object({
 // Activar/desactivar competencia
 router.post('/toggle', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (req, res) => {
   const { profesionalId, servicioId, activa } = toggleSchema.parse(req.body);
+
+  // Guard de CATEGORÍA: al HABILITAR, el servicio debe ser del área del profesional (podóloga→podo,
+  // fisio→fisio, médico→baro). El baro "por solicitud" para podólogas se asigna desde Movimientos
+  // (baro-solicitud), no por aquí. Desactivar (activa=false) siempre se permite (para limpiar).
+  if (activa) {
+    const [prof, serv] = await Promise.all([
+      prisma.profesional.findUnique({ where: { id: profesionalId }, select: { tipo: true } }),
+      prisma.servicio.findUnique({ where: { id: servicioId }, select: { unidadNegocio: { select: { nombre: true } } } }),
+    ]);
+    const catProf = prof ? catDeTipo(prof.tipo) : null;
+    const catServ = serv ? catDeUnidad(serv.unidadNegocio?.nombre ?? '') : null;
+    if (catProf && catServ && catProf !== catServ) {
+      throw new AppError('Ese servicio no corresponde al área del profesional (cruza categoría). El baro por solicitud se asigna desde Movimientos.', 400, 'CATEGORIA_INVALIDA');
+    }
+  }
 
   const existing = await prisma.competenciaProfesional.findUnique({
     where: { profesionalId_servicioId: { profesionalId, servicioId } },

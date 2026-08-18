@@ -38,6 +38,7 @@ import { ReportesRrhhPage } from './pages/herramientas/ReportesRrhhPage';
 import { ComposicionSedePage } from './pages/herramientas/ComposicionSedePage';
 import { ComposicionImprimirPage } from './pages/herramientas/ComposicionImprimirPage';
 import { ComprobantesImprimirPage } from './pages/herramientas/ComprobantesImprimirPage';
+import { MovimientosImprimirPage } from './pages/herramientas/MovimientosImprimirPage';
 import { VideosServicioPage } from './pages/herramientas/VideosServicioPage';
 import { Idea1AgendaPage } from './pages/Idea1AgendaPage';
 import { HorariosRestriccionesPage } from './pages/HorariosRestriccionesPage';
@@ -78,6 +79,8 @@ export default function App() {
       <Route path="/imprimir/composicion-sede" element={<ComposicionImprimirPage />} />
       {/* Comprobantes del día en una sola hoja (cierre) */}
       <Route path="/imprimir/comprobantes" element={<ComprobantesImprimirPage />} />
+      {/* Cambios de personal del mes (movimientos) — A4 vertical para PDF */}
+      <Route path="/imprimir/movimientos" element={<MovimientosImprimirPage />} />
       <Route element={<Layout />}>
         <Route path="/" element={<Navigate to="/AgendaPrincipal" replace />} />
         <Route path="/agenda-vieja" element={<AgendaPage />} />

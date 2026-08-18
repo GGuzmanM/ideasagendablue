@@ -49,6 +49,10 @@ router.get('/:id', ...soloAdmins, async (req, res) => {
 // POST /api/v1/users
 router.post('/', ...editarAdmins, async (req, res) => {
   const data = crearSchema.parse(req.body);
+  // Whitelist: el rol debe existir en la tabla Rol (evita fijar un rol inexistente → usuario sin permisos).
+  if (!(await prisma.rol.findFirst({ where: { nombre: data.rol } }))) {
+    throw new AppError(`Rol inválido: "${data.rol}"`, 400, 'ROL_INVALIDO');
+  }
   const existe = await prisma.usuario.findFirst({ where: { email: data.email.toLowerCase(), deletedAt: null } });
   if (existe) throw new AppError('Ya existe un usuario con ese email', 409);
   const passwordHash = await bcrypt.hash(data.password, 12);
@@ -74,6 +78,10 @@ router.put('/:id', ...editarAdmins, async (req, res) => {
 
   if (data.activo === false && id === caller.userId) {
     throw new AppError('No puedes desactivarte a ti mismo', 400);
+  }
+
+  if (data.rol && !(await prisma.rol.findFirst({ where: { nombre: data.rol } }))) {
+    throw new AppError(`Rol inválido: "${data.rol}"`, 400, 'ROL_INVALIDO');
   }
 
   const update: Record<string, unknown> = {};

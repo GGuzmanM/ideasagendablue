@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db';
-import { requireAuth, requireScope } from '../middleware/auth';
+import { requireAuth, requireScope, requireAcceso } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { auditEnTx } from '../services/audit';
 import { alertaDePaciente, alertasDePacientes } from '../services/alertaPaciente';
@@ -507,7 +507,7 @@ async function resolverResidencia(
   return out;
 }
 
-router.post('/', requireAuth, async (req, res) => {
+router.post('/', requireAuth, requireAcceso('patients:write', 'pacientes.editar'), async (req, res) => {
   const data = normalizarPaciente(crearPacienteSchema.parse(req.body));
 
   // Primera capa: verificación en la app (mensaje claro inmediato).
@@ -562,7 +562,7 @@ router.post('/', requireAuth, async (req, res) => {
 });
 
 // ─── PATCH /pacientes/:id ─────────────────────────────────────────────────────
-router.patch('/:id', requireAuth, async (req, res) => {
+router.patch('/:id', requireAuth, requireAcceso('patients:write', 'pacientes.editar'), async (req, res) => {
   const data = normalizarPaciente(crearPacienteSchema.partial().parse(req.body));
   const antes = await prisma.paciente.findUnique({ where: { id: req.params.id, deletedAt: null } });
   if (!antes) throw new AppError('Paciente no encontrado', 404);

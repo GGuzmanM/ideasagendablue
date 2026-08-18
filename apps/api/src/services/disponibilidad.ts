@@ -92,6 +92,27 @@ export async function turnosDelDia(sedeId: string, fecha: string, profIds: strin
     }
     if (turno) out.set(id, turno);
   }
+
+  // EXCEPCIÓN abierta: una podóloga ASIGNADA SOLO ESE DÍA (movimiento de un día, fechaInicio ==
+  // fechaFin == la fecha) trabaja el día especial AUTOMÁTICAMENTE, aunque no tenga horario base
+  // ni override — su turno por defecto es la ventana de la excepción. Así, "traer" a alguien para
+  // un domingo habilitado basta para que salga en la agenda y sea agendable, sin marcar presencia
+  // aparte. Las asignaciones LARGAS/indefinidas NO se auto-incluyen: en días especiales la
+  // presencia del staff base sigue siendo opt-in (se marca en Días Especiales).
+  if (excAbierta) {
+    const faltantes = profIds.filter((id) => !out.has(id));
+    if (faltantes.length > 0) {
+      const unDia = await prisma.asignacionSede.findMany({
+        where: { sedeId, profesionalId: { in: faltantes }, fechaInicio: fechaPunto, fechaFin: fechaPunto },
+        select: { profesionalId: true },
+      });
+      for (const { profesionalId } of unDia) {
+        const t = recortar(excAbierta.horaApertura!, excAbierta.horaCierre!);
+        if (t) out.set(profesionalId, t);
+      }
+    }
+  }
+
   return out;
 }
 
@@ -219,7 +240,10 @@ export async function calcularDisponibilidad(params: DisponibilidadParams): Prom
         OR: [{ profesionalId: prof.id }, { solicitadoProfesionalId: prof.id }],
         fecha: new Date(fecha + 'T12:00:00'),
         deletedAt: null,
-        estado: { notIn: ['cancelada', 'no_show'] },
+        // 'reprogramada' LIBERA el slot (la cita se movió a otro lado): alinear con el índice único
+        // y validarProfesionalLibre, que también la excluyen. Si no, el slot se mostraría ocupado
+        // aunque está libre (sub-oferta) y la auto-asignación descartaría al profesional en falso.
+        estado: { notIn: ['cancelada', 'no_show', 'reprogramada'] },
       },
       select: { horaInicio: true, duracionMinutos: true },
     });
@@ -416,7 +440,7 @@ export async function seleccionarProfesionalOptimo(
         OR: [{ profesionalId: prof.id }, { solicitadoProfesionalId: prof.id }],
         fecha: fechaDate,
         deletedAt: null,
-        estado: { notIn: ['cancelada', 'no_show'] },
+        estado: { notIn: ['cancelada', 'no_show', 'reprogramada'] }, // reprogramada libera el slot (ver arriba)
       },
       select: { horaInicio: true, duracionMinutos: true },
     });

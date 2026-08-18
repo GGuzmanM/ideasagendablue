@@ -1,8 +1,11 @@
 import { Router } from 'express';
+import { MotivoMovimiento } from '@prisma/client';
 import { prisma } from '../db';
 import { requireAuth, requireRol } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { registrarAudit } from '../services/audit';
+
+const MOTIVOS = Object.values(MotivoMovimiento) as string[];
 
 const router = Router();
 
@@ -30,11 +33,18 @@ const esSlotGenerico = (p: { nombres: string; apellidos: string }) =>
 // Sin `sedeId` (página global): lista todos los registros con su sede.
 router.get('/', requireAuth, async (req, res) => {
   const sedeId = typeof req.query.sedeId === 'string' && req.query.sedeId ? req.query.sedeId : null;
+  // `fecha` (opcional): filtra el roster a los doctores cuya asignación de baro RIGE ese día
+  // (fechaInicio ≤ fecha ≤ fechaFin|indefinido). Lo usa el combo de médico de Nueva Cita para
+  // listar solo a los disponibles en la sede ESA fecha. Sin `fecha` → todos los activos.
+  const fecha = typeof req.query.fecha === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.fecha) ? req.query.fecha : null;
+  const ventana = fecha
+    ? { fechaInicio: { lte: new Date(`${fecha}T23:59:59`) }, OR: [{ fechaFin: null }, { fechaFin: { gte: new Date(`${fecha}T00:00:00`) } }] }
+    : {};
   const { unidad, servicios } = await baroContexto();
 
-  // Registros de baro por sede (activos), con datos del médico y la sede.
+  // Registros de baro por sede (activos + vigentes en la fecha), con datos del médico y la sede.
   const registros = await prisma.baroMedicoSede.findMany({
-    where: { activa: true, ...(sedeId ? { sedeId } : {}), profesional: { deletedAt: null } },
+    where: { activa: true, ...(sedeId ? { sedeId } : {}), profesional: { deletedAt: null }, ...ventana },
     include: {
       profesional: { select: { id: true, nombres: true, apellidos: true, tipo: true, activo: true } },
       sede: { select: { id: true, nombre: true } },
@@ -49,6 +59,10 @@ router.get('/', requireAuth, async (req, res) => {
     activo: r.profesional.activo,
     sedeId: r.sede.id,
     sedeNombre: r.sede.nombre,
+    // Vigencia temporal de la asignación (para la sección "Baro" de movimientos).
+    fechaInicio: r.fechaInicio.toISOString().slice(0, 10),
+    fechaFin: r.fechaFin ? r.fechaFin.toISOString().slice(0, 10) : null,
+    motivo: r.motivo,
   }));
   const yaEnSede = new Set(registros.filter((r) => !sedeId || r.sedeId === sedeId).map((r) => r.profesionalId));
 
@@ -104,20 +118,63 @@ router.post('/:profesionalId', requireAuth, requireRol('admin', 'coordinadora_se
   const sede = await prisma.sede.findUnique({ where: { id: sedeId }, select: { id: true, nombre: true } });
   if (!sede) throw new AppError('Sede no encontrada', 404);
 
-  // 1) Registro por sede (baro_medico_sede).
-  await prisma.baroMedicoSede.upsert({
-    where: { profesionalId_sedeId: { profesionalId, sedeId } },
-    update: { activa: true },
-    create: { profesionalId, sedeId, activa: true, creadoPor: req.user?.userId },
-  });
-  // 2) Competencia "por solicitud" en TODOS los servicios de baro (habilita agendarle).
-  for (const servicioId of servicioIds) {
-    await prisma.competenciaProfesional.upsert({
-      where: { profesionalId_servicioId: { profesionalId, servicioId } },
-      update: { activa: true, soloPorSolicitud: true },
-      create: { profesionalId, servicioId, habilitadoDesde: new Date(), activa: true, soloPorSolicitud: true, creadoPor: req.user?.userId },
+  // Asignación temporal (opcional): fechaInicio (default hoy), fechaFin (null = indefinido), motivo.
+  const b = req.body ?? {};
+  const fechaInicio = typeof b.fechaInicio === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(b.fechaInicio) ? new Date(`${b.fechaInicio}T00:00:00`) : new Date(new Date().setHours(0, 0, 0, 0));
+  const fechaFin = typeof b.fechaFin === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(b.fechaFin) ? new Date(`${b.fechaFin}T00:00:00`) : null;
+  const motivo = (typeof b.motivo === 'string' && MOTIVOS.includes(b.motivo) ? b.motivo : null) as MotivoMovimiento | null;
+  if (fechaFin && fechaFin < fechaInicio) throw new AppError('La fecha de fin no puede ser anterior a la de inicio', 400);
+
+  const DIA = 24 * 60 * 60 * 1000;
+  const diaAntes = (d: Date) => new Date(d.getTime() - DIA);
+
+  // REGLA "1 sede por día": un doctor NUNCA está en 2 sedes el mismo día. Al crear el periodo
+  // nuevo [fechaInicio, fechaFin] resolvemos solapes con sus OTROS periodos activos (cualquier sede):
+  //  · el periodo que lo cubre el día de inicio → se CIERRA el día anterior (deja esa sede ese día).
+  //  · una asignación FUTURA dentro del rango → RECORTA el fin del nuevo hasta el día anterior a ella.
+  await prisma.$transaction(async (tx) => {
+    const activos = await tx.baroMedicoSede.findMany({
+      where: { profesionalId, activa: true },
+      select: { id: true, sedeId: true, fechaInicio: true, fechaFin: true },
     });
-  }
+
+    // 1) Recortar el fin del nuevo si hay una asignación futura que empieza dentro del rango.
+    let finEfectivo = fechaFin;
+    for (const o of activos) {
+      const empiezaDentro = o.fechaInicio > fechaInicio && (fechaFin === null || o.fechaInicio <= fechaFin);
+      if (empiezaDentro) {
+        const cap = diaAntes(o.fechaInicio);
+        if (finEfectivo === null || cap < finEfectivo) finEfectivo = cap;
+      }
+    }
+
+    // 2) Cerrar (o desactivar) el periodo que cubre el día de inicio del nuevo.
+    for (const o of activos) {
+      const cubreInicio = o.fechaInicio <= fechaInicio && (o.fechaFin === null || o.fechaFin >= fechaInicio);
+      if (!cubreInicio) continue;
+      const cierre = diaAntes(fechaInicio);
+      if (cierre < o.fechaInicio) {
+        // El periodo viejo quedaría vacío (empezaba el mismo día) → lo reemplaza el nuevo.
+        await tx.baroMedicoSede.update({ where: { id: o.id }, data: { activa: false } });
+      } else {
+        await tx.baroMedicoSede.update({ where: { id: o.id }, data: { fechaFin: cierre } });
+      }
+    }
+
+    // 3) Crear el periodo nuevo.
+    await tx.baroMedicoSede.create({
+      data: { profesionalId, sedeId, activa: true, fechaInicio, fechaFin: finEfectivo, motivo, creadoPor: req.user?.userId },
+    });
+
+    // 4) Competencia "por solicitud" en TODOS los servicios de baro (habilita agendarle).
+    for (const servicioId of servicioIds) {
+      await tx.competenciaProfesional.upsert({
+        where: { profesionalId_servicioId: { profesionalId, servicioId } },
+        update: { activa: true, soloPorSolicitud: true },
+        create: { profesionalId, servicioId, habilitadoDesde: new Date(), activa: true, soloPorSolicitud: true, creadoPor: req.user?.userId },
+      });
+    }
+  });
   await registrarAudit({
     usuarioId: req.user?.userId, accion: 'baro_solicitud_agregar', entidad: 'profesional', entidadId: profesionalId,
     despues: { soloPorSolicitud: true, sede: sede.nombre }, sedeId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
@@ -131,12 +188,36 @@ router.delete('/:profesionalId', requireAuth, requireRol('admin', 'coordinadora_
   const profesionalId = req.params.profesionalId;
   const sedeId = typeof req.query.sedeId === 'string' && req.query.sedeId ? req.query.sedeId : undefined;
   if (!sedeId) throw new AppError('Se requiere la sede para quitar el médico de baro', 400, 'SEDE_REQUERIDA');
+  // `hasta` (opcional): CIERRA la asignación en esa fecha (conserva el historial fechaInicio..hasta)
+  // en vez de desactivarla. Lo usa MOVER: al cambiar de sede el día X, la sede vieja se cierra en X
+  // sin borrar el pasado. Sin `hasta` (la ✕) → se desactiva por completo.
+  const hasta = typeof req.query.hasta === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.hasta) ? req.query.hasta : null;
 
-  // Desactiva el registro de ESA sede.
-  await prisma.baroMedicoSede.updateMany({ where: { profesionalId, sedeId }, data: { activa: false } });
+  const hoyCero = new Date(); hoyCero.setHours(0, 0, 0, 0);
+  if (hasta) {
+    // MOVER: cierra en `hasta` SOLO el/los periodo(s) de esa sede que están vigentes ese día y se
+    // extienden más allá (fin null o > hasta). No toca periodos pasados ya cerrados ni futuros.
+    const hastaDate = new Date(`${hasta}T00:00:00`);
+    await prisma.baroMedicoSede.updateMany({
+      where: { profesionalId, sedeId, activa: true, fechaInicio: { lte: hastaDate }, OR: [{ fechaFin: null }, { fechaFin: { gt: hastaDate } }] },
+      data: { fechaFin: hastaDate },
+    });
+  } else {
+    // ✕ QUITAR: desactiva los periodos vigentes/futuros de esa sede (fin null o ≥ hoy). Los periodos
+    // pasados ya cerrados quedan intactos como historial.
+    await prisma.baroMedicoSede.updateMany({
+      where: { profesionalId, sedeId, activa: true, OR: [{ fechaFin: null }, { fechaFin: { gte: hoyCero } }] },
+      data: { activa: false },
+    });
+  }
 
-  // Si ya no atiende baro en NINGUNA sede, desactiva también sus competencias por-solicitud.
-  const quedanSedes = await prisma.baroMedicoSede.count({ where: { profesionalId, activa: true } });
+  // Si ya no atiende baro en NINGUNA sede VIGENTE, desactiva también sus competencias por-solicitud.
+  // Cuenta solo filas activas y NO cerradas en el pasado (una fila cerrada con `hasta` sigue
+  // activa=true, pero si su fechaFin ya pasó no cuenta como sede vigente).
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  const quedanSedes = await prisma.baroMedicoSede.count({
+    where: { profesionalId, activa: true, OR: [{ fechaFin: null }, { fechaFin: { gte: hoy } }] },
+  });
   let competenciasDesactivadas = 0;
   if (quedanSedes === 0) {
     const r = await prisma.competenciaProfesional.updateMany({

@@ -42,6 +42,9 @@ export const composicionSedeApi = {
   editarAsignacion: (id: string, data: { sedeId?: string; fechaInicio?: string; fechaFin?: string | null; notas?: string | null }) =>
     api.patch<{ id: string }>(`${BASE}/asignaciones/${id}`, data),
   eliminarAsignacion: (id: string) => api.delete<{ ok: boolean }>(`${BASE}/asignaciones/${id}`),
+  // Mover de sede atómico (arrastre): cierra la vieja + crea la nueva [desde → fin de mes] en una tx.
+  moverAsignacion: (id: string, data: { sedeId: string; desde: string }) =>
+    api.post<{ ok: boolean }>(`${BASE}/asignaciones/${id}/mover`, data),
 
   // PDF: descarga por blob con el token (mismo patrón que exportar/*).
   descargarPDF: async (mes: string) => {

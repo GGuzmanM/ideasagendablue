@@ -107,14 +107,15 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
     // muere al instante aunque el token siga vigente (no esperar a que caduque).
     const usuario = await prisma.usuario.findUnique({
       where: { id: payload.userId },
-      select: { activo: true, deletedAt: true },
+      select: { activo: true, deletedAt: true, sedes: { select: { sedeId: true } } },
     });
     if (!usuario || usuario.deletedAt || !usuario.activo) {
       throw new AppError('Sesión revocada: usuario inactivo o eliminado', 401, 'SESION_REVOCADA');
     }
-    // Permisos SIEMPRE frescos desde la BD (según el rol): si el admin cambia los permisos
-    // de un rol, aplican al instante sin necesidad de cerrar y abrir sesión.
+    // Permisos Y SEDES SIEMPRE frescos desde la BD: si el admin cambia los permisos del rol o
+    // reasigna/quita sedes del usuario, aplican al instante sin cerrar sesión (no esperar al token).
     payload.permisos = await getPermisosRol(payload.rol);
+    payload.sedes = usuario.sedes.map((s) => s.sedeId);
     req.user = payload;
     return next();
   }

@@ -3,6 +3,19 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { competenciasApi, serviciosApi, profesionalesApi, sedesApi } from '../api';
 
+// Categoría por área/tipo (regla dura: cada profesional solo atiende su categoría; el baro por
+// solicitud de las podólogas se asigna desde Movimientos, no en esta matriz).
+function catDeUnidad(nombre: string): 'podo' | 'baro' | 'fisio' | null {
+  const n = (nombre ?? '').toLowerCase();
+  if (n.includes('baropodometr')) return 'baro';
+  if (n.includes('fisio')) return 'fisio';
+  if (n.includes('podolog')) return 'podo';
+  return null;
+}
+function catDeTipo(tipo: string): 'podo' | 'baro' | 'fisio' | null {
+  return tipo === 'podologa' ? 'podo' : tipo === 'fisioterapeuta' ? 'fisio' : tipo === 'medico' ? 'baro' : null;
+}
+
 export function useCompetenciasData() {
   const qc = useQueryClient();
   const [filtroProf, setFiltroProf]     = useState('');
@@ -38,6 +51,13 @@ export function useCompetenciasData() {
   const tieneCompetencia = (profId: string, servId: string) =>
     competencias?.some(c => c.profesional.id === profId && c.servicio.id === servId && c.activa) ?? false;
 
+  // ¿La celda (profesional × servicio) respeta la categoría? Solo estas se pueden marcar.
+  const celdaPermitida = (prof: { tipo: string }, srv: { unidadNegocio: { nombre: string } }) => {
+    const cp = catDeTipo(prof.tipo);
+    const cs = catDeUnidad(srv.unidadNegocio.nombre);
+    return !!cp && !!cs && cp === cs;
+  };
+
   // Profesionales asignados a la sede seleccionada
   const profsFiltrados = (profesionales ?? [])
     .filter(p => p.tipo !== 'medico') // excluir Baros (no tienen competencias)
@@ -52,31 +72,38 @@ export function useCompetenciasData() {
 
   // Bulk: activar/desactivar toda una fila o columna
   const toggleFila = (profId: string, activar: boolean, nombreProf: string) => {
+    const prof = profsFiltrados.find(p => p.id === profId);
+    if (!prof) return;
     const msg = activar
-      ? `¿Estás segura de agregar todos los servicios a ${nombreProf}?`
+      ? `¿Estás segura de agregar todos los servicios de su área a ${nombreProf}?`
       : `¿Estás segura de quitar todos los servicios a ${nombreProf}?`;
     if (!confirm(msg)) return;
     servsFiltrados.forEach(s => {
+      if (!celdaPermitida(prof, s)) return; // no cruzar categoría
       const tiene = tieneCompetencia(profId, s.id);
       if (activar !== tiene) toggle(profId, s.id, activar);
     });
   };
 
   const toggleColumna = (servId: string, activar: boolean, nombreServ: string) => {
+    const srv = servsFiltrados.find(s => s.id === servId);
+    if (!srv) return;
     const msg = activar
-      ? `¿Estás segura de agregar "${nombreServ}" a todas las profesionales?`
+      ? `¿Estás segura de agregar "${nombreServ}" a todas las profesionales de su área?`
       : `¿Estás segura de quitar "${nombreServ}" a todas las profesionales?`;
     if (!confirm(msg)) return;
     profsFiltrados.forEach(p => {
+      if (!celdaPermitida(p, srv)) return; // no cruzar categoría
       const tiene = tieneCompetencia(p.id, servId);
       if (activar !== tiene) toggle(p.id, servId, activar);
     });
   };
 
-  // Resumen de cobertura
-  const totalCeldas = profsFiltrados.length * servsFiltrados.length;
+  // Resumen de cobertura (solo celdas PERMITIDAS por categoría → el % es significativo).
+  const totalCeldas = profsFiltrados.reduce((acc, p) =>
+    acc + servsFiltrados.filter(s => celdaPermitida(p, s)).length, 0);
   const totalActivas = profsFiltrados.reduce((acc, p) =>
-    acc + servsFiltrados.filter(s => tieneCompetencia(p.id, s.id)).length, 0);
+    acc + servsFiltrados.filter(s => celdaPermitida(p, s) && tieneCompetencia(p.id, s.id)).length, 0);
   const pct = totalCeldas > 0 ? Math.round((totalActivas / totalCeldas) * 100) : 0;
 
   return {
@@ -93,6 +120,7 @@ export function useCompetenciasData() {
     pendientes,
     toggle,
     tieneCompetencia,
+    celdaPermitida,
     profsFiltrados,
     unidades,
     servsFiltrados,

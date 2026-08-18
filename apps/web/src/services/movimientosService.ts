@@ -216,7 +216,7 @@ export function useMovimientosData() {
     cambiosPorSede,
     proximos,
     historial,
-    proximosCount: proximosQ.data?.length,
+    proximosCount: proximos.length, // el badge cuenta lo mismo que se lista (excluye no-movibles y respeta búsqueda)
     cargando,
     // Acciones
     handleEliminar,

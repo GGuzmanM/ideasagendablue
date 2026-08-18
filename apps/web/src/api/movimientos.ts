@@ -76,6 +76,8 @@ export const movimientosApi = {
     profesionalId?: string;
     sedeId?: string;
     estado?: 'activo' | 'proximo' | 'historial';
+    desde?: string; // YYYY-MM-DD — fechaInicio >= desde
+    hasta?: string; // YYYY-MM-DD — fechaFin <= hasta
   }) => api.get<Movimiento[]>('/movimientos', params as Record<string, string>),
 
   preview: (params: {

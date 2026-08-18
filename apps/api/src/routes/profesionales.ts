@@ -676,21 +676,24 @@ router.put('/:id/horario', requireAuth, requireRol('admin', 'coordinadora_sedes'
   res.json({ ok: true, horarios });
 });
 
-// Crear bloqueo de agenda
-router.post('/:id/bloqueos', requireAuth, async (req, res) => {
+// Crear bloqueo de agenda (inhabilita slots reales) → solo gestión (admin/coordinadora).
+router.post('/:id/bloqueos', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (req, res) => {
   const { fechaInicio, fechaFin, motivo } = z.object({
     fechaInicio: z.string(),
     fechaFin: z.string(),
     motivo: z.string().min(3),
   }).parse(req.body);
 
+  const ini = new Date(fechaInicio);
+  const fin = new Date(fechaFin);
+  if (isNaN(ini.getTime()) || isNaN(fin.getTime())) throw new AppError('Fechas inválidas', 400);
+  if (fin < ini) throw new AppError('La fecha de fin no puede ser anterior a la de inicio', 400);
+
+  const prof = await prisma.profesional.findFirst({ where: { id: req.params.id, deletedAt: null }, select: { id: true } });
+  if (!prof) throw new AppError('Profesional no encontrado', 404);
+
   const bloqueo = await prisma.bloqueoAgenda.create({
-    data: {
-      profesionalId: req.params.id,
-      fechaInicio: new Date(fechaInicio),
-      fechaFin: new Date(fechaFin),
-      motivo,
-    },
+    data: { profesionalId: req.params.id, fechaInicio: ini, fechaFin: fin, motivo },
   });
   res.status(201).json(bloqueo);
 });

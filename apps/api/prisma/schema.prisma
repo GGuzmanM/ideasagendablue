@@ -355,6 +355,12 @@ model BaroMedicoSede {
   profesionalId String   @db.Uuid
   sedeId        String   @db.Uuid
   activa        Boolean  @default(true)
+  // Asignación TEMPORAL del doctor a la baro de esta sede (independiente de su sede general).
+  // Rige la sección "Baro" de movimientos y qué médicos lista el combo de Nueva Cita para baro
+  // en esa sede+fecha. fechaFin null = indefinido. motivo null = asignación base (sin cambio).
+  fechaInicio   DateTime @default(now())
+  fechaFin      DateTime?
+  motivo        MotivoMovimiento?
   creadoPor     String?  @db.Uuid
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
@@ -362,7 +368,9 @@ model BaroMedicoSede {
   profesional Profesional @relation(fields: [profesionalId], references: [id])
   sede        Sede        @relation(fields: [sedeId], references: [id])
 
-  @@unique([profesionalId, sedeId])
+  // Sin unique(prof, sede): un doctor puede tener VARIOS periodos en la misma sede a lo largo del
+  // tiempo (histórico). La regla "1 sede por día" se aplica en la lógica (no se solapan periodos).
+  @@index([profesionalId, activa])
   @@index([sedeId, activa])
   @@map("baro_medico_sede")
 }
@@ -722,9 +730,12 @@ model Cita {
   horaInicio              String // "HH:mm"
   duracionMinutos         Int
   estado                  EstadoCita        @default(agendada)
-  // Momento en que se marcó "Llegó" (ancla para el auto-completado por tiempo: 90 min después
-  // pasa a 'completada' automáticamente). Se reinicia si se revierte una cita ya atendida.
+  // Momento en que se marcó "Llegó" (ancla del auto-completado como RED DE SEGURIDAD para citas
+  // que se quedan en 'llego' sin pasar a atención: 90 min después pasan a 'completada').
   llegoEn                 DateTime?
+  // Momento en que se marcó "En atención" (ancla PRINCIPAL del auto-completado: la cita pasa sola
+  // a 'completada' tras duración + 15 min). Se reinicia al (re)entrar a 'en_atencion'.
+  enAtencionEn            DateTime?
   canal                   String            @default("recepcion") // valor de un Canal configurable
   origenAsignacion        OrigenAsignacion?
   paquetePacienteId       String?           @db.Uuid

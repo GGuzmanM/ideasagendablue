@@ -48,6 +48,7 @@ import webhooksRouter from './routes/webhooks';
 import resendWebhookRouter from './routes/resendWebhook';
 import { horariosRouter } from './routes/horarios';
 import analyticsRouter, { recalcularAgregadosAuto } from './routes/analytics';
+import { iniciarRenovacionMensual } from './services/renovacionMensual';
 import analyticsAgentesRouter from './routes/analyticsAgentes';
 import exportarRouter from './routes/exportar';
 import composicionSedeRouter from './routes/composicionSede';
@@ -186,15 +187,16 @@ if (outlookConfigurado()) {
 }
 
 // ─── Sincronización INVERSA: ocupación de Outlook → bloqueos en Limablue ───────
-// Solo si Azure está configurado. Cada 5 min lee el calendario de los profesionales del
+// Solo si Azure está configurado. Cada MINUTO lee el calendario de los profesionales del
 // tenant y refleja sus eventos "Ocupado/Fuera de oficina" como bloqueos de agenda. Una
-// corrida al arrancar (tras BD/redis listos). No bloqueante.
+// corrida al arrancar (tras BD/redis listos). No bloqueante. (Sondeo: en red local Graph no
+// puede hacer push; 1 min es lo más rápido razonable sin una URL pública para webhooks.)
 if (outlookConfigurado()) {
   const importarOcupacion = () => void importarOcupacionOutlookTodos()
     .then((r) => { if (r.creados || r.actualizados || r.borrados) console.log('[outlook-inverso] ocupación importada:', r); })
     .catch((e) => console.error('[outlook-inverso] error:', e));
-  setTimeout(importarOcupacion, 25_000);
-  setInterval(importarOcupacion, 5 * 60_000).unref();
+  setTimeout(importarOcupacion, 15_000);
+  setInterval(importarOcupacion, 60_000).unref();
 }
 
 // ─── Conexión temprana a Redis ────────────────────────────────────────────────
@@ -220,6 +222,11 @@ setInterval(recalcAgregados, 6 * 60 * 60_000).unref();
 const autocompletar = () => void autocompletarCitasPorTiempo().catch((e) => console.error('[autocompletar] error:', e));
 setTimeout(autocompletar, 15_000); // al arrancar (deja que la BD/redis estén listos)
 setInterval(autocompletar, 5 * 60_000).unref();
+
+// ─── Auto-renovación mensual de asignaciones (baro + recepción) ───────────────
+// Al cambiar de mes, el personal continúa en su misma sede salvo que lo muevan o den de baja.
+// Corre al arrancar (catch-up) y cada 12 h. Idempotente. Ver services/renovacionMensual.ts.
+setTimeout(() => iniciarRenovacionMensual(), 25_000);
 
 // ─── Red de seguridad de procesos ─────────────────────────────────────────────
 // Las tareas "fire-and-forget" del POST de citas (correo de reserva, sync Outlook,

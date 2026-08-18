@@ -355,6 +355,46 @@ router.patch('/asignaciones/:id', ...gestion, async (req, res) => {
   res.json(upd);
 });
 
+// MOVER de sede (arrastre) de forma ATÓMICA: cierra la asignación vieja el día anterior a `desde`
+// y crea la nueva [desde → fin de mes] en una sola transacción. Evita el estado roto de hacerlo
+// en 2 llamadas desde el front (si la 2ª fallaba, la persona quedaba sin sede en ambas).
+router.post('/asignaciones/:id/mover', ...gestion, async (req, res) => {
+  const actual = await prisma.asignacionAdministrativa.findFirst({ where: { id: req.params.id, deletedAt: null } });
+  if (!actual) throw new AppError('Asignación no encontrada', 404);
+  const data = z.object({ sedeId: z.string().uuid(), desde: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).parse(req.body);
+  const sede = await prisma.sede.findFirst({ where: { id: data.sedeId, deletedAt: null } });
+  if (!sede) throw new AppError('Sede no encontrada', 404);
+
+  const campo: 'profesionalId' | 'recepcionistaId' = actual.profesionalId ? 'profesionalId' : 'recepcionistaId';
+  const personaId = (actual.profesionalId ?? actual.recepcionistaId)!;
+
+  const DIA = 86_400_000;
+  const desde = new Date(data.desde); // @db.Date medianoche UTC
+  const cierre = new Date(desde.getTime() - DIA);
+  const [y, m] = data.desde.split('-').map(Number);
+  const finMes = new Date(Date.UTC(y, m, 0)); // último día del mes (bisiesto-correcto)
+
+  // Recortar el fin nuevo si la persona ya tiene una asignación futura dentro del mes (1 sede/día).
+  const prox = await prisma.asignacionAdministrativa.findFirst({
+    where: { [campo]: personaId, deletedAt: null, id: { not: actual.id }, fechaInicio: { gt: desde } },
+    select: { fechaInicio: true }, orderBy: { fechaInicio: 'asc' },
+  });
+  const finNuevo = prox && prox.fechaInicio <= finMes ? new Date(prox.fechaInicio.getTime() - DIA) : finMes;
+
+  await prisma.$transaction(async (tx) => {
+    // Cerrar la vieja el día anterior; si arrancaba en/después de `desde` (sin días previos), borrarla.
+    if (cierre < actual.fechaInicio) {
+      await tx.asignacionAdministrativa.update({ where: { id: actual.id }, data: { deletedAt: new Date() } });
+    } else {
+      await tx.asignacionAdministrativa.update({ where: { id: actual.id }, data: { fechaFin: cierre } });
+    }
+    await tx.asignacionAdministrativa.create({
+      data: { sedeId: data.sedeId, [campo]: personaId, fechaInicio: desde, fechaFin: finNuevo, creadoPor: req.user?.userId },
+    });
+  });
+  res.json({ ok: true });
+});
+
 router.delete('/asignaciones/:id', ...gestion, async (req, res) => {
   const actual = await prisma.asignacionAdministrativa.findFirst({ where: { id: req.params.id, deletedAt: null } });
   if (!actual) throw new AppError('Asignación no encontrada', 404);

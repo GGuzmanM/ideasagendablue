@@ -54,7 +54,10 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
   });
   useEffect(() => {
     if (!citaFresca) return;
-    setCitaActiva(prev => ({
+    // El poll está fijado al id ORIGINAL del modal. Si el usuario navegó a otra cita del historial
+    // (seleccionarCitaPorId cambió citaActiva), NO mergear el refetch viejo encima o el modal
+    // "saltaría" de vuelta a la cita original. Solo mergear si sigue siendo la misma cita.
+    setCitaActiva(prev => prev.id !== citaFresca.id ? prev : ({
       ...prev,
       ...citaFresca,
       paciente: { ...prev.paciente, ...citaFresca.paciente },
@@ -152,6 +155,10 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
     onSuccess: (updatedCita, variables) => {
       qc.invalidateQueries({ queryKey: ['citas'] });
       qc.invalidateQueries({ queryKey: ['idea1-citas'] });
+      // Invalida el detalle cacheado de ESTA cita: sin esto, al reabrir el modal se mergeaba el
+      // estado viejo ('agendada') encima del fresco y volvía a ofrecer "llegó" (no avanzaba el flujo).
+      qc.invalidateQueries({ queryKey: ['cita-detalle', cita.id] });
+      if (updatedCita) qc.setQueryData(['cita-detalle', cita.id], updatedCita);
       qc.invalidateQueries({ queryKey: ['paciente-historial', cita.paciente.id] });
       // El cambio de estado (llegó/completada/no-show) puede descontar/devolver la sesión
       // en el backend → refrescar saldos y ficha al instante (sin esperar el staleTime).

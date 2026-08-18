@@ -314,9 +314,19 @@ export async function sincronizarConsumoCita(citaId: string): Promise<'consumida
   // previo (flujo legacy sin diálogo). El diálogo de llegada es el camino normal.
   // Nunca si la cita está exonerada ("no descontar").
   if (cita.estado === 'completada' && !consumoVivo && !cita.sesionExonerada) {
-    return prisma.$transaction<'consumida' | 'sin_cambio'>(async (tx) => {
-      const pp = await tx.paquetePaciente.findUnique({ where: { id: cita.paquetePacienteId! }, select: { sesionesTotal: true, composicion: true } });
+    try {
+    return await prisma.$transaction<'consumida' | 'sin_cambio'>(async (tx) => {
+      // Mismas guardas que el diálogo manual (consumirDeCita): NO auto-consumir si el paquete está
+      // borrado, deshabilitado/anulado (activo=false) o FUERA DE VIGENCIA contra la fecha de la cita.
+      // Antes usaba findUnique sin filtros → auto-consumía membresías vencidas/borradas (BUG).
+      const pp = await tx.paquetePaciente.findFirst({
+        where: { id: cita.paquetePacienteId!, deletedAt: null, activo: true },
+        select: { sesionesTotal: true, composicion: true, vigenciaInicio: true, vigenciaFin: true },
+      });
       if (!pp) return 'sin_cambio';
+      const fechaCita = cita.fecha.toISOString().slice(0, 10);
+      if (pp.vigenciaInicio && fechaCita < pp.vigenciaInicio) return 'sin_cambio'; // aún no vigente
+      if (pp.vigenciaFin && fechaCita > pp.vigenciaFin) return 'sin_cambio';       // vencida
       const vivos = await tx.consumoSesion.count({ where: { paqueteId: cita.paquetePacienteId!, deletedAt: null } });
       if (vivos >= pp.sesionesTotal) return 'sin_cambio'; // nunca sobre-consume
       const comp = (pp.composicion as ItemComposicion[] | null) ?? [];
@@ -344,6 +354,12 @@ export async function sincronizarConsumoCita(citaId: string): Promise<'consumida
       });
       return 'consumida';
     });
+    } catch (e) {
+      // Carrera: otro disparo (job de auto-completar + PATCH de estado) ya creó el consumo de esta
+      // cita → el índice consumos_cita_unico lanza P2002. El estado deseado ya está: no es un error.
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') return 'sin_cambio';
+      throw e;
+    }
   }
 
   return 'sin_cambio';

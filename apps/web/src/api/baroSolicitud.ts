@@ -8,6 +8,10 @@ export interface ProfBaro {
   servicios?: number;
   sedeId?: string;
   sedeNombre?: string;
+  // Vigencia temporal de la asignación de baro (sección "Baro" de movimientos).
+  fechaInicio?: string;
+  fechaFin?: string | null;
+  motivo?: string | null;
 }
 
 export interface BaroSolicitudData {
@@ -21,7 +25,16 @@ export interface BaroSolicitudData {
 
 export const baroSolicitudApi = {
   // `sedeId` filtra el roster y los candidatos a esa sede (registro de baro es por sede).
-  obtener: (sedeId?: string) => api.get<BaroSolicitudData>('/baro-solicitud', sedeId ? { sedeId } : undefined),
-  agregar: (profesionalId: string, sedeId: string) => api.post<{ ok: boolean }>(`/baro-solicitud/${profesionalId}`, { sedeId }),
-  quitar: (profesionalId: string, sedeId: string) => api.delete<{ ok: boolean }>(`/baro-solicitud/${profesionalId}?sedeId=${encodeURIComponent(sedeId)}`),
+  // `fecha` (YYYY-MM-DD) filtra a los doctores cuya asignación de baro rige ese día.
+  obtener: (sedeId?: string, fecha?: string) =>
+    api.get<BaroSolicitudData>('/baro-solicitud', {
+      ...(sedeId ? { sedeId } : {}),
+      ...(fecha ? { fecha } : {}),
+    }),
+  agregar: (profesionalId: string, sedeId: string, opts?: { fechaInicio?: string; fechaFin?: string | null; motivo?: string | null }) =>
+    api.post<{ ok: boolean }>(`/baro-solicitud/${profesionalId}`, { sedeId, ...opts }),
+  // `hasta` (YYYY-MM-DD): CIERRA la asignación en esa fecha (conserva historial) en vez de
+  // desactivarla — se usa al MOVER de sede. Sin `hasta`: quita por completo.
+  quitar: (profesionalId: string, sedeId: string, hasta?: string) =>
+    api.delete<{ ok: boolean }>(`/baro-solicitud/${profesionalId}?sedeId=${encodeURIComponent(sedeId)}${hasta ? `&hasta=${hasta}` : ''}`),
 };

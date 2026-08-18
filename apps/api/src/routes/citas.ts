@@ -216,10 +216,17 @@ async function medicoDeSolicitud(servicioId: string, sedeId: string): Promise<st
 }
 
 // ¿El médico está registrado para atender baro en esta sede (y habilitado en el servicio)?
-async function medicoAtiendeBaroEnSede(profesionalId: string, servicioId: string, sedeId: string): Promise<boolean> {
+async function medicoAtiendeBaroEnSede(profesionalId: string, servicioId: string, sedeId: string, fecha?: string | Date): Promise<boolean> {
+  // Ventana de vigencia del periodo de baro EN LA FECHA de la cita (regla "1 sede por día"): el
+  // registro debe cubrir ese día (fechaInicio ≤ fecha ≤ fechaFin|indefinido). Sin fecha → solo activa.
+  let ventana = {};
+  if (fecha) {
+    const f = typeof fecha === 'string' ? fecha.slice(0, 10) : fecha.toISOString().slice(0, 10);
+    ventana = { fechaInicio: { lte: new Date(`${f}T23:59:59`) }, OR: [{ fechaFin: null }, { fechaFin: { gte: new Date(`${f}T00:00:00`) } }] };
+  }
   const reg = await prisma.baroMedicoSede.findFirst({
     where: {
-      profesionalId, sedeId, activa: true,
+      profesionalId, sedeId, activa: true, ...ventana,
       profesional: { activo: true, deletedAt: null, competencias: { some: { servicioId, activa: true, soloPorSolicitud: true } } },
     },
     select: { id: true },
@@ -255,12 +262,13 @@ async function guardSedeCita(req: Request, _res: Response, next: NextFunction): 
 // solape real de duraciones (no solo misma horaInicio). `excluirCitaId` para mover.
 async function validarProfesionalLibre(
   profesionalId: string, fecha: string, horaInicio: string, duracionMin: number, excluirCitaId?: string, excluirCitaIds: string[] = [],
+  client: Prisma.TransactionClient | typeof prisma = prisma,
 ) {
   const slotStart = timeToMinutes(horaInicio);
   const slotEnd = slotStart + duracionMin;
   // Citas a excluir del chequeo de solape (la propia al mover; todo el grupo al mover un bloque).
   const excluidos = [...(excluirCitaId ? [excluirCitaId] : []), ...excluirCitaIds];
-  const citas = await prisma.cita.findMany({
+  const citas = await client.cita.findMany({
     where: {
       OR: [{ profesionalId }, { solicitadoProfesionalId: profesionalId }],
       fecha: fechaDb(fecha),
@@ -900,6 +908,10 @@ router.get('/reprogramar/:token', async (req, res) => {
 });
 
 // ─── GET /citas/:id ───────────────────────────────────────────────────────────
+// NOTA: se dejó CROSS-SEDE a propósito (decisión del equipo, ago-2026): recepción puede leer una
+// cita por id de cualquier sede para "verificación por ficha". El listado GET /citas sí filtra por
+// sede. Un agente de seguridad marcó esto como posible fuga de PII entre sedes; si se quiere
+// restringir, agregar `guardSedeCita` aquí (pendiente de decisión del usuario).
 router.get('/:id', requireAuth, async (req, res) => {
   const cita = await getCitaCompleta(req.params.id);
   if (!cita || cita.deletedAt) throw new AppError('Cita no encontrada', 404);
@@ -970,7 +982,7 @@ router.post('/', requireAuth, requireAcceso('appointments:write', 'agenda.editar
     // Recepción puede ELEGIR el médico (si el roster de la sede tiene varios); si no, se
     // adjunta el único registrado en esa sede. El médico debe atender baro EN ESA SEDE.
     if (data.solicitadoProfesionalId) {
-      const ok = await medicoAtiendeBaroEnSede(data.solicitadoProfesionalId, data.servicioId, data.sedeId);
+      const ok = await medicoAtiendeBaroEnSede(data.solicitadoProfesionalId, data.servicioId, data.sedeId, data.fecha);
       if (!ok) throw new AppError('El médico elegido no atiende baropodometría en esta sede', 400, 'MEDICO_BARO_INVALIDO');
       solicitadoProfesionalId = data.solicitadoProfesionalId;
     } else {
@@ -1232,6 +1244,23 @@ router.post('/', requireAuth, requireAcceso('appointments:write', 'agenda.editar
       // solo al consumir → no deja agendar 2 Premium cuando la membresía incluye 1.
       if (data.paquetePacienteId) {
         await validarCupoItemAlAgendar(tx, data.paquetePacienteId, data.servicioId, subcategoriaId ?? null);
+        // CUPO GLOBAL del paquete recalculado DENTRO de la tx Serializable (salvo el flujo Genexis
+        // con reanclaje manual, que numera aparte): así dos registros simultáneos del mismo paquete
+        // no pueden colarse ambos → no se sobre-agenda → no hay saldo negativo. Cancelar/no-show
+        // libera el cupo (la cita sale del conteo). Reusa la misma lógica atómica del bloque combinado.
+        if (!reanclajeGenexis) {
+          sesionNumero = await calcularSesionNumeroTx(tx, data.paquetePacienteId, data.sedeId);
+        }
+      }
+      // ANTI-DOBLE-BOOKING ATÓMICO: re-chequear el solape DENTRO de la tx Serializable. El índice
+      // único parcial solo cubre (prof, fecha, horaInicio) EXACTO; dos citas que se SOLAPAN con
+      // distinto horaInicio (p.ej. 08:00 60min y 08:30 30min) no chocan en el índice. Corriendo el
+      // SELECT de solape aquí, la serialización (SSI) de Postgres aborta una de dos reservas
+      // concurrentes solapadas (40001 → withDeadlockRetry reintenta → ve la otra → 409). Cubre al
+      // profesional y al médico de baro (solicitadoProfesionalId).
+      await validarProfesionalLibre(profesionalId!, data.fecha, data.horaInicio, servicio.duracionMinutos, undefined, [], tx);
+      if (solicitadoProfesionalId && solicitadoProfesionalId !== profesionalId) {
+        await validarProfesionalLibre(solicitadoProfesionalId, data.fecha, data.horaInicio, servicio.duracionMinutos, undefined, [], tx);
       }
       const c = await tx.cita.create({
         data: {
@@ -1528,6 +1557,14 @@ router.post('/combinada', requireAuth, requireAcceso('appointments:write', 'agen
         if (data.paquetePacienteId) await validarCupoItemAlAgendar(tx, data.paquetePacienteId, data.servicioId, subcategoriaAncla ?? null);
         if (data.extra.paquetePacienteId) await validarCupoItemAlAgendar(tx, data.extra.paquetePacienteId, data.extra.servicioId, subcategoriaExtra ?? null);
 
+        // ANTI-DOBLE-BOOKING ATÓMICO dentro de la tx Serializable: el/los profesional(es) del bloque
+        // deben estar libres CONTRA CITAS EXISTENTES (las 2 del bloque comparten slot a propósito y
+        // aún no existen, por eso se chequea ANTES de crear). Frena bloques concurrentes solapados.
+        await validarProfesionalLibre(anclaProfesionalId, data.fecha, data.horaInicio, duracionSlot, undefined, [], tx);
+        if (extraProfesionalId !== anclaProfesionalId) {
+          await validarProfesionalLibre(extraProfesionalId, data.fecha, data.horaInicio, duracionSlot, undefined, [], tx);
+        }
+
         const ancla = await tx.cita.create({
           data: {
             pacienteId: data.pacienteId, profesionalId: anclaProfesionalId, sedeId: data.sedeId,
@@ -1657,11 +1694,16 @@ router.patch('/:id/estado', requireAuth, requireAcceso('appointments:write', 'ag
     : [];
 
   const antes = { estado: cita.estado };
-  // Ancla del auto-completado por tiempo: se (re)inicia al marcar 'llego' y al REVERTIR una
-  // cita atendida (completada→en_atencion), para que el reloj de 90 min cuente de nuevo.
-  // Solo en cambios REALES: comentar una cita que ya está en 'llego' no reinicia el reloj.
+  // Anclas del auto-completado por tiempo (solo en cambios REALES; comentar sin cambiar no reinicia):
+  //  • `llegoEn`      → red de seguridad de 90 min para citas que se quedan en 'llego'.
+  //  • `enAtencionEn` → ancla PRINCIPAL: al entrar (o re-entrar) a 'en_atencion' arranca el reloj
+  //     de "duración + 15 min" tras el cual la cita pasa sola a 'completada'.
   const reiniciaLlegoEn = cambioReal && (estado === 'llego' || (cita.estado === 'completada' && estado === 'en_atencion'));
-  const llegoEnData = reiniciaLlegoEn ? { llegoEn: new Date() } : {};
+  const reiniciaEnAtencion = cambioReal && estado === 'en_atencion';
+  const llegoEnData = {
+    ...(reiniciaLlegoEn ? { llegoEn: new Date() } : {}),
+    ...(reiniciaEnAtencion ? { enAtencionEn: new Date() } : {}),
+  };
   const updatedCita = await prisma.$transaction(async (tx) => {
     const u = await tx.cita.update({
       where: { id: req.params.id },
@@ -2132,7 +2174,15 @@ router.patch('/:id/mover', requireAuth, requireAcceso('appointments:write', 'age
       horaInicio: cita.horaInicio,
     };
 
-    const updatedCita = await prisma.$transaction(async (tx) => {
+    const updatedCita = await withDeadlockRetry(() => prisma.$transaction(async (tx) => {
+      // ANTI-DOBLE-BOOKING ATÓMICO (igual que el CREATE): re-chequear el solape DENTRO de la tx
+      // Serializable. El índice único solo cubre horaInicio EXACTO; dos reprogramaciones concurrentes
+      // a horas que se pisan (distinto inicio) se colaban. Con el SELECT aquí, SSI aborta una (40001
+      // → retry → ve la otra → 409). Cubre profesional y médico de baro.
+      await validarProfesionalLibre(nuevoProfesionalId!, data.fecha, data.horaInicio, cita.duracionMinutos, cita.id, [], tx);
+      if (cita.solicitadoProfesionalId && cita.solicitadoProfesionalId !== nuevoProfesionalId) {
+        await validarProfesionalLibre(cita.solicitadoProfesionalId, data.fecha, data.horaInicio, cita.duracionMinutos, cita.id, [], tx);
+      }
       const u = await tx.cita.update({
         where: { id: req.params.id },
         data: {
@@ -2155,7 +2205,7 @@ router.patch('/:id/mover', requireAuth, requireAcceso('appointments:write', 'age
         ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
       });
       return u;
-    });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
 
     await invalidateDisponibilidadCache(cita.sedeId, cita.fecha.toISOString().split('T')[0]!);
     await invalidateDisponibilidadCache(cita.sedeId, data.fecha);
@@ -2249,7 +2299,10 @@ router.patch('/grupo/:slotGrupoId/mover', requireAuth, requireAcceso('appointmen
     // Libre EXCLUYENDO las citas del propio grupo (comparten el slot a propósito).
     await validarProfesionalLibre(nuevoProfesionalId!, data.fecha, data.horaInicio, ancla.duracionMinutos, undefined, grupoIds);
 
-    await prisma.$transaction(async (tx) => {
+    await withDeadlockRetry(() => prisma.$transaction(async (tx) => {
+      // Anti-doble-booking atómico dentro de la tx Serializable (excluye el propio grupo, que
+      // comparte el slot a propósito). Frena reprogramaciones concurrentes solapadas.
+      await validarProfesionalLibre(nuevoProfesionalId!, data.fecha, data.horaInicio, ancla.duracionMinutos, undefined, grupoIds, tx);
       for (const c of citas) {
         await tx.cita.update({
           where: { id: c.id },
@@ -2268,7 +2321,7 @@ router.patch('/grupo/:slotGrupoId/mover', requireAuth, requireAcceso('appointmen
           sedeId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
         });
       }
-    });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
 
     await invalidateDisponibilidadCache(sedeId, ancla.fecha.toISOString().split('T')[0]!);
     await invalidateDisponibilidadCache(sedeId, data.fecha);
@@ -2581,11 +2634,24 @@ router.get('/sede/:sedeId/stats', requireAuth, async (req, res) => {
 // mano (consume sesión de paquete, evento socket, webhook) y audita como 'auto_completar'.
 const AUTOCOMPLETAR_MIN = Number(process.env.AUTOCOMPLETAR_MIN) || 90;
 
-export async function autocompletarCitasPorTiempo(minutos = AUTOCOMPLETAR_MIN): Promise<number> {
-  const limite = new Date(Date.now() - minutos * 60_000);
-  const candidatas = await prisma.cita.findMany({
-    where: { estado: { in: ['llego', 'en_atencion'] }, llegoEn: { lte: limite }, deletedAt: null },
-    select: { id: true, sedeId: true, fecha: true },
+export async function autocompletarCitasPorTiempo(): Promise<number> {
+  const ahora = Date.now();
+  // Todas las 'llego'/'en_atencion' vivas; el UMBRAL se evalúa POR CITA:
+  //  • en_atencion → duración + 15 min desde `enAtencionEn` (ancla principal).
+  //  • llego       → AUTOCOMPLETAR_MIN (90) desde `llegoEn` (red de seguridad para las que
+  //                  se quedan en "llegó" sin pasar a atención).
+  const todas = await prisma.cita.findMany({
+    where: { estado: { in: ['llego', 'en_atencion'] }, deletedAt: null },
+    select: { id: true, sedeId: true, fecha: true, estado: true, duracionMinutos: true, llegoEn: true, enAtencionEn: true },
+  });
+  const candidatas = todas.filter((c) => {
+    if (c.estado === 'en_atencion') {
+      // Ancla: enAtencionEn; si es nula (citas puestas en atención ANTES de esta versión), cae a
+      // llegoEn para no dejarlas atascadas. Umbral: duración + 15 min.
+      const ancla = c.enAtencionEn ?? c.llegoEn;
+      return !!ancla && ahora - ancla.getTime() >= (c.duracionMinutos + 15) * 60_000;
+    }
+    return !!c.llegoEn && ahora - c.llegoEn.getTime() >= AUTOCOMPLETAR_MIN * 60_000;
   });
   const diasAfectados = new Set<string>();
   let completadas = 0;
@@ -2593,13 +2659,26 @@ export async function autocompletarCitasPorTiempo(minutos = AUTOCOMPLETAR_MIN): 
   for (const c of candidatas) {
     try {
       const cambiada = await prisma.$transaction(async (tx) => {
-        const actual = await tx.cita.findUnique({ where: { id: c.id }, select: { estado: true } });
-        if (!actual || (actual.estado !== 'llego' && actual.estado !== 'en_atencion')) return false; // ya cambió
+        // Re-leer DENTRO de la tx y RE-VERIFICAR el umbral contra el estado/ancla ACTUALES.
+        // Sin esto había una carrera: una cita en 'llego' (candidata por los 90 min) que justo
+        // pasa a 'en_atencion' entre el findMany y la tx se completaba al instante, cuando recién
+        // le tocaría a los duración+15 min.
+        const actual = await tx.cita.findUnique({ where: { id: c.id }, select: { estado: true, duracionMinutos: true, llegoEn: true, enAtencionEn: true, deletedAt: true } });
+        if (!actual || actual.deletedAt) return false; // borrada entre el barrido y la tx → no completar ni disparar side-effects
+        const vence = actual.estado === 'en_atencion'
+          ? (() => { const ancla = actual.enAtencionEn ?? actual.llegoEn; return !!ancla && ahora - ancla.getTime() >= (actual.duracionMinutos + 15) * 60_000; })()
+          : actual.estado === 'llego'
+            ? !!actual.llegoEn && ahora - actual.llegoEn.getTime() >= AUTOCOMPLETAR_MIN * 60_000
+            : false; // ya cambió a otro estado (completada/cancelada/…) → no tocar
+        if (!vence) return false;
+        const motivoAuto = actual.estado === 'en_atencion'
+          ? `auto por tiempo (${actual.duracionMinutos} + 15 min desde "En atención")`
+          : `auto por tiempo (${AUTOCOMPLETAR_MIN} min desde "Llegó")`;
         await tx.cita.update({ where: { id: c.id }, data: { estado: 'completada' } });
         await auditEnTx(tx, {
           citaId: c.id, usuarioId: undefined, accion: 'auto_completar', entidad: 'cita', entidadId: c.id,
           antes: { estado: actual.estado },
-          despues: { estado: 'completada', motivo: `auto por tiempo (${minutos} min desde "Llegó")` },
+          despues: { estado: 'completada', motivo: motivoAuto },
           sedeId: c.sedeId, ip: undefined,
         });
         return true;
@@ -2624,7 +2703,7 @@ export async function autocompletarCitasPorTiempo(minutos = AUTOCOMPLETAR_MIN): 
     const d = new Date(`${fecha}T00:00:00Z`); const h = new Date(`${fecha}T23:59:59Z`);
     agregarRango(d, h).catch(() => {/* silencioso */});
   }
-  if (completadas) console.log(`[autocompletar] ${completadas} cita(s) completadas por tiempo (${minutos} min)`);
+  if (completadas) console.log(`[autocompletar] ${completadas} cita(s) completadas por tiempo (duración+15 / red 90 min)`);
   return completadas;
 }
 

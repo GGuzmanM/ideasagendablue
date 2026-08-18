@@ -196,8 +196,10 @@ export function useIdea1NuevaCitaForm({
   const esBaro = /baropodometr/i.test(unidadesDeSede.find((u) => u.id === unidadNegocioId)?.nombre ?? '');
   const puedeGestionarBaro = useAuthStore((s) => s.isCoordinadora()); // admin + coordinadora_sedes
   const { data: baroRoster } = useQuery({
-    queryKey: ['baro-solicitud', sedeId],
-    queryFn: () => baroSolicitudApi.obtener(sedeId),
+    queryKey: ['baro-solicitud', sedeId, fechaCita],
+    // Pasa la FECHA de la cita → el combo lista solo los doctores cuya asignación de baro
+    // rige ese día en esa sede.
+    queryFn: () => baroSolicitudApi.obtener(sedeId, fechaCita),
     enabled: esBaro && Boolean(sedeId),
   });
   const medicosBaro = baroRoster?.porSolicitud ?? [];
@@ -205,6 +207,10 @@ export function useIdea1NuevaCitaForm({
   // Si hay exactamente un médico en el roster, se preselecciona; al salir de baro se limpia.
   useEffect(() => {
     if (!esBaro) { if (medicoBaroId) setMedicoBaroId(''); return; }
+    // Si el médico elegido YA NO está en el roster de esta fecha/sede (cambió la fecha y su periodo
+    // no rige, o se movió de sede), limpiar la selección obsoleta ANTES de autoseleccionar. Evita
+    // agendar a un doctor que ese día no atiende ahí (violaría "1 sede por día").
+    if (medicoBaroId && !medicosBaro.some((m) => m.id === medicoBaroId)) { setMedicoBaroId(''); return; }
     if (!medicoBaroId && medicosBaro.length === 1) setMedicoBaroId(medicosBaro[0].id);
   }, [esBaro, medicosBaro, medicoBaroId]);
 
@@ -225,6 +231,25 @@ export function useIdea1NuevaCitaForm({
   // Consulta MANUAL por botón para evitar consumo innecesario de API PeruDevs
   const puedeBuscarDni = npTipoDoc === 'DNI' && /^\d{8}$/.test(npNumDoc.trim());
 
+  // Carga un paciente de la BD como "existente" (lo selecciona y cambia el modo). Reusado por la
+  // búsqueda manual (botón RENIEC) y por la auto-detección al tipear el DNI.
+  const cargarComoExistente = useCallback((yaRegistrado: any, msg?: string) => {
+    const nombreComp = `${yaRegistrado.nombres} ${yaRegistrado.apellidoPaterno} ${yaRegistrado.apellidoMaterno || ''}`.trim();
+    setPacienteSeleccionado({
+      id: yaRegistrado.id,
+      nombres: yaRegistrado.nombres,
+      apellidoPaterno: yaRegistrado.apellidoPaterno,
+      apellidoMaterno: yaRegistrado.apellidoMaterno,
+      nombreCompleto: nombreComp,
+      telefono: yaRegistrado.telefono,
+      numeroDocumento: yaRegistrado.numeroDocumento,
+      alerta: yaRegistrado.alerta ?? undefined,
+      familiares: yaRegistrado.familiares ?? undefined,
+    });
+    setModoPaciente('existente');
+    toast.success(msg ?? `Paciente ya registrado: ${nombreComp}. Se cargó automáticamente.`);
+  }, []);
+
   const buscarPorDocumento = async () => {
     if (!puedeBuscarDni || dniConsultando) return;
     const doc = npNumDoc.trim();
@@ -236,20 +261,7 @@ export function useIdea1NuevaCitaForm({
         (p: any) => p.numeroDocumento === doc && p.tipoDocumento === npTipoDoc,
       );
       if (yaRegistrado) {
-        const nombreComp = `${yaRegistrado.nombres} ${yaRegistrado.apellidoPaterno} ${yaRegistrado.apellidoMaterno || ''}`.trim();
-        setPacienteSeleccionado({
-          id: yaRegistrado.id,
-          nombres: yaRegistrado.nombres,
-          apellidoPaterno: yaRegistrado.apellidoPaterno,
-          apellidoMaterno: yaRegistrado.apellidoMaterno,
-          nombreCompleto: nombreComp,
-          telefono: yaRegistrado.telefono,
-          numeroDocumento: yaRegistrado.numeroDocumento,
-          alerta: yaRegistrado.alerta ?? undefined,
-          familiares: yaRegistrado.familiares ?? undefined,
-        });
-        setModoPaciente('existente');
-        toast.success(`Paciente ya registrado: ${nombreComp}. Se cargó automáticamente.`);
+        cargarComoExistente(yaRegistrado);
         return;
       }
 
@@ -267,6 +279,29 @@ export function useIdea1NuevaCitaForm({
       setDniConsultando(false);
     }
   };
+
+  // AUTO-DETECCIÓN al tipear el DNI en modo "nuevo": si el paciente YA está registrado en la BD
+  // local, salta solo a "paciente existente" (lo carga + avisa "ya registrado"), listo para agendar
+  // su cita. Si NO está, se queda en "nuevo". NO consulta RENIEC (eso sigue por botón, por costo).
+  // Debounce de 500ms para no consultar en cada tecla.
+  useEffect(() => {
+    if (modoPaciente !== 'nuevo') return;
+    const doc = npNumDoc.trim();
+    if (npTipoDoc !== 'DNI' || !/^\d{8}$/.test(doc)) return;
+    let cancelado = false;
+    const t = setTimeout(async () => {
+      try {
+        const encontrados = await pacientesApi.buscar(doc);
+        if (cancelado) return;
+        const yaRegistrado = encontrados.find((p: any) => p.numeroDocumento === doc && p.tipoDocumento === npTipoDoc);
+        if (yaRegistrado) {
+          const nom = `${yaRegistrado.nombres} ${yaRegistrado.apellidoPaterno}`.trim();
+          cargarComoExistente(yaRegistrado, `Ya registrado: ${nom}. Te llevamos a agendar su cita.`);
+        }
+      } catch { /* búsqueda silenciosa: si falla, no interrumpe el registro de un paciente nuevo */ }
+    }, 500);
+    return () => { cancelado = true; clearTimeout(t); };
+  }, [npNumDoc, npTipoDoc, modoPaciente, cargarComoExistente]);
 
   // Subida de Comprobante
   const handleSubirComprobante = useCallback(
