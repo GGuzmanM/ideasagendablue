@@ -139,10 +139,12 @@ export async function crearMovimientoEnTx(tx: Prisma.TransactionClient, data: Cr
     }
 
     // ── 1. Encontrar y cerrar la asignación vigente ─────────────────────────
+    // OJO: NO se filtra por `activa`. Una base "reemplazada" por un movimiento FUTURO queda
+    // activa=false pero SIGUE siendo la sede vigente hoy (su rango aún cubre el día). Si al mover
+    // no la encontráramos, no la cerraríamos y la persona quedaría en DOS sedes a la vez (solape).
     const actual = await tx.asignacionSede.findFirst({
       where: {
         profesionalId: data.profesionalId,
-        activa: true,
         fechaInicio: { lte: nuevaFechaInicio },
         OR: [{ fechaFin: null }, { fechaFin: { gte: nuevaFechaInicio } }],
       },

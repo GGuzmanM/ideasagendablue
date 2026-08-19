@@ -60,6 +60,7 @@ interface SaldoPaquetesProps {
 export function SaldoPaquetes({ pacienteId, variante, servicioActualId, sedeActualId, onChipClick, nombrePaciente, documento }: SaldoPaquetesProps) {
   const { data: paquetes, isLoading, isError, refetch } = usePaquetesPaciente(pacienteId);
   const [explorarProgramas, setExplorarProgramas] = useState(false);
+  const puedeVender = useAuthStore((s) => s.tiene('membresias.vender')); // ver catálogo + vender
 
   if (isLoading) {
     return variante === 'detalle' ? <Skeleton className="h-24 w-full" /> : <span className="text-[10px] text-slate-300">…</span>;
@@ -133,13 +134,15 @@ export function SaldoPaquetes({ pacienteId, variante, servicioActualId, sedeActu
             <h3 className="font-headline-sm text-headline-sm text-on-surface font-bold">Paquetes y membresías</h3>
             <p className="text-on-surface-variant mt-0.5">Este paciente aún no cuenta con planes de salud activos.</p>
           </div>
-          <button
-            type="button"
-            onClick={() => setExplorarProgramas(true)}
-            className="z-10 px-6 py-2 border-2 border-primary text-primary font-bold rounded-xl hover:bg-primary hover:text-on-primary transition-all shrink-0"
-          >
-            Explorar Programas
-          </button>
+          {puedeVender && (
+            <button
+              type="button"
+              onClick={() => setExplorarProgramas(true)}
+              className="z-10 px-6 py-2 border-2 border-primary text-primary font-bold rounded-xl hover:bg-primary hover:text-on-primary transition-all shrink-0"
+            >
+              Explorar Programas
+            </button>
+          )}
         </div>
       )}
       {explorarProgramas && (

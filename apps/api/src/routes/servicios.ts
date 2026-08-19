@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db';
-import { requireAuth, requireRol } from '../middleware/auth';
+import { requireAuth, requirePermiso } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { auditEnTx, registrarAudit } from '../services/audit';
 
@@ -75,7 +75,7 @@ async function generarCodigo(unidadNegocioId: string): Promise<string> {
   return `${prefijo}-${String(max + 1).padStart(2, '0')}`;
 }
 
-router.post('/', requireAuth, requireRol('admin'), async (req, res) => {
+router.post('/', requireAuth, requirePermiso('servicios.editar'), async (req, res) => {
   const data = servicioSchema.parse(req.body);
   // El código se asigna automáticamente para mantener el formato consistente por unidad.
   const codigo = await generarCodigo(data.unidadNegocioId);
@@ -88,7 +88,7 @@ router.post('/', requireAuth, requireRol('admin'), async (req, res) => {
   res.status(201).json(servicio);
 });
 
-router.patch('/:id', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (req, res) => {
+router.patch('/:id', requireAuth, requirePermiso('servicios.editar'), async (req, res) => {
   const data = servicioSchema.partial().parse(req.body);
   // Capturar el estado ANTES para poder diffear en auditoría.
   const antes = await prisma.servicio.findUnique({
@@ -126,7 +126,7 @@ router.get('/:id/subcategorias', requireAuth, async (req, res) => {
 });
 
 // POST /servicios/:id/subcategorias — crear (admin).
-router.post('/:id/subcategorias', requireAuth, requireRol('admin'), async (req, res) => {
+router.post('/:id/subcategorias', requireAuth, requirePermiso('servicios.editar'), async (req, res) => {
   const data = subcategoriaSchema.parse(req.body);
   const servicio = await prisma.servicio.findFirst({ where: { id: req.params.id, deletedAt: null }, select: { id: true } });
   if (!servicio) throw new AppError('Servicio no encontrado', 404);
@@ -153,7 +153,7 @@ router.post('/:id/subcategorias', requireAuth, requireRol('admin'), async (req, 
 });
 
 // PATCH /servicios/subcategorias/:subId — editar (admin/coordinadora).
-router.patch('/subcategorias/:subId', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (req, res) => {
+router.patch('/subcategorias/:subId', requireAuth, requirePermiso('servicios.editar'), async (req, res) => {
   const data = subcategoriaSchema.partial().extend({ activo: z.boolean().optional() }).parse(req.body);
   const actual = await prisma.subcategoriaServicio.findFirst({ where: { id: req.params.subId, deletedAt: null } });
   if (!actual) throw new AppError('Subcategoría no encontrada', 404);
@@ -190,7 +190,7 @@ router.patch('/subcategorias/:subId', requireAuth, requireRol('admin', 'coordina
 
 // DELETE /servicios/subcategorias/:subId — desactivar (soft, admin). Las citas
 // históricas conservan su subcategoriaId (FK ON DELETE SET NULL nunca se dispara).
-router.delete('/subcategorias/:subId', requireAuth, requireRol('admin'), async (req, res) => {
+router.delete('/subcategorias/:subId', requireAuth, requirePermiso('servicios.editar'), async (req, res) => {
   const actual = await prisma.subcategoriaServicio.findFirst({ where: { id: req.params.subId, deletedAt: null } });
   if (!actual) throw new AppError('Subcategoría no encontrada', 404);
   await prisma.$transaction(async (tx) => {

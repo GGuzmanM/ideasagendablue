@@ -609,7 +609,7 @@ export function useIdea1AgendaData() {
   const sedesDb = useMemo(() => {
     if (!sedesDbRaw) return [];
     if (!usuario) return sedesDbRaw;
-    if (usuario.permisos?.includes('admin.ver') || ['admin', 'coordinadora_sedes'].includes(usuario.rol)) {
+    if (['admin', 'coordinadora_sedes'].includes(usuario.rol)) {
       return sedesDbRaw;
     }
     return sedesDbRaw.filter((s) => puedeAccederSede(s.id));

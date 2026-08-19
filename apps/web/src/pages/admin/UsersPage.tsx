@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '../../stores/authStore';
 import { AdminHeaderNav } from './AdminHeaderNav';
 import {
@@ -8,7 +9,8 @@ import {
   type FormUsuarioState,
 } from '../../services/usersService';
 import { cn } from '../../utils/cn';
-import { type Usuario } from '../../api';
+import { sedesApi, type Usuario } from '../../api';
+import { composicionSedeApi } from '../../api/composicionSede';
 
 // ── Componente Tarjeta KPI ───────────────────────────────────────────────────
 function KpiCard({
@@ -41,12 +43,16 @@ function KpiCard({
 function FormularioUsuarioModal({
   editing,
   roles,
+  sedes,
+  recepcionistas,
   onSave,
   onCancel,
   isPending,
 }: {
   editing: Usuario | null;
   roles: { nombre: string; label: string }[];
+  sedes: { id: string; nombre: string }[];
+  recepcionistas: { id: string; nombre: string }[];
   onSave: (form: FormUsuarioState) => void;
   onCancel: () => void;
   isPending: boolean;
@@ -57,7 +63,12 @@ function FormularioUsuarioModal({
     password: '',
     rol: editing?.rol ?? (roles[0]?.nombre || ''),
     activo: editing?.activo ?? true,
+    sedeIds: editing?.sedes.map(s => s.id) ?? [],
+    recepcionistaId: editing?.recepcionistaId ?? null,
   });
+
+  const toggleSede = (id: string) =>
+    setForm(f => ({ ...f, sedeIds: f.sedeIds.includes(id) ? f.sedeIds.filter(x => x !== id) : [...f.sedeIds, id] }));
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -145,6 +156,67 @@ function FormularioUsuarioModal({
             </select>
           </div>
 
+          {/* Vínculo con la ficha del roster (Movimientos) */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">
+              Vincular a ficha de recepción (Movimientos)
+              <span className="text-slate-400 font-normal"> — opcional</span>
+            </label>
+            <select
+              value={form.recepcionistaId ?? ''}
+              onChange={e => setForm(f => ({ ...f, recepcionistaId: e.target.value || null }))}
+              className="input w-full text-sm"
+            >
+              <option value="">Sin vincular (acceso por sedes manuales)</option>
+              {recepcionistas.map(r => <option key={r.id} value={r.id}>{r.nombre}</option>)}
+            </select>
+            <p className="text-[11px] text-slate-400 mt-1 leading-snug">
+              Si la vinculas, su acceso a la agenda se toma solo de la sede donde esté en Movimientos
+              (al moverla de sede, su acceso cambia al instante).
+            </p>
+          </div>
+
+          {form.recepcionistaId ? (
+            <div className="rounded-xl bg-primary/5 border border-primary/20 px-3 py-2.5 text-xs text-primary flex items-start gap-2">
+              <span className="material-symbols-outlined text-base shrink-0">link</span>
+              <span>Sus sedes de acceso vienen de <b>Movimientos</b> (ficha vinculada). No hace falta elegirlas aquí.</span>
+            </div>
+          ) : (
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                Sedes de acceso
+                <span className="text-slate-400 font-normal"> — a qué sedes puede entrar (agenda)</span>
+              </label>
+              <div className="grid grid-cols-2 gap-1.5">
+                {sedes.map(s => {
+                  const marcada = form.sedeIds.includes(s.id);
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => toggleSede(s.id)}
+                      className={cn(
+                        'flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-colors text-left',
+                        marcada
+                          ? 'bg-primary/10 border-primary/40 text-primary'
+                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50',
+                      )}
+                    >
+                      <span className="material-symbols-outlined text-base">{marcada ? 'check_box' : 'check_box_outline_blank'}</span>
+                      {s.nombre}
+                    </button>
+                  );
+                })}
+              </div>
+              {form.sedeIds.length === 0 && (
+                <p className="text-[11px] text-amber-600 mt-1.5 flex items-center gap-1">
+                  <span className="material-symbols-outlined text-sm">warning</span>
+                  Sin sedes no podrá ver ninguna agenda. (admin/coordinación ven todas igual.)
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="pt-2">
             <label className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer hover:bg-slate-100/70 transition-colors">
               <input
@@ -210,14 +282,18 @@ export function UsersPage() {
   } = useUsersData();
 
   const [usuarioAEliminar, setUsuarioAEliminar] = useState<Usuario | null>(null);
+  const { data: sedes = [] } = useQuery({ queryKey: ['sedes'], queryFn: sedesApi.listar });
+  const { data: recepcionistas = [] } = useQuery({ queryKey: ['recepcionistas-todas'], queryFn: composicionSedeApi.recepcionistas });
 
   const handleSaveUser = (formData: FormUsuarioState) => {
     if (usuarioEditando) {
-      const payload: { nombre: string; email: string; rol: string; activo: boolean; password?: string } = {
+      const payload: { nombre: string; email: string; rol: string; activo: boolean; password?: string; sedeIds: string[]; recepcionistaId: string | null } = {
         nombre: formData.nombre,
         email: formData.email,
         rol: formData.rol,
         activo: formData.activo,
+        sedeIds: formData.sedeIds,
+        recepcionistaId: formData.recepcionistaId,
       };
       if (formData.password) payload.password = formData.password;
       editarMut.mutate({ id: usuarioEditando.id, data: payload });
@@ -401,6 +477,24 @@ export function UsersPage() {
                                   </span>
                                 )}
                               </div>
+                              {/* Sedes de acceso (login) o vínculo con el roster */}
+                              <div className="flex flex-wrap items-center gap-1 mt-1">
+                                {u.recepcionista ? (
+                                  <span className="inline-flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
+                                    <span className="material-symbols-outlined text-[11px]">link</span>
+                                    Sedes vía Movimientos ({u.recepcionista.nombre})
+                                  </span>
+                                ) : u.sedes.length > 0 ? (
+                                  u.sedes.map(s => (
+                                    <span key={s.id} className="inline-flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
+                                      <span className="material-symbols-outlined text-[11px]">location_on</span>
+                                      {s.nombre}
+                                    </span>
+                                  ))
+                                ) : (
+                                  <span className="text-[10px] font-medium text-amber-600">Sin sedes</span>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </td>
@@ -493,6 +587,8 @@ export function UsersPage() {
         <FormularioUsuarioModal
           editing={usuarioEditando}
           roles={roles}
+          sedes={sedes.map(s => ({ id: s.id, nombre: s.nombre }))}
+          recepcionistas={recepcionistas.map(r => ({ id: r.id, nombre: r.nombre }))}
           onSave={handleSaveUser}
           onCancel={cerrarModal}
           isPending={isSaving}

@@ -9,6 +9,8 @@ export interface FormUsuarioState {
   password: string;
   rol: string;
   activo: boolean;
+  sedeIds: string[]; // sedes de login
+  recepcionistaId: string | null; // vínculo con ficha del roster (Movimientos)
 }
 
 export const USER_ROLE_PALETTE = [

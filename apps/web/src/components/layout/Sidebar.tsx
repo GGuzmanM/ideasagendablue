@@ -4,12 +4,12 @@ import { useAuthStore } from '../../stores/authStore';
 
 // El menú se guía por PERMISOS del rol (configurables en Administración → Roles).
 const navItems = [
-  { to: '/', label: 'Agenda', icon: '📅', permiso: 'agenda.ver' },
+  { to: '/', label: 'Agenda', icon: '📅', permiso: 'citas.ver' },
   { to: '/pacientes', label: 'Pacientes', icon: '👤', permiso: 'pacientes.ver' },
   { to: '/horarios', label: 'Horarios y Restricciones', icon: '⏰', permiso: 'horarios.ver' },
-  { to: '/herramientas', label: 'Herramientas', icon: '🛠️', permiso: ['herramientas.operativas', 'herramientas.estrategicas'] },
+  { to: '/herramientas', label: 'Herramientas', icon: '🛠️', permiso: ['exportar.usar', 'comunicaciones.gestionar', 'promociones.ver', 'promociones.gestionar', 'canales.gestionar', 'membresias.gestionar', 'config.editar'] },
   { to: '/movimientos', label: 'Movimientos', icon: '⇄', permiso: 'movimientos.ver' },
-  { to: '/admin', label: 'Administración', icon: '⚙️', permiso: ['admin.ver', 'usuarios.ver', 'roles.editar', 'notificaciones.ver'] },
+  { to: '/admin', label: 'Administración', icon: '⚙️', permiso: ['profesionales.ver', 'servicios.ver', 'competencias.editar', 'auditoria.ver', 'membresias.gestionar', 'usuarios.ver', 'roles.editar', 'notificaciones.ver'] },
   { to: '/analytics', label: 'Analytics', icon: '📊', permiso: 'analytics.ver' },
 ];
 

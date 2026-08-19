@@ -11,7 +11,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { addMonths, format } from 'date-fns';
 import { prisma } from '../db';
-import { requireAuth, requireRol } from '../middleware/auth';
+import { requireAuth, requirePermiso } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { auditEnTx, registrarAudit } from '../services/audit';
 import { uploadContrato } from '../middleware/uploadContrato';
@@ -20,7 +20,10 @@ import fs, { existsSync as fsExiste } from 'fs';
 import { PDFDocument } from 'pdf-lib';
 
 const router = Router();
-const requireGestor = requireRol('admin', 'coordinadora_sedes');
+// Gestionar tipos de membresía y contratos (crear/editar/borrar/activar). Antes requireRol gestor.
+const requireGestor = requirePermiso('membresias.gestionar');
+const requireVerMemb = requirePermiso('membresias.ver');    // ver el catálogo vendible
+const requireVender = requirePermiso('membresias.vender');  // vender a un paciente
 
 /** URL base pública del API (para armar las URLs de archivos servidos en /uploads). */
 function baseUrlDe(req: { protocol: string; get: (h: string) => string | undefined }): string {
@@ -237,7 +240,9 @@ router.patch('/vendidas/:ppId', requireAuth, requireGestor, async (req, res) => 
 });
 
 // ─── GET /membresias — lista para el constructor (incl. inactivas) ───────────
-router.get('/', requireAuth, requireGestor, async (_req, res) => {
+// requireVender: gestores y vendedores (recepción/contact) pueden VER el catálogo; solo lectura
+// (crear/editar/borrar tipos y contratos siguen siendo requireGestor).
+router.get('/', requireAuth, requireVerMemb, async (_req, res) => {
   const promos = await prisma.promocion.findMany({
     where: { tipo: 'MEMBRESIA', deletedAt: null },
     orderBy: { nombre: 'asc' },
@@ -369,7 +374,7 @@ router.delete('/:id', requireAuth, requireGestor, async (req, res) => {
 // ─── GET /membresias/vendibles — membresías ACTIVAS para agendar/activar (recepción) ──
 // Abierto a cualquier usuario autenticado (recepción activa membresías desde la agenda).
 // Devuelve solo las activas con su composición vigente (plantilla) para el flujo del drawer.
-router.get('/vendibles', requireAuth, async (_req, res) => {
+router.get('/vendibles', requireAuth, requireVerMemb, async (_req, res) => {
   const promos = await prisma.promocion.findMany({
     where: { tipo: 'MEMBRESIA', activo: true, deletedAt: null },
     orderBy: { nombre: 'asc' },
@@ -425,7 +430,7 @@ const venderSchema = z.object({
 
 interface ItemSnapshot { servicioId: string; cantidad: number; etiqueta: string; subcategoriaId?: string; subcategoriaEtiqueta?: string }
 
-router.post('/:id/vender', requireAuth, async (req, res) => {
+router.post('/:id/vender', requireAuth, requireVender, async (req, res) => {
   const data = venderSchema.parse(req.body);
   const promo = await prisma.promocion.findFirst({ where: { id: req.params.id, tipo: 'MEMBRESIA', activo: true, deletedAt: null } });
   if (!promo) throw new AppError('Membresía no encontrada o inactiva', 404);

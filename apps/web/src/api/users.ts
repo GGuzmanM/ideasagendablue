@@ -1,5 +1,10 @@
 import { api } from './client';
 
+export interface UsuarioSede {
+  id: string;
+  nombre: string;
+}
+
 export interface Usuario {
   id: string;
   nombre: string;
@@ -7,6 +12,9 @@ export interface Usuario {
   rol: string;
   activo: boolean;
   creadoEn: string;
+  sedes: UsuarioSede[]; // sedes de login (a qué sedes puede acceder) — ignoradas si está vinculado al roster
+  recepcionistaId: string | null;                       // vínculo con la ficha del roster (Movimientos)
+  recepcionista: { id: string; nombre: string } | null; // datos de la ficha vinculada
 }
 
 export interface CrearUsuarioPayload {
@@ -15,6 +23,8 @@ export interface CrearUsuarioPayload {
   password: string;
   rol: string;
   activo?: boolean;
+  sedeIds?: string[];
+  recepcionistaId?: string | null;
 }
 
 export interface EditarUsuarioPayload {
@@ -23,6 +33,8 @@ export interface EditarUsuarioPayload {
   password?: string;
   rol?: string;
   activo?: boolean;
+  sedeIds?: string[];
+  recepcionistaId?: string | null;
 }
 
 export const usersApi = {

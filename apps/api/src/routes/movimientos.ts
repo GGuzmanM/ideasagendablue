@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { MotivoMovimiento } from '@prisma/client';
 import { prisma } from '../db';
-import { requireAuth, requireRol } from '../middleware/auth';
+import { requireAuth, requirePermiso } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { crearMovimiento, crearMovimientoEnTx, eliminarMovimientoEnTx, hallarPredecesor, previewMovimiento, notificarCambioMovimiento, MOTIVO_LABELS } from '../services/asignacionService';
 import { CitasPendientesError } from '../middleware/errorHandler';
@@ -218,7 +218,7 @@ router.get('/', requireAuth, async (req, res) => {
 });
 
 // ─── POST /movimientos ─────────────────────────────────────────────────────────
-router.post('/', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (req, res) => {
+router.post('/', requireAuth, requirePermiso('movimientos.editar'), async (req, res) => {
   const data = crearSchema.parse(req.body);
   const creadoPor = req.user!.userId;
 
@@ -256,7 +256,7 @@ router.post('/', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (
 // - Cambiar la FECHA FIN de un movimiento temporal SINCRONIZA su RETORNO automático
 //   (la asignación que devuelve a la sede matriz): se corre su inicio, se crea si el
 //   movimiento pasa de indefinido a temporal, o se elimina si pasa a indefinido.
-router.put('/:id', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (req, res) => {
+router.put('/:id', requireAuth, requirePermiso('movimientos.editar'), async (req, res) => {
   const data = editarSchema.parse(req.body);
 
   const existente = await prisma.asignacionSede.findUnique({
@@ -495,7 +495,7 @@ router.put('/:id', requireAuth, requireRol('admin', 'coordinadora_sedes'), async
 });
 
 // ─── DELETE /movimientos/:id ───────────────────────────────────────────────────
-router.delete('/:id', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (req, res) => {
+router.delete('/:id', requireAuth, requirePermiso('movimientos.editar'), async (req, res) => {
   const asignacion = await prisma.asignacionSede.findUnique({
     where: { id: req.params.id },
   });

@@ -1,13 +1,14 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db';
-import { requireAuth, requireRol } from '../middleware/auth';
+import { requireAuth, requirePermiso } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { auditEnTx } from '../services/audit';
 import { promocionesElegibles, reporteUsoPromociones } from '../services/promocionesService';
 
 const router = Router();
-const requireGestor = requireRol('admin', 'coordinadora_sedes');
+const requireGestor = requirePermiso('promociones.gestionar'); // crear/editar/borrar promos
+const requireVerPromo = requirePermiso('promociones.ver');     // ver catálogo/reporte de promos
 
 const promoSelect = {
   id: true, nombre: true, descripcion: true, tipo: true, valor: true, activo: true, orden: true,
@@ -79,7 +80,7 @@ router.get('/', requireAuth, async (_req, res) => {
 });
 
 // GET /promociones/reporte — uso agregado por promo en un rango (caja/campañas). Solo gestor.
-router.get('/reporte', requireAuth, requireGestor, async (req, res) => {
+router.get('/reporte', requireAuth, requireVerPromo, async (req, res) => {
   const q = z.object({
     desde: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     hasta: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -90,7 +91,7 @@ router.get('/reporte', requireAuth, requireGestor, async (req, res) => {
 });
 
 // GET /promociones/todas — incl. inactivas + conteo de uso (citas VIVAS). Para gestión.
-router.get('/todas', requireAuth, requireGestor, async (_req, res) => {
+router.get('/todas', requireAuth, requireVerPromo, async (_req, res) => {
   const promos = await prisma.promocion.findMany({
     where: { deletedAt: null },
     orderBy: [{ orden: 'asc' }, { nombre: 'asc' }],

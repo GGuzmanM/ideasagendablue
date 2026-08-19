@@ -7,16 +7,29 @@ import { registrarAudit } from '../services/audit';
 
 const router = Router();
 
+// Catálogo GRANULAR (35). Cada permiso = una acción cableada a su candado. Espeja el seed y la
+// matriz aprobada. Si agregas uno, cablea su `requirePermiso` en el/los endpoint(s) o no hace nada.
 const PERMISOS_VALIDOS = [
-  'agenda.ver', 'agenda.editar',
-  'pacientes.ver', 'pacientes.editar',
-  'horarios.ver', 'horarios.editar',
-  'herramientas.operativas', 'herramientas.estrategicas',
+  // Citas
+  'citas.ver', 'citas.crear', 'citas.reprogramar', 'citas.cancelar', 'citas.estado', 'citas.revertir',
+  // Pacientes
+  'pacientes.ver', 'pacientes.crear', 'pacientes.editar',
+  // Membresías
+  'membresias.ver', 'membresias.vender', 'membresias.consumir', 'membresias.gestionar',
+  // Promociones
+  'promociones.ver', 'promociones.gestionar',
+  // Movimientos
   'movimientos.ver', 'movimientos.editar',
-  'admin.ver', 'analytics.ver', 'analytics.agentes',
-  'notificaciones.ver',
-  'usuarios.ver', 'usuarios.editar',
-  'roles.editar',
+  // Horarios / almuerzos
+  'horarios.ver', 'horarios.editar',
+  // Profesionales y servicios
+  'profesionales.ver', 'profesionales.editar', 'competencias.editar', 'servicios.ver', 'servicios.editar',
+  // Analítica y exportaciones
+  'analytics.ver', 'analytics.agentes', 'exportar.usar',
+  // Comunicaciones
+  'comunicaciones.gestionar', 'canales.gestionar',
+  // Sistema
+  'usuarios.ver', 'usuarios.editar', 'roles.editar', 'auditoria.ver', 'notificaciones.ver', 'config.editar',
 ];
 
 const rolSchema = z.object({
@@ -47,36 +60,60 @@ router.get('/', requireAuth, async (_req, res) => {
 // GET /api/v1/roles/permisos — lista de permisos disponibles
 router.get('/permisos', requireAuth, async (_req, res) => {
   const grupos: Record<string, { id: string; label: string }[]> = {
-    'Agenda': [
-      { id: 'agenda.ver', label: 'Ver agenda' },
-      { id: 'agenda.editar', label: 'Crear / editar / cancelar citas' },
+    'Citas': [
+      { id: 'citas.ver', label: 'Ver agenda y citas' },
+      { id: 'citas.crear', label: 'Registrar / agendar citas' },
+      { id: 'citas.reprogramar', label: 'Reprogramar / mover citas' },
+      { id: 'citas.cancelar', label: 'Cancelar citas' },
+      { id: 'citas.estado', label: 'Cambiar estado (llegó / en atención / completar / no-show)' },
+      { id: 'citas.revertir', label: 'Revertir una cita ya atendida' },
     ],
     'Pacientes': [
       { id: 'pacientes.ver', label: 'Ver pacientes' },
-      { id: 'pacientes.editar', label: 'Crear / editar pacientes' },
+      { id: 'pacientes.crear', label: 'Crear pacientes' },
+      { id: 'pacientes.editar', label: 'Editar pacientes' },
     ],
-    'Horarios y Restricciones': [
-      { id: 'horarios.ver', label: 'Ver horarios de sede, ausencias y restricciones' },
-      { id: 'horarios.editar', label: 'Gestionar horarios base, excepciones, almuerzos y permisos/ausencias' },
+    'Membresías': [
+      { id: 'membresias.ver', label: 'Ver catálogo vendible' },
+      { id: 'membresias.vender', label: 'Vender membresías a pacientes' },
+      { id: 'membresias.consumir', label: 'Descontar / consumir sesiones' },
+      { id: 'membresias.gestionar', label: 'Gestionar tipos de membresía y contratos' },
     ],
-    'Herramientas': [
-      { id: 'herramientas.operativas', label: 'Operativas: Lista de citas, Reactivación de Pacientes, Historial de Atenciones' },
-      { id: 'herramientas.estrategicas', label: 'Estratégicas: TODAS (almuerzos, horarios, permisos, canales, confirmación…) + las operativas' },
+    'Promociones': [
+      { id: 'promociones.ver', label: 'Ver el catálogo de promociones' },
+      { id: 'promociones.gestionar', label: 'Crear / editar / eliminar promociones y ver su reporte' },
     ],
     'Movimientos': [
       { id: 'movimientos.ver', label: 'Ver movimientos de personal' },
       { id: 'movimientos.editar', label: 'Crear / editar / eliminar movimientos' },
     ],
-    'Administración': [
-      { id: 'admin.ver', label: 'Ver panel de administración' },
+    'Horarios y almuerzos': [
+      { id: 'horarios.ver', label: 'Ver horarios de sede, ausencias y restricciones' },
+      { id: 'horarios.editar', label: 'Gestionar horarios base, excepciones, almuerzos y permisos/ausencias' },
+    ],
+    'Profesionales y servicios': [
+      { id: 'profesionales.ver', label: 'Ver profesionales' },
+      { id: 'profesionales.editar', label: 'Crear / editar / activar profesionales' },
+      { id: 'competencias.editar', label: 'Editar la matriz de competencias' },
+      { id: 'servicios.ver', label: 'Ver el catálogo de servicios' },
+      { id: 'servicios.editar', label: 'Crear / editar servicios' },
+    ],
+    'Analítica y exportaciones': [
       { id: 'analytics.ver', label: 'Ver analytics y reportes' },
       { id: 'analytics.agentes', label: 'Ver desempeño de agentes (Contact Center / Recepción)' },
-      { id: 'notificaciones.ver', label: 'Ver / gestionar notificaciones' },
+      { id: 'exportar.usar', label: 'Exportar citas, reactivación e historial' },
     ],
-    'Usuarios y Roles': [
+    'Comunicaciones': [
+      { id: 'comunicaciones.gestionar', label: 'Recordatorios, confirmación por correo y videos' },
+      { id: 'canales.gestionar', label: 'Gestionar canales de reserva' },
+    ],
+    'Sistema': [
       { id: 'usuarios.ver', label: 'Ver usuarios del sistema' },
       { id: 'usuarios.editar', label: 'Crear / editar / desactivar usuarios' },
       { id: 'roles.editar', label: 'Crear / editar / eliminar roles' },
+      { id: 'auditoria.ver', label: 'Ver la auditoría del sistema' },
+      { id: 'notificaciones.ver', label: 'Ver / gestionar notificaciones' },
+      { id: 'config.editar', label: 'Configuración del sistema (bloques combinados, conciliación, correo)' },
     ],
   };
   res.json(grupos);
@@ -101,6 +138,9 @@ router.put('/:id', requireAuth, requirePermiso('roles.editar'), async (req, res)
   const data = rolSchema.parse(req.body);
   const rol = await prisma.rol.findUnique({ where: { id: req.params.id } });
   if (!rol) throw new AppError('Rol no encontrado', 404);
+  // BLINDAJE: el rol `admin` es intocable — nadie puede editar/vaciar sus permisos (evita lockout
+  // y que un rol con roles.editar se auto-eleve o inutilice al admin). El admin manda por su rol.
+  if (rol.nombre === 'admin') throw new AppError('El rol admin está protegido y no se puede editar', 403, 'ROL_ADMIN_PROTEGIDO');
   const actualizado = await prisma.rol.update({ where: { id: req.params.id }, data });
   void registrarAudit({
     usuarioId: req.user?.userId, accion: 'editar', entidad: 'rol', entidadId: rol.id,

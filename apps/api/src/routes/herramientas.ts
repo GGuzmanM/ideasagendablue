@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db';
-import { requireAuth, requireRol } from '../middleware/auth';
+import { requireAuth, requirePermiso } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { enviarEmail, resendConfigurado, estadoDominio, DOMINIO_ENVIO } from '../services/emailService';
 import { renderPlantillaPrueba } from '../services/emailTemplates';
@@ -25,13 +25,13 @@ async function configPublica() {
 }
 
 // ─── GET /herramientas/mail-config ────────────────────────────────────────────
-router.get('/mail-config', requireAuth, requireRol('admin'), async (_req, res) => {
+router.get('/mail-config', requireAuth, requirePermiso('config.editar'), async (_req, res) => {
   res.json(await configPublica());
 });
 
 // ─── PUT /herramientas/mail-config ────────────────────────────────────────────
 // Guarda correo y nombre del remitente (se usan como From en Resend).
-router.put('/mail-config', requireAuth, requireRol('admin'), async (req, res) => {
+router.put('/mail-config', requireAuth, requirePermiso('config.editar'), async (req, res) => {
   const { fromEmail, fromName } = z
     .object({
       fromEmail: z
@@ -59,7 +59,7 @@ router.put('/mail-config', requireAuth, requireRol('admin'), async (req, res) =>
 // Estado del dominio de envío en Resend (verified/pending/failed) + región.
 // Consulta Resend desde el backend con la API key del entorno; NUNCA la expone.
 // Respuesta cacheada 5 min en memoria (ver emailService.estadoDominio).
-router.get('/mail-config/dominio', requireAuth, requireRol('admin'), async (_req, res) => {
+router.get('/mail-config/dominio', requireAuth, requirePermiso('config.editar'), async (_req, res) => {
   if (!resendConfigurado()) {
     return res.json({ configurado: false, dominio: DOMINIO_ENVIO, estado: null, region: null });
   }
@@ -76,7 +76,7 @@ router.get('/mail-config/dominio', requireAuth, requireRol('admin'), async (_req
 // DEPRECADO - migrado a Resend [2026-07-07]. El flujo OAuth de Gmail ya no se usa
 // (Resend usa una API key estática del entorno). Se conserva la ruta para no romper
 // clientes viejos: responde 410 con un mensaje claro.
-router.get('/mail-config/oauth/url', requireAuth, requireRol('admin'), () => {
+router.get('/mail-config/oauth/url', requireAuth, requirePermiso('config.editar'), () => {
   throw new AppError(
     'La conexión con Google (Gmail) fue reemplazada por Resend; ya no se conecta ninguna cuenta.',
     410,
@@ -100,7 +100,7 @@ router.get('/mail-config/oauth/callback', (_req, res) => {
 
 // ─── POST /herramientas/mail-config/test ──────────────────────────────────────
 // Envía un correo de prueba vía Resend al destinatario indicado por el admin.
-router.post('/mail-config/test', requireAuth, requireRol('admin'), async (req, res) => {
+router.post('/mail-config/test', requireAuth, requirePermiso('config.editar'), async (req, res) => {
   const { to } = z.object({ to: z.string().email('Correo de destino inválido') }).parse(req.body);
 
   if (!resendConfigurado()) {

@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '../db';
 import { redis } from '../redis';
-import { requireAuth, requireRol } from '../middleware/auth';
+import { requireAuth, requirePermiso } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { agregarRango, agregarHoy } from '../services/agregacion';
 
@@ -62,7 +62,7 @@ function prevPeriod(desde: string, hasta: string) {
   };
 }
 
-const requireCoordinadora = requireRol('admin', 'coordinadora_sedes');
+const requireCoordinadora = requirePermiso('analytics.ver');
 
 // ─── Recalcular agregados (con candado anti-concurrencia) ──────────────────────
 // El ETL de agregados_diarios tarda ~2 min a volumen real; dos ejecuciones concurrentes se

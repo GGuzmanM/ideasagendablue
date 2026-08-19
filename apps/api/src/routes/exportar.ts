@@ -2,10 +2,14 @@ import { Router } from 'express';
 import ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
 import { prisma } from '../db';
-import { requireAuth } from '../middleware/auth';
+import { requireAuth, requirePermiso } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 
 const router = Router();
+
+// TODAS las exportaciones exigen `exportar.usar` (antes solo requireAuth → cualquier usuario
+// logueado exportaba datos por API). Contact center NO lo tiene → no puede exportar.
+router.use(requireAuth, requirePermiso('exportar.usar'));
 
 // Teléfono → formato internacional. Si tiene 9 dígitos (caso típico Perú) se le
 // antepone +51. Si ya trae código de país (+1, +51, cualquier +) se respeta tal cual.

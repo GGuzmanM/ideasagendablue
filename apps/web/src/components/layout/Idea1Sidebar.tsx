@@ -9,13 +9,17 @@ export interface NavItem {
   permiso?: string | string[];
 }
 
+// Conjuntos de permisos que hacen visible un hub (basta CUALQUIERA).
+export const HERRAMIENTAS_PERMS = ['exportar.usar', 'comunicaciones.gestionar', 'promociones.ver', 'promociones.gestionar', 'canales.gestionar', 'membresias.gestionar', 'config.editar'];
+export const ADMIN_PERMS = ['profesionales.ver', 'servicios.ver', 'competencias.editar', 'auditoria.ver', 'membresias.gestionar', 'usuarios.ver', 'roles.editar', 'notificaciones.ver'];
+
 export const idea1NavItems: NavItem[] = [
-  { to: '/AgendaPrincipal', label: 'Agenda', icon: 'calendar_today', permiso: 'agenda.ver' },
+  { to: '/AgendaPrincipal', label: 'Agenda', icon: 'calendar_today', permiso: 'citas.ver' },
   { to: '/pacientes', label: 'Pacientes', icon: 'groups', permiso: 'pacientes.ver' },
   { to: '/horarios', label: 'Horarios y Restricciones', icon: 'schedule', permiso: 'horarios.ver' },
-  { to: '/herramientas', label: 'Herramientas', icon: 'home_repair_service', permiso: ['herramientas.operativas', 'herramientas.estrategicas'] },
+  { to: '/herramientas', label: 'Herramientas', icon: 'home_repair_service', permiso: HERRAMIENTAS_PERMS },
   { to: '/movimientos', label: 'Movimientos', icon: 'sync_alt', permiso: 'movimientos.ver' },
-  { to: '/admin', label: 'Administración', icon: 'admin_panel_settings', permiso: ['admin.ver', 'usuarios.ver', 'roles.editar', 'notificaciones.ver'] },
+  { to: '/admin', label: 'Administración', icon: 'admin_panel_settings', permiso: ADMIN_PERMS },
   { to: '/analytics', label: 'Analytics', icon: 'analytics', permiso: 'analytics.ver' },
 ];
 

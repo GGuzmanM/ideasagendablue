@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { MotivoMovimiento } from '@prisma/client';
 import { prisma } from '../db';
-import { requireAuth, requireRol } from '../middleware/auth';
+import { requireAuth, requirePermiso } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { registrarAudit } from '../services/audit';
 
@@ -107,7 +107,7 @@ router.get('/', requireAuth, async (req, res) => {
 });
 
 // ─── POST /baro-solicitud/:profesionalId ─── registrar en una sede ───
-router.post('/:profesionalId', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (req, res) => {
+router.post('/:profesionalId', requireAuth, requirePermiso('movimientos.editar'), async (req, res) => {
   const { servicioIds } = await baroContexto();
   const profesionalId = req.params.profesionalId;
   const sedeId: string | undefined = req.body?.sedeId;
@@ -183,7 +183,7 @@ router.post('/:profesionalId', requireAuth, requireRol('admin', 'coordinadora_se
 });
 
 // ─── DELETE /baro-solicitud/:profesionalId?sedeId= ─── quitar de una sede ───
-router.delete('/:profesionalId', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (req, res) => {
+router.delete('/:profesionalId', requireAuth, requirePermiso('movimientos.editar'), async (req, res) => {
   const { servicioIds } = await baroContexto();
   const profesionalId = req.params.profesionalId;
   const sedeId = typeof req.query.sedeId === 'string' && req.query.sedeId ? req.query.sedeId : undefined;

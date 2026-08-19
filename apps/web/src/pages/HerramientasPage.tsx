@@ -40,8 +40,12 @@ export function HerramientasPage() {
   const [vista, setVista] = useState<Vista>('inicio');
   const [exportTab, setExportTab] = useState<'excel' | 'reactivacion' | 'pdf'>('excel');
 
-  const verOperativas = tiene('herramientas.operativas') || tiene('herramientas.estrategicas');
-  const verEstrategicas = tiene('herramientas.estrategicas');
+  // Con permisos finos: cada tarjeta se muestra si el usuario tiene algún permiso de su grupo
+  // (las RUTAS de cada herramienta enforcean el acceso exacto). "Operativas" = exportar + comunicaciones;
+  // "Estratégicas" = promos/canales/membresías/movimientos/horarios/config.
+  const verOperativas = tiene('exportar.usar') || tiene('comunicaciones.gestionar');
+  const verEstrategicas = tiene('promociones.ver') || tiene('promociones.gestionar') || tiene('canales.gestionar')
+    || tiene('membresias.gestionar') || tiene('movimientos.editar') || tiene('horarios.editar') || tiene('config.editar');
 
   return (
     <div className="flex-1 overflow-y-auto bg-slate-50 flex flex-col">

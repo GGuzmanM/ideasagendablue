@@ -6,7 +6,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db';
-import { requireAuth, requireRol } from '../middleware/auth';
+import { requireAuth, requirePermiso } from '../middleware/auth';
 import { consumirDeCita, consumoManual, anularConsumo, exonerarSesion, revertirExoneracion } from '../services/consumoService';
 
 const router = Router();
@@ -64,7 +64,7 @@ router.post('/cita/:citaId/exonerar', requireAuth, async (req, res) => {
 });
 
 // ─── POST /consumos/:id/anular — reversa (solo admin, motivo obligatorio) ────
-router.post('/:id/anular', requireAuth, requireRol('admin'), async (req, res) => {
+router.post('/:id/anular', requireAuth, requirePermiso('membresias.gestionar'), async (req, res) => {
   const { motivo } = z.object({ motivo: z.string().trim().min(3).max(500) }).parse(req.body);
   const r = await anularConsumo(req.params.id, motivo, req.user?.userId, await nombreUsuario(req.user?.userId));
   res.json(r);

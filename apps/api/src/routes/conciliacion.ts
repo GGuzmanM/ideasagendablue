@@ -7,12 +7,12 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db';
-import { requireAuth, requireRol } from '../middleware/auth';
+import { requireAuth, requirePermiso } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { aprobarApertura } from '../services/aperturaService';
 
 const router = Router();
-const requireAdmin = requireRol('admin');
+const requireAdmin = requirePermiso('config.editar');
 
 // El JWT no lleva el nombre: se resuelve fresco (la firma humana queda con nombre legible).
 async function nombreUsuario(userId: string | undefined): Promise<string> {

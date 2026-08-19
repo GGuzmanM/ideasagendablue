@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db';
-import { requireAuth, requireRol } from '../middleware/auth';
+import { requireAuth, requirePermiso } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { turnosDelDia } from '../services/disponibilidad';
 import { fechaDb } from '../utils/fechaLima';
@@ -295,7 +295,7 @@ const profesionalSchema = z.object({
   activo: z.boolean().optional(),
 });
 
-router.post('/', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (req, res) => {
+router.post('/', requireAuth, requirePermiso('profesionales.editar'), async (req, res) => {
   const data = profesionalSchema.parse(req.body);
   if (data.emailAgenda === '') data.emailAgenda = null; // vacío = sin sincronización de calendario
   const profesional = await prisma.profesional.create({
@@ -310,7 +310,7 @@ router.post('/', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (
   res.status(201).json(profesional);
 });
 
-router.patch('/:id', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (req, res) => {
+router.patch('/:id', requireAuth, requirePermiso('profesionales.editar'), async (req, res) => {
   const data = profesionalSchema.partial().parse(req.body);
   if (data.emailAgenda === '') data.emailAgenda = null; // vacío = quitar la sincronización
   // Capturar el estado ANTES para diffear en auditoría.
@@ -360,7 +360,7 @@ function fechasSemana(fechaISO: string): { fecha: Date; iso: string; diaSemana: 
 
 // GET /profesionales/horarios-entrada?sedeId=X&semana=YYYY-MM-DD
 // Devuelve, por podóloga, la entrada (8/9) de cada día Lun-Sáb de esa semana.
-router.get('/horarios-entrada', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (req, res) => {
+router.get('/horarios-entrada', requireAuth, requirePermiso('horarios.editar'), async (req, res) => {
   const { sedeId, semana } = req.query as { sedeId?: string; semana?: string };
   if (!sedeId) throw new AppError('sedeId requerido', 400);
   const semanaRef = semana && /^\d{4}-\d{2}-\d{2}$/.test(semana) ? semana : new Date().toISOString().slice(0, 10);
@@ -412,7 +412,7 @@ router.get('/horarios-entrada', requireAuth, requireRol('admin', 'coordinadora_s
 // Fija la entrada de 1 o varias fechas (toda la semana = 5 fechas Lun-Vie; excepción = 1 fecha).
 // Es un OVERRIDE DE TURNO por fecha (capa 2): afecta la agenda Y los horarios reservables.
 // Si el recorte deja citas fuera del turno responde 409 (repetir con forzar:true para aplicar).
-router.patch('/:id/entrada', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (req, res) => {
+router.patch('/:id/entrada', requireAuth, requirePermiso('horarios.editar'), async (req, res) => {
   const { fechas, horaInicio, forzar } = z.object({
     fechas: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).min(1).max(7),
     horaInicio: z.enum(HORAS_ENTRADA),
@@ -429,7 +429,7 @@ router.patch('/:id/entrada', requireAuth, requireRol('admin', 'coordinadora_sede
 // ─── Personal de un DÍA EXCEPCIONAL habilitado (domingo/feriado que la sede abre) ──
 // Lista las podólogas asignadas a la sede con su estado de PRESENCIA ese día (si tienen
 // EntradaPodologa = vienen). Solo tiene sentido en una fecha con excepción de sede abierta.
-router.get('/personal-excepcion', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (req, res) => {
+router.get('/personal-excepcion', requireAuth, requirePermiso('horarios.editar'), async (req, res) => {
   const { sedeId, fecha } = req.query as { sedeId?: string; fecha?: string };
   if (!sedeId || !fecha || !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) throw new AppError('sedeId y fecha (YYYY-MM-DD) requeridos', 400);
   const fechaPunto = fechaDb(fecha);
@@ -466,7 +466,7 @@ router.get('/personal-excepcion', requireAuth, requireRol('admin', 'coordinadora
 // PATCH /:id/presencia-excepcion { sedeId, fecha, presente, horaInicio? }
 // Marca/desmarca a una podóloga como presente un día excepcional habilitado. Presente =
 // crea/actualiza su EntradaPodologa (turno [entrada, cierre de la excepción]); ausente = la borra.
-router.patch('/:id/presencia-excepcion', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (req, res) => {
+router.patch('/:id/presencia-excepcion', requireAuth, requirePermiso('horarios.editar'), async (req, res) => {
   const { sedeId, fecha, presente, horaInicio } = z.object({
     sedeId: z.string().uuid(),
     fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -493,7 +493,7 @@ function esCoberturaUnDia(a: { fechaInicio: Date; fechaFin: Date | null; motivo:
 
 // GET /profesionales/dia-especial?sedeId&fecha → quién trabaja en la sede esa fecha,
 // con TODAS las podólogas (las de la sede + las traíbles de otras) y su estado.
-router.get('/dia-especial', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (req, res) => {
+router.get('/dia-especial', requireAuth, requirePermiso('horarios.editar'), async (req, res) => {
   const { sedeId, fecha } = req.query as { sedeId?: string; fecha?: string };
   if (!sedeId || !fecha || !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) throw new AppError('sedeId y fecha (YYYY-MM-DD) requeridos', 400);
   const fechaPunto = fechaDb(fecha);
@@ -540,7 +540,7 @@ router.get('/dia-especial', requireAuth, requireRol('admin', 'coordinadora_sedes
 // POST /profesionales/dia-especial/set { profesionalId, sedeId, fechas: string[], viene, horaInicio? }
 // Aplica a CADA fecha del array (una fecha o un rango). Propia → EntradaPodologa;
 // otra sede → cobertura de un día (asignación + entrada). Todo idempotente y auditado.
-router.post('/dia-especial/set', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (req, res) => {
+router.post('/dia-especial/set', requireAuth, requirePermiso('horarios.editar'), async (req, res) => {
   const { profesionalId, sedeId, fechas, viene, horaInicio } = z.object({
     profesionalId: z.string().uuid(),
     sedeId: z.string().uuid(),
@@ -667,7 +667,7 @@ const horarioDiaSchema = z.object({
   horaFin: z.string().regex(/^\d{2}:\d{2}$/),
   turno: z.enum(['manana', 'tarde', 'completo']).optional(),
 });
-router.put('/:id/horario', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (req, res) => {
+router.put('/:id/horario', requireAuth, requirePermiso('horarios.editar'), async (req, res) => {
   const data = z.object({ dias: z.array(horarioDiaSchema).max(7), forzar: z.boolean().optional() }).parse(req.body);
   const { horarios } = await setHorarioBase({
     profesionalId: req.params.id, dias: data.dias, forzar: data.forzar,
@@ -677,7 +677,7 @@ router.put('/:id/horario', requireAuth, requireRol('admin', 'coordinadora_sedes'
 });
 
 // Crear bloqueo de agenda (inhabilita slots reales) → solo gestión (admin/coordinadora).
-router.post('/:id/bloqueos', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (req, res) => {
+router.post('/:id/bloqueos', requireAuth, requirePermiso('horarios.editar'), async (req, res) => {
   const { fechaInicio, fechaFin, motivo } = z.object({
     fechaInicio: z.string(),
     fechaFin: z.string(),

@@ -86,10 +86,7 @@ export function usePermisosData(overrideSedeId?: string) {
   const sedes = useMemo(() => {
     if (!sedesRaw.length) return [];
     if (!usuario) return sedesRaw;
-    if (
-      usuario.permisos?.includes('admin.ver') ||
-      ['admin', 'coordinadora_sedes'].includes(usuario.rol)
-    ) {
+    if (['admin', 'coordinadora_sedes'].includes(usuario.rol)) {
       return sedesRaw;
     }
     return sedesRaw.filter((s) => puedeAccederSede(s.id));

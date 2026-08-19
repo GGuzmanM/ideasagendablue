@@ -10,11 +10,11 @@ export interface AdminTabItem {
 }
 
 export const ADMIN_TABS: AdminTabItem[] = [
-  { to: '/admin/competencias', label: 'Competencias', icon: 'verified', permiso: 'admin.ver' },
-  { to: '/admin/paquetes', label: 'Paquetes', icon: 'package', permiso: 'admin.ver' },
-  { to: '/admin/podologas', label: 'Podólogas', icon: 'person', permiso: 'admin.ver' },
-  { to: '/admin/servicios', label: 'Servicios', icon: 'medical_services', permiso: 'admin.ver' },
-  { to: '/admin/auditoria', label: 'Auditoría', icon: 'receipt_long', permiso: 'admin.ver' },
+  { to: '/admin/competencias', label: 'Competencias', icon: 'verified', permiso: 'competencias.editar' },
+  { to: '/admin/paquetes', label: 'Paquetes', icon: 'package', permiso: 'membresias.gestionar' },
+  { to: '/admin/podologas', label: 'Podólogas', icon: 'person', permiso: 'profesionales.ver' },
+  { to: '/admin/servicios', label: 'Servicios', icon: 'medical_services', permiso: 'servicios.ver' },
+  { to: '/admin/auditoria', label: 'Auditoría', icon: 'receipt_long', permiso: 'auditoria.ver' },
   { to: '/admin/usuarios', label: 'Usuarios', icon: 'group', permiso: 'usuarios.ver' },
   { to: '/admin/roles', label: 'Roles', icon: 'key', permiso: 'roles.editar' },
   { to: '/admin/notificaciones', label: 'Notificaciones', icon: 'notifications_active', permiso: 'notificaciones.ver' },

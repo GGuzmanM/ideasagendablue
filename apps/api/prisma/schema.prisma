@@ -386,6 +386,7 @@ model Recepcionista {
   deletedAt DateTime?
 
   asignaciones AsignacionAdministrativa[]
+  usuario      Usuario? // cuenta de login vinculada (1:1); su acceso deriva de esta ficha
 
   creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
@@ -1092,6 +1093,12 @@ model Usuario {
   area           AreaAgente?
   sedeAsignadaId String?     @db.Uuid
   sedeAsignada   Sede?       @relation("UsuarioSedeAsignada", fields: [sedeAsignadaId], references: [id])
+
+  // Vínculo con la ficha del ROSTER (Movimientos). Si un usuario recepcionista está vinculado,
+  // su ACCESO a la agenda se DERIVA en vivo de la sede donde el roster lo tiene HOY (ver auth.ts),
+  // en vez de UsuarioSede. Así, moverlo en Movimientos cambia su acceso al instante.
+  recepcionistaId String?        @unique @db.Uuid
+  recepcionista   Recepcionista? @relation(fields: [recepcionistaId], references: [id])
 
   sedes                 UsuarioSede[]
   apiKeys               ApiKey[]

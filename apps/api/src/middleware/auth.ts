@@ -44,11 +44,28 @@ export async function getPermisosRol(rolNombre: string): Promise<string[]> {
   return rol?.permisos ?? [];
 }
 
+// Sedes donde el ROSTER (Movimientos) tiene a esta recepcionista HOY (asignaciones vigentes).
+// Es la fuente de verdad del acceso para usuarios vinculados: se recalcula en cada request.
+export async function sedesVigentesDeRecepcionista(recepcionistaId: string): Promise<string[]> {
+  const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  const hoyD = new Date(hoy); // medianoche UTC (server TZ=UTC) — @db.Date se compara igual
+  const asigs = await prisma.asignacionAdministrativa.findMany({
+    where: {
+      recepcionistaId, deletedAt: null,
+      fechaInicio: { lte: hoyD },
+      OR: [{ fechaFin: null }, { fechaFin: { gte: hoyD } }],
+    },
+    select: { sedeId: true },
+  });
+  return [...new Set(asigs.map((a) => a.sedeId))];
+}
+
 // ─── Autorización por SEDE ─────────────────────────────────────────────────────
-// Roles que operan TODAS las sedes (coordinación general). El resto (recepción,
-// contact center) solo puede operar/leer las sedes de su token. Espeja la lógica del
-// frontend (authStore.puedeAccederSede) → cerrar el hueco de la API directa sin romper la UI.
-const ROLES_TODAS_SEDES = ['admin', 'coordinadora_sedes'];
+// Roles que VEN/OPERAN TODAS las sedes (coordinación general + contact center, que atiende
+// llamadas de todas las sedes). Es SOLO acceso a sedes — NO otorga poderes de gestión (eso va
+// por `permisos`/requireRol; contact_center NO es coordinadora). El resto (recepción) solo
+// opera/lee las sedes de su token. Espeja authStore.puedeAccederSede en el frontend.
+const ROLES_TODAS_SEDES = ['admin', 'coordinadora_sedes', 'contact_center'];
 
 export function puedeTodasLasSedes(user: AuthPayload): boolean {
   return ROLES_TODAS_SEDES.includes(user.rol);
@@ -107,7 +124,7 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
     // muere al instante aunque el token siga vigente (no esperar a que caduque).
     const usuario = await prisma.usuario.findUnique({
       where: { id: payload.userId },
-      select: { activo: true, deletedAt: true, sedes: { select: { sedeId: true } } },
+      select: { activo: true, deletedAt: true, recepcionistaId: true, sedes: { select: { sedeId: true } } },
     });
     if (!usuario || usuario.deletedAt || !usuario.activo) {
       throw new AppError('Sesión revocada: usuario inactivo o eliminado', 401, 'SESION_REVOCADA');
@@ -115,7 +132,12 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
     // Permisos Y SEDES SIEMPRE frescos desde la BD: si el admin cambia los permisos del rol o
     // reasigna/quita sedes del usuario, aplican al instante sin cerrar sesión (no esperar al token).
     payload.permisos = await getPermisosRol(payload.rol);
-    payload.sedes = usuario.sedes.map((s) => s.sedeId);
+    // Acceso a sedes: si el usuario está VINCULADO a una ficha del roster (Movimientos), su acceso se
+    // DERIVA EN VIVO de la sede donde el roster lo tiene HOY (una sola fuente de verdad → moverlo en
+    // Movimientos cambia su acceso al instante). Si no está vinculado, usa sus UsuarioSede.
+    payload.sedes = usuario.recepcionistaId
+      ? await sedesVigentesDeRecepcionista(usuario.recepcionistaId)
+      : usuario.sedes.map((s) => s.sedeId);
     req.user = payload;
     return next();
   }

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db';
-import { requireAuth, requireRol } from '../middleware/auth';
+import { requireAuth, requirePermiso } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { recalcularPaquete } from '../services/consumoService';
 import { registrarAudit } from '../services/audit';
@@ -13,7 +13,7 @@ const router = Router();
 // puede corregirlo. Ajusta sesionesTotal, capa consumos sobrantes (soft-delete) y
 // recalcula el estado. Siempre con motivo y auditado. Nunca edita el saldo a mano:
 // el saldo = tamaño − consumos vivos.
-router.patch('/instancia/:id/tamano', requireAuth, requireRol('admin'), async (req, res) => {
+router.patch('/instancia/:id/tamano', requireAuth, requirePermiso('membresias.gestionar'), async (req, res) => {
   const { sesionesTotal, motivo } = z
     .object({ sesionesTotal: z.number().int().min(1).max(60), motivo: z.string().trim().min(3).max(500) })
     .parse(req.body);
@@ -204,7 +204,7 @@ const plantillaSchema = z.object({
   precio: z.number().positive().optional(),
 });
 
-router.post('/', requireAuth, requireRol('admin'), async (req, res) => {
+router.post('/', requireAuth, requirePermiso('membresias.gestionar'), async (req, res) => {
   const data = plantillaSchema.parse(req.body);
   const paquete = await prisma.paquete.create({
     data: { ...data, precio: data.precio as never, creadoPor: req.user?.userId },
@@ -218,7 +218,7 @@ router.post('/', requireAuth, requireRol('admin'), async (req, res) => {
   res.status(201).json(paquete);
 });
 
-router.patch('/:id', requireAuth, requireRol('admin'), async (req, res) => {
+router.patch('/:id', requireAuth, requirePermiso('membresias.gestionar'), async (req, res) => {
   const paquete = await prisma.paquete.findUnique({ where: { id: req.params.id, deletedAt: null } });
   if (!paquete) throw new AppError('Paquete no encontrado', 404);
 
@@ -237,7 +237,7 @@ router.patch('/:id', requireAuth, requireRol('admin'), async (req, res) => {
   res.json(updated);
 });
 
-router.delete('/:id', requireAuth, requireRol('admin'), async (req, res) => {
+router.delete('/:id', requireAuth, requirePermiso('membresias.gestionar'), async (req, res) => {
   const paquete = await prisma.paquete.findUnique({ where: { id: req.params.id, deletedAt: null } });
   if (!paquete) throw new AppError('Paquete no encontrado', 404);
 

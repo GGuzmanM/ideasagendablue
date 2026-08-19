@@ -30,7 +30,7 @@ export function RecordatoriosPanel() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const tiene = useAuthStore(s => s.tiene);
-  const puedeReenviar = tiene('herramientas.estrategicas') || useAuthStore.getState().usuario?.rol === 'admin';
+  const puedeReenviar = tiene('comunicaciones.gestionar');
 
   const hoy = format(new Date(), 'yyyy-MM-dd');
   const [modoRango, setModoRango] = useState(false);

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import PDFDocument from 'pdfkit';
 import { prisma } from '../db';
-import { requireAuth, requireRol } from '../middleware/auth';
+import { requireAuth, requirePermiso } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 
 // ─── Composición de sede ──────────────────────────────────────────────────────
@@ -12,7 +12,7 @@ import { AppError } from '../middleware/errorHandler';
 // El roster NO alimenta la disponibilidad ni las reservas: es puramente informativo.
 
 const router = Router();
-const gestion = [requireAuth, requireRol('admin', 'coordinadora_sedes')] as const;
+const gestion = [requireAuth, requirePermiso('movimientos.editar')] as const;
 
 // Máquinas de baropodometría ("Baro 1/2") vs doctores reales — mismo criterio que baroSolicitud.ts.
 const esMaquinaBaro = (nombres: string, apellidos: string) =>

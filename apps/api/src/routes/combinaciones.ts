@@ -1,12 +1,12 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db';
-import { requireAuth, requireRol } from '../middleware/auth';
+import { requireAuth, requirePermiso } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { auditEnTx } from '../services/audit';
 
 const router = Router();
-const requireAdmin = requireRol('admin');
+const requireAdmin = requirePermiso('config.editar');
 
 // Servicio embebido en respuestas de combinación (para selectores del frontend).
 const servicioSelect = {

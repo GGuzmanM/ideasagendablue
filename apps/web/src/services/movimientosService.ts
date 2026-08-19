@@ -154,16 +154,28 @@ export function useMovimientosData() {
 
   const todas = todosQ.data ?? [];
 
-  // Tablero: quién está en cada sede el día elegido. VIGENCIA = SOLO el rango de fechas
-  // (misma regla que la agenda al pintar columnas) — los rangos nunca se solapan.
-  // `activa` es contabilidad interna (fila reemplazada por un movimiento posterior),
-  // NO participa en la resolución del día.
+  // Tablero: quién está en cada sede el día elegido. VIGENCIA = el rango de fechas cubre el día.
+  // NOTA: NO se filtra por `activa` a secas — una base "reemplazada" por un movimiento FUTURO queda
+  // activa=false pero sigue siendo la sede vigente hasta que arranque ese movimiento. En cambio, si
+  // dos filas cubren el mismo día (solape: una cerrada que aún cubre + la nueva), la persona NO debe
+  // salir en dos sedes → DEDUP por profesional: gana la ACTIVA; si empatan, la de inicio más reciente.
   const enFecha = (m: Movimiento) =>
     m.fechaInicio.slice(0, 10) <= fechaVista &&
     (!m.fechaFin || m.fechaFin.slice(0, 10) >= fechaVista);
 
   const tableroMovs = useMemo(
-    () => todas.filter(enFecha).filter(m => !esProfesionalNoMovible(m.profesional)).filter(coincide),
+    () => {
+      const cubren = todas.filter(enFecha).filter(m => !esProfesionalNoMovible(m.profesional)).filter(coincide);
+      const porProf = new Map<string, Movimiento>();
+      for (const m of cubren) {
+        const prev = porProf.get(m.profesionalId);
+        const gana = !prev
+          || (m.activa !== prev.activa ? m.activa           // la activa gana
+              : m.fechaInicio.slice(0, 10) > prev.fechaInicio.slice(0, 10)); // si empatan, la más reciente
+        if (gana) porProf.set(m.profesionalId, m);
+      }
+      return [...porProf.values()];
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [todas, fechaVista, query],
   );

@@ -1,14 +1,14 @@
 import { Router } from 'express';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../db';
-import { requireAuth, requireRol } from '../middleware/auth';
+import { requireAuth, requirePermiso } from '../middleware/auth';
 
 const router = Router();
 
 // ─── GET /audit ───────────────────────────────────────────────────────────────
 // Lista paginada de audit_logs con filtros. Incluye usuario, sede (con color)
 // y — si la entidad es una cita — el nombre del paciente para el resumen.
-router.get('/', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (req, res) => {
+router.get('/', requireAuth, requirePermiso('auditoria.ver'), async (req, res) => {
   const {
     sedeId, usuarioId, entidad, accion, q,
     desde, hasta, page = '1', limit = '50',
@@ -186,7 +186,7 @@ async function resolverNombres(logs: { entidad: string; entidadId: string; antes
 
 // ─── GET /audit/stats ─────────────────────────────────────────────────────────
 // KPIs para el header: total histórico, acciones hoy, usuarios activos hoy.
-router.get('/stats', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (_req, res) => {
+router.get('/stats', requireAuth, requirePermiso('auditoria.ver'), async (_req, res) => {
   const hoy = new Date();
   hoy.setHours(0, 0, 0, 0);
 
@@ -205,7 +205,7 @@ router.get('/stats', requireAuth, requireRol('admin', 'coordinadora_sedes'), asy
 // ─── GET /audit/facetas ───────────────────────────────────────────────────────
 // Devuelve las opciones únicas para poblar los selects de filtros (entidad,
 // acción, usuarios que han generado logs). Cacheable en el cliente.
-router.get('/facetas', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (_req, res) => {
+router.get('/facetas', requireAuth, requirePermiso('auditoria.ver'), async (_req, res) => {
   const [entidades, acciones, usuarios] = await Promise.all([
     prisma.auditLog.findMany({ distinct: ['entidad'], select: { entidad: true }, orderBy: { entidad: 'asc' } }),
     prisma.auditLog.findMany({ distinct: ['accion'], select: { accion: true }, orderBy: { accion: 'asc' } }),

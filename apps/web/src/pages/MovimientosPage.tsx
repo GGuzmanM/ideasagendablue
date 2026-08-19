@@ -9,7 +9,7 @@ import { cn } from '../utils/cn';
 import { type Sede } from '../api';
 import { composicionSedeApi } from '../api/composicionSede';
 import { baroSolicitudApi } from '../api/baroSolicitud';
-import { MOTIVO_LABELS, type Movimiento } from '../api/movimientos';
+import { MOTIVO_LABELS, movimientosApi, type Movimiento } from '../api/movimientos';
 import { MovimientoModal } from '../components/movimientos/MovimientoModal';
 import {
   useMovimientosData,
@@ -76,9 +76,22 @@ function PodologaCard({ mov, canWrite, onEditar, onEliminar }: {
   const style = MOTIVO_STYLE[mov.motivo] ?? MOTIVO_STYLE.OTRO;
   const puedeEliminar = canWrite && mov.estadoCalc !== 'historial';
 
+  // Arrastrable: soltar en otra sede la MUEVE (crea un movimiento desde el día visto hasta fin de mes).
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: `pod-${mov.sedeId}-${mov.id}`,
+    data: { profesionalId: mov.profesionalId, fromSedeId: mov.sedeId, nombre: `${mov.profesional.nombres} ${mov.profesional.apellidos}` },
+    disabled: !canWrite,
+  });
+  const dragStyle = { transform: CSS.Translate.toString(transform), opacity: isDragging ? 0.4 : 1, zIndex: isDragging ? 50 : undefined };
+
   return (
-    <div className={cn(
+    <div
+      ref={setNodeRef}
+      style={dragStyle}
+      {...(canWrite ? { ...attributes, ...listeners } : {})}
+      className={cn(
       'group relative bg-surface-container-lowest rounded-xl border border-outline-variant/40 py-3 pl-3 pr-1.5 flex items-start gap-2.5 transition-all hover:shadow-md hover:border-outline-variant',
+      canWrite && 'cursor-grab active:cursor-grabbing',
       cobertura && cn('border-l-[3px]', style.accent),
     )}>
       <Avatar prof={mov.profesional} size="sm" />
@@ -106,7 +119,7 @@ function PodologaCard({ mov, canWrite, onEditar, onEliminar }: {
         )}
       </div>
       {canWrite && (
-        <div className="flex shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+        <div onPointerDown={(e) => e.stopPropagation()} className="flex shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
           <IconBtn label="Editar" onClick={() => onEditar(mov)} icon="edit" />
           {puedeEliminar && <IconBtn label="Eliminar" danger onClick={() => onEliminar(mov)} icon="delete" />}
         </div>
@@ -134,9 +147,10 @@ function SedeColumn({ sede, movs, proximos, canWrite, onNuevo, onEditar, onElimi
     if (ca !== cb) return ca - cb;
     return a.profesional.nombres.localeCompare(b.profesional.nombres);
   });
+  const { setNodeRef, isOver } = useDroppable({ id: `sede-${sede.id}`, data: { sedeId: sede.id } });
 
   return (
-    <div className="flex flex-col bg-surface-container-low rounded-2xl border border-outline-variant/40 lg:w-72 lg:shrink-0 overflow-hidden">
+    <div ref={setNodeRef} className={cn('flex flex-col bg-surface-container-low rounded-2xl border lg:w-72 lg:shrink-0 overflow-hidden transition-all', isOver ? 'border-primary ring-2 ring-primary/40' : 'border-outline-variant/40')}>
       {/* Encabezado */}
       <div className="flex items-center gap-2 px-3.5 py-3 border-b border-outline-variant/30 bg-surface-container-lowest">
         <span className="w-1.5 h-6 rounded-full shrink-0" style={{ backgroundColor: sede.color }} />
@@ -561,11 +575,10 @@ export function MovimientosPage() {
   const [asignarSede, setAsignarSede] = useState<Sede | null>(null);
   const mesVista = fechaVista.slice(0, 7); // recepción: mes de la fecha elegida (no solo el actual)
 
-  const { data: compRecep } = useQuery({
-    queryKey: ['composicion-mov', mesVista],
-    queryFn: () => composicionSedeApi.composicion(mesVista),
-    enabled: grupo === 'recepcion',
-  });
+  // 'DD/MM/YYYY' (composición) → 'YYYY-MM-DD' para comparar con fechaVista.
+  const ddmmyyyyAYmd = (s: string) => (/^\d{2}\/\d{2}\/\d{4}$/.test(s) ? s.split('/').reverse().join('-') : s);
+  // Asignaciones de recepción CON fechas — fuente día-aware del tablero (y de Próximos/Historial).
+  const { data: recepAsigs } = useQuery({ queryKey: ['recep-asigs-mov'], queryFn: () => composicionSedeApi.asignaciones(), enabled: grupo === 'recepcion' });
   const { data: baroRoster } = useQuery({
     queryKey: ['baro-roster-mov', fechaVista],
     queryFn: () => baroSolicitudApi.obtener(undefined, fechaVista),
@@ -575,16 +588,39 @@ export function MovimientosPage() {
   const { data: recepTodas } = useQuery({ queryKey: ['recepcionistas-todas'], queryFn: composicionSedeApi.recepcionistas, enabled: grupo === 'recepcion' });
   const { data: doctoresTodos } = useQuery({ queryKey: ['doctores-baro-todos'], queryFn: composicionSedeApi.doctores, enabled: grupo === 'doctores' });
 
-  // Recepción por sede (roster del mes desde Composición) — con asignacionId para poder quitar.
+  // Recepción por sede EL DÍA elegido (fechaVista), resolviendo a UNA sola sede por recepcionista.
+  // Antes usaba la composición del MES → una recepcionista movida a mitad de mes salía en TODAS las
+  // sedes donde estuvo ese mes. Ahora: solo la asignación cuyo rango cubre el día; si dos lo cubren
+  // (solape), gana la de inicio más reciente. Trae `asignacionId` (a.id) para poder mover/quitar.
   const recepPorSede: Record<string, PersonaGrupo[]> = {};
-  (compRecep?.sedes ?? []).forEach(s => { recepPorSede[s.sedeId] = s.recepcionistas.map(r => ({ id: r.id, nombre: r.nombre, asignacionId: r.asignacionId })); });
+  {
+    const porRecep = new Map<string, { sedeId: string; desde: string; persona: PersonaGrupo }>();
+    (recepAsigs ?? []).filter(a => a.cargo === 'recepcionista' && a.personaId).forEach(a => {
+      const desde = ddmmyyyyAYmd(a.fechaInicio);
+      const hasta = a.fechaFin ? ddmmyyyyAYmd(a.fechaFin) : null;
+      if (desde <= fechaVista && (!hasta || hasta >= fechaVista)) {
+        const prev = porRecep.get(a.personaId!);
+        if (!prev || desde > prev.desde) porRecep.set(a.personaId!, { sedeId: a.sedeId, desde, persona: { id: a.personaId!, nombre: a.personaNombre, asignacionId: a.id } });
+      }
+    });
+    for (const { sedeId, persona } of porRecep.values()) (recepPorSede[sedeId] ??= []).push(persona);
+  }
   // Doctores de baro por sede (solo tipo=medico; las podólogas por-solicitud no cuentan aquí).
+  // Dedup por doctor: si hubiera dos periodos que cubren el día (solape), gana el de inicio más
+  // reciente → nunca sale en dos sedes. (El roster ya es date-aware; esto es red de seguridad.)
   const doctoresPorSede: Record<string, PersonaGrupo[]> = {};
-  (baroRoster?.porSolicitud ?? []).filter(p => p.tipo === 'medico' && p.sedeId).forEach(p => {
-    (doctoresPorSede[p.sedeId!] ??= []).push({ id: p.id, nombre: p.nombre });
-  });
+  {
+    const porDoc = new Map<string, { sedeId: string; desde: string; nombre: string }>();
+    (baroRoster?.porSolicitud ?? []).filter(p => p.tipo === 'medico' && p.sedeId).forEach(p => {
+      const desde = p.fechaInicio ?? '';
+      const prev = porDoc.get(p.id);
+      if (!prev || desde > prev.desde) porDoc.set(p.id, { sedeId: p.sedeId!, desde, nombre: p.nombre });
+    });
+    for (const [id, v] of porDoc) (doctoresPorSede[v.sedeId] ??= []).push({ id, nombre: v.nombre });
+  }
 
   const invalidarGrupos = () => {
+    qc.invalidateQueries({ queryKey: ['recep-asigs-mov'] }); // fuente día-aware del tablero de recepción
     qc.invalidateQueries({ queryKey: ['composicion-mov'] });
     qc.invalidateQueries({ queryKey: ['baro-roster-mov'] });
     qc.invalidateQueries({ queryKey: ['profesionales-sede'] });
@@ -634,6 +670,29 @@ export function MovimientosPage() {
   });
   const onMover = (persona: PersonaGrupo, fromSedeId: string, toSedeId: string) => moverMut.mutate({ persona, fromSedeId, toSedeId });
 
+  // ── PODÓLOGAS: mover arrastrando (crea un movimiento [fechaVista → fin de mes]) ──
+  // El sistema de movimientos ya respeta el pasado y secuencia solo: nunca toca días anteriores
+  // a fechaVista; el cambio rige desde ese día hasta fin de mes (editable luego desde el modal).
+  const moverPodologaMut = useMutation({
+    mutationFn: async ({ profesionalId, toSedeId }: { profesionalId: string; toSedeId: string }) => {
+      const finMes = format(endOfMonth(parseISO(fechaVista)), 'yyyy-MM-dd');
+      await movimientosApi.crear({ profesionalId, sedeId: toSedeId, fechaInicio: fechaVista, fechaFin: finMes, motivo: 'OTRO' });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['movimientos'] });
+      qc.invalidateQueries({ queryKey: ['profesionales-sede'] });
+      qc.invalidateQueries({ queryKey: ['citas'] });
+      toast.success('Podóloga movida de sede');
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const podSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
+  const handleDragEndPodologas = (e: DragEndEvent) => {
+    const from = e.active.data.current as { profesionalId: string; fromSedeId: string } | undefined;
+    const to = e.over?.data.current as { sedeId: string } | undefined;
+    if (from && to && from.fromSedeId !== to.sedeId) moverPodologaMut.mutate({ profesionalId: from.profesionalId, toSedeId: to.sedeId });
+  };
+
   // Candidatos para el modal (los que aún no están en esa sede).
   const candidatosAsignar = (() => {
     if (!asignarSede) return [] as { id: string; nombre: string }[];
@@ -647,10 +706,7 @@ export function MovimientosPage() {
 
   // ── Próximos / Historial por grupo (recepción y doctores) desde sus propias fuentes ──
   const sedeColorMap = new Map(sedesActivas.map(s => [s.id, s.color] as const));
-  const ddmmyyyyAYmd = (s: string) => (/^\d{2}\/\d{2}\/\d{4}$/.test(s) ? s.split('/').reverse().join('-') : s);
-  // Se cargan apenas se elige el grupo (no solo en la vista Próximos/Historial) para que el
-  // CONTADOR del tab "Próximos" aparezca de una, sin tener que entrar a esa vista.
-  const { data: recepAsigs } = useQuery({ queryKey: ['recep-asigs-mov'], queryFn: () => composicionSedeApi.asignaciones(), enabled: grupo === 'recepcion' });
+  // (recepAsigs se carga arriba, día-aware, para el tablero; aquí solo alimenta Próximos/Historial.)
   const { data: baroTodos } = useQuery({ queryKey: ['baro-todos-mov'], queryFn: () => baroSolicitudApi.obtener(), enabled: grupo === 'doctores' });
   const listaGrupo: { key: string; nombre: string; sedeNombre: string; color: string; desde: string; hasta: string | null }[] =
     grupo === 'recepcion'
@@ -853,24 +909,32 @@ export function MovimientosPage() {
                 </p>
               )}
             </div>
-            <div className="flex flex-col lg:flex-row gap-4 lg:overflow-x-auto pb-2 custom-scrollbar">
-              {sedesActivas.map(sede => (
-                <SedeColumn
-                  key={sede.id}
-                  sede={sede}
-                  movs={tableroMovs.filter(m => m.sedeId === sede.id)}
-                  proximos={cambiosPorSede[sede.id] ?? 0}
-                  canWrite={canWrite}
-                  onNuevo={s => abrirNuevo(s.id)}
-                  onEditar={abrirEditar}
-                  onEliminar={handleEliminar}
-                  onVerProximos={() => setVista('proximo')}
-                />
-              ))}
-              {!sedesActivas.length && (
-                <p className="text-sm text-on-surface-variant py-16 text-center w-full">No hay sedes activas.</p>
-              )}
-            </div>
+            {canWrite && (
+              <p className="text-xs text-on-surface-variant flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-sm">info</span>
+                Arrastra una podóloga a otra sede para MOVERLA (rige desde el día visto hasta fin de mes; no toca el pasado). O usa el + / editar / ✕.
+              </p>
+            )}
+            <DndContext sensors={podSensors} collisionDetection={closestCenter} onDragEnd={handleDragEndPodologas}>
+              <div className="flex flex-col lg:flex-row gap-4 lg:overflow-x-auto pb-2 custom-scrollbar">
+                {sedesActivas.map(sede => (
+                  <SedeColumn
+                    key={sede.id}
+                    sede={sede}
+                    movs={tableroMovs.filter(m => m.sedeId === sede.id)}
+                    proximos={cambiosPorSede[sede.id] ?? 0}
+                    canWrite={canWrite}
+                    onNuevo={s => abrirNuevo(s.id)}
+                    onEditar={abrirEditar}
+                    onEliminar={handleEliminar}
+                    onVerProximos={() => setVista('proximo')}
+                  />
+                ))}
+                {!sedesActivas.length && (
+                  <p className="text-sm text-on-surface-variant py-16 text-center w-full">No hay sedes activas.</p>
+                )}
+              </div>
+            </DndContext>
           </div>
         ) : vista === 'proximo' ? (
           // ── Próximos ──

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db';
-import { requireAuth, requireRol } from '../middleware/auth';
+import { requireAuth, requirePermiso } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { auditEnTx } from '../services/audit';
 import { extraerYoutubeVideoId } from '../utils/youtube';
@@ -22,7 +22,7 @@ import {
 const router = Router();
 
 // Todas las rutas del módulo son SOLO administradores.
-router.use(requireAuth, requireRol('admin'));
+router.use(requireAuth, requirePermiso('comunicaciones.gestionar'));
 
 // ─── Validación ───────────────────────────────────────────────────────────────
 const videoSchema = z.object({

@@ -34,6 +34,8 @@ function aparienciaDeRol(nombre: string) {
 const GRUPO_META: Record<string, { icon: string; corto: string }> = {
   'Agenda':           { icon: 'calendar_today',       corto: 'Agenda' },
   'Pacientes':        { icon: 'groups',               corto: 'Pacientes' },
+  'Membresías':       { icon: 'loyalty',              corto: 'Membres.' },
+  'Horarios y Restricciones': { icon: 'schedule',     corto: 'Horarios' },
   'Herramientas':     { icon: 'home_repair_service',  corto: 'Herram.' },
   'Movimientos':      { icon: 'sync_alt',             corto: 'Movim.' },
   'Administración':   { icon: 'admin_panel_settings', corto: 'Admin' },
@@ -171,7 +173,11 @@ function FormularioRolModal({ editing, gruposPermisos, totalPermisosCount, onSav
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSave(form);
+    // Solo enviar permisos que EXISTEN en el catálogo actual: si el rol arrastra permisos obsoletos
+    // (p.ej. una pestaña vieja cargada antes de un cambio de catálogo), se descartan en vez de que el
+    // backend rechace todo con un 422. Guarda limpio.
+    const idsValidos = new Set(Object.values(gruposPermisos).flat().map(i => i.id));
+    onSave({ ...form, permisos: form.permisos.filter(p => idsValidos.has(p)) });
   };
 
   const pct = totalPermisosCount > 0 ? Math.round((form.permisos.length / totalPermisosCount) * 100) : 0;

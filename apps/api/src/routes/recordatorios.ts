@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '../db';
-import { requireAuth, requireRol } from '../middleware/auth';
+import { requireAuth, requirePermiso } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { registrarAudit } from '../services/audit';
 import { programarJobRecordatorio } from '../queue/recordatorioQueue';
@@ -147,7 +147,7 @@ router.get('/cita/:citaId', requireAuth, async (req, res) => {
 });
 
 // ─── POST /recordatorios/:citaId/reenviar ─── forzar reenvío (admin) ───────────
-router.post('/:citaId/reenviar', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (req, res) => {
+router.post('/:citaId/reenviar', requireAuth, requirePermiso('comunicaciones.gestionar'), async (req, res) => {
   const rec = await prisma.recordatorioCita.findFirst({
     where: { citaId: req.params.citaId, tipo: 'RECORDATORIO', deletedAt: null },
     orderBy: { creadoEn: 'desc' },

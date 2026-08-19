@@ -1,12 +1,12 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db';
-import { requireAuth, requireRol } from '../middleware/auth';
+import { requireAuth, requirePermiso } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 
 const router = Router();
 
-const requireCoord = requireRol('admin', 'coordinadora_sedes');
+const requireCoord = requirePermiso('notificaciones.ver');
 
 const INCLUDE_AUTOR = {
   autor: { select: { id: true, nombre: true } },

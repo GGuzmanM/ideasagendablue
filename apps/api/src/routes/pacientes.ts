@@ -507,7 +507,7 @@ async function resolverResidencia(
   return out;
 }
 
-router.post('/', requireAuth, requireAcceso('patients:write', 'pacientes.editar'), async (req, res) => {
+router.post('/', requireAuth, requireAcceso('patients:write', 'pacientes.crear'), async (req, res) => {
   const data = normalizarPaciente(crearPacienteSchema.parse(req.body));
 
   // Primera capa: verificación en la app (mensaje claro inmediato).

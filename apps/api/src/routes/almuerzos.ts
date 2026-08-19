@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db';
-import { requireAuth } from '../middleware/auth';
+import { requireAuth, requirePermiso } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { crearAlmuerzo, esFinDeSemana } from '../services/almuerzoService';
 import { registrarAudit } from '../services/audit';
@@ -75,7 +75,8 @@ router.get('/profesional/:profesionalId', requireAuth, async (req, res) => {
 });
 
 // ─── POST /almuerzos ──────────────────────────────────────────────────────────
-router.post('/', requireAuth, async (req, res) => {
+// Gestionar almuerzos = restricción de horario → exige `horarios.editar` (antes solo requireAuth).
+router.post('/', requireAuth, requirePermiso('horarios.editar'), async (req, res) => {
   const { profesionalId, sedeId, horaInicio, fecha, esRecurrente } = z
     .object({
       profesionalId: z.string().uuid(),
@@ -157,7 +158,7 @@ router.post('/', requireAuth, async (req, res) => {
 });
 
 // ─── DELETE /almuerzos/:id ────────────────────────────────────────────────────
-router.delete('/:id', requireAuth, async (req, res) => {
+router.delete('/:id', requireAuth, requirePermiso('horarios.editar'), async (req, res) => {
   const bloqueo = await prisma.bloqueoAgenda.findUnique({
     where: { id: req.params.id },
   });

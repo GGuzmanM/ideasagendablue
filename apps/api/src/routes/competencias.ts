@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db';
-import { requireAuth, requireRol } from '../middleware/auth';
+import { requireAuth, requirePermiso } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { registrarAudit } from '../services/audit';
 
@@ -64,7 +64,7 @@ const toggleSchema = z.object({
 });
 
 // Activar/desactivar competencia
-router.post('/toggle', requireAuth, requireRol('admin', 'coordinadora_sedes'), async (req, res) => {
+router.post('/toggle', requireAuth, requirePermiso('competencias.editar'), async (req, res) => {
   const { profesionalId, servicioId, activa } = toggleSchema.parse(req.body);
 
   // Guard de CATEGORÍA: al HABILITAR, el servicio debe ser del área del profesional (podóloga→podo,
