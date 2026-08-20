@@ -14,7 +14,19 @@ import { BadgeAsistencia } from '../pacientes/BadgeAsistencia';
 import { formatPromoValor } from '../../api/promociones';
 import { horaInicioValidaParaDuracion } from '@limablue/shared';
 import { cn } from '../../utils/cn';
+import { useAuthStore } from '../../stores/authStore';
 import type { HistorialCita, Profesional } from '../../api';
+
+// Etiquetas legibles del estado para el display de solo-lectura.
+const ESTADO_LABEL: Record<string, string> = {
+  agendada: 'AGENDADA',
+  confirmada: 'CONFIRMADA',
+  llego: 'LLEGÓ',
+  en_atencion: 'EN ATENCIÓN',
+  completada: 'COMPLETADA',
+  no_show: 'NO SHOW',
+  cancelada: 'CANCELADA',
+};
 
 export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
   const {
@@ -54,6 +66,8 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
     dialogoConsumo,
     setDialogoConsumo,
     esCombo,
+    bloquePrincipal,
+    bloqueSecundaria,
     citaExon,
     estadoMutation,
     exonerarMut,
@@ -89,6 +103,13 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
   // "No descontar sesión" es genérico, pero la redacción "(láser no aplicado)" solo aplica a
   // láser/combo. En una Profilaxis suelta el texto de láser confunde → wording context-aware.
   const esLaserOCombo = esCombo || /l[áa]ser/i.test(cita.servicio?.nombre ?? '');
+
+  // Una vez registrada la cita, Estado/Canal/Promoción quedan de SOLO LECTURA en el modal:
+  // el estado solo avanza con los botones de flujo (Llegó/En atención/Completar). Únicamente
+  // quien puede REVERTIR (permiso citas.revertir → admin/coordinadora) conserva los desplegables
+  // para corregir errores. Recepción/contact center los ven bloqueados.
+  const permisos = useAuthStore((s) => s.usuario?.permisos ?? []);
+  const puedeCorregir = permisos.includes('citas.revertir');
 
   return (
     <>
@@ -156,7 +177,8 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                 {estadoNorm === 'llego' ? 'LLEGÓ' : cita.estado}
               </span>
 
-              {estadoNorm !== 'llego' && estadoNorm !== 'completada' && (
+              {/* En bloque combinado, la llegada se marca en el flujo secuencial de abajo (no aquí). */}
+              {!esCombo && estadoNorm !== 'llego' && estadoNorm !== 'completada' && (
                 <button
                   type="button"
                   data-testid="popover-cita-btn-llego"
@@ -279,15 +301,45 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
 
             {/* INFO GRID */}
             <div className="grid grid-cols-[110px_1fr] gap-y-4 items-center bg-surface-container-low/30 p-4 rounded-2xl border border-outline-variant/20">
-              <div className="font-label-caps text-label-caps text-on-surface-variant/70 uppercase tracking-wider">Servicio</div>
-              <div className="font-body-lg text-on-surface font-bold tracking-tight uppercase flex items-center gap-2 flex-wrap">
-                <span>{cita.servicio?.nombre}</span>
-                {cita.subcategoria && (
-                  <span className="px-2 py-0.5 rounded-md bg-primary/10 text-primary text-xs font-semibold normal-case">
-                    {cita.subcategoria.nombre}
-                  </span>
-                )}
+              <div className="font-label-caps text-label-caps text-on-surface-variant/70 uppercase tracking-wider">
+                {esCombo && bloquePrincipal && bloqueSecundaria ? 'Servicios' : 'Servicio'}
               </div>
+              {esCombo && bloquePrincipal && bloqueSecundaria ? (
+                // Bloque combinado: ambos servicios apilados (1º arriba, 2º abajo) con su estado.
+                <div className="flex flex-col gap-1.5">
+                  {[{ c: bloquePrincipal, n: '1º' }, { c: bloqueSecundaria, n: '2º' }].map(({ c, n }) => {
+                    const e = (c.estado || '').toLowerCase().replace(/\s+/g, '_');
+                    return (
+                      <div key={c.id} className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[10px] font-bold text-primary bg-primary/10 rounded px-1.5 py-0.5 leading-none">{n}</span>
+                        <span className="font-body-lg text-on-surface font-bold tracking-tight uppercase">{c.servicio?.nombre}</span>
+                        {c.subcategoria && (
+                          <span className="px-2 py-0.5 rounded-md bg-primary/10 text-primary text-xs font-semibold normal-case">{c.subcategoria.nombre}</span>
+                        )}
+                        <span className={cn(
+                          'text-[9px] font-bold uppercase px-1.5 py-0.5 rounded leading-none',
+                          e === 'completada' ? 'bg-emerald-100 text-emerald-700'
+                            : e === 'en_atencion' ? 'bg-amber-100 text-amber-700'
+                            : e === 'cancelada' || e === 'no_show' ? 'bg-rose-100 text-rose-700'
+                            : e === 'llego' ? 'bg-primary/10 text-primary'
+                            : 'bg-surface-container text-on-surface-variant',
+                        )}>
+                          {ESTADO_LABEL[e] ?? c.estado}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="font-body-lg text-on-surface font-bold tracking-tight uppercase flex items-center gap-2 flex-wrap">
+                  <span>{cita.servicio?.nombre}</span>
+                  {cita.subcategoria && (
+                    <span className="px-2 py-0.5 rounded-md bg-primary/10 text-primary text-xs font-semibold normal-case">
+                      {cita.subcategoria.nombre}
+                    </span>
+                  )}
+                </div>
+              )}
 
               <div className="font-label-caps text-label-caps text-on-surface-variant/70 uppercase tracking-wider">Hora</div>
               <div className="font-body-lg text-on-surface font-semibold">
@@ -295,25 +347,63 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
               </div>
 
               <div className="font-label-caps text-label-caps text-on-surface-variant/70 uppercase tracking-wider">Estado</div>
-              <div className="relative">
-                <select
-                  value={estadoNorm}
-                  onChange={(e) => estadoMutation.mutate({ estado: e.target.value })}
-                  disabled={estadoMutation.isPending}
-                  className="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-xl px-3 py-1.5 text-xs font-bold text-on-surface outline-none focus:ring-2 focus:ring-primary/20 appearance-none hover:border-primary/40 transition-colors uppercase"
-                >
-                  <option value="agendada">AGENDADA</option>
-                  <option value="confirmada">CONFIRMADA</option>
-                  <option value="llego">LLEGÓ</option>
-                  <option value="en_atencion">EN ATENCIÓN</option>
-                  <option value="completada">COMPLETADA</option>
-                  <option value="no_show">NO SHOW</option>
-                  <option value="cancelada">CANCELADA</option>
-                </select>
-                <span className="material-symbols-outlined absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-on-surface-variant/60 text-base">
-                  expand_more
-                </span>
-              </div>
+              {puedeCorregir ? (
+                <div className="relative">
+                  <select
+                    value={estadoNorm}
+                    onChange={(e) => estadoMutation.mutate({ estado: e.target.value })}
+                    disabled={estadoMutation.isPending}
+                    className="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-xl px-3 py-1.5 text-xs font-bold text-on-surface outline-none focus:ring-2 focus:ring-primary/20 appearance-none hover:border-primary/40 transition-colors uppercase"
+                  >
+                    <option value="agendada">AGENDADA</option>
+                    <option value="confirmada">CONFIRMADA</option>
+                    <option value="llego">LLEGÓ</option>
+                    <option value="en_atencion">EN ATENCIÓN</option>
+                    <option value="completada">COMPLETADA</option>
+                    <option value="no_show">NO SHOW</option>
+                    <option value="cancelada">CANCELADA</option>
+                  </select>
+                  <span className="material-symbols-outlined absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-on-surface-variant/60 text-base">
+                    expand_more
+                  </span>
+                </div>
+              ) : (
+                // Solo lectura: el estado se mueve con los botones de flujo, no editando este campo.
+                <div className="text-xs font-bold text-on-surface uppercase px-3 py-1.5 rounded-xl bg-surface-container border border-outline-variant/20">
+                  {ESTADO_LABEL[estadoNorm] ?? cita.estado}
+                </div>
+              )}
+
+              {(() => {
+                // Tiempos de la cita, calculados de los timestamps del flujo (solo si existen).
+                const dur = (a?: string | null, b?: string | null) => {
+                  if (!a || !b) return null;
+                  const ms = new Date(b).getTime() - new Date(a).getTime();
+                  if (!(ms >= 0)) return null;
+                  const min = Math.round(ms / 60000);
+                  return min >= 60 ? `${Math.floor(min / 60)}h ${min % 60}min` : `${min} min`;
+                };
+                const espera = dur(cita.llegoEn, cita.enAtencionEn);
+                const atencion = dur(cita.enAtencionEn, cita.completadaEn);
+                const total = dur(cita.llegoEn, cita.completadaEn);
+                if (!espera && !atencion && !total) return null;
+                const Chip = ({ icon, label, value }: { icon: string; label: string; value: string }) => (
+                  <span className="inline-flex items-center gap-1 text-xs font-bold text-on-surface-variant bg-surface-container border border-outline-variant/30 rounded-lg px-2 py-1">
+                    <span className="material-symbols-outlined text-sm text-primary">{icon}</span>
+                    {label} <b className="text-on-surface">{value}</b>
+                  </span>
+                );
+                return (
+                  <>
+                    <div className="font-label-caps text-label-caps text-on-surface-variant/70 uppercase tracking-wider">Tiempos</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {espera && <Chip icon="hourglass_empty" label="Espera" value={espera} />}
+                      {atencion && <Chip icon="medical_services" label="Atención" value={atencion} />}
+                      {total && <Chip icon="schedule" label="Total" value={total} />}
+                    </div>
+                  </>
+                );
+              })()}
 
               <div className="font-label-caps text-label-caps text-on-surface-variant/70 uppercase tracking-wider">Profesional</div>
               <div className="flex items-center gap-2 font-body-lg text-primary font-semibold">
@@ -357,29 +447,36 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
               )}
 
               <div className="font-label-caps text-label-caps text-on-surface-variant/70 uppercase tracking-wider">Canal</div>
-              <div className="relative">
-                <select
-                  value={canalSel}
-                  onChange={(e) => {
-                    setCanalSel(e.target.value);
-                    canalMutation.mutate(e.target.value);
-                  }}
-                  disabled={canalMutation.isPending}
-                  className="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-xl px-3 py-1.5 text-xs font-medium text-on-surface outline-none focus:ring-2 focus:ring-primary/20 appearance-none hover:border-primary/40 transition-colors"
-                >
-                  {!canalesOpts.some((c) => c.value === canalSel) && (
-                    <option value={canalSel}>{canalSel}</option>
-                  )}
-                  {canalesOpts.map((c) => (
-                    <option key={c.value} value={c.value}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
-                <span className="material-symbols-outlined absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-on-surface-variant/60 text-base">
-                  expand_more
-                </span>
-              </div>
+              {puedeCorregir ? (
+                <div className="relative">
+                  <select
+                    value={canalSel}
+                    onChange={(e) => {
+                      setCanalSel(e.target.value);
+                      canalMutation.mutate(e.target.value);
+                    }}
+                    disabled={canalMutation.isPending}
+                    className="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-xl px-3 py-1.5 text-xs font-medium text-on-surface outline-none focus:ring-2 focus:ring-primary/20 appearance-none hover:border-primary/40 transition-colors"
+                  >
+                    {!canalesOpts.some((c) => c.value === canalSel) && (
+                      <option value={canalSel}>{canalSel}</option>
+                    )}
+                    {canalesOpts.map((c) => (
+                      <option key={c.value} value={c.value}>
+                        {c.label}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="material-symbols-outlined absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-on-surface-variant/60 text-base">
+                    expand_more
+                  </span>
+                </div>
+              ) : (
+                // Solo lectura: el canal se fija al registrar la cita.
+                <div className="text-xs font-medium text-on-surface px-3 py-1.5 rounded-xl bg-surface-container border border-outline-variant/20">
+                  {canalesOpts.find((c) => c.value === canalSel)?.label ?? canalSel ?? '—'}
+                </div>
+              )}
 
               <div className="font-label-caps text-label-caps text-on-surface-variant/70 uppercase tracking-wider">Promoción</div>
               <div className="relative">
@@ -388,6 +485,11 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                     {promoHeredada
                       ? `🎁 ${promoHeredada.nombre} (del bloque)`
                       : '— Ninguna (del bloque)'}
+                  </span>
+                ) : !puedeCorregir ? (
+                  // Solo lectura: la promoción se fija al registrar la cita.
+                  <span className="text-xs text-on-surface-variant font-medium">
+                    {promoCita ? `🎁 ${promoCita.nombre}` : '— Ninguna —'}
                   </span>
                 ) : (
                   <>
@@ -452,8 +554,8 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
               </div>
             )}
 
-            {/* BOTONES DE ASISTENCIA ("¿Vino el paciente?") */}
-            {!esFinal && (estadoNorm === 'agendada' || estadoNorm === 'confirmada' || estadoNorm === 'llego' || estadoNorm === 'en_atencion') && (
+            {/* BOTONES DE ASISTENCIA ("¿Vino el paciente?") — cita suelta (no bloque combinado) */}
+            {!esCombo && !esFinal && (estadoNorm === 'agendada' || estadoNorm === 'confirmada' || estadoNorm === 'llego' || estadoNorm === 'en_atencion') && (
               <div className="space-y-3">
                 <p className="font-headline-sm text-headline-sm text-on-surface text-sm font-bold">
                   ¿Vino el paciente?
@@ -505,8 +607,98 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
               </div>
             )}
 
+            {/* FLUJO SECUENCIAL DEL BLOQUE COMBINADO: 1º tratamiento → (continuar/cancelar) → 2º tratamiento */}
+            {esCombo && bloquePrincipal && bloqueSecundaria && (() => {
+              if (!bloquePrincipal || !bloqueSecundaria) return null;
+              const norm = (e?: string) => (e || '').toLowerCase().replace(/\s+/g, '_');
+              const pE = norm(bloquePrincipal.estado);
+              const sE = norm(bloqueSecundaria.estado);
+              const P = bloquePrincipal.id;
+              const S = bloqueSecundaria.id;
+              const pend = estadoMutation.isPending;
+              const finales = ['completada', 'no_show', 'cancelada'];
+              if (finales.includes(pE) && finales.includes(sE)) return null; // bloque cerrado
+              const s1 = bloquePrincipal.servicio?.nombre ?? '1º tratamiento';
+              const s2 = bloqueSecundaria.servicio?.nombre ?? '2º tratamiento';
+              const btnFull = 'w-full flex items-center justify-center gap-2 p-3.5 rounded-2xl transition-all font-bold text-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed';
+              return (
+                <div className="space-y-3 p-3.5 rounded-2xl border border-primary/20 bg-primary/5">
+                  <p className="font-label-caps text-label-caps text-primary font-bold uppercase tracking-wider">Bloque combinado · 2 tratamientos</p>
+
+                  {(pE === 'agendada' || pE === 'confirmada') && (
+                    <>
+                      <p className="font-headline-sm text-headline-sm text-on-surface text-sm font-bold">¿Vino el paciente?</p>
+                      <div className="grid grid-cols-2 gap-4">
+                        <button
+                          disabled={pend}
+                          onClick={() => estadoMutation.mutate({ estado: 'llego', citaId: P })}
+                          className="flex items-center justify-center gap-2.5 p-3.5 border border-emerald-300 bg-emerald-50/50 hover:bg-emerald-100 text-emerald-800 rounded-2xl transition-all font-bold text-sm shadow-xs cursor-pointer disabled:opacity-50"
+                        >
+                          <span className="material-symbols-outlined text-xl text-emerald-600">check_circle</span>
+                          <span>Llegó</span>
+                        </button>
+                        <button
+                          disabled={pend}
+                          onClick={() => estadoMutation.mutate({ estado: 'no_show', citaId: P })}
+                          className="flex items-center justify-center gap-2.5 p-3.5 border border-rose-300 bg-rose-50/50 hover:bg-rose-100 text-rose-800 rounded-2xl transition-all font-bold text-sm shadow-xs cursor-pointer disabled:opacity-50"
+                        >
+                          <span className="material-symbols-outlined text-xl text-rose-600">cancel</span>
+                          <span>No vino</span>
+                        </button>
+                      </div>
+                    </>
+                  )}
+
+                  {pE === 'llego' && (
+                    <button disabled={pend} onClick={() => estadoMutation.mutate({ estado: 'en_atencion', citaId: P, soloEsta: true })}
+                      className={cn(btnFull, 'border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-800 shadow-xs')}>
+                      <span className="material-symbols-outlined text-lg">play_arrow</span>
+                      Iniciar 1º tratamiento · {s1}
+                    </button>
+                  )}
+
+                  {pE === 'en_atencion' && (
+                    <button disabled={pend} onClick={() => estadoMutation.mutate({ estado: 'completada', citaId: P, soloEsta: true })}
+                      className={cn(btnFull, 'border border-emerald-400 bg-emerald-600 text-white shadow-md shadow-emerald-600/20 hover:bg-emerald-700')}>
+                      <span className="material-symbols-outlined text-lg">task_alt</span>
+                      Completar 1º tratamiento · {s1}
+                    </button>
+                  )}
+
+                  {pE === 'completada' && (sE === 'llego' || sE === 'agendada' || sE === 'confirmada') && (
+                    <>
+                      <p className="font-headline-sm text-headline-sm text-on-surface text-sm font-bold">
+                        ✅ 1º tratamiento completado. ¿Continuar con el 2º?
+                      </p>
+                      <div className="grid grid-cols-2 gap-4">
+                        <button disabled={pend} onClick={() => estadoMutation.mutate({ estado: 'en_atencion', citaId: S, soloEsta: true })}
+                          className="flex items-center justify-center gap-2.5 p-3.5 border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-2xl transition-all font-bold text-sm shadow-xs cursor-pointer disabled:opacity-50">
+                          <span className="material-symbols-outlined text-xl">play_arrow</span>
+                          <span>Continuar con 2º</span>
+                        </button>
+                        <button disabled={pend} onClick={() => estadoMutation.mutate({ estado: 'cancelada', citaId: S, soloEsta: true })}
+                          className="flex items-center justify-center gap-2.5 p-3.5 border border-rose-300 bg-rose-50/50 hover:bg-rose-100 text-rose-800 rounded-2xl transition-all font-bold text-sm shadow-xs cursor-pointer disabled:opacity-50">
+                          <span className="material-symbols-outlined text-xl text-rose-600">cancel</span>
+                          <span>2º cancelado</span>
+                        </button>
+                      </div>
+                      <p className="text-[11px] text-on-surface-variant/70">2º tratamiento: {s2}</p>
+                    </>
+                  )}
+
+                  {sE === 'en_atencion' && (
+                    <button disabled={pend} onClick={() => estadoMutation.mutate({ estado: 'completada', citaId: S, soloEsta: true })}
+                      className={cn(btnFull, 'border border-emerald-400 bg-emerald-600 text-white shadow-md shadow-emerald-600/20 hover:bg-emerald-700')}>
+                      <span className="material-symbols-outlined text-lg">task_alt</span>
+                      Completar 2º tratamiento · {s2}
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* REPROGRAMAR — solo AGENDADAS: enviar a otro día/hora con validación de disponibilidad */}
-            {estadoNorm === 'agendada' && !reprogramando && (
+            {!esCombo && estadoNorm === 'agendada' && !reprogramando && (
               <button
                 onClick={() => setReprogramando(true)}
                 className="w-full flex items-center justify-center gap-2 p-3 border border-primary/40 text-primary bg-primary/5 hover:bg-primary/10 rounded-2xl transition-all font-bold text-sm cursor-pointer"

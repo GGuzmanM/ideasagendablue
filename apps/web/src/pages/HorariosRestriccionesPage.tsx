@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { format } from 'date-fns';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
+import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { sedesApi } from '../api';
+import { sedesApi, profesionalesApi, type PodologaDiaEspecial } from '../api';
 import { DIAS_ABREV, DIAS_FULL, useHorarioSede, useFormExcepcion, HORAS_SLOT, PRESETS_CIERRE, proximasFechas } from '../services/horarioSedeService';
 import { usePermisosData, tipoLabel, hoyISO } from '../services/permisosService';
 import { PermisosPage } from './herramientas/PermisosPage';
@@ -271,6 +272,9 @@ function TabHorarioBase({ sedeId, sedeName }: { sedeId: string; sedeName: string
 function TabExcepciones({ sedeId, sedeName }: { sedeId: string; sedeName: string }) {
   const { excepciones, guardarExcepcion, eliminarExcepcion, isGuardando, isEliminando } = useHorarioSede(sedeId);
   const form = useFormExcepcion();
+  const puedeEditar = useAuthStore((s) => s.tiene('horarios.editar'));
+  // Excepción cuyo panel de "personal del día" está desplegado (solo una a la vez).
+  const [personalAbierto, setPersonalAbierto] = useState<string | null>(null);
 
   const handleGuardar = () => {
     if (form.rangoInvalido) return;
@@ -398,43 +402,218 @@ function TabExcepciones({ sedeId, sedeName }: { sedeId: string; sedeName: string
             </p>
           ) : (
             <div className="space-y-2">
-              {excepciones.map((exc) => (
+              {excepciones.map((exc) => {
+                const expandido = personalAbierto === exc.fecha;
+                return (
                 <div
                   key={exc.fecha}
-                  className="p-3.5 bg-white border border-outline-variant/30 rounded-xl flex items-center justify-between gap-3 shadow-2xs"
+                  className="bg-white border border-outline-variant/30 rounded-xl overflow-hidden shadow-2xs"
                 >
-                  <div className="flex items-center gap-3">
-                    <span
-                      className={cn(
-                        'w-2.5 h-2.5 rounded-full shrink-0',
-                        exc.abierto ? 'bg-green-500' : 'bg-red-500'
+                  <div className="p-3.5 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <span
+                        className={cn(
+                          'w-2.5 h-2.5 rounded-full shrink-0',
+                          exc.abierto ? 'bg-green-500' : 'bg-red-500'
+                        )}
+                      />
+                      <div>
+                        <p className="text-xs font-bold text-on-surface font-mono">
+                          {exc.fecha}
+                        </p>
+                        <p className="text-xs font-semibold text-on-surface-variant">
+                          {exc.abierto ? `Atención: ${exc.horaApertura} – ${exc.horaCierre}` : 'CERRADO TODO EL DÍA'}
+                          {exc.nota && <span className="text-on-surface-variant/70"> · {exc.nota}</span>}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      {/* Solo un día ABIERTO tiene personal que asignar (si está cerrado no atiende nadie). */}
+                      {exc.abierto && (
+                        <button
+                          type="button"
+                          onClick={() => setPersonalAbierto(expandido ? null : exc.fecha)}
+                          className={cn(
+                            'text-xs font-bold px-2.5 py-1 rounded-lg border transition-colors cursor-pointer flex items-center gap-1',
+                            expandido
+                              ? 'bg-primary text-white border-primary'
+                              : 'text-primary border-primary/30 hover:bg-primary/5'
+                          )}
+                        >
+                          <span className="material-symbols-outlined text-sm">groups</span>
+                          Personal
+                          <span className={cn('material-symbols-outlined text-sm transition-transform', expandido && 'rotate-180')}>expand_more</span>
+                        </button>
                       )}
-                    />
-                    <div>
-                      <p className="text-xs font-bold text-on-surface font-mono">
-                        {exc.fecha}
-                      </p>
-                      <p className="text-xs font-semibold text-on-surface-variant">
-                        {exc.abierto ? `Atención: ${exc.horaApertura} – ${exc.horaCierre}` : 'CERRADO TODO EL DÍA'}
-                        {exc.nota && <span className="text-on-surface-variant/70"> · {exc.nota}</span>}
-                      </p>
+                      <button
+                        type="button"
+                        onClick={() => eliminarExcepcion(exc.fecha)}
+                        disabled={isEliminando}
+                        className="text-xs text-red-600 font-bold hover:bg-red-50 px-2.5 py-1 rounded-lg border border-red-200 transition-colors cursor-pointer"
+                      >
+                        Eliminar
+                      </button>
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => eliminarExcepcion(exc.fecha)}
-                    disabled={isEliminando}
-                    className="text-xs text-red-600 font-bold hover:bg-red-50 px-2.5 py-1 rounded-lg border border-red-200 transition-colors cursor-pointer"
-                  >
-                    Eliminar
-                  </button>
+                  {exc.abierto && expandido && (
+                    <PanelPersonalExcepcion
+                      sedeId={sedeId}
+                      sedeName={sedeName}
+                      fecha={exc.fecha}
+                      apertura={exc.horaApertura ?? null}
+                      puedeEditar={puedeEditar}
+                    />
+                  )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Panel de personal de un día de EXCEPCIÓN abierta ──────────────────────────
+// Reutiliza el motor de "día especial" (mismo que la herramienta Días Especiales):
+//  - Podóloga DE LA SEDE → marca PRESENCIA (EntradaPodologa) ese día.
+//  - Podóloga de OTRA SEDE → crea una COBERTURA de un solo día (su sede base NO se toca);
+//    al día siguiente vuelve sola. Baropodometría no se toca (baro permanente por clínica).
+// El backend limita/valida contra la ventana de la excepción y refresca disponibilidad.
+function PanelPersonalExcepcion({ sedeId, sedeName, fecha, apertura, puedeEditar }: {
+  sedeId: string; sedeName: string; fecha: string; apertura: string | null; puedeEditar: boolean;
+}) {
+  const qc = useQueryClient();
+  // Entrada por defecto = apertura de la excepción (08/09); si abre a otra hora, 08:00
+  // (el backend recorta el turno a la ventana de la excepción de todos modos).
+  const [horaInicio, setHoraInicio] = useState<'08:00' | '09:00'>(apertura === '09:00' ? '09:00' : '08:00');
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['dia-especial', sedeId, fecha],
+    queryFn: () => profesionalesApi.diaEspecial(sedeId, fecha),
+    enabled: !!sedeId && !!fecha,
+  });
+
+  const setMut = useMutation({
+    mutationFn: (vars: { profesionalId: string; viene: boolean }) =>
+      profesionalesApi.setDiaEspecial({ profesionalId: vars.profesionalId, sedeId, fechas: [fecha], viene: vars.viene, horaInicio }),
+    onSuccess: (r, vars) => {
+      qc.invalidateQueries({ queryKey: ['dia-especial', sedeId, fecha] });
+      qc.invalidateQueries({ queryKey: ['profesionales-sede'] }); // refresca columnas de la agenda
+      if (r.errores.length > 0) toast.error(r.errores[0].error, { duration: 6000 });
+      else toast.success(vars.viene ? 'Agregada al día' : 'Quitada del día');
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const deshabilitado = !puedeEditar || setMut.isPending;
+
+  return (
+    <div className="border-t border-outline-variant/30 bg-surface-container-low/40 p-4 space-y-3">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <p className="text-xs font-bold text-on-surface">
+          Personal que atenderá el{' '}
+          <span className="capitalize">{format(parseISO(fecha), "EEEE d 'de' MMM", { locale: es })}</span>
+          <span className="font-normal text-on-surface-variant"> · {sedeName}</span>
+        </p>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xxs font-semibold text-on-surface-variant">Entrada:</span>
+          {(['08:00', '09:00'] as const).map((h) => (
+            <button
+              key={h}
+              type="button"
+              disabled={!puedeEditar}
+              onClick={() => setHoraInicio(h)}
+              className={cn(
+                'px-2 py-0.5 rounded-md text-xxs font-bold border cursor-pointer disabled:cursor-not-allowed',
+                horaInicio === h ? 'bg-primary text-white border-primary' : 'bg-white text-on-surface-variant border-outline-variant'
+              )}
+            >
+              {h}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {isLoading ? (
+        <p className="text-xs text-on-surface-variant/70 py-3 text-center">Cargando personal…</p>
+      ) : !data ? null : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <ListaStaffExcepcion
+            titulo={`Podólogas de ${sedeName}`}
+            subtitulo="Marca quién viene este día"
+            staff={data.propias}
+            deshabilitado={deshabilitado}
+            onToggle={(id, viene) => setMut.mutate({ profesionalId: id, viene })}
+            vacio="No hay podólogas asignadas a esta sede"
+          />
+          <ListaStaffExcepcion
+            titulo="Traer de otra sede"
+            subtitulo="Cubre solo este día — su sede base no se toca"
+            staff={data.otras}
+            deshabilitado={deshabilitado}
+            onToggle={(id, viene) => setMut.mutate({ profesionalId: id, viene })}
+            mostrarSedeBase
+            vacio="No hay podólogas de otras sedes"
+          />
+        </div>
+      )}
+      <p className="text-xxs text-on-surface-variant/60">
+        {puedeEditar
+          ? 'Baropodometría no cambia aquí: su médico es permanente por clínica.'
+          : 'Solo lectura — se requiere permiso de edición de horarios.'}
+      </p>
+    </div>
+  );
+}
+
+function ListaStaffExcepcion({ titulo, subtitulo, staff, deshabilitado, onToggle, mostrarSedeBase = false, vacio }: {
+  titulo: string; subtitulo: string; staff: PodologaDiaEspecial[]; deshabilitado: boolean;
+  onToggle: (id: string, viene: boolean) => void; mostrarSedeBase?: boolean; vacio: string;
+}) {
+  const vienen = staff.filter((p) => p.viene).length;
+  return (
+    <div className="bg-white border border-outline-variant/30 rounded-xl overflow-hidden">
+      <div className="px-3 py-2 border-b border-outline-variant/20 flex items-center justify-between">
+        <div>
+          <p className="text-xs font-bold text-on-surface">{titulo}</p>
+          <p className="text-xxs text-on-surface-variant/70">{subtitulo}</p>
+        </div>
+        <span className="text-xxs font-bold text-primary bg-primary/5 border border-primary/20 rounded-full px-2 py-0.5">{vienen} vienen</span>
+      </div>
+      {staff.length === 0 ? (
+        <p className="px-3 py-5 text-center text-xxs text-on-surface-variant/60">{vacio}</p>
+      ) : (
+        <div className="max-h-64 overflow-y-auto divide-y divide-outline-variant/10">
+          {staff.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              disabled={deshabilitado}
+              onClick={() => onToggle(p.id, !p.viene)}
+              className={cn(
+                'w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
+                p.viene ? 'bg-primary/5' : 'hover:bg-surface-container-low'
+              )}
+            >
+              <span className={cn('w-4 h-4 rounded border flex items-center justify-center shrink-0', p.viene ? 'bg-primary border-primary text-white' : 'border-outline-variant bg-white')}>
+                {p.viene && <span className="material-symbols-outlined text-[12px] leading-none">check</span>}
+              </span>
+              <span className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold shrink-0" style={{ backgroundColor: p.colorAvatar }}>
+                {(p.nombres[0] ?? '') + (p.apellidos[0] ?? '')}
+              </span>
+              <span className={cn('flex-1 text-xs', p.viene ? 'font-semibold text-on-surface' : 'text-on-surface-variant')}>
+                {p.nombres.split(' ')[0]} {p.apellidos.split(' ')[0]}
+              </span>
+              {mostrarSedeBase && p.sedeBase && <span className="text-xxs text-on-surface-variant/60">de {p.sedeBase}</span>}
+              {p.viene && <span className="text-xxs text-primary">{p.horaEntrada}</span>}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -338,7 +338,15 @@ export const pacientesApi = {
   actualizar: (id: string, data: Partial<Paciente>) => api.patch<Paciente>(`/pacientes/${id}`, data),
   // Resumen de asistencia (Limablue + Genexis) para la tarjeta de Nueva Cita.
   estadisticas: (id: string) =>
-    api.get<{ total: number; asistencias: number; canceladas: number; noShow: number; noVino: number; porcentajeAsistencia: number | null }>(
+    api.get<{
+      total: number; asistencias: number; canceladas: number; noShow: number; noVino: number;
+      porcentajeAsistencia: number | null;
+      // Promedios (en minutos) de espera/atención/total, con nº de muestras de cada uno.
+      tiempos: {
+        esperaMin: number | null; atencionMin: number | null; totalMin: number | null;
+        muestras: { espera: number; atencion: number; total: number };
+      };
+    }>(
       `/pacientes/${id}/estadisticas`),
 };
 

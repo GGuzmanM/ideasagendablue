@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { TURNOS_ALMUERZO, horasEnMinutos } from '@limablue/shared';
@@ -241,12 +241,18 @@ function FilaProfesional({
   prof,
   sedeId,
   onEliminar,
+  abierto,
+  onToggle,
+  onClose,
 }: {
   prof: ProfesionalConAlmuerzo;
   sedeId: string;
   onEliminar: (b: BloqueoAlmuerzo) => void;
+  // Estado del selector controlado por el PADRE: solo una fila abierta a la vez.
+  abierto: boolean;
+  onToggle: () => void;
+  onClose: () => void;
 }) {
-  const [mostrando, setMostrando] = useState(false);
   const iniciales = `${prof.nombres[0] ?? ''}${prof.apellidos[0] ?? ''}`.toUpperCase();
   const turno = prof.almuerzo ? TURNOS_ALMUERZO.find((t) => t.horaInicio === prof.almuerzo!.horaInicio) : null;
   const tipoLabel = prof.tipo === 'podologa' ? 'Podóloga' : 'Fisioterapeuta';
@@ -301,14 +307,14 @@ function FilaProfesional({
         <div className="flex items-center gap-1 shrink-0">
           <div className="relative">
             <button
-              onClick={() => setMostrando((v) => !v)}
+              onClick={onToggle}
               className="px-3 py-1.5 rounded-lg border border-outline-variant text-primary font-headline-sm text-xs hover:bg-primary/5 transition-colors flex items-center gap-1 font-semibold"
               title="Cambiar horario de almuerzo desde hoy hasta fin de mes"
             >
               <span className="material-symbols-outlined text-[16px]">edit</span> Cambiar
             </button>
-            {mostrando && (
-              <PopoverAsignar profesional={prof} sedeId={sedeId} onClose={() => setMostrando(false)} />
+            {abierto && (
+              <PopoverAsignar profesional={prof} sedeId={sedeId} onClose={onClose} />
             )}
           </div>
           <button
@@ -322,13 +328,13 @@ function FilaProfesional({
       ) : noDisponible ? null : (
         <div className="relative shrink-0">
           <button
-            onClick={() => setMostrando((v) => !v)}
+            onClick={onToggle}
             className="px-4 py-2 rounded-lg border border-outline-variant text-primary font-headline-sm text-sm hover:bg-primary/5 transition-colors flex items-center gap-2 font-semibold"
           >
             <span className="material-symbols-outlined text-[18px]">add</span> Asignar
           </button>
-          {mostrando && (
-            <PopoverAsignar profesional={prof} sedeId={sedeId} onClose={() => setMostrando(false)} />
+          {abierto && (
+            <PopoverAsignar profesional={prof} sedeId={sedeId} onClose={onClose} />
           )}
         </div>
       )}
@@ -360,6 +366,12 @@ export function AlmuerzosPage({
     setConfirmando,
     eliminarMutation,
   } = useAlmuerzosData(externalSedeId);
+
+  // Solo UNA fila puede tener su selector abierto a la vez: se guarda el id del profesional
+  // abierto en el padre. Abrir otro (o el mismo) cierra el anterior — no se apilan.
+  const [abiertoId, setAbiertoId] = useState<string | null>(null);
+  // Al cambiar de sede, cerrar cualquier selector abierto (la lista cambia).
+  useEffect(() => { setAbiertoId(null); }, [sedeId]);
 
   return (
     <div className="flex-1 overflow-y-auto bg-background text-on-background">
@@ -415,7 +427,15 @@ export function AlmuerzosPage({
             {/* Staff List (disponibles hoy) */}
             <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/50 shadow-sm overflow-visible flex flex-col gap-[1px] bg-outline-variant/20">
               {disponibles.map((prof) => (
-                <FilaProfesional key={prof.id} prof={prof} sedeId={sedeId} onEliminar={setConfirmando} />
+                <FilaProfesional
+                  key={prof.id}
+                  prof={prof}
+                  sedeId={sedeId}
+                  onEliminar={setConfirmando}
+                  abierto={abiertoId === prof.id}
+                  onToggle={() => setAbiertoId((prev) => (prev === prof.id ? null : prof.id))}
+                  onClose={() => setAbiertoId(null)}
+                />
               ))}
               {disponibles.length === 0 && (
                 <div className="p-6 bg-surface-container-lowest text-center text-sm text-on-surface-variant">
@@ -432,7 +452,15 @@ export function AlmuerzosPage({
                 </summary>
                 <div className="mt-2 bg-surface-container-lowest rounded-xl border border-outline-variant/50 shadow-sm overflow-visible flex flex-col gap-[1px] bg-outline-variant/20">
                   {noDisponibles.map((prof) => (
-                    <FilaProfesional key={prof.id} prof={prof} sedeId={sedeId} onEliminar={setConfirmando} />
+                    <FilaProfesional
+                      key={prof.id}
+                      prof={prof}
+                      sedeId={sedeId}
+                      onEliminar={setConfirmando}
+                      abierto={abiertoId === prof.id}
+                      onToggle={() => setAbiertoId((prev) => (prev === prof.id ? null : prof.id))}
+                      onClose={() => setAbiertoId(null)}
+                    />
                   ))}
                 </div>
               </details>

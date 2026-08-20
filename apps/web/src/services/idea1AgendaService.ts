@@ -497,13 +497,22 @@ export function calcularRangoHorarioAgenda(
  */
 export function calcularGridTemplateColsCss(
   numDoctores: number,
-  opts: { maxVisible?: number; timeColPx?: number; minDoctorColPx?: number } = {},
+  opts: { maxVisible?: number; timeColPx?: number; minDoctorColPx?: number; containerWidthPx?: number } = {},
 ): string {
-  const { maxVisible = 6, timeColPx = 80, minDoctorColPx = 180 } = opts;
+  const { maxVisible = 6, timeColPx = 80, minDoctorColPx = 180, containerWidthPx } = opts;
   const count = Math.max(numDoctores, 1);
   const visibleCols = Math.min(count, maxVisible);
-  const doctorColWidthCss = `calc(max(${minDoctorColPx}px, (100% - ${timeColPx}px) / ${visibleCols}))`;
-  return `${timeColPx}px repeat(${count}, ${doctorColWidthCss})`;
+  // Ancho de columna EN PÍXELES FIJOS: se calcula para que quepan EXACTAMENTE `maxVisible` (6)
+  // columnas en el ancho visible de la agenda (`containerWidthPx`), con un piso legible
+  // (`minDoctorColPx`). Al ser px fijos (no %), la fila CRECE a `count*colW + timeCol`, así el
+  // borde inferior (las líneas de cada hora) cubre TODAS las columnas y las que sobran de las 6
+  // se ven con SCROLL lateral. Sin `containerWidthPx` (primer render antes de medir) cae al piso.
+  // NB: NO usar `%` en el track (p.ej. `(100%-80px)/6`): rompe el sizing intrínseco del grid, el
+  // contenedor no crece y las columnas 7ª+ quedan FUERA de la fila → pierden sus líneas de hora.
+  const colW = containerWidthPx && containerWidthPx > timeColPx
+    ? Math.max(minDoctorColPx, Math.floor((containerWidthPx - timeColPx) / visibleCols))
+    : minDoctorColPx;
+  return `${timeColPx}px repeat(${count}, ${colW}px)`;
 }
 
 /**
@@ -840,6 +849,8 @@ export function useIdea1AgendaData() {
     maxVisible: 6,
     timeColPx: isMobileGrid ? 56 : 80,
     minDoctorColPx: isMobileGrid ? 140 : 180,
+    // Ancho medido del área visible de la agenda → 6 columnas llenan la pantalla; el resto, scroll.
+    containerWidthPx: containerWidth,
   });
 
   const qc = useQueryClient();

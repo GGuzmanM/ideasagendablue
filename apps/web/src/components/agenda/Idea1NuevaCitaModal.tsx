@@ -9,6 +9,12 @@ import { RomboAlerta } from '../pacientes/RomboAlerta';
 import { VisorHistorialGenexis } from '../pacientes/HistorialGenexis';
 import { BaroSolicitudModal } from './BaroSolicitudModal';
 
+// Formatea minutos a "Xh Ym" / "Xm"; "—" si no hay dato.
+function fmtMinProm(min: number | null | undefined): string {
+  if (min == null) return '—';
+  return min >= 60 ? `${Math.floor(min / 60)}h ${min % 60}m` : `${min}m`;
+}
+
 export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
   const [mostrarBaroRoster, setMostrarBaroRoster] = useState(false);
   const {
@@ -329,6 +335,15 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
                             <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-error/5 text-error text-[10px] font-semibold border border-error/20" title="Canceladas">
                               {estadisticasPaciente.canceladas} cancel.
                             </span>
+                            {estadisticasPaciente.tiempos.totalMin != null && (
+                              <span
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-primary/5 text-primary text-[10px] font-semibold border border-primary/20"
+                                title={`Promedio por cita — Espera: ${fmtMinProm(estadisticasPaciente.tiempos.esperaMin)} · Atención: ${fmtMinProm(estadisticasPaciente.tiempos.atencionMin)} · Total: ${fmtMinProm(estadisticasPaciente.tiempos.totalMin)} (${estadisticasPaciente.tiempos.muestras.total} citas)`}
+                              >
+                                <span className="material-symbols-outlined text-[12px] leading-none">schedule</span>
+                                ~{fmtMinProm(estadisticasPaciente.tiempos.totalMin)} prom.
+                              </span>
+                            )}
                           </div>
                         )}
                       </div>

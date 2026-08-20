@@ -38,6 +38,10 @@ export interface CitaResumen {
   horaInicio: string;
   duracionMinutos: number;
   estado: string;
+  // Timestamps del flujo (para medir tiempos): llegó, en atención, completada.
+  llegoEn?: string | null;
+  enAtencionEn?: string | null;
+  completadaEn?: string | null;
   canal: string;
   origenAsignacion: string | null;
   // Bloque combinado: null = cita individual; si != null pertenece a un bloque de 2
@@ -168,8 +172,10 @@ export const citasApi = {
   crearCombinada: (data: CrearCitaCombinadaInput) =>
     api.post<RespuestaCombinada>('/citas/combinada', data),
 
-  cambiarEstado: (id: string, estado: string, comentario?: string, motivoCancelacion?: string) =>
-    api.patch<CitaResumen>(`/citas/${id}/estado`, { estado, comentario, motivoCancelacion }),
+  // `soloEsta`: en un bloque combinado, avanza SOLO esta cita (no cascadea al hermano).
+  // Lo usa el flujo secuencial de 2 tratamientos. Sin él, el bloque se mueve junto (default).
+  cambiarEstado: (id: string, estado: string, comentario?: string, motivoCancelacion?: string, soloEsta?: boolean) =>
+    api.patch<CitaResumen>(`/citas/${id}/estado`, { estado, comentario, motivoCancelacion, soloEsta }),
 
   mover: (id: string, data: { profesionalId?: string | null; fecha: string; horaInicio: string; origenAsignacion?: string }) =>
     api.patch<CitaResumen>(`/citas/${id}/mover`, data),

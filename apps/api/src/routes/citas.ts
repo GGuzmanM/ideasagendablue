@@ -120,6 +120,10 @@ const estadoSchema = z.object({
   estado: z.enum(['agendada', 'confirmada', 'llego', 'en_atencion', 'completada', 'no_show', 'cancelada']),
   comentario: z.string().optional(),
   motivoCancelacion: z.string().optional(),
+  // Bloque combinado: si true, el cambio NO cascadea a las citas hermanas del grupo —
+  // avanza SOLO esta cita. Lo usa el flujo secuencial de 2 tratamientos (iniciar/completar/
+  // cancelar cada tratamiento por separado). Sin el flag, el bloque se mueve junto (default).
+  soloEsta: z.boolean().optional(),
 });
 
 const ESTADOS_FINALES = ['completada', 'no_show', 'cancelada'];
@@ -1644,7 +1648,7 @@ router.post('/combinada', requireAuth, requireAcceso('appointments:write', 'cita
 
 // ─── PATCH /citas/:id/estado ──────────────────────────────────────────────────
 router.patch('/:id/estado', requireAuth, requireAcceso('appointments:write', 'citas.estado'), guardSedeCita, async (req, res) => {
-  const { estado, comentario, motivoCancelacion } = estadoSchema.parse(req.body);
+  const { estado, comentario, motivoCancelacion, soloEsta } = estadoSchema.parse(req.body);
   const usuarioId = req.user?.userId;
 
   const cita = await prisma.cita.findUnique({ where: { id: req.params.id, deletedAt: null } });
@@ -1680,7 +1684,8 @@ router.patch('/:id/estado', requireAuth, requireAcceso('appointments:write', 'ci
   //    no salta pasos — se queda como está en vez de forzarla).
   const esCancelacion = estado === 'cancelada';
   const cambioReal = estado !== cita.estado;
-  const hermanas = (cita.slotGrupoId && cambioReal)
+  // `soloEsta` (flujo secuencial de bloque combinado) desactiva la cascada: avanza solo esta cita.
+  const hermanas = (cita.slotGrupoId && cambioReal && !soloEsta)
     ? (await prisma.cita.findMany({
         where: { slotGrupoId: cita.slotGrupoId, id: { not: cita.id }, deletedAt: null },
       })).filter((c) =>
@@ -1699,9 +1704,14 @@ router.patch('/:id/estado', requireAuth, requireAcceso('appointments:write', 'ci
   //     de "duración + 15 min" tras el cual la cita pasa sola a 'completada'.
   const reiniciaLlegoEn = cambioReal && (estado === 'llego' || (cita.estado === 'completada' && estado === 'en_atencion'));
   const reiniciaEnAtencion = cambioReal && estado === 'en_atencion';
+  // `completadaEn` (para medir tiempos): se sella al entrar a 'completada'; se limpia si se revierte.
+  const marcaCompletada = cambioReal && estado === 'completada';
+  const revierteCompletada = cambioReal && cita.estado === 'completada' && estado !== 'completada';
   const llegoEnData = {
     ...(reiniciaLlegoEn ? { llegoEn: new Date() } : {}),
     ...(reiniciaEnAtencion ? { enAtencionEn: new Date() } : {}),
+    ...(marcaCompletada ? { completadaEn: new Date() } : {}),
+    ...(revierteCompletada ? { completadaEn: null } : {}),
   };
   const updatedCita = await prisma.$transaction(async (tx) => {
     const u = await tx.cita.update({
@@ -2673,7 +2683,7 @@ export async function autocompletarCitasPorTiempo(): Promise<number> {
         const motivoAuto = actual.estado === 'en_atencion'
           ? `auto por tiempo (${actual.duracionMinutos} + 15 min desde "En atención")`
           : `auto por tiempo (${AUTOCOMPLETAR_MIN} min desde "Llegó")`;
-        await tx.cita.update({ where: { id: c.id }, data: { estado: 'completada' } });
+        await tx.cita.update({ where: { id: c.id }, data: { estado: 'completada', completadaEn: new Date() } });
         await auditEnTx(tx, {
           citaId: c.id, usuarioId: undefined, accion: 'auto_completar', entidad: 'cita', entidadId: c.id,
           antes: { estado: actual.estado },

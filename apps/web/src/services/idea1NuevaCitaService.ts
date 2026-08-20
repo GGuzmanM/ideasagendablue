@@ -923,6 +923,12 @@ export function useIdea1NuevaCitaForm({
       toast.error('Selecciona una opción/subcategoría del servicio');
       return;
     }
+    // Bloque combinado: si activó "servicio extra combinado" pero NO eligió el extra, no dejar
+    // que se guarde como cita suelta en silencio (antes se perdía el 2º servicio sin avisar).
+    if (combinar && !extraServicioId) {
+      toast.error('Marcaste "servicio extra combinado" pero no elegiste el servicio extra: selecciónalo o desmarca la opción.');
+      return;
+    }
     if (!fechaCita || !horaCita) {
       toast.error('Selecciona fecha y hora');
       return;

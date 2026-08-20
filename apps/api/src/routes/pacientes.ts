@@ -352,9 +352,19 @@ router.get('/:id/paquetes', requireAuth, requireScope('patients:read'), async (r
 // de Limablue (por estado) con la historia congelada de Genexis (por `llegoPaciente`).
 router.get('/:id/estadisticas', requireAuth, requireScope('patients:read'), async (req, res) => {
   const pacienteId = req.params.id;
-  const [porEstado, porGenexis] = await Promise.all([
+  const [porEstado, porGenexis, conTiempos] = await Promise.all([
     prisma.cita.groupBy({ by: ['estado'], where: { pacienteId, deletedAt: null }, _count: { _all: true } }),
     prisma.historialGenexis.groupBy({ by: ['llegoPaciente'], where: { pacienteId }, _count: { _all: true } }),
+    // Citas con al menos una marca de tiempo del flujo (llegó/en atención/completada),
+    // para promediar espera/atención/total. Solo Limablue (Genexis no tiene timestamps).
+    prisma.cita.findMany({
+      where: {
+        pacienteId,
+        deletedAt: null,
+        OR: [{ llegoEn: { not: null } }, { enAtencionEn: { not: null } }, { completadaEn: { not: null } }],
+      },
+      select: { llegoEn: true, enAtencionEn: true, completadaEn: true },
+    }),
   ]);
 
   // Limablue: llegó/en atención/completada = asistió; cancelada / no_show por separado.
@@ -383,7 +393,30 @@ router.get('/:id/estadisticas', requireAuth, requireScope('patients:read'), asyn
   const resueltas = asistencias + noVino; // base del % (excluye futuras/agendadas sin desenlace)
   const porcentajeAsistencia = resueltas > 0 ? Math.round((asistencias / resueltas) * 1000) / 10 : null;
 
-  res.json({ total, asistencias, canceladas, noShow, noVino, porcentajeAsistencia });
+  // Tiempos promedio (en minutos) de las citas con marcas de tiempo:
+  //   espera   = enAtencionEn − llegoEn
+  //   atención = completadaEn − enAtencionEn
+  //   total    = completadaEn − llegoEn
+  // Cada promedio ignora las citas que no tienen ambos extremos (las de antes de que
+  // existiera `completadaEn` no cuentan hacia atención/total; los datos se acumulan hacia adelante).
+  let esperaSum = 0, esperaN = 0, atencionSum = 0, atencionN = 0, totalSum = 0, totalN = 0;
+  for (const c of conTiempos) {
+    const lleg = c.llegoEn?.getTime();
+    const aten = c.enAtencionEn?.getTime();
+    const comp = c.completadaEn?.getTime();
+    if (lleg != null && aten != null && aten >= lleg) { esperaSum += aten - lleg; esperaN++; }
+    if (aten != null && comp != null && comp >= aten) { atencionSum += comp - aten; atencionN++; }
+    if (lleg != null && comp != null && comp >= lleg) { totalSum += comp - lleg; totalN++; }
+  }
+  const promMin = (sum: number, n: number) => (n > 0 ? Math.round(sum / n / 60000) : null);
+  const tiempos = {
+    esperaMin: promMin(esperaSum, esperaN),
+    atencionMin: promMin(atencionSum, atencionN),
+    totalMin: promMin(totalSum, totalN),
+    muestras: { espera: esperaN, atencion: atencionN, total: totalN },
+  };
+
+  res.json({ total, asistencias, canceladas, noShow, noVino, porcentajeAsistencia, tiempos });
 });
 
 // ─── GET /pacientes/:id/historial-genexis/existe ──────────────────────────────

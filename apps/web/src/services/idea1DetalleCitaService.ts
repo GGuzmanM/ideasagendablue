@@ -136,43 +136,66 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
   const [dialogoConsumo, setDialogoConsumo] = useState(false);
 
   const esCombo = !!cita.slotGrupoId;
+  // Cargar las citas del día del bloque para tener AMBAS mitades (principal + secundaria),
+  // sin importar cuál se clickeó. Antes solo se cargaba al abrir la PRINCIPAL.
   const { data: citasComboDia } = useQuery({
     queryKey: ['combo-sibling', cita.sedeId, cita.fecha?.slice(0, 10), cita.slotGrupoId],
     queryFn: () => citasApi.listar({ sedeId: cita.sedeId, fecha: (cita.fecha ?? '').slice(0, 10) }),
-    enabled: esCombo && cita.slotRol === 'PRINCIPAL' && !!cita.fecha,
+    enabled: esCombo && !!cita.fecha,
     staleTime: 15_000,
   });
 
-  const citaExon =
-    (esCombo && cita.slotRol === 'PRINCIPAL'
-      ? (citasComboDia ?? []).find((c) => c.slotGrupoId === cita.slotGrupoId && c.slotRol === 'SECUNDARIO')
-      : null) ?? cita;
+  // Miembros del bloque combinado (principal arriba, secundaria abajo). Se prefiere la copia
+  // FRESCA `cita` (citaActiva, con polling) para el rol que coincida; la otra sale del fetch.
+  const grupoBloque = esCombo
+    ? [cita, ...(citasComboDia ?? []).filter((c) => c.slotGrupoId === cita.slotGrupoId && c.id !== cita.id)]
+    : [];
+  const bloquePrincipal: CitaResumen | null = esCombo
+    ? (grupoBloque.find((c) => c.slotRol === 'PRINCIPAL') ?? (cita.slotRol === 'PRINCIPAL' ? cita : null))
+    : null;
+  const bloqueSecundaria: CitaResumen | null = esCombo
+    ? (grupoBloque.find((c) => c.slotRol === 'SECUNDARIO') ?? (cita.slotRol === 'SECUNDARIO' ? cita : null))
+    : null;
+
+  const citaExon = bloqueSecundaria ?? cita;
 
   // Mutations
+  // `citaId` opcional: en un bloque combinado permite avanzar la mitad SECUNDARIA (el 2º
+  // tratamiento) sin cerrar el modal ni pisar el estado de la mitad activa. Por defecto = la
+  // cita activa (comportamiento intacto para citas sueltas).
   const estadoMutation = useMutation({
-    mutationFn: ({ estado, comentario }: { estado: string; comentario?: string }) =>
-      citasApi.cambiarEstado(cita.id, estado, comentario, motivoCancelacion || undefined),
+    mutationFn: ({ estado, comentario, citaId, soloEsta }: { estado: string; comentario?: string; citaId?: string; soloEsta?: boolean }) =>
+      citasApi.cambiarEstado(citaId ?? cita.id, estado, comentario, motivoCancelacion || undefined, soloEsta),
     onSuccess: (updatedCita, variables) => {
+      const targetId = variables.citaId ?? cita.id;
+      const esActiva = targetId === cita.id;
       qc.invalidateQueries({ queryKey: ['citas'] });
       qc.invalidateQueries({ queryKey: ['idea1-citas'] });
-      // Invalida el detalle cacheado de ESTA cita: sin esto, al reabrir el modal se mergeaba el
+      // Refresca la otra mitad del bloque combinado (para que el flujo secuencial vea el nuevo estado).
+      qc.invalidateQueries({ queryKey: ['combo-sibling'] });
+      // Invalida el detalle cacheado de la cita afectada: sin esto, al reabrir el modal se mergeaba el
       // estado viejo ('agendada') encima del fresco y volvía a ofrecer "llegó" (no avanzaba el flujo).
-      qc.invalidateQueries({ queryKey: ['cita-detalle', cita.id] });
-      if (updatedCita) qc.setQueryData(['cita-detalle', cita.id], updatedCita);
+      qc.invalidateQueries({ queryKey: ['cita-detalle', targetId] });
+      if (updatedCita) qc.setQueryData(['cita-detalle', targetId], updatedCita);
       qc.invalidateQueries({ queryKey: ['paciente-historial', cita.paciente.id] });
       // El cambio de estado (llegó/completada/no-show) puede descontar/devolver la sesión
       // en el backend → refrescar saldos y ficha al instante (sin esperar el staleTime).
       qc.invalidateQueries({ queryKey: ['paquetes-sesiones', cita.paciente.id] });
       qc.invalidateQueries({ queryKey: ['paciente', cita.paciente.id] });
       toast.success('Estado actualizado');
-      if (updatedCita) {
-        setCitaActiva((prev) => ({ ...prev, estado: updatedCita.estado }));
-      } else {
-        setCitaActiva((prev) => ({ ...prev, estado: variables.estado }));
+      // Solo actualizar la copia local si la cita afectada es la activa (no la hermana del bloque).
+      if (esActiva) {
+        if (updatedCita) {
+          setCitaActiva((prev) => ({ ...prev, estado: updatedCita.estado }));
+        } else {
+          setCitaActiva((prev) => ({ ...prev, estado: variables.estado }));
+        }
       }
-      if (variables.estado === 'llego' && elegiblesConsumo.length > 0) {
+      if (esActiva && variables.estado === 'llego' && elegiblesConsumo.length > 0) {
         setDialogoConsumo(true);
-      } else if (variables.estado === 'cancelada') {
+      } else if (esActiva && variables.estado === 'cancelada' && !esCombo) {
+        // Cita suelta: al cancelar se cierra el modal. En un BLOQUE combinado NO se cierra
+        // (cancelar el 2º tratamiento deja ver el estado final del bloque; el usuario cierra manual).
         onClose();
       }
     },
@@ -398,6 +421,8 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
     dialogoConsumo,
     setDialogoConsumo,
     esCombo,
+    bloquePrincipal,
+    bloqueSecundaria,
     citaExon,
     estadoMutation,
     exonerarMut,

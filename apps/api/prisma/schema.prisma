@@ -737,6 +737,9 @@ model Cita {
   // Momento en que se marcó "En atención" (ancla PRINCIPAL del auto-completado: la cita pasa sola
   // a 'completada' tras duración + 15 min). Se reinicia al (re)entrar a 'en_atencion'.
   enAtencionEn            DateTime?
+  // Momento en que la cita pasó a "Completada" (manual o auto). Con llegoEn/enAtencionEn permite
+  // medir tiempos: espera (llegó→atención), atención (atención→completada) y total (llegó→completada).
+  completadaEn            DateTime?
   canal                   String            @default("recepcion") // valor de un Canal configurable
   origenAsignacion        OrigenAsignacion?
   paquetePacienteId       String?           @db.Uuid
