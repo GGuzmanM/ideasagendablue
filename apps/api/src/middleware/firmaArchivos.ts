@@ -115,5 +115,16 @@ export function servirUploadFirmado(req: Request, res: Response): void {
     res.status(404).end();
     return;
   }
+  // Defensa en profundidad contra XSS almacenado: nunca dejar que el navegador EJECUTE el archivo.
+  // - `nosniff`: el navegador no adivina un tipo peligroso (p.ej. text/html) por el contenido.
+  // - Extensiones seguras (imagen/PDF) → se pueden ver inline. Cualquier otra (legado: .html/.svg/…)
+  //   se fuerza a DESCARGA con tipo neutro, así jamás se ejecuta en el origen del API.
+  const ext = path.extname(abs).toLowerCase();
+  const EXT_SEGURAS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.pdf']);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  if (!EXT_SEGURAS.has(ext)) {
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', 'attachment');
+  }
   res.sendFile(abs);
 }

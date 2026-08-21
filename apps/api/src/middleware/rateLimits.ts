@@ -56,3 +56,39 @@ export const reniecLimiter = crearLimiter({
   code: 'DEMASIADAS_CONSULTAS',
   message: 'Demasiadas consultas de documento desde esta IP. Espera unos minutos e intenta de nuevo.',
 });
+
+/**
+ * BACKSTOP GLOBAL de toda la API: tope ALTO por IP (2000/min). Calibrado para NO estorbar la
+ * operación real — incluso una sede con ~10 recepcionistas detrás de la MISMA IP pública (NAT),
+ * que en picos hace unos cientos de requests/min por las cargas de agenda — pero corta en seco
+ * un flood/DoS (un script haría miles/seg). Es la red de seguridad; los límites finos van abajo.
+ */
+export const globalLimiter = crearLimiter({
+  limit: 2000,
+  windowMs: 60 * 1000,
+  code: 'DEMASIADAS_PETICIONES',
+  message: 'Demasiadas peticiones desde esta IP. Espera un momento e intenta de nuevo.',
+});
+
+/**
+ * Búsqueda de pacientes (`/pacientes/buscar`): consulta con trigram/ILIKE, costosa. 300/min por
+ * IP: generoso para una sede ocupada, pero frena a un script que barra la base de pacientes.
+ */
+export const busquedaLimiter = crearLimiter({
+  limit: 300,
+  windowMs: 60 * 1000,
+  code: 'DEMASIADAS_BUSQUEDAS',
+  message: 'Demasiadas búsquedas desde esta IP. Espera un momento e intenta de nuevo.',
+});
+
+/**
+ * Analítica (`/analytics/*`): agregaciones pesadas sobre citas + historial Genexis. Solo la ven
+ * admin/coordinadora (poco tráfico), pero cada dashboard dispara varias consultas. 300/min por IP:
+ * cómodo para uso normal, corta a quien machaque los reportes pesados.
+ */
+export const analyticsLimiter = crearLimiter({
+  limit: 300,
+  windowMs: 60 * 1000,
+  code: 'DEMASIADAS_CONSULTAS_ANALYTICS',
+  message: 'Demasiadas consultas de analítica desde esta IP. Espera un momento e intenta de nuevo.',
+});

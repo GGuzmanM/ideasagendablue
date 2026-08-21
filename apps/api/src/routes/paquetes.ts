@@ -102,7 +102,7 @@ router.get('/paciente/:pacienteId', requireAuth, async (req, res) => {
 });
 
 // Asignar paquete a paciente
-router.post('/paciente/:pacienteId', requireAuth, async (req, res) => {
+router.post('/paciente/:pacienteId', requireAuth, requirePermiso('membresias.vender'), async (req, res) => {
   const data = z.object({
     paqueteId: z.string().uuid(),
     fechaCompra: z.string(),

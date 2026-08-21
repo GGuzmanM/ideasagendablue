@@ -50,7 +50,7 @@ const INCLUDE_COMPLETO = {
 //  las comparten el DELETE y la edición estructural del PUT.)
 
 // ─── GET /movimientos/verificar-citas ─────────────────────────────────────────
-router.get('/verificar-citas', requireAuth, async (req, res) => {
+router.get('/verificar-citas', requireAuth, requirePermiso('movimientos.ver'), async (req, res) => {
   const { profesionalId, fechaInicio, fechaFin } = req.query as Record<string, string>;
   if (!profesionalId || !fechaInicio) {
     throw new AppError('Faltan parámetros: profesionalId, fechaInicio', 400);
@@ -115,7 +115,7 @@ router.get('/verificar-citas', requireAuth, async (req, res) => {
 });
 
 // ─── GET /movimientos/:id/impacto ─── consecuencias de eliminar (para confirmar) ─
-router.get('/:id/impacto', requireAuth, async (req, res) => {
+router.get('/:id/impacto', requireAuth, requirePermiso('movimientos.ver'), async (req, res) => {
   const asignacion = await prisma.asignacionSede.findUnique({
     where: { id: req.params.id },
     include: { profesional: { select: { nombres: true, apellidos: true } }, sede: { select: { nombre: true } } },
@@ -154,7 +154,7 @@ router.get('/:id/impacto', requireAuth, async (req, res) => {
 });
 
 // ─── GET /movimientos/preview ──────────────────────────────────────────────────
-router.get('/preview', requireAuth, async (req, res) => {
+router.get('/preview', requireAuth, requirePermiso('movimientos.ver'), async (req, res) => {
   const { profesionalId, sedeId, fechaInicio, fechaFin } = req.query as Record<string, string>;
   if (!profesionalId || !sedeId || !fechaInicio) {
     throw new AppError('Faltan parámetros: profesionalId, sedeId, fechaInicio', 400);
@@ -169,7 +169,7 @@ router.get('/preview', requireAuth, async (req, res) => {
 });
 
 // ─── GET /movimientos ──────────────────────────────────────────────────────────
-router.get('/', requireAuth, async (req, res) => {
+router.get('/', requireAuth, requirePermiso('movimientos.ver'), async (req, res) => {
   const { profesionalId, sedeId, desde, hasta, estado } = req.query as Record<string, string>;
 
   const hoy = new Date();

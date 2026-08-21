@@ -18,7 +18,7 @@ async function nombreUsuario(userId: string | undefined): Promise<string> {
 }
 
 // ─── POST /consumos/cita/:citaId — consumo confirmado desde el diálogo de llegada ──
-router.post('/cita/:citaId', requireAuth, async (req, res) => {
+router.post('/cita/:citaId', requireAuth, requirePermiso('membresias.consumir'), async (req, res) => {
   const { paquetePacienteId } = z.object({ paquetePacienteId: z.string().uuid() }).parse(req.body);
   const r = await consumirDeCita({
     citaId: req.params.citaId,
@@ -30,7 +30,7 @@ router.post('/cita/:citaId', requireAuth, async (req, res) => {
 });
 
 // ─── POST /consumos/manual — válvula de escape (recepción), auditada ─────────
-router.post('/manual', requireAuth, async (req, res) => {
+router.post('/manual', requireAuth, requirePermiso('membresias.consumir'), async (req, res) => {
   const body = z
     .object({
       paquetePacienteId: z.string().uuid(),
@@ -51,7 +51,7 @@ router.post('/manual', requireAuth, async (req, res) => {
 // exonerar=true marca la cita como sesión no aplicada (ej. láser no aplicado) y DEVUELVE la
 // sesión si ya se descontó; exonerar=false quita la marca. Auditado. En un combo se aplica
 // solo a la cita del láser (la profilaxis descuenta normal).
-router.post('/cita/:citaId/exonerar', requireAuth, async (req, res) => {
+router.post('/cita/:citaId/exonerar', requireAuth, requirePermiso('membresias.consumir'), async (req, res) => {
   const { exonerar, motivo } = z.object({
     exonerar: z.boolean(),
     motivo: z.string().trim().max(500).optional(),

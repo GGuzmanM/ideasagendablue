@@ -123,6 +123,33 @@ router.put('/:id', ...editarAdmins, async (req, res) => {
     throw new AppError(`Rol inválido: "${data.rol}"`, 400, 'ROL_INVALIDO');
   }
 
+  // ── #7 · Anti escalada de privilegios y anti lockout del admin ───────────────
+  const callerEsAdmin = caller.rol === 'admin';
+  // Estado actual del objetivo (solo si el cambio toca rol o lo desactiva).
+  const objetivo = (data.rol !== undefined || data.activo === false)
+    ? await prisma.usuario.findFirst({ where: { id, deletedAt: null }, select: { rol: true } })
+    : null;
+
+  // (a) SOLO un admin puede asignar/modificar el rol `admin`. Cierra la auto-escalada: un rol con
+  //     `usuarios.editar` que NO sea admin no puede volverse admin ni tocar a un usuario admin.
+  if (data.rol !== undefined && (data.rol === 'admin' || objetivo?.rol === 'admin') && !callerEsAdmin) {
+    throw new AppError('Solo un administrador puede asignar o modificar el rol admin', 403, 'ROL_ADMIN_PROTEGIDO');
+  }
+
+  // (b) No dejar el sistema SIN admins: si a un admin se le cambia el rol o se le desactiva, debe
+  //     quedar ≥1 admin activo (evita el lockout, incluido el auto-degradarse el único admin).
+  const quitaCondicionAdmin =
+    objetivo?.rol === 'admin' &&
+    ((data.rol !== undefined && data.rol !== 'admin') || data.activo === false);
+  if (quitaCondicionAdmin) {
+    const otrosAdmins = await prisma.usuario.count({
+      where: { rol: 'admin', activo: true, deletedAt: null, id: { not: id } },
+    });
+    if (otrosAdmins === 0) {
+      throw new AppError('No puedes quitar el rol ni desactivar al último administrador (dejaría el sistema sin admins)', 400, 'ULTIMO_ADMIN');
+    }
+  }
+
   const update: Record<string, unknown> = {};
   if (data.nombre) update.nombre = data.nombre;
   if (data.email) update.email = data.email.toLowerCase();
@@ -156,6 +183,19 @@ router.delete('/:id', ...editarAdmins, async (req, res) => {
   const caller = req.user as AuthPayload;
   const { id } = req.params;
   if (id === caller.userId) throw new AppError('No puedes desactivarte a ti mismo', 400);
+
+  // #7 — Al eliminar (soft delete) a un admin: solo otro admin puede hacerlo, y nunca al último.
+  const objetivo = await prisma.usuario.findFirst({ where: { id, deletedAt: null }, select: { rol: true } });
+  if (objetivo?.rol === 'admin') {
+    if (caller.rol !== 'admin') {
+      throw new AppError('Solo un administrador puede eliminar a otro admin', 403, 'ROL_ADMIN_PROTEGIDO');
+    }
+    const otrosAdmins = await prisma.usuario.count({ where: { rol: 'admin', activo: true, deletedAt: null, id: { not: id } } });
+    if (otrosAdmins === 0) {
+      throw new AppError('No puedes eliminar al último administrador', 400, 'ULTIMO_ADMIN');
+    }
+  }
+
   await prisma.usuario.update({ where: { id }, data: { activo: false, deletedAt: new Date() } });
   res.json({ success: true });
 });

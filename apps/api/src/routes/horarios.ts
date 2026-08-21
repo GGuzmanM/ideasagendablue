@@ -181,7 +181,9 @@ const horarioDefaultSchema = z.record(
   ])
 );
 
-router.patch('/:sedeId', requireAuth, async (req, res) => {
+// Editar el horario de operación (apertura/cierre por día) de una sede: solo admin/coordinadora
+// (mismo candado que el resto del módulo). NO afecta cancelar/crear citas — eso es otro permiso.
+router.patch('/:sedeId', requireAuth, requirePermiso('horarios.editar'), async (req, res) => {
   const { sedeId } = req.params;
   const horario = horarioDefaultSchema.parse(req.body);
 

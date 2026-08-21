@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react';
-import * as XLSX from 'xlsx';
 import { cn } from '../../utils/cn';
 
 // ─── Formato de números (centralizado) ──────────────────────────────────────
@@ -16,13 +15,35 @@ export function deltaColor(v: number | null | undefined, invertido = false) {
   return positivo ? 'text-emerald-600' : 'text-red-500';
 }
 
-export function exportToExcel(filename: string, sheets: { name: string; data: Record<string, unknown>[] }[]) {
-  const wb = XLSX.utils.book_new();
+// Exporta datos a un .xlsx usando exceljs (reemplazó a `xlsx`, que tenía vulnerabilidades sin
+// parche). exceljs se carga BAJO DEMANDA (import dinámico) → no engorda el bundle principal.
+// Mismo comportamiento visible: una hoja por entrada, encabezados = claves del objeto, y descarga.
+export async function exportToExcel(filename: string, sheets: { name: string; data: Record<string, unknown>[] }[]) {
+  const ExcelJS = (await import('exceljs')).default;
+  const wb = new ExcelJS.Workbook();
   for (const s of sheets) {
-    const ws = XLSX.utils.json_to_sheet(s.data);
-    XLSX.utils.book_append_sheet(wb, ws, s.name);
+    // Excel prohíbe [ ] * / \ ? : en el nombre de hoja y lo limita a 31 caracteres.
+    const nombreHoja = (s.name || 'Hoja').replace(/[[\]*/\\?:]/g, ' ').slice(0, 31) || 'Hoja';
+    const ws = wb.addWorksheet(nombreHoja);
+    const filas = s.data ?? [];
+    if (filas.length > 0) {
+      const columnas = Object.keys(filas[0]);
+      ws.columns = columnas.map((c) => ({ header: c, key: c }));
+      ws.addRows(filas);
+    }
   }
-  XLSX.writeFile(wb, filename);
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 // ─── StatCard (fila HERO) ────────────────────────────────────────────────────

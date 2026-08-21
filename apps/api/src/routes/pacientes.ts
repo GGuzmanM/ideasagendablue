@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db';
-import { requireAuth, requireScope, requireAcceso } from '../middleware/auth';
+import { requireAuth, requireAcceso } from '../middleware/auth';
+import { busquedaLimiter } from '../middleware/rateLimits';
 import { AppError } from '../middleware/errorHandler';
 import { auditEnTx } from '../services/audit';
 import { alertaDePaciente, alertasDePacientes } from '../services/alertaPaciente';
@@ -38,7 +39,7 @@ const crearPacienteSchema = z.object({
 });
 
 // ─── Búsqueda con trigram ─────────────────────────────────────────────────────
-router.get('/buscar', requireAuth, requireScope('patients:read'), async (req, res) => {
+router.get('/buscar', busquedaLimiter, requireAuth, requireAcceso('patients:read', 'pacientes.ver'), async (req, res) => {
   const q = (req.query.q as string)?.trim() ?? '';
   let pacientes: { id: string; nombres: string; apellidoPaterno: string; apellidoMaterno: string; telefono: string; tipoDocumento: string; numeroDocumento: string; email: string | null; fechaNacimiento: Date | null; requiereActualizacionDatos: boolean }[];
 
@@ -96,7 +97,7 @@ router.get('/buscar', requireAuth, requireScope('patients:read'), async (req, re
 // chips del autocomplete. Excluye las filas especiales (Extranjero / No precisa —
 // esas son chips FIJOS en el frontend). `?sedeId=` opcional: frecuentes entre
 // pacientes con al menos una cita en esa sede. Cache Redis 24h por sede.
-router.get('/distritos-frecuentes', requireAuth, requireScope('patients:read'), async (req, res) => {
+router.get('/distritos-frecuentes', requireAuth, requireAcceso('patients:read', 'pacientes.ver'), async (req, res) => {
   const { sedeId } = req.query as { sedeId?: string };
   const cacheKey = `cache:distritos-frecuentes:${sedeId ?? 'todas'}`;
 
@@ -129,7 +130,7 @@ router.get('/distritos-frecuentes', requireAuth, requireScope('patients:read'), 
   res.json(resultado);
 });
 
-router.get('/:id', requireAuth, requireScope('patients:read'), async (req, res) => {
+router.get('/:id', requireAuth, requireAcceso('patients:read', 'pacientes.ver'), async (req, res) => {
   const paciente = await prisma.paciente.findUnique({
     where: { id: req.params.id, deletedAt: null },
     include: {
@@ -268,7 +269,7 @@ router.get('/:id', requireAuth, requireScope('patients:read'), async (req, res) 
 // ⚠ Vista de SALDO de paquetes (consumos reales). Su vista HERMANA de AGENDAMIENTO
 // (cupo por citas programadas + Genexis) vive en /paquetes/paciente/:id — ver la nota
 // allá antes de cambiar reglas de conteo en cualquiera de las dos.
-router.get('/:id/paquetes', requireAuth, requireScope('patients:read'), async (req, res) => {
+router.get('/:id/paquetes', requireAuth, requireAcceso('patients:read', 'pacientes.ver'), async (req, res) => {
   const paquetes = await prisma.paquetePaciente.findMany({
     where: { pacienteId: req.params.id, deletedAt: null },
     include: {
@@ -350,7 +351,7 @@ router.get('/:id/paquetes', requireAuth, requireScope('patients:read'), async (r
 // ─── GET /pacientes/:id/estadisticas ──────────────────────────────────────────
 // Resumen de asistencia del paciente para la tarjeta de "Nueva Cita": combina las citas
 // de Limablue (por estado) con la historia congelada de Genexis (por `llegoPaciente`).
-router.get('/:id/estadisticas', requireAuth, requireScope('patients:read'), async (req, res) => {
+router.get('/:id/estadisticas', requireAuth, requireAcceso('patients:read', 'pacientes.ver'), async (req, res) => {
   const pacienteId = req.params.id;
   const [porEstado, porGenexis, conTiempos] = await Promise.all([
     prisma.cita.groupBy({ by: ['estado'], where: { pacienteId, deletedAt: null }, _count: { _all: true } }),
@@ -421,7 +422,7 @@ router.get('/:id/estadisticas', requireAuth, requireScope('patients:read'), asyn
 
 // ─── GET /pacientes/:id/historial-genexis/existe ──────────────────────────────
 // Consulta liviana para decidir si el botón "Historial Genexis" se renderiza.
-router.get('/:id/historial-genexis/existe', requireAuth, requireScope('patients:read'), async (req, res) => {
+router.get('/:id/historial-genexis/existe', requireAuth, requireAcceso('patients:read', 'pacientes.ver'), async (req, res) => {
   const total = await prisma.historialGenexis.count({
     where: { pacienteId: req.params.id, deletedAt: null },
   });
@@ -441,7 +442,7 @@ const historialGenexisQuery = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 
-router.get('/:id/historial-genexis', requireAuth, requireScope('patients:read'), async (req, res) => {
+router.get('/:id/historial-genexis', requireAuth, requireAcceso('patients:read', 'pacientes.ver'), async (req, res) => {
   const q = historialGenexisQuery.parse(req.query);
   const paciente = await prisma.paciente.findUnique({
     where: { id: req.params.id, deletedAt: null },

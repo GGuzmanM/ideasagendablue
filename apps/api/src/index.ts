@@ -29,6 +29,8 @@ import { importarOcupacionOutlookTodos } from './services/importarOcupacionOutlo
 import { errorHandler } from './middleware/errorHandler';
 import { firmarUrlsRespuesta, servirUploadFirmado } from './middleware/firmaArchivos';
 import { swaggerSpec } from './swagger';
+import { verificarSecretosAlArranque } from './utils/verificarSecretos';
+import { globalLimiter, analyticsLimiter } from './middleware/rateLimits';
 
 import citasRouter, { autocompletarCitasPorTiempo } from './routes/citas';
 import usersRouter from './routes/users';
@@ -82,7 +84,22 @@ const server = http.createServer(app);
 app.set('trust proxy', process.env.TRUST_PROXY || 'loopback');
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
-app.use(helmet({ contentSecurityPolicy: false }));
+// CSP estricta para las páginas HTML del API (confirmar/cancelar cita, baja de videos): los
+// scripts solo pueden ser propios ('self') → un script inyectado NO se ejecuta. Se permiten los
+// estilos INLINE (esas páginas usan style="" en cada elemento) — riesgo bajo vs. scripts.
+// `upgradeInsecureRequests: null` evita forzar https en dev (http://localhost). Swagger tiene su
+// propia CSP relajada más abajo (usa un script inline para arrancar).
+app.use(helmet({
+  contentSecurityPolicy: {
+    useDefaults: true,
+    directives: {
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:'],
+      frameAncestors: ["'none'"],
+      upgradeInsecureRequests: null,
+    },
+  },
+}));
 app.use(cors({
   origin: corsOrigin,
   credentials: true,
@@ -92,7 +109,21 @@ app.use(compression());
 // sobre el RAW body (el router usa su propio parser raw). Ruta específica primero.
 app.use('/api/v1/webhooks/resend', resendWebhookRouter);
 app.use(express.json({ limit: '10mb' }));
-app.use(morgan('combined'));
+
+// ─── Logging con REDACCIÓN de tokens ─────────────────────────────────────────
+// Los enlaces de correo (confirmar/cancelar cita, baja de videos) y las URLs firmadas de
+// /uploads llevan tokens/firmas en el query string. morgan loguea la URL completa → esos
+// tokens quedarían en los access-logs y serían REUTILIZABLES. Se enmascara el VALOR de los
+// params sensibles antes de escribir la línea, tanto en la URL como en el Referer.
+const redactarTokens = (s?: string | null): string => {
+  if (!s) return s ?? '-';
+  return s.replace(/([?&](?:token|sig|access_token|apikey|api_key|key|password|secret)=)[^&#\s]*/gi, '$1***');
+};
+morgan.token('url-safe', (req: express.Request) => redactarTokens(req.originalUrl || req.url));
+morgan.token('ref-safe', (req: express.Request) => redactarTokens(req.headers.referer || '-'));
+app.use(morgan(
+  ':remote-addr - :remote-user [:date[clf]] ":method :url-safe HTTP/:http-version" :status :res[content-length] ":ref-safe" ":user-agent"',
+));
 
 // Firma las URLs de archivos privados (/uploads) en TODA respuesta JSON (punto único).
 app.use(firmarUrlsRespuesta);
@@ -103,6 +134,18 @@ app.use(firmarUrlsRespuesta);
 app.use('/uploads', servirUploadFirmado);
 
 // ─── Swagger ──────────────────────────────────────────────────────────────────
+// Swagger UI necesita su script/estilos inline (y a veces eval) para arrancar → CSP relajada
+// SOLO en /api/docs (herramienta interna, no cara al usuario). El resto del API queda con la CSP
+// estricta de arriba.
+app.use('/api/docs', helmet.contentSecurityPolicy({
+  useDefaults: true,
+  directives: {
+    scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+    styleSrc: ["'self'", "'unsafe-inline'"],
+    imgSrc: ["'self'", 'data:'],
+    upgradeInsecureRequests: null,
+  },
+}));
 app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
   customCss: '.swagger-ui .topbar { background-color: #1e40af; }',
   customSiteTitle: 'Limablue Agenda API',
@@ -121,6 +164,8 @@ app.get('/health', async (_req, res) => {
 
 // ─── Rutas API ────────────────────────────────────────────────────────────────
 const v1 = '/api/v1';
+// Backstop global anti-DoS: tope alto por IP para toda la API (no estorba la operación real).
+app.use(v1, globalLimiter);
 app.use(`${v1}/auth`, authRouter);
 app.use(`${v1}/users`, usersRouter);
 app.use(`${v1}/roles`, rolesRouter);
@@ -137,8 +182,8 @@ app.use(`${v1}/paquetes`, paquetesRouter);
 app.use(`${v1}/audit`, auditRouter);
 app.use(`${v1}/webhooks`, webhooksRouter);
 app.use(`${v1}/horarios`, horariosRouter);
-app.use(`${v1}/analytics/agentes`, analyticsAgentesRouter); // antes que /analytics (prefijo más específico)
-app.use(`${v1}/analytics`, analyticsRouter);
+app.use(`${v1}/analytics/agentes`, analyticsLimiter, analyticsAgentesRouter); // antes que /analytics (prefijo más específico)
+app.use(`${v1}/analytics`, analyticsLimiter, analyticsRouter);
 app.use(`${v1}/exportar`, exportarRouter);
 app.use(`${v1}/composicion-sede`, composicionSedeRouter);
 app.use(`${v1}/movimientos`, movimientosRouter);
@@ -243,6 +288,10 @@ process.on('uncaughtException', (err) => {
 });
 
 // ─── Start ────────────────────────────────────────────────────────────────────
+// Blindaje: si algún secreto de firma es débil/por defecto/duplicado, NO se levanta el
+// servidor (process.exit(1)). Imposible desplegar producción con un secreto vulnerable.
+verificarSecretosAlArranque();
+
 const PORT = Number(process.env.PORT) || 3001;
 server.listen(PORT, () => {
   console.log(`🚀 Limablue Agenda API corriendo en http://localhost:${PORT}`);

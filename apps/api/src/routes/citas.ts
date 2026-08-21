@@ -13,7 +13,7 @@ import { requireAuth, requireScope, requireAcceso, requirePermiso, assertSede, p
 import { AppError } from '../middleware/errorHandler';
 import { withDeadlockRetry, esDeadlockTransitorio, esConflictoDeSlot } from '../utils/dbRetry';
 import { agregarRango } from '../services/agregacion';
-import { uploadComprobante } from '../middleware/uploadComprobante';
+import { uploadComprobante, validarComprobanteReal } from '../middleware/uploadComprobante';
 import { limpiarUrlArchivo } from '../middleware/firmaArchivos';
 import { construirIcsDeCita, logoAdjunto } from '../services/emailTemplates';
 import { sincronizarCitaOutlook, reintentarOutlookFallidos } from '../services/outlookCalendarService';
@@ -420,6 +420,7 @@ router.post(
   '/upload-comprobante',
   requireAuth,
   uploadComprobante.single('comprobante'),
+  validarComprobanteReal, // valida el CONTENIDO real (magic bytes) — rechaza html/svg/script disfrazado
   (req, res) => {
     if (!req.file) throw new AppError('No se recibió ningún archivo', 400);
     const baseUrl = `${req.protocol}://${req.get('host')}`;
