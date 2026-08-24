@@ -20,6 +20,30 @@ export function fechaAStr(fecha: Date): string {
   return fecha.toISOString().slice(0, 10);
 }
 
+/** "YYYY-MM-DD" del día de HOY en hora de Lima (independiente de la TZ del proceso). */
+export function hoyLimaStr(ref: Date = new Date()): string {
+  // en-CA da el formato ISO (YYYY-MM-DD) directo.
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: TZ_LIMA, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(ref);
+}
+
+/**
+ * ¿La fecha "YYYY-MM-DD" es ANTERIOR a hoy (en hora Lima)? → cita retroactiva.
+ * Compara strings ISO (comparación lexicográfica = cronológica para YYYY-MM-DD).
+ */
+export function esFechaPasadaLima(fechaStr: string, ref: Date = new Date()): boolean {
+  return fechaStr < hoyLimaStr(ref);
+}
+
+/** Nº de días que `fechaStr` está en el pasado respecto a hoy (Lima). 0 si es hoy o futura. */
+export function diasEnPasadoLima(fechaStr: string, ref: Date = new Date()): number {
+  const hoy = hoyLimaStr(ref);
+  if (fechaStr >= hoy) return 0;
+  const ms = Date.parse(`${hoy}T00:00:00Z`) - Date.parse(`${fechaStr}T00:00:00Z`);
+  return Math.round(ms / 86_400_000);
+}
+
 /**
  * Datetime UTC del inicio de una cita a partir de su `fecha` (@db.Date) y
  * `horaInicio` ("HH:mm" hora Lima). Ej.: 2026-06-20 + "10:00" → 2026-06-20T15:00:00Z.

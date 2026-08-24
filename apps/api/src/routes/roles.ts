@@ -42,6 +42,20 @@ const crearSchema = rolSchema.extend({
   nombre: z.string().min(2).regex(/^[a-z0-9_]+$/, 'Solo minúsculas, números y guiones bajos'),
 });
 
+// #7 · Permisos que abren la CADENA de escalada a admin: quien gestiona usuarios o roles puede
+// fabricarse (directa o indirectamente) una cuenta admin. Solo un admin real puede OTORGARLOS a un
+// rol; así, delegar `roles.editar` a otro rol no le permite auto-elevarse creando un rol con estos.
+const PERMISOS_ESCALADA = ['usuarios.editar', 'roles.editar'] as const;
+function bloquearEscalada(callerRol: string | undefined, permisos: string[]): void {
+  if (callerRol !== 'admin' && permisos.some((p) => (PERMISOS_ESCALADA as readonly string[]).includes(p))) {
+    throw new AppError(
+      'Solo un administrador puede otorgar permisos de gestión de usuarios o roles',
+      403,
+      'ESCALADA_BLOQUEADA',
+    );
+  }
+}
+
 // GET /api/v1/roles — lista todos los roles (cualquier usuario autenticado puede verlos para el formulario)
 // Incluye `usuariosCount`: cuántos usuarios activos tienen cada rol (footer de las cards).
 router.get('/', requireAuth, async (_req, res) => {
@@ -122,6 +136,7 @@ router.get('/permisos', requireAuth, async (_req, res) => {
 // POST /api/v1/roles
 router.post('/', requireAuth, requirePermiso('roles.editar'), async (req, res) => {
   const data = crearSchema.parse(req.body);
+  bloquearEscalada(req.user?.rol, data.permisos);
   const existe = await prisma.rol.findUnique({ where: { nombre: data.nombre } });
   if (existe) throw new AppError('Ya existe un rol con ese nombre interno', 409);
   const rol = await prisma.rol.create({ data: { ...data, esSistema: false, creadoPor: req.user?.userId } });
@@ -136,6 +151,7 @@ router.post('/', requireAuth, requirePermiso('roles.editar'), async (req, res) =
 // PUT /api/v1/roles/:id
 router.put('/:id', requireAuth, requirePermiso('roles.editar'), async (req, res) => {
   const data = rolSchema.parse(req.body);
+  bloquearEscalada(req.user?.rol, data.permisos);
   const rol = await prisma.rol.findUnique({ where: { id: req.params.id } });
   if (!rol) throw new AppError('Rol no encontrado', 404);
   // BLINDAJE: el rol `admin` es intocable — nadie puede editar/vaciar sus permisos (evita lockout

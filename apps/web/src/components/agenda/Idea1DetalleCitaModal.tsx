@@ -241,6 +241,36 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
               </div>
             )}
 
+            {/* Chip RETROACTIVA (solo lectura): la cita se registró para una fecha anterior a su día
+                de creación. Se DERIVA de fecha < día(creadoEn); el motivo (si existe) se muestra debajo.
+                (Si además fue reprogramada al pasado, el banner de arriba da el contexto del movimiento.) */}
+            {(() => {
+              const fechaCitaStr = (cita.fecha ?? '').slice(0, 10);
+              const creadoDia = cita.creadoEn ? format(new Date(cita.creadoEn), 'yyyy-MM-dd') : '';
+              if (!fechaCitaStr || !creadoDia || fechaCitaStr >= creadoDia) return null;
+              return (
+                <div className="flex items-start gap-2.5 rounded-xl bg-amber-50 border border-amber-300 px-3.5 py-2.5">
+                  <span className="material-symbols-outlined text-amber-600 text-lg shrink-0">history</span>
+                  <div className="text-xs text-amber-900 min-w-0">
+                    <p className="font-bold flex items-center gap-1.5">
+                      Cita retroactiva
+                      <span className="inline-block rounded-full bg-amber-200 text-amber-800 text-[10px] font-bold px-2 py-0.5">registrada en el pasado</span>
+                    </p>
+                    <p className="text-amber-700 mt-0.5">
+                      Registrada el <b>{format(new Date(cita.creadoEn), "d 'de' MMMM yyyy · HH:mm", { locale: es })}</b>
+                      {' '}para el <b>{format(new Date(fechaCitaStr + 'T12:00:00'), "EEEE d 'de' MMMM", { locale: es })}</b>
+                      {cita.creadoPorUsuario ? ` · por ${cita.creadoPorUsuario.nombre}` : ''}
+                    </p>
+                    {cita.motivoRetroactivo && (
+                      <p className="text-[11px] text-amber-800 mt-1">
+                        <span className="font-semibold">Motivo:</span> {cita.motivoRetroactivo}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* Paquetes y Membresías Activas */}
             {paquetesPac && paquetesPac.some((p) => p.estado === 'ACTIVO') && (
               <div className="bg-surface-container-low/60 rounded-xl p-3 border border-outline-variant/20 space-y-1">

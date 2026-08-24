@@ -800,6 +800,11 @@ model Cita {
   // Quién hizo la reserva (usuario del sistema que la creó) — se llena en cada nueva cita.
   creadoPorUsuarioId String? @db.Uuid
 
+  // Motivo cuando la cita se registró RETROACTIVAMENTE (día de la cita anterior al día de creación).
+  // El flag "retroactiva" NO se guarda: se DERIVA de `fecha` < día(`creadoEn`) en hora Lima. Aquí
+  // solo vive el texto del POR QUÉ (obligatorio al agendar en el pasado). null = cita normal.
+  motivoRetroactivo String?
+
   // Clave de idempotencia (para no duplicar al reintentar). NO se muestra; va en su propio campo
   // (antes se metía dentro del comentario como [IK:...] y se filtraba a la vista).
   idempotencyKey String?

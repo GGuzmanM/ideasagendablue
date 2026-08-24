@@ -72,6 +72,9 @@ export interface CitaResumen {
   creadoPorUsuario: { id: string; nombre: string } | null;
   creadoEn: string;
   actualizadoEn: string;
+  // Motivo si la cita se registró retroactivamente (fecha pasada). null = cita normal. El flag
+  // "retroactiva" se DERIVA comparando `fecha` con el día de `creadoEn`.
+  motivoRetroactivo?: string | null;
 }
 
 export interface CrearCitaInput {
@@ -94,6 +97,7 @@ export interface CrearCitaInput {
   comprobanteUrl?: string;
   comprobanteNombre?: string;
   comprobanteMimeType?: string;
+  motivoRetroactivo?: string; // obligatorio si `fecha` es anterior a hoy (cita retroactiva)
 }
 
 // Agendamiento de un bloque combinado: ancla (profilaxis) + un servicio extra.
@@ -111,6 +115,7 @@ export interface CrearCitaCombinadaInput {
   paquetePacienteId?: string;
   promocionId?: string | null; // promo del BLOQUE (la guarda el backend en la PRINCIPAL)
   codigoPromo?: string;
+  motivoRetroactivo?: string; // obligatorio si `fecha` es anterior a hoy (bloque retroactivo)
   extra: {
     servicioId: string;
     profesionalId?: string; // default: misma profesional del ancla

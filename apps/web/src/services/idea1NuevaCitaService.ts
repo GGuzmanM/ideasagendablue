@@ -145,6 +145,11 @@ export function useIdea1NuevaCitaForm({
   const [fechaCita, setFechaCita] = useState<string>(format(fecha, 'yyyy-MM-dd'));
   const [horaCita, setHoraCita] = useState<string>(horaInicial);
   const [comentarioRecepcion, setComentarioRecepcion] = useState('');
+  // Cita RETROACTIVA: la fecha elegida es anterior a HOY. Se permite (registrar algo ya ocurrido),
+  // pero exige un motivo. `esRetroactiva` se deriva de la fecha; el backend re-valida el motivo.
+  const [motivoRetroactivo, setMotivoRetroactivo] = useState('');
+  const esRetroactiva = fechaCita < format(new Date(), 'yyyy-MM-dd');
+  const faltaMotivoRetroactivo = esRetroactiva && !motivoRetroactivo.trim();
 
   // Estado de Membresías ("Membresía (opcional)" / "Activar nueva membresía")
   const [membSel, setMembSel] = useState(''); // 'inst:<id>' | 'tpl:<id>' | ''
@@ -835,6 +840,7 @@ export function useIdea1NuevaCitaForm({
           codigoPromo: promocionId && codigoPromo.trim() ? codigoPromo.trim() : undefined,
           comentarioRecepcion: comentarioRecepcion.trim() || undefined,
           paquetePacienteId: finalPaqueteId || undefined,
+          motivoRetroactivo: esRetroactiva ? motivoRetroactivo.trim() : undefined,
           extra: {
             servicioId: extraServicioId,
             profesionalId: extraProfesionalId || undefined,
@@ -862,6 +868,7 @@ export function useIdea1NuevaCitaForm({
           comprobanteUrl: comprobante?.url,
           comprobanteNombre: comprobante?.nombre,
           comprobanteMimeType: comprobante?.mimeType,
+          motivoRetroactivo: esRetroactiva ? motivoRetroactivo.trim() : undefined,
         };
         return citasApi.crear(crearInput, key);
       }
@@ -931,6 +938,11 @@ export function useIdea1NuevaCitaForm({
     }
     if (!fechaCita || !horaCita) {
       toast.error('Selecciona fecha y hora');
+      return;
+    }
+    // Retroactiva: fecha en el pasado → exige motivo (el backend también lo re-valida).
+    if (faltaMotivoRetroactivo) {
+      toast.error('Estás registrando una cita en una fecha pasada: indica el motivo del registro retroactivo.');
       return;
     }
     if (profesionalId && turnosProfMap) {
@@ -1062,6 +1074,11 @@ export function useIdea1NuevaCitaForm({
     setHoraCita,
     comentarioRecepcion,
     setComentarioRecepcion,
+    // Cita retroactiva (fecha pasada)
+    esRetroactiva,
+    motivoRetroactivo,
+    setMotivoRetroactivo,
+    faltaMotivoRetroactivo,
     combinar,
     setCombinar,
     extraServicioId,

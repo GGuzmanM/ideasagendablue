@@ -93,6 +93,10 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
     setHoraCita,
     comentarioRecepcion,
     setComentarioRecepcion,
+    esRetroactiva,
+    motivoRetroactivo,
+    setMotivoRetroactivo,
+    faltaMotivoRetroactivo,
     combinar,
     setCombinar,
     extraServicioId,
@@ -1079,6 +1083,40 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
               </div>
             </div>
           </div>
+
+          {/* Aviso + motivo obligatorio cuando la cita es RETROACTIVA (fecha en el pasado) */}
+          {esRetroactiva && (
+            <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 space-y-3">
+              <div className="flex items-start gap-2">
+                <span className="material-symbols-outlined text-amber-600 text-xl shrink-0">history</span>
+                <div className="text-sm text-amber-800">
+                  <p className="font-bold">Estás registrando una cita en una fecha pasada (retroactiva).</p>
+                  <p className="text-amber-700/90 text-[13px] mt-0.5">
+                    Se permitirá, pero quedará marcada como retroactiva y registrada en auditoría. Indica el motivo.
+                  </p>
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="font-label-caps text-label-caps text-amber-800 text-[11px] font-bold">
+                  MOTIVO DEL REGISTRO RETROACTIVO <span className="text-error">*</span>
+                </label>
+                <textarea
+                  rows={2}
+                  value={motivoRetroactivo}
+                  onChange={(e) => setMotivoRetroactivo(e.target.value)}
+                  placeholder="Ej. registro de cita ya atendida; no-show reportado tarde; corrección de agenda…"
+                  className={`w-full bg-white border rounded-xl px-4 py-3 text-sm outline-none focus:ring-1 transition-all resize-none text-on-surface ${
+                    faltaMotivoRetroactivo
+                      ? 'border-error focus:border-error focus:ring-error'
+                      : 'border-amber-300 focus:border-amber-500 focus:ring-amber-500'
+                  }`}
+                />
+                {faltaMotivoRetroactivo && (
+                  <p className="text-error text-[12px] font-medium">El motivo es obligatorio para agendar en una fecha pasada.</p>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Comentarios de Recepción */}
           <div className="space-y-2">

@@ -1,7 +1,20 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { useAgendaStore } from './agendaStore';
+import { queryClient } from '../lib/queryClient';
 
 const API_BASE = '/api/v1';
+
+/**
+ * Limpia TODO el estado ligado al usuario que estaba logueado: la selección de agenda in-memory
+ * (sede/fecha/unidad) y la caché de datos de TanStack Query. Se llama al iniciar y cerrar sesión
+ * para que NADA se herede entre usuarios (el logout no recarga la página, así que sin esto la
+ * sede y el día que dejó el usuario anterior seguían vivos para el siguiente).
+ */
+function limpiarEstadoDeSesion() {
+  useAgendaStore.getState().reset();
+  queryClient.clear();
+}
 
 interface SedeInfo { id: string; nombre: string; color: string }
 
@@ -41,7 +54,10 @@ export const useAuthStore = create<AuthState>()(
 
       setAuth: (token, usuario) => set({ token, usuario, isAuthenticated: true, isLoading: false }),
 
-      logout: () => set({ token: null, usuario: null, isAuthenticated: false, isLoading: false }),
+      logout: () => {
+        limpiarEstadoDeSesion();
+        set({ token: null, usuario: null, isAuthenticated: false, isLoading: false });
+      },
 
       login: async (email, password) => {
         const res = await fetch(`${API_BASE}/auth/login`, {
@@ -54,6 +70,7 @@ export const useAuthStore = create<AuthState>()(
           throw new Error((err as { message?: string }).message || 'Credenciales inválidas');
         }
         const data = await res.json() as { token: string; usuario: UsuarioAuth };
+        limpiarEstadoDeSesion(); // arranca en limpio: sin sede/fecha/caché heredadas de otra sesión
         set({ token: data.token, usuario: data.usuario, isAuthenticated: true, isLoading: false });
       },
 

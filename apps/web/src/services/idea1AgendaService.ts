@@ -624,15 +624,21 @@ export function useIdea1AgendaData() {
     return sedesDbRaw.filter((s) => puedeAccederSede(s.id));
   }, [sedesDbRaw, usuario, puedeAccederSede]);
 
-  // Auto-seleccionar sede permitida (si no hay seleccionada o la actual no está permitida)
+  // Auto-seleccionar sede permitida. Casos:
+  //  - hay sedes accesibles y la actual no es válida (o no hay) → tomar la primera.
+  //  - el usuario NO tiene sedes accesibles pero quedó una `sedeId` (heredada de otra sesión) →
+  //    limpiarla, para no mostrar ni consultar una sede a la que no tiene acceso.
+  // Se espera a que `sedesDbRaw` cargue (no `sedesDb`, que arranca en [] mientras carga) para no
+  // borrar una sede válida durante el fetch.
   useEffect(() => {
-    if (sedesDb && sedesDb.length > 0) {
+    if (!sedesDbRaw) return; // aún cargando la lista de sedes
+    if (sedesDb.length > 0) {
       const esValida = sedesDb.some((s) => s.id === sedeId);
-      if (!sedeId || !esValida) {
-        setSedeId(sedesDb[0].id);
-      }
+      if (!sedeId || !esValida) setSedeId(sedesDb[0].id);
+    } else if (sedeId) {
+      setSedeId(null); // sin sedes accesibles: no heredar la sede de otro usuario
     }
-  }, [sedesDb, sedeId, setSedeId]);
+  }, [sedesDbRaw, sedesDb, sedeId, setSedeId]);
 
   const activeSedeDb = sedesDb?.find((s) => s.id === sedeId);
   const unidadesDisponibles = activeSedeDb?.unidadesNegocio || [];

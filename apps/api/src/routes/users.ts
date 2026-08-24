@@ -84,6 +84,11 @@ router.get('/:id', ...soloAdmins, async (req, res) => {
 // POST /api/v1/users
 router.post('/', ...editarAdmins, async (req, res) => {
   const data = crearSchema.parse(req.body);
+  // #7 · Solo un admin puede CREAR una cuenta admin (cierra la escalada: un rol con
+  // `usuarios.editar` que no sea admin no puede fabricarse un admin nuevo).
+  if (data.rol === 'admin' && (req.user as AuthPayload).rol !== 'admin') {
+    throw new AppError('Solo un administrador puede crear una cuenta admin', 403, 'ROL_ADMIN_PROTEGIDO');
+  }
   // Whitelist: el rol debe existir en la tabla Rol (evita fijar un rol inexistente → usuario sin permisos).
   if (!(await prisma.rol.findFirst({ where: { nombre: data.rol } }))) {
     throw new AppError(`Rol inválido: "${data.rol}"`, 400, 'ROL_INVALIDO');
@@ -125,15 +130,15 @@ router.put('/:id', ...editarAdmins, async (req, res) => {
 
   // ── #7 · Anti escalada de privilegios y anti lockout del admin ───────────────
   const callerEsAdmin = caller.rol === 'admin';
-  // Estado actual del objetivo (solo si el cambio toca rol o lo desactiva).
-  const objetivo = (data.rol !== undefined || data.activo === false)
-    ? await prisma.usuario.findFirst({ where: { id, deletedAt: null }, select: { rol: true } })
-    : null;
+  // Estado actual del objetivo — SIEMPRE (no solo cuando el payload trae rol/activo). CLAVE: sin
+  // esto, un payload que solo cambia `password`/`email` de un admin se saltaba las guardas y
+  // permitía RESETEAR la contraseña del admin → tomar su cuenta.
+  const objetivo = await prisma.usuario.findFirst({ where: { id, deletedAt: null }, select: { rol: true } });
 
-  // (a) SOLO un admin puede asignar/modificar el rol `admin`. Cierra la auto-escalada: un rol con
-  //     `usuarios.editar` que NO sea admin no puede volverse admin ni tocar a un usuario admin.
-  if (data.rol !== undefined && (data.rol === 'admin' || objetivo?.rol === 'admin') && !callerEsAdmin) {
-    throw new AppError('Solo un administrador puede asignar o modificar el rol admin', 403, 'ROL_ADMIN_PROTEGIDO');
+  // (a) Un NO-admin NO puede tocar a un usuario admin por NINGUNA vía (password/email/rol/sedes/…),
+  //     ni asignar el rol admin a nadie. Solo un admin gestiona cuentas admin.
+  if (!callerEsAdmin && (objetivo?.rol === 'admin' || data.rol === 'admin')) {
+    throw new AppError('Solo un administrador puede modificar o asignar cuentas admin', 403, 'ROL_ADMIN_PROTEGIDO');
   }
 
   // (b) No dejar el sistema SIN admins: si a un admin se le cambia el rol o se le desactiva, debe

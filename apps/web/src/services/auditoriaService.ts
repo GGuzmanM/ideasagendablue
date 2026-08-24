@@ -73,6 +73,7 @@ const ACCION_MATCHERS: { match: RegExp; style: AccionStyle }[] = [
   { match: /activar/i,             style: { label: 'Activar',         icon: 'play_circle',  bg: 'bg-emerald-100', text: 'text-emerald-800', border: 'border-emerald-200/70', circleBg: 'bg-emerald-600' } },
   { match: /excluir/i,             style: { label: 'Excluir correo',  icon: 'unsubscribe',  bg: 'bg-red-100',     text: 'text-red-800',     border: 'border-red-200/70',     circleBg: 'bg-red-600' } },
   { match: /reactivar/i,           style: { label: 'Reactivar correo', icon: 'mark_email_read', bg: 'bg-emerald-100', text: 'text-emerald-800', border: 'border-emerald-200/70', circleBg: 'bg-emerald-600' } },
+  { match: /crear_retroactiva/i,   style: { label: 'Creó (retroactiva)', icon: 'history',  bg: 'bg-amber-100',   text: 'text-amber-800',   border: 'border-amber-300/70',   circleBg: 'bg-amber-600' } },
   { match: /crear|registrar/i,     style: { label: 'Crear',           icon: 'add_circle',   bg: 'bg-emerald-100', text: 'text-emerald-800', border: 'border-emerald-200/70', circleBg: 'bg-emerald-600' } },
   { match: /mover|reprogramar/i,   style: { label: 'Mover',           icon: 'swap_horiz',   bg: 'bg-blue-100',    text: 'text-blue-800',    border: 'border-blue-200/70',    circleBg: 'bg-blue-600' } },
   { match: /cambiar_estado/i,      style: { label: 'Cambiar estado',  icon: 'autorenew',    bg: 'bg-amber-100',   text: 'text-amber-800',   border: 'border-amber-200/70',   circleBg: 'bg-amber-600' } },
@@ -210,7 +211,14 @@ export function resumenLog(log: AuditLog, nombresPorId: Record<string, string> =
     const hora = log.cita.horaInicio;
     const prof = log.cita.profesional ? `${log.cita.profesional.nombres.split(' ')[0]}` : null;
     const servicio = log.cita.servicio?.nombre;
-    const subtitulo = [servicio, prof].filter(Boolean).join(' · ');
+    let subtitulo = [servicio, prof].filter(Boolean).join(' · ');
+    // Creación RETROACTIVA: añade "retroactiva · N días atrás · motivo" (el motivo/días viven en `antes`).
+    if (log.accion === 'crear_retroactiva') {
+      const meta = (log.antes || {}) as { diasAtras?: number; motivo?: string };
+      const dias = meta.diasAtras ? `retroactiva · ${meta.diasAtras} día${meta.diasAtras === 1 ? '' : 's'} atrás` : 'retroactiva';
+      const nota = meta.motivo ? `${dias} · ${meta.motivo}` : dias;
+      subtitulo = [subtitulo, nota].filter(Boolean).join(' — ');
+    }
     return { titulo: `Cita de ${nombrePac} · ${hora}`, subtitulo };
   }
 

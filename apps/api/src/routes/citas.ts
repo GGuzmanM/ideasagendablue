@@ -29,7 +29,7 @@ import { precioListaDe, validarYCalcularPromo } from '../services/promocionesSer
 import { getServicioAnclaId, esCombinacionPermitida } from '../services/combinacionService';
 import { enviarCorreoReserva } from '../services/emailService';
 import { verificarTokenConfirmacion } from '../utils/confirmToken';
-import { fechaDb } from '../utils/fechaLima';
+import { fechaDb, esFechaPasadaLima, diasEnPasadoLima } from '../utils/fechaLima';
 import { horaInicioValidaParaDuracion, timeToMinutes, minutesToTime } from '@limablue/shared';
 
 const router = Router();
@@ -81,6 +81,9 @@ const crearCitaSchema = z.object({
   comprobanteUrl: z.string().optional(),
   comprobanteNombre: z.string().optional(),
   comprobanteMimeType: z.string().optional(),
+  // Motivo obligatorio SOLO si la cita se agenda en una fecha pasada (retroactiva). Se valida en
+  // el handler (aquí es opcional porque para citas normales no aplica). Ver `esFechaPasadaLima`.
+  motivoRetroactivo: z.string().trim().max(500).optional(),
 });
 
 // Bloque combinado: ancla (profilaxis) + un servicio extra en el mismo slot de 1 h.
@@ -100,6 +103,7 @@ const crearCombinadaSchema = z.object({
   paquetePacienteId: z.string().uuid().optional(),
   promocionId: z.string().uuid().nullable().optional(), // promo del BLOQUE → va en la PRINCIPAL
   codigoPromo: z.string().trim().max(60).optional(),
+  motivoRetroactivo: z.string().trim().max(500).optional(), // obligatorio si el bloque es en fecha pasada
   extra: z.object({
     servicioId: z.string().uuid(),
     profesionalId: z.string().uuid().optional(), // default: profesional del ancla
@@ -943,6 +947,15 @@ router.post('/', requireAuth, requireAcceso('appointments:write', 'citas.crear')
   await validarCanal(data.canal);
   const usuarioId = req.user?.userId;
 
+  // ── Cita RETROACTIVA: fecha de la cita anterior a HOY (Lima). Se PERMITE a propósito (registrar
+  //    algo que ya ocurrió / una cita cancelada), pero exige motivo y queda marcado + auditado.
+  //    El flag no se guarda: se deriva de la fecha; aquí solo persistimos el texto del motivo.
+  const esRetroactiva = esFechaPasadaLima(data.fecha);
+  const motivoRetroactivo = esRetroactiva ? (data.motivoRetroactivo?.trim() || '') : null;
+  if (esRetroactiva && !motivoRetroactivo) {
+    throw new AppError('Esta cita es para una fecha pasada: indica el motivo del registro retroactivo', 400, 'MOTIVO_RETROACTIVO_REQUERIDO');
+  }
+
   // Verificar que la unidad opera en la sede
   const sedeUnidad = await prisma.sedeUnidadNegocio.findUnique({
     where: { sedeId_unidadNegocioId: { sedeId: data.sedeId, unidadNegocioId: data.unidadNegocioId } },
@@ -1283,6 +1296,7 @@ router.post('/', requireAuth, requireAcceso('appointments:write', 'citas.crear')
           canal: data.canal,
           origenAsignacion,
           creadoPorUsuarioId: usuarioId ?? null, // quién hizo la reserva
+          motivoRetroactivo, // null salvo que se agende en fecha pasada
           idempotencyKey: idempotencyKey ?? null,
           paquetePacienteId: data.paquetePacienteId,
           promocionId: data.promocionId ?? null,
@@ -1298,11 +1312,14 @@ router.post('/', requireAuth, requireAcceso('appointments:write', 'citas.crear')
         },
       });
       await auditEnTx(tx, {
+        // Retroactiva → acción distinta para que RESALTE y sea filtrable en auditoría.
         citaId: c.id,
         usuarioId,
-        accion: 'crear',
+        accion: esRetroactiva ? 'crear_retroactiva' : 'crear',
         entidad: 'cita',
         entidadId: c.id,
+        // `antes` documenta el POR QUÉ y cuántos días atrás (solo en retroactivas).
+        antes: esRetroactiva ? { retroactiva: true, diasAtras: diasEnPasadoLima(data.fecha), motivo: motivoRetroactivo } : undefined,
         despues: c,
         sedeId: data.sedeId,
         ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
@@ -1457,6 +1474,14 @@ router.post('/combinada', requireAuth, requireAcceso('appointments:write', 'cita
   const usuarioId = req.user?.userId;
   await validarCanal(data.canal);
 
+  // Bloque RETROACTIVO (fecha pasada): mismo criterio que la cita individual — exige motivo, se
+  // marca y se audita. El motivo se guarda en AMBAS citas del bloque (para el chip en cada una).
+  const esRetroactiva = esFechaPasadaLima(data.fecha);
+  const motivoRetroactivo = esRetroactiva ? (data.motivoRetroactivo?.trim() || '') : null;
+  if (esRetroactiva && !motivoRetroactivo) {
+    throw new AppError('Este bloque es para una fecha pasada: indica el motivo del registro retroactivo', 400, 'MOTIVO_RETROACTIVO_REQUERIDO');
+  }
+
   // 1) El servicio del ancla debe ser el ancla configurado.
   const anclaId = await getServicioAnclaId();
   if (!anclaId) throw new AppError('No hay un servicio ancla configurado para combinaciones', 400, 'SIN_ANCLA');
@@ -1576,6 +1601,7 @@ router.post('/combinada', requireAuth, requireAcceso('appointments:write', 'cita
             unidadNegocioId: data.unidadNegocioId, servicioId: data.servicioId, subcategoriaId: subcategoriaAncla, fecha: fechaDate,
             horaInicio: data.horaInicio, duracionMinutos: duracionSlot, estado: 'agendada',
             canal: data.canal, origenAsignacion: origenAncla, creadoPorUsuarioId: usuarioId ?? null,
+            motivoRetroactivo,
             paquetePacienteId: data.paquetePacienteId, sesionNumero: sesionAncla,
             // FUENTE ÚNICA: la promo del bloque vive SOLO aquí (PRINCIPAL/profilaxis); la
             // SECUNDARIO va con promocionId null. Así analytics/conteos nunca duplican.
@@ -1593,13 +1619,15 @@ router.post('/combinada', requireAuth, requireAcceso('appointments:write', 'cita
             unidadNegocioId: extraSrv.unidadNegocioId, servicioId: data.extra.servicioId, subcategoriaId: subcategoriaExtra, fecha: fechaDate,
             horaInicio: data.horaInicio, duracionMinutos: duracionSlot, estado: 'agendada',
             canal: data.canal, origenAsignacion: 'elegida_por_paciente', creadoPorUsuarioId: usuarioId ?? null,
+            motivoRetroactivo,
             paquetePacienteId: data.extra.paquetePacienteId, sesionNumero: sesionExtra,
             slotGrupoId, slotRol: 'SECUNDARIO',
           },
         });
         for (const c of [ancla, extra]) {
           await auditEnTx(tx, {
-            citaId: c.id, usuarioId, accion: 'crear', entidad: 'cita', entidadId: c.id,
+            citaId: c.id, usuarioId, accion: esRetroactiva ? 'crear_retroactiva' : 'crear', entidad: 'cita', entidadId: c.id,
+            antes: esRetroactiva ? { retroactiva: true, diasAtras: diasEnPasadoLima(data.fecha), motivo: motivoRetroactivo } : undefined,
             despues: c, sedeId: data.sedeId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
           });
         }
