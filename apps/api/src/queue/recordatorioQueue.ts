@@ -1,5 +1,6 @@
 import { Queue, type ConnectionOptions } from 'bullmq';
 import { Redis } from 'ioredis';
+import { USA_REDIS } from '../config/colaModo';
 
 // El worker/cola se puede apagar con RECORDATORIOS_ACTIVOS="false".
 export const RECORDATORIOS_ACTIVOS = process.env.RECORDATORIOS_ACTIVOS !== 'false';
@@ -23,7 +24,7 @@ export function crearConexionBull(): ConnectionOptions {
 let queue: Queue | null = null;
 
 export function getRecordatorioQueue(): Queue | null {
-  if (!RECORDATORIOS_ACTIVOS) return null;
+  if (!RECORDATORIOS_ACTIVOS || !USA_REDIS) return null; // modo 'db': sin cola BullMQ
   if (!queue) {
     try {
       queue = new Queue(QUEUE_NAME, { connection: crearConexionBull() });

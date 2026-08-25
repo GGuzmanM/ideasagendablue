@@ -1,6 +1,7 @@
 import { Queue, Worker } from 'bullmq';
 import { crearConexionBull } from './recordatorioQueue';
 import { procesarBarridoVideos } from '../services/videoEnvioService';
+import { USA_REDIS } from '../config/colaModo';
 
 export const VIDEOS_SERVICIO_ACTIVOS = process.env.VIDEOS_SERVICIO_ACTIVOS !== 'false';
 export const VIDEO_QUEUE_NAME = 'videos-servicio';
@@ -11,7 +12,7 @@ let queue: Queue | null = null;
 let worker: Worker | null = null;
 
 function getVideoQueue(): Queue | null {
-  if (!VIDEOS_SERVICIO_ACTIVOS) return null;
+  if (!VIDEOS_SERVICIO_ACTIVOS || !USA_REDIS) return null; // modo 'db': el barrido lo hace schedulerDb
   if (!queue) {
     try {
       queue = new Queue(VIDEO_QUEUE_NAME, { connection: crearConexionBull() });
@@ -43,7 +44,7 @@ export async function programarBarridoVideos(): Promise<void> {
 }
 
 export function iniciarVideoWorker(): void {
-  if (!VIDEOS_SERVICIO_ACTIVOS || worker) return;
+  if (!VIDEOS_SERVICIO_ACTIVOS || !USA_REDIS || worker) return; // modo 'db': lo maneja schedulerDb
   try {
     worker = new Worker(
       VIDEO_QUEUE_NAME,

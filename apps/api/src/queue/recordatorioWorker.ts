@@ -1,6 +1,7 @@
 import { Worker } from 'bullmq';
 import { QUEUE_NAME, JOB_ENVIAR, JOB_RESERVA, RECORDATORIOS_ACTIVOS, crearConexionBull } from './recordatorioQueue';
 import { procesarEnvioRecordatorio, procesarEnvioReserva } from '../services/recordatorioService';
+import { USA_REDIS } from '../config/colaModo';
 
 // Marca de versión del worker. Aparece en el log de arranque → sirve para confirmar,
 // tras un deploy, que el proceso vivo corre este código (el que distingue cupo
@@ -11,7 +12,7 @@ let worker: Worker | null = null;
 
 /** Inicia el worker en proceso. No-op si los recordatorios están desactivados. */
 export function iniciarRecordatorioWorker(): void {
-  if (!RECORDATORIOS_ACTIVOS || worker) return;
+  if (!RECORDATORIOS_ACTIVOS || !USA_REDIS || worker) return; // modo 'db': lo maneja schedulerDb
 
   worker = new Worker(
     QUEUE_NAME,

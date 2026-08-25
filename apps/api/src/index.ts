@@ -24,6 +24,8 @@ import { corsOrigin } from './cors';
 import { iniciarRecordatorioWorker } from './queue/recordatorioWorker';
 import { recuperarRecordatoriosProgramados } from './services/recordatorioService';
 import { iniciarVideoWorker, programarBarridoVideos } from './queue/videoQueue';
+import { USA_REDIS } from './config/colaModo';
+import { iniciarSchedulerDb } from './queue/schedulerDb';
 import { outlookConfigurado, reintentarOutlookFallidos } from './services/outlookCalendarService';
 import { importarOcupacionOutlookTodos } from './services/importarOcupacionOutlook';
 import { errorHandler } from './middleware/errorHandler';
@@ -134,22 +136,31 @@ app.use(firmarUrlsRespuesta);
 app.use('/uploads', servirUploadFirmado);
 
 // ─── Swagger ──────────────────────────────────────────────────────────────────
-// Swagger UI necesita su script/estilos inline (y a veces eval) para arrancar → CSP relajada
-// SOLO en /api/docs (herramienta interna, no cara al usuario). El resto del API queda con la CSP
-// estricta de arriba.
-app.use('/api/docs', helmet.contentSecurityPolicy({
-  useDefaults: true,
-  directives: {
-    scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
-    styleSrc: ["'self'", "'unsafe-inline'"],
-    imgSrc: ["'self'", 'data:'],
-    upgradeInsecureRequests: null,
-  },
-}));
-app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
-  customCss: '.swagger-ui .topbar { background-color: #1e40af; }',
-  customSiteTitle: 'Limablue Agenda API',
-}));
+// La documentación (Swagger UI) expone el MAPA COMPLETO de la API. No filtra datos ni salta la
+// auth (cada endpoint sigue exigiendo token), pero es un plano útil para un atacante → NO debe
+// quedar pública en producción. Regla: si SWAGGER_HABILITADO está seteado manda ("true"/"false");
+// si no, se habilita solo FUERA de producción. En el servidor (NODE_ENV=production) queda apagada.
+const swaggerHabilitado = process.env.SWAGGER_HABILITADO
+  ? process.env.SWAGGER_HABILITADO === 'true'
+  : process.env.NODE_ENV !== 'production';
+
+if (swaggerHabilitado) {
+  // Swagger UI necesita su script/estilos inline (y a veces eval) para arrancar → CSP relajada
+  // SOLO en /api/docs. El resto del API queda con la CSP estricta de arriba.
+  app.use('/api/docs', helmet.contentSecurityPolicy({
+    useDefaults: true,
+    directives: {
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:'],
+      upgradeInsecureRequests: null,
+    },
+  }));
+  app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+    customCss: '.swagger-ui .topbar { background-color: #1e40af; }',
+    customSiteTitle: 'Limablue Agenda API',
+  }));
+}
 
 // ─── Health check ─────────────────────────────────────────────────────────────
 app.get('/health', async (_req, res) => {
@@ -209,19 +220,24 @@ app.use(errorHandler);
 // ─── Socket.io ────────────────────────────────────────────────────────────────
 initSocket(server);
 
-// ─── Worker de recordatorios (BullMQ) ─────────────────────────────────────────
-// Por defecto corre en proceso. Para separarlo, pon RECORDATORIOS_WORKER_INLINE="false"
-// en el API y arranca `npm run worker` aparte.
-if (process.env.RECORDATORIOS_WORKER_INLINE !== 'false') {
-  iniciarRecordatorioWorker();
-  iniciarVideoWorker();
-  // Self-healing: si Redis estuvo caído, re-encola los recordatorios PROGRAMADO
-  // huérfanos (jobId null) para que las confirmaciones pendientes salgan al volver.
-  void recuperarRecordatoriosProgramados();
+// ─── Recordatorios (Correo 2) + barrido de videos ─────────────────────────────
+if (USA_REDIS) {
+  // Modo Redis/BullMQ. El worker corre en proceso salvo RECORDATORIOS_WORKER_INLINE="false"
+  // (en ese caso arranca `npm run worker` aparte).
+  if (process.env.RECORDATORIOS_WORKER_INLINE !== 'false') {
+    iniciarRecordatorioWorker();
+    iniciarVideoWorker();
+    // Self-healing: si Redis estuvo caído, re-encola los recordatorios PROGRAMADO
+    // huérfanos (jobId null) para que las confirmaciones pendientes salgan al volver.
+    void recuperarRecordatoriosProgramados();
+  }
+  // Registra el job repetible del barrido de videos (cada 5 min). Idempotente: limpia
+  // repeticiones previas. Se registra aunque el worker corra aparte (el worker lo procesa).
+  void programarBarridoVideos();
+} else {
+  // Modo COLA_MODO="db" (sin Redis): un temporizador revisa la BD y envía lo vencido.
+  iniciarSchedulerDb();
 }
-// Registra el job repetible del barrido de videos (cada 5 min). Idempotente: limpia
-// repeticiones previas. Se registra aunque el worker corra aparte (el worker lo procesa).
-void programarBarridoVideos();
 
 // ─── Reintento periódico de sincronizaciones Outlook fallidas ─────────────────
 // Solo si Azure está configurado. Cada 10 min reprocesa las citas con outlookSyncError.
@@ -295,7 +311,11 @@ verificarSecretosAlArranque();
 const PORT = Number(process.env.PORT) || 3001;
 server.listen(PORT, () => {
   console.log(`🚀 Limablue Agenda API corriendo en http://localhost:${PORT}`);
-  console.log(`📚 Documentación: http://localhost:${PORT}/api/docs`);
+  if (swaggerHabilitado) {
+    console.log(`📚 Documentación: http://localhost:${PORT}/api/docs`);
+  } else {
+    console.log('🔒 Documentación (Swagger) DESHABILITADA (producción / SWAGGER_HABILITADO=false)');
+  }
 });
 
 export { app, server };

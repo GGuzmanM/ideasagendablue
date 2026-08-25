@@ -1,15 +1,46 @@
 import { Redis } from 'ioredis';
+import { USA_REDIS } from './config/colaModo';
 
-export const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
-  lazyConnect: true,
-  maxRetriesPerRequest: 1,
-  enableOfflineQueue: false,
-  retryStrategy: (times) => (times > 3 ? null : Math.min(times * 100, 1000)),
-});
+/**
+ * Stub no-op del cliente Redis para el modo COLA_MODO="db" (sin Redis). Implementa SOLO los
+ * métodos que el código usa (get/set/setex/del/keys/eval/call/ping/connect/on/quit), sin abrir
+ * ningún socket. Efecto: la caché siempre "falla" (miss → se recalcula) y los locks devuelven
+ * "OK" (fail-open — la garantía real de no-doble-booking son los índices únicos de la BD).
+ */
+function crearRedisStub(): Redis {
+  const ok = async () => 'OK';
+  const stub: Record<string, unknown> = {
+    get: async () => null,
+    set: ok,
+    setex: ok,
+    del: async () => 0,
+    keys: async () => [] as string[],
+    eval: async () => null,
+    call: async () => null,
+    ping: async () => 'PONG',
+    connect: async () => undefined,
+    quit: ok,
+    disconnect: () => undefined,
+    duplicate: () => stub,
+  };
+  stub.on = () => stub; // encadenable (redis.on('error', …))
+  return stub as unknown as Redis;
+}
 
-redis.on('error', (err) => {
-  // Silencioso en desarrollo si Redis no está corriendo localmente
-});
+export const redis: Redis = USA_REDIS
+  ? new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
+      lazyConnect: true,
+      maxRetriesPerRequest: 1,
+      enableOfflineQueue: false,
+      retryStrategy: (times) => (times > 3 ? null : Math.min(times * 100, 1000)),
+    })
+  : crearRedisStub();
+
+if (USA_REDIS) {
+  redis.on('error', () => {
+    // Silencioso en desarrollo si Redis no está corriendo localmente
+  });
+}
 
 // ─── Helpers de lock (anti doble-booking) ─────────────────────────────────────
 
