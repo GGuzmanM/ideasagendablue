@@ -3,7 +3,6 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './stores/authStore';
 import { Layout } from './components/layout/Layout';
 import { LoginPage } from './pages/LoginPage';
-import { AgendaPage } from './pages/AgendaPage';
 import { PacientesPage, FichaPacientePage } from './pages/PacientesPage';
 import { AdminPage } from './pages/AdminPage';
 import { AnalyticsPage } from './pages/AnalyticsPage';
@@ -91,7 +90,8 @@ export default function App() {
       <Route path="/imprimir/movimientos" element={<MovimientosImprimirPage />} />
       <Route element={<RequireAuth><Layout /></RequireAuth>}>
         <Route path="/" element={<Navigate to="/AgendaPrincipal" replace />} />
-        <Route path="/agenda-vieja" element={<AgendaPage />} />
+        {/* Agenda antigua DESHABILITADA: se redirige a la agenda principal (ya no se usa). */}
+        <Route path="/agenda-vieja" element={<Navigate to="/AgendaPrincipal" replace />} />
         <Route path="/pacientes" element={<RequirePermiso permiso="pacientes.ver"><PacientesPage /></RequirePermiso>} />
         <Route path="/pacientes/:id" element={<RequirePermiso permiso="pacientes.ver"><FichaPacientePage /></RequirePermiso>} />
         <Route path="/horarios" element={<RequirePermiso permiso="horarios.ver"><HorariosRestriccionesPage /></RequirePermiso>} />

@@ -26,6 +26,7 @@ import { usePaquetesPaciente } from '../api/paquetesSesiones';
 import { useCanales } from '../hooks/useCanales';
 import { promocionesApi, calcularConPromo, type PromocionElegible } from '../api/promociones';
 import { useAuthStore } from '../stores/authStore';
+import { canalDefaultPorRol } from '../utils/canalDefault';
 
 const toTitleCase = (str: string) =>
   str.replace(/\S+/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
@@ -98,6 +99,7 @@ export function useIdea1NuevaCitaForm({
 }: UseIdea1NuevaCitaFormProps) {
   const qc = useQueryClient();
   const token = useAuthStore((s) => s.token);
+  const rolActual = useAuthStore((s) => s.usuario?.rol); // para pre-marcar el canal por rol
   const { canales, canalesPaciente } = useCanales();
 
   const idempotencyKeyRef = useRef(uuidv4());
@@ -138,7 +140,8 @@ export function useIdea1NuevaCitaForm({
   const [servicioId, setServicioId] = useState('');
   const [subcategoriaId, setSubcategoriaId] = useState('');
   const [paquetePacienteId, setPaquetePacienteId] = useState('');
-  const [canal, setCanal] = useState('recepcion');
+  // Canal PRE-marcado según el rol de quien agenda (recepción / central telefónica). Editable.
+  const [canal, setCanal] = useState(() => canalDefaultPorRol(rolActual));
   const [promocionId, setPromocionId] = useState('');
   const [codigoPromo, setCodigoPromo] = useState(''); // cupón/convenio si la promo lo requiere
   const [profesionalId, setProfesionalId] = useState(profInicial);

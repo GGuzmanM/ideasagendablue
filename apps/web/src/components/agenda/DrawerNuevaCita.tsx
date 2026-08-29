@@ -11,6 +11,7 @@ import { DistritoAutocomplete, PaisAutocomplete } from '../ui/DistritoAutocomple
 import { usePaquetesPaciente, paquetesElegibles, paquetesOtraSede } from '../../api/paquetesSesiones';
 import { format } from 'date-fns';
 import { useAuthStore } from '../../stores/authStore';
+import { canalDefaultPorRol } from '../../utils/canalDefault';
 import { horaInicioValidaParaDuracion, esCitaInactiva, UBIGEO_EXTRANJERO } from '@limablue/shared';
 import { useCanales } from '../../hooks/useCanales';
 import { usePromociones } from '../../hooks/usePromociones';
@@ -51,6 +52,7 @@ export function DrawerNuevaCita({
 }: DrawerNuevaCitaProps) {
   const qc = useQueryClient();
   const token = useAuthStore(s => s.token);
+  const rolActual = useAuthStore(s => s.usuario?.rol); // para pre-marcar el canal por rol
   // Flujo paciente: elegir → existente | nuevo → seleccionado
   const [fechaLocal, setFechaLocal] = useState<Date>(fecha);
   const [pasoPaciente, setPasoPaciente] = useState<'elegir' | 'existente' | 'nuevo'>('elegir');
@@ -78,7 +80,7 @@ export function DrawerNuevaCita({
   const [verVisorGenexis, setVerVisorGenexis] = useState(false);
   const [profesionalId, setProfesionalId] = useState(profIdInicial ?? '');
   const [hora, setHora] = useState(horaInicio ?? '08:00');
-  const [canal, setCanal] = useState('recepcion'); // de dónde viene el cliente
+  const [canal, setCanal] = useState(() => canalDefaultPorRol(rolActual)); // pre-marcado por rol; editable
   const { canales: canalesOpts } = useCanales();
   const [promocionId, setPromocionId] = useState(''); // '' = sin promoción
   const { promociones } = usePromociones();
