@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format, addDays } from 'date-fns';
 import toast from 'react-hot-toast';
-import { horariosApi, type HorarioDia, type Excepcion } from '../api';
+import { horariosApi, type HorarioDia, type HorarioSede, type Excepcion } from '../api';
 
 // ── Constantes de dominio ────────────────────────────────────────────────────
 export const DIAS_ABREV = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
@@ -73,14 +73,27 @@ export function useHorarioSede(sedeId: string) {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  // Guarda el HORARIO BASE semanal (apertura/cierre por día). Cambia las franjas reservables de
+  // TODOS los días de ese tipo desde ya (a diferencia de una excepción, que es de una fecha puntual).
+  const guardarBaseMut = useMutation({
+    mutationFn: (horario: HorarioSede) => horariosApi.guardarBase(sedeId, horario),
+    onSuccess: () => {
+      invalidarTodo();
+      toast.success('Horario base actualizado');
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   return {
     horarioEfectivo: horarioData?.efectivo,
     horarioDefault: (horarioData?.horarioDefault ?? {}) as Record<string, HorarioDia>,
     excepciones: (excepciones ?? []) as Excepcion[],
     guardarExcepcion: guardarMut.mutate,
     eliminarExcepcion: eliminarMut.mutate,
+    guardarBase: guardarBaseMut.mutate,
     isGuardando: guardarMut.isPending,
     isEliminando: eliminarMut.isPending,
+    isGuardandoBase: guardarBaseMut.isPending,
   };
 }
 

@@ -19,7 +19,7 @@ const TABS = [
 ] as const;
 type TabId = typeof TABS[number]['id'];
 
-export function HorariosPage({ hideHeader = false }: { hideHeader?: boolean }) {
+export function HorariosPage({ hideHeader = false, sedeId, sedeNombre }: { hideHeader?: boolean; sedeId?: string; sedeNombre?: string }) {
   const navigate = useNavigate();
   const puedeGestionar = useAuthStore(s => s.tiene('horarios.editar'));
   const [params, setParams] = useSearchParams();
@@ -78,7 +78,7 @@ export function HorariosPage({ hideHeader = false }: { hideHeader?: boolean }) {
           <div>
             <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
               <span className="material-symbols-outlined text-teal-600 text-base">badge</span>
-              Horarios del Personal (Vista General — Todas las Sedes)
+              {sedeNombre ? `Horarios del Personal · ${sedeNombre}` : 'Horarios del Personal (Vista General — Todas las Sedes)'}
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">{TABS.find(t => t.id === tab)?.hint}</p>
           </div>
@@ -97,7 +97,7 @@ export function HorariosPage({ hideHeader = false }: { hideHeader?: boolean }) {
         </div>
       )}
 
-      {tab === 'semana' ? <SemanaTipoContent /> : <AjustesFechaContent />}
+      {tab === 'semana' ? <SemanaTipoContent sedeId={sedeId} sedeNombre={sedeNombre} /> : <AjustesFechaContent />}
     </div>
   );
 }

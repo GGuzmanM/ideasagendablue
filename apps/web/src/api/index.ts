@@ -145,7 +145,7 @@ export const profesionalesApi = {
       id: string; nombres: string; apellidos: string; tipo: string; porSolicitud: boolean;
       // Bloqueos del día (permisos + almuerzos): el selector desactiva a quien esté
       // bloqueado a la hora elegida y muestra el rango en la etiqueta.
-      bloqueos: { horaInicio: string; horaFin: string; motivo: string; tipo: string }[];
+      bloqueos: { horaInicio: string; horaFin: string; motivo: string; tipo: string; esVacaciones: boolean }[];
     }[]>(
       '/profesionales/seleccionables', params as Record<string, string>),
 
@@ -452,6 +452,10 @@ export const horariosApi = {
   }) => api.post<Excepcion>(`/horarios/${sedeId}/excepciones`, data),
   eliminarExcepcion: (sedeId: string, fecha: string) =>
     api.delete(`/horarios/${sedeId}/excepciones/${fecha}`),
+  // Guarda el HORARIO BASE semanal de la sede (apertura/cierre por día, o cerrado). Reemplaza el
+  // JSON completo. Requiere permiso horarios.editar (el backend lo valida). PATCH /horarios/:sedeId.
+  guardarBase: (sedeId: string, horario: HorarioSede) =>
+    api.patch<{ id: string }>(`/horarios/${sedeId}`, horario),
 };
 
 // ─── Competencias ─────────────────────────────────────────────────────────────

@@ -414,13 +414,12 @@ export function procesarYOrdenarDoctores(params: {
   return Array.from(doctoresMap.values())
     .map((doc) => {
       const sel = seleccionablesDb.find((s) => s.id === doc.id);
-      const tieneVacaciones =
-        sel?.bloqueos?.some((b: any) => {
-          if (b.esVacaciones) return true;
-          const m = (b.motivo || '').toLowerCase();
-          const t = (b.tipo || '').toLowerCase();
-          return m.includes('vacac') || t.includes('vacac') || m.includes('licencia');
-        }) || false;
+      // "En vacaciones" (día completo → 🌴 + columna bloqueada) SOLO si hay un bloqueo con el flag
+      // AUTORITATIVO `esVacaciones`. Antes también hacía match por el TEXTO del `motivo`
+      // ("vacac"/"licencia"), lo que marcaba mal como vacaciones de día completo a un PERMISO PARCIAL
+      // cuyo motivo mencionaba "Vacaciones" (ej.: trabaja hasta las 15:00 pero se retira por vacaciones
+      // → bloqueaba el día ENTERO). El flag `esVacaciones` es la única verdad; el texto no decide.
+      const tieneVacaciones = sel?.bloqueos?.some((b: any) => b.esVacaciones === true) || false;
 
       const count = citasAgenda.filter((c) => c.doctorId === doc.id).length;
 

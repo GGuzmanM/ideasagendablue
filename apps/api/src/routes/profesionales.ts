@@ -263,10 +263,13 @@ router.get('/seleccionables', requireAuth, async (req, res) => {
         { esRecurrente: true, fechaInicio: { lte: dayEnd }, fechaFin: { gte: dayStart } },
       ],
     },
-    select: { profesionalId: true, horaInicio: true, horaFin: true, motivo: true, tipo: true, fechaInicio: true, fechaFin: true },
+    select: { profesionalId: true, horaInicio: true, horaFin: true, motivo: true, tipo: true, esVacaciones: true, fechaInicio: true, fechaFin: true },
   });
   const horaDe = (d: Date) => `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
-  const bloqueosPorProf = new Map<string, { horaInicio: string; horaFin: string; motivo: string; tipo: string }[]>();
+  // `esVacaciones` es el flag AUTORITATIVO de "vacaciones de día completo" (🌴). La agenda lo usa para
+  // marcar la columna del profesional; sin él, caía a adivinar por el TEXTO del motivo y marcaba mal
+  // un permiso parcial cuyo motivo decía "Vacaciones" (ej.: se retira 15:00 pero trabaja la mañana).
+  const bloqueosPorProf = new Map<string, { horaInicio: string; horaFin: string; motivo: string; tipo: string; esVacaciones: boolean }[]>();
   for (const b of bloqueosDia) {
     const arr = bloqueosPorProf.get(b.profesionalId) ?? [];
     arr.push({
@@ -275,6 +278,7 @@ router.get('/seleccionables', requireAuth, async (req, res) => {
       horaFin: b.horaFin ?? horaDe(b.fechaFin),
       motivo: b.motivo,
       tipo: b.tipo,
+      esVacaciones: b.esVacaciones,
     });
     bloqueosPorProf.set(b.profesionalId, arr);
   }

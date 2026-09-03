@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { sedesApi, profesionalesApi, type PodologaDiaEspecial } from '../api';
+import { sedesApi, profesionalesApi, type PodologaDiaEspecial, type HorarioSede } from '../api';
 import { DIAS_ABREV, DIAS_FULL, useHorarioSede, useFormExcepcion, HORAS_SLOT, PRESETS_CIERRE, proximasFechas } from '../services/horarioSedeService';
 import { usePermisosData, tipoLabel, hoyISO } from '../services/permisosService';
 import { PermisosPage } from './herramientas/PermisosPage';
@@ -51,37 +51,29 @@ export function HorariosRestriccionesPage() {
           </div>
         </div>
 
-        {/* Selector de Sede */}
+        {/* Selector de Sede — aplica a TODAS las pestañas, incluida Horarios del Personal
+            (así el turno base del personal se edita por la sede seleccionada). */}
         <div className="flex items-center gap-3">
-          {activeTab === 'personal_general' ? (
-            <div className="flex items-center gap-2 px-3.5 py-2 bg-teal-50 border border-teal-200 rounded-xl text-teal-800 text-xs font-bold shadow-2xs">
-              <span className="w-2 h-2 rounded-full bg-teal-500 shrink-0" />
-              <span>General (Todas las Sedes)</span>
-            </div>
-          ) : (
-            <>
-              <label className="text-xs font-bold text-on-surface-variant flex items-center gap-1 shrink-0">
-                <span className="material-symbols-outlined text-base">location_on</span>
-                SEDE:
-              </label>
-              <div className="relative min-w-[200px]">
-                <select
-                  value={activeSedeId}
-                  onChange={(e) => setSedeId(e.target.value)}
-                  className="w-full bg-surface-container-low border border-outline-variant/50 rounded-xl px-3.5 py-2 text-xs font-bold text-on-surface outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all appearance-none cursor-pointer"
-                >
-                  {sedes.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.nombre}
-                    </option>
-                  ))}
-                </select>
-                <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-on-surface-variant text-base">
-                  expand_more
-                </span>
-              </div>
-            </>
-          )}
+          <label className="text-xs font-bold text-on-surface-variant flex items-center gap-1 shrink-0">
+            <span className="material-symbols-outlined text-base">location_on</span>
+            SEDE:
+          </label>
+          <div className="relative min-w-[200px]">
+            <select
+              value={activeSedeId}
+              onChange={(e) => setSedeId(e.target.value)}
+              className="w-full bg-surface-container-low border border-outline-variant/50 rounded-xl px-3.5 py-2 text-xs font-bold text-on-surface outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all appearance-none cursor-pointer"
+            >
+              {sedes.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.nombre}
+                </option>
+              ))}
+            </select>
+            <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-on-surface-variant text-base">
+              expand_more
+            </span>
+          </div>
         </div>
       </header>
 
@@ -158,7 +150,7 @@ export function HorariosRestriccionesPage() {
       {/* Content Area */}
       <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
         {activeTab === 'personal_general' ? (
-          <HorariosPage hideHeader={true} />
+          <HorariosPage hideHeader={true} sedeId={activeSedeId} sedeNombre={sedeActiva?.nombre} />
         ) : activeSedeId ? (
           <>
             {activeTab === 'base' && (
@@ -188,8 +180,50 @@ export function HorariosRestriccionesPage() {
 }
 
 // ── Tab 1: Horario Semanal Base ────────────────────────────────────────────────
+// Estado editable de un día del horario base.
+type DiaHorarioEstado = { abierto: boolean; apertura: string; cierre: string };
+
+function estadoDesdeHorario(hd: Record<string, { abierto?: boolean; apertura?: string; cierre?: string } | undefined>): Record<number, DiaHorarioEstado> {
+  const m: Record<number, DiaHorarioEstado> = {};
+  for (let i = 0; i < 7; i++) {
+    const t = hd[String(i)];
+    if (t && t.abierto !== false && t.apertura && t.cierre) m[i] = { abierto: true, apertura: t.apertura, cierre: t.cierre };
+    else m[i] = { abierto: false, apertura: '09:00', cierre: '18:00' };
+  }
+  return m;
+}
+
+function horarioDesdeEstado(est: Record<number, DiaHorarioEstado>): HorarioSede {
+  const h: HorarioSede = {};
+  for (let i = 0; i < 7; i++) {
+    const d = est[i];
+    h[String(i)] = d.abierto ? { abierto: true, apertura: d.apertura, cierre: d.cierre } : { abierto: false };
+  }
+  return h;
+}
+
 function TabHorarioBase({ sedeId, sedeName }: { sedeId: string; sedeName: string }) {
-  const { horarioDefault, horarioEfectivo } = useHorarioSede(sedeId);
+  const { horarioDefault, horarioEfectivo, guardarBase, isGuardandoBase } = useHorarioSede(sedeId);
+  const puedeEditar = useAuthStore((s) => s.tiene('horarios.editar'));
+
+  // Firma del horario del server → re-inicializa el estado editable al cambiar de sede o al llegar
+  // datos frescos (tras guardar). Durante la edición no cambia, así no pisa lo que estás editando.
+  const sig = useMemo(() => JSON.stringify(horarioDefault), [horarioDefault]);
+  const [estado, setEstado] = useState<Record<number, DiaHorarioEstado>>(() => estadoDesdeHorario(horarioDefault));
+  useEffect(() => { setEstado(estadoDesdeHorario(horarioDefault)); }, [sedeId, sig]);
+
+  const originalJson = useMemo(() => JSON.stringify(horarioDesdeEstado(estadoDesdeHorario(horarioDefault))), [sig]);
+  const actualJson = JSON.stringify(horarioDesdeEstado(estado));
+  const dirty = actualJson !== originalJson;
+  const invalido = Object.values(estado).some((d) => d.abierto && d.apertura >= d.cierre);
+
+  const set = (i: number, patch: Partial<DiaHorarioEstado>) =>
+    setEstado((prev) => ({ ...prev, [i]: { ...prev[i], ...patch } }));
+
+  const guardar = () => {
+    if (!dirty || invalido || !puedeEditar) return;
+    guardarBase(horarioDesdeEstado(estado));
+  };
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -200,7 +234,7 @@ function TabHorarioBase({ sedeId, sedeName }: { sedeId: string; sedeName: string
               Horario Base Recurrente · <span className="text-[#0044ab]">{sedeName}</span>
             </h2>
             <p className="text-xs text-on-surface-variant mt-1">
-              Configuración por defecto de atención semanal. Los cambios a fechas puntuales se aplican en la pestaña de Excepciones.
+              Define la apertura/cierre por día — es la franja <strong>reservable</strong> de la sede. Los cambios a fechas puntuales van en la pestaña de Excepciones.
             </p>
           </div>
           {horarioEfectivo && (
@@ -215,19 +249,19 @@ function TabHorarioBase({ sedeId, sedeName }: { sedeId: string; sedeName: string
 
         <div className="border border-outline-variant/40 rounded-2xl overflow-hidden bg-white">
           {DIAS_ABREV.map((dia, i) => {
-            const turno = horarioDefault[String(i)];
-            const abierto = turno?.abierto !== false;
+            const d = estado[i] ?? { abierto: false, apertura: '09:00', cierre: '18:00' };
             const isToday = new Date().getDay() === i;
+            const rangoMal = d.abierto && d.apertura >= d.cierre;
 
             return (
               <div
                 key={i}
                 className={cn(
-                  'flex items-center gap-4 px-5 py-4 border-b border-outline-variant/20 last:border-b-0 transition-colors',
-                  isToday ? 'bg-primary/5 font-medium' : 'hover:bg-surface-container-low/30'
+                  'flex items-center gap-4 px-5 py-3.5 border-b border-outline-variant/20 last:border-b-0 transition-colors',
+                  isToday ? 'bg-primary/5' : 'hover:bg-surface-container-low/30'
                 )}
               >
-                <div className="w-10 flex items-center justify-center">
+                <div className="w-10 flex items-center justify-center shrink-0">
                   <span
                     className={cn(
                       'w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold',
@@ -238,21 +272,62 @@ function TabHorarioBase({ sedeId, sedeName }: { sedeId: string; sedeName: string
                   </span>
                 </div>
 
-                <div className="w-32">
+                <div className="w-28 shrink-0">
                   <p className="text-sm font-bold text-on-surface">{DIAS_FULL[i]}</p>
                   {isToday && (
                     <span className="text-[10px] font-bold text-[#0044ab] uppercase tracking-wider">Hoy</span>
                   )}
                 </div>
 
-                <div className="flex-1 flex items-center gap-3">
-                  {abierto && turno && 'apertura' in turno ? (
-                    <div className="flex items-center gap-2 px-3 py-1 bg-green-50 text-green-800 border border-green-200 rounded-lg text-xs font-mono font-bold">
-                      <span className="w-1.5 h-1.5 rounded-full bg-green-600" />
-                      <span>{turno.apertura}</span>
-                      <span className="text-green-400">→</span>
-                      <span>{turno.cierre}</span>
-                    </div>
+                {/* Toggle Abierto / Cerrado */}
+                <div className="flex bg-surface-container-high rounded-lg p-0.5 shrink-0">
+                  <button
+                    type="button"
+                    disabled={!puedeEditar}
+                    onClick={() => set(i, { abierto: true })}
+                    className={cn('px-2.5 py-1 text-[11px] font-bold rounded-md transition-all',
+                      d.abierto ? 'bg-green-600 text-white shadow-sm' : 'text-on-surface-variant hover:text-on-surface',
+                      !puedeEditar && 'opacity-60 cursor-not-allowed')}
+                  >
+                    Abierto
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!puedeEditar}
+                    onClick={() => set(i, { abierto: false })}
+                    className={cn('px-2.5 py-1 text-[11px] font-bold rounded-md transition-all',
+                      !d.abierto ? 'bg-red-500 text-white shadow-sm' : 'text-on-surface-variant hover:text-on-surface',
+                      !puedeEditar && 'opacity-60 cursor-not-allowed')}
+                  >
+                    Cerrado
+                  </button>
+                </div>
+
+                {/* Horas (solo si está abierto) */}
+                <div className="flex-1 flex items-center gap-2">
+                  {d.abierto ? (
+                    <>
+                      <select
+                        value={d.apertura}
+                        disabled={!puedeEditar}
+                        onChange={(e) => set(i, { apertura: e.target.value })}
+                        className={cn('bg-surface-container-low border rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-on-surface outline-none focus:ring-1 focus:ring-primary cursor-pointer disabled:opacity-60',
+                          rangoMal ? 'border-error' : 'border-outline-variant/50')}
+                      >
+                        {HORAS_SLOT.map((h) => <option key={h} value={h}>{h}</option>)}
+                      </select>
+                      <span className="text-on-surface-variant text-xs">→</span>
+                      <select
+                        value={d.cierre}
+                        disabled={!puedeEditar}
+                        onChange={(e) => set(i, { cierre: e.target.value })}
+                        className={cn('bg-surface-container-low border rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-on-surface outline-none focus:ring-1 focus:ring-primary cursor-pointer disabled:opacity-60',
+                          rangoMal ? 'border-error' : 'border-outline-variant/50')}
+                      >
+                        {HORAS_SLOT.map((h) => <option key={h} value={h}>{h}</option>)}
+                      </select>
+                      {rangoMal && <span className="text-error text-[11px] font-semibold ml-1">La apertura debe ser antes del cierre</span>}
+                    </>
                   ) : (
                     <span className="px-3 py-1 bg-red-50 text-red-700 border border-red-200 rounded-lg text-xs font-bold italic">
                       Cerrado
@@ -263,6 +338,30 @@ function TabHorarioBase({ sedeId, sedeName }: { sedeId: string; sedeName: string
             );
           })}
         </div>
+
+        {/* Footer: guardar */}
+        {puedeEditar && (
+          <div className="flex items-center justify-between gap-3 pt-1">
+            <p className="text-xs text-on-surface-variant">
+              {invalido
+                ? <span className="text-error font-semibold">Revisa los días marcados: la apertura debe ser antes del cierre.</span>
+                : dirty
+                ? 'Tienes cambios sin guardar.'
+                : 'Cambia la hora de apertura/cierre de cada día y guarda.'}
+            </p>
+            <button
+              type="button"
+              onClick={guardar}
+              disabled={!dirty || invalido || isGuardandoBase}
+              className={cn('px-5 py-2 rounded-xl text-sm font-bold transition-all shrink-0',
+                !dirty || invalido || isGuardandoBase
+                  ? 'bg-surface-container-high text-on-surface-variant/50 cursor-not-allowed'
+                  : 'bg-[#0044ab] text-white hover:bg-[#003a91] shadow-sm cursor-pointer')}
+            >
+              {isGuardandoBase ? 'Guardando…' : 'Guardar cambios'}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

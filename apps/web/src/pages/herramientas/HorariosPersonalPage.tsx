@@ -18,13 +18,15 @@ const DIAS = [
 ];
 const TIPO_LABEL: Record<string, string> = { podologa: 'Podólogas', medico: 'Médicos', fisioterapeuta: 'Fisioterapeutas' };
 
-export function SemanaTipoContent() {
+export function SemanaTipoContent({ sedeId, sedeNombre }: { sedeId?: string; sedeNombre?: string } = {}) {
   const [q, setQ] = useState('');
   const [abierto, setAbierto] = useState<string | null>(null);
 
+  // Si viene `sedeId`, la lista se ACOTA al personal asignado a esa sede (el módulo /horarios usa
+  // el selector de sede de arriba). Sin `sedeId` (uso standalone), muestra todo el personal.
   const { data: personal = [], isLoading } = useQuery({
-    queryKey: ['personal-todos'],
-    queryFn: () => profesionalesApi.listar({ activo: true }),
+    queryKey: ['personal-todos', sedeId ?? 'todas'],
+    queryFn: () => profesionalesApi.listar({ activo: true, ...(sedeId ? { sedeId } : {}) }),
   });
 
   // Las "máquinas" de baropodometría (Baro 1 / Baro 2) son pseudo-personas: NO tienen
@@ -53,7 +55,13 @@ export function SemanaTipoContent() {
           <span className="material-symbols-outlined text-lg">lightbulb</span>
         </div>
         <p className="text-xs text-on-surface-variant leading-relaxed">
-          Este es el horario <strong className="text-on-surface">permanente</strong> de cada trabajador (vigente hasta volver a editarlo) y define las franjas <strong className="text-on-surface">reservables</strong> en la agenda. Para cambiar la hora de entrada de un día concreto usa <strong className="text-on-surface">Ajustes por fecha</strong>; para ausencias puntuales usa <strong className="text-on-surface">Restricciones/Ausencias</strong>.
+          {sedeNombre && (
+            <span className="inline-flex items-center gap-1 mb-1 px-2 py-0.5 rounded-full bg-[#0044ab]/10 text-[#0044ab] font-bold">
+              <span className="material-symbols-outlined text-sm">location_on</span>
+              Personal de {sedeNombre}
+            </span>
+          )}
+          {' '}Este es el horario <strong className="text-on-surface">permanente</strong> de cada trabajador (vigente hasta volver a editarlo) y define las franjas <strong className="text-on-surface">reservables</strong> en la agenda{sedeNombre ? <> — aquí ves solo al personal asignado a <strong className="text-on-surface">{sedeNombre}</strong></> : ''}. Para cambiar la hora de entrada de un día concreto usa <strong className="text-on-surface">Ajustes por fecha</strong>; para ausencias puntuales usa <strong className="text-on-surface">Restricciones/Ausencias</strong>.
         </p>
       </div>
 
