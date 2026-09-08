@@ -104,6 +104,15 @@ const CAMPO_A_MODELO: Record<string, TipoEntidad> = {
   autorId: 'usuario',
   creadoPorUsuarioId: 'usuario',
   enviadoManualPor: 'usuario',
+  // Historia clínica
+  autorUsuarioId: 'usuario',
+  abiertaPorUsuarioId: 'usuario',
+  registradoPorUsuarioId: 'usuario',
+  editadaPorUsuarioId: 'usuario',
+  anuladaPorUsuarioId: 'usuario',
+  guardadoPorUsuarioId: 'usuario',
+  emisorProfesionalId: 'profesional',
+  emisorUsuarioId: 'usuario',
   servicioId: 'servicio',
   unidadNegocioId: 'unidadNegocio',
   promocionId: 'promocion',
@@ -137,6 +146,7 @@ const ENTIDAD_A_TIPO: Record<string, TipoEntidad> = {
   unidad_negocio: 'unidadNegocio',
   rol: 'rol',
   servicio_video: 'servicioVideo', // el entidadId de un video ES el servicioVideoId
+  historia_clinica: 'paciente', // el entidadId de la HC (ver_hc, antecedentes, alergias) ES el pacienteId
 };
 
 async function resolverNombres(logs: { entidad: string; entidadId: string; antes: unknown; despues: unknown }[]): Promise<Record<string, string>> {

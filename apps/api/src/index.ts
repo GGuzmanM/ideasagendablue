@@ -72,6 +72,9 @@ import consumosRouter from './routes/consumos';
 import reportesRouter from './routes/reportes';
 import servicioVideosRouter from './routes/servicioVideos';
 import videosPublicoRouter from './routes/videosPublico';
+import catalogosRouter from './routes/catalogos';
+import historiaClinicaRouter from './routes/historiaClinica';
+import recetasRouter from './routes/recetas';
 
 const app = express();
 const server = http.createServer(app);
@@ -213,6 +216,9 @@ app.use(`${v1}/consumos`, consumosRouter);
 app.use(`${v1}/reportes`, reportesRouter);
 app.use(`${v1}/servicio-videos`, servicioVideosRouter);
 app.use(`${v1}/videos`, videosPublicoRouter); // PÚBLICO (sin login): baja/reactivar desde el correo
+app.use(`${v1}/catalogos`, catalogosRouter); // CIE-10 + medicamentos (base de la receta)
+app.use(`${v1}/historia-clinica`, historiaClinicaRouter); // Historia clínica (solo usuarios con hc.*)
+app.use(`${v1}/recetas`, recetasRouter); // Recetas médicas e indicaciones (receta.*)
 
 // ─── Error handler ────────────────────────────────────────────────────────────
 app.use(errorHandler);

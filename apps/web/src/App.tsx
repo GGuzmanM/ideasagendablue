@@ -41,6 +41,7 @@ import { MovimientosImprimirPage } from './pages/herramientas/MovimientosImprimi
 import { VideosServicioPage } from './pages/herramientas/VideosServicioPage';
 import { Idea1AgendaPage } from './pages/Idea1AgendaPage';
 import { HorariosRestriccionesPage } from './pages/HorariosRestriccionesPage';
+import { HistoriaClinicaPage } from './pages/HistoriaClinicaPage';
 
 // Guard de SESIÓN: sin token → directo a /login. Está suscrito al store, así que al cerrar sesión
 // (logout pone token=null) redirige AL INSTANTE — no se queda la vista/sidebar hasta el próximo clic.
@@ -94,6 +95,8 @@ export default function App() {
         <Route path="/agenda-vieja" element={<Navigate to="/AgendaPrincipal" replace />} />
         <Route path="/pacientes" element={<RequirePermiso permiso="pacientes.ver"><PacientesPage /></RequirePermiso>} />
         <Route path="/pacientes/:id" element={<RequirePermiso permiso="pacientes.ver"><FichaPacientePage /></RequirePermiso>} />
+        {/* Historia clínica: módulo aparte (dos paneles), solo con hc.ver */}
+        <Route path="/historia-clinica/:pacienteId" element={<RequirePermiso permiso="hc.ver"><HistoriaClinicaPage /></RequirePermiso>} />
         <Route path="/horarios" element={<RequirePermiso permiso="horarios.ver"><HorariosRestriccionesPage /></RequirePermiso>} />
         <Route path="/herramientas" element={<RequirePermiso permiso={['exportar.usar', 'comunicaciones.gestionar', 'promociones.ver', 'promociones.gestionar', 'canales.gestionar', 'membresias.gestionar', 'config.editar']}><HerramientasPage /></RequirePermiso>} />
         <Route path="/herramientas/almuerzos" element={<RequirePermiso permiso="horarios.editar"><AlmuerzosPage /></RequirePermiso>} />

@@ -42,9 +42,14 @@ Reemplaza un ERP de escritorio de 14 años. 5 sedes, ~400 citas diarias, 40 pod�
     baseline, que ya NO existe en la BD), más `combinaciones_servicio_unico`.
   - En `20260625230000_promociones`: `promociones_nombre_unico`.
   - En `20260705193100_modulo_sesiones`: `consumos_cita_unico` (máx 1 consumo vivo por cita).
+  - En `20260908120000_historia_clinica_receta`: `diagnosticos_principal_unico` (máx 1 diagnóstico
+    principal vigente por atención clínica).
+  - Además, índices **GIN pg_trgm** (no únicos, tampoco en el schema) en
+    `20260903120000_catalogos_hce_cie10_medicamento`: `cie10_descripcion_trgm`,
+    `medicamentos_dci_trgm`, `medicamentos_comercial_trgm`.
 
   Como NO están en `schema.prisma`, al correr `migrate dev` Prisma intentará "dropearlos" en la
-  migración generada → **revisa el SQL generado y borra cualquier `DROP INDEX` de esos 8** (o
+  migración generada → **revisa el SQL generado y borra cualquier `DROP INDEX` de esos** (o
   genera la migración con
   `prisma migrate diff --from-schema-datamodel <viejo> --to-schema-datamodel <nuevo> --script`,
   que no los toca). `prisma migrate status` debe quedar siempre "up to date".

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { useAuthStore } from '../stores/authStore';
 import { useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -280,6 +281,17 @@ export function FichaPacientePage() {
               </div>
             </div>
             <div className="flex gap-3 shrink-0">
+              {/* Historia clínica: módulo aparte (dos paneles); solo con hc.ver */}
+              {useAuthStore.getState().tiene('hc.ver') && (
+                <button
+                  type="button"
+                  onClick={() => navigate(`/historia-clinica/${paciente.id}`)}
+                  className="px-6 py-3 border border-primary/40 text-primary bg-primary/5 font-semibold rounded-xl hover:bg-primary/10 transition-all flex items-center"
+                >
+                  <span className="material-symbols-outlined mr-2">clinical_notes</span>
+                  Historia clínica
+                </button>
+              )}
               {/* Estético por ahora (sin acción): más adelante abrirá la ficha técnica */}
               <button
                 type="button"

@@ -74,6 +74,11 @@ const ACCION_MATCHERS: { match: RegExp; style: AccionStyle }[] = [
   { match: /excluir/i,             style: { label: 'Excluir correo',  icon: 'unsubscribe',  bg: 'bg-red-100',     text: 'text-red-800',     border: 'border-red-200/70',     circleBg: 'bg-red-600' } },
   { match: /reactivar/i,           style: { label: 'Reactivar correo', icon: 'mark_email_read', bg: 'bg-emerald-100', text: 'text-emerald-800', border: 'border-emerald-200/70', circleBg: 'bg-emerald-600' } },
   { match: /crear_retroactiva/i,   style: { label: 'Creó (retroactiva)', icon: 'history',  bg: 'bg-amber-100',   text: 'text-amber-800',   border: 'border-amber-300/70',   circleBg: 'bg-amber-600' } },
+  // Historia clínica (antes de los genéricos crear/editar/eliminar para ganar el match).
+  { match: /ver_hc|ver_receta/i,   style: { label: 'Lectura HC',      icon: 'visibility',   bg: 'bg-sky-100',     text: 'text-sky-800',     border: 'border-sky-200/70',     circleBg: 'bg-sky-600' } },
+  { match: /emitir_receta|emitir_indicaciones/i, style: { label: 'Receta', icon: 'prescriptions', bg: 'bg-teal-100', text: 'text-teal-800', border: 'border-teal-200/70', circleBg: 'bg-teal-600' } },
+  { match: /anular_receta/i,       style: { label: 'Anular receta',   icon: 'block',        bg: 'bg-red-100',     text: 'text-red-800',     border: 'border-red-200/70',     circleBg: 'bg-red-600' } },
+  { match: /abrir_historia|abrir_atencion|cerrar_atencion|reabrir_atencion|_nota|_diagnostico|_antecedente|_alergia/i, style: { label: 'Historia clínica', icon: 'clinical_notes', bg: 'bg-indigo-100', text: 'text-indigo-800', border: 'border-indigo-200/70', circleBg: 'bg-indigo-600' } },
   { match: /crear|registrar/i,     style: { label: 'Crear',           icon: 'add_circle',   bg: 'bg-emerald-100', text: 'text-emerald-800', border: 'border-emerald-200/70', circleBg: 'bg-emerald-600' } },
   { match: /mover|reprogramar/i,   style: { label: 'Mover',           icon: 'swap_horiz',   bg: 'bg-blue-100',    text: 'text-blue-800',    border: 'border-blue-200/70',    circleBg: 'bg-blue-600' } },
   { match: /cambiar_estado/i,      style: { label: 'Cambiar estado',  icon: 'autorenew',    bg: 'bg-amber-100',   text: 'text-amber-800',   border: 'border-amber-200/70',   circleBg: 'bg-amber-600' } },

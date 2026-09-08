@@ -20,6 +20,19 @@ export function conflictoUnicidad(target: string): { error: string; message: str
   if (target.includes('idempotency') || target.includes('idempotencyKey')) {
     return { error: 'OPERACION_DUPLICADA', message: 'Esta operación ya fue registrada (se evitó un duplicado).' };
   }
+  // Historia clínica — ANTES de la rama genérica de `profesionalId` (usuarios_profesionalId_key la incluye).
+  if (target.includes('atenciones_clinicas_citaId_key')) {
+    return { error: 'ATENCION_YA_EXISTE', message: 'Esta cita ya tiene una atención clínica registrada.' };
+  }
+  if (target.includes('diagnosticos_principal_unico')) {
+    return { error: 'DX_PRINCIPAL_DUPLICADO', message: 'La atención ya tiene un diagnóstico principal vigente.' };
+  }
+  if (target.includes('historias_clinicas_pacienteId_key')) {
+    return { error: 'HC_YA_EXISTE', message: 'El paciente ya tiene historia clínica abierta.' };
+  }
+  if (target.includes('usuarios_profesionalId_key')) {
+    return { error: 'PROFESIONAL_YA_VINCULADO', message: 'Ese profesional ya está vinculado a otro usuario.' };
+  }
   if (target.includes('asignaciones_sede_una_abierta') || target.includes('profesionalId')) {
     return { error: 'CONFLICTO_ASIGNACION', message: 'El profesional ya tiene una asignación abierta. Ciérrala antes de crear otra.' };
   }

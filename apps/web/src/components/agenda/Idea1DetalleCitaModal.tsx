@@ -98,6 +98,10 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
     equipoBaro,
     totalConsultorios,
     SLOTS,
+    resumenAtencion,
+    puedeVerHc,
+    puedeRegistrarHc,
+    irAHistoriaClinica,
   } = useIdea1DetalleCita(props);
 
   // "No descontar sesión" es genérico, pero la redacción "(láser no aplicado)" solo aplica a
@@ -978,6 +982,29 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                 </div>
               )}
             </div>
+
+            {/* HISTORIA CLÍNICA: único toque de la agenda al módulo clínico. Solo visible con hc.ver y
+                cuando el paciente ya fue atendido (llegó / en atención / completada). */}
+            {puedeVerHc && ['llego', 'en_atencion', 'completada'].includes(estadoNorm) && (
+              resumenAtencion?.atencionId ? (
+                <button
+                  onClick={irAHistoriaClinica}
+                  className="w-full flex items-center justify-center gap-2 p-3 border border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-2xl transition-all font-bold text-sm cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-lg">clinical_notes</span>
+                  Ver atención clínica
+                  <span className="text-[11px] font-semibold text-emerald-700/80">· {resumenAtencion.totalNotas ?? 0} nota(s) · {resumenAtencion.totalDiagnosticos ?? 0} dx{resumenAtencion.totalRecetas ? ` · ${resumenAtencion.totalRecetas} receta(s)` : ''}</span>
+                </button>
+              ) : puedeRegistrarHc ? (
+                <button
+                  onClick={irAHistoriaClinica}
+                  className="w-full flex items-center justify-center gap-2 p-3 border border-primary/40 text-primary bg-primary/5 hover:bg-primary/10 rounded-2xl transition-all font-bold text-sm cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-lg">clinical_notes</span>
+                  Registrar atención clínica
+                </button>
+              ) : null
+            )}
 
             {/* BOTÓN GENEXIS (SI APLICA) */}
             <div className="empty:hidden">

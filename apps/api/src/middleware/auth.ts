@@ -9,6 +9,9 @@ export interface AuthPayload {
   rol: string;
   sedes: string[];
   permisos: string[];
+  // Historia clínica: ficha de Profesional vinculada (médico con login). Se refresca en cada
+  // request desde la BD, igual que permisos y sedes. null/undefined = sin vínculo.
+  profesionalId?: string | null;
 }
 
 declare global {
@@ -124,7 +127,7 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
     // muere al instante aunque el token siga vigente (no esperar a que caduque).
     const usuario = await prisma.usuario.findUnique({
       where: { id: payload.userId },
-      select: { activo: true, deletedAt: true, recepcionistaId: true, sedes: { select: { sedeId: true } } },
+      select: { activo: true, deletedAt: true, recepcionistaId: true, profesionalId: true, sedes: { select: { sedeId: true } } },
     });
     if (!usuario || usuario.deletedAt || !usuario.activo) {
       throw new AppError('Sesión revocada: usuario inactivo o eliminado', 401, 'SESION_REVOCADA');
@@ -132,6 +135,7 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
     // Permisos Y SEDES SIEMPRE frescos desde la BD: si el admin cambia los permisos del rol o
     // reasigna/quita sedes del usuario, aplican al instante sin cerrar sesión (no esperar al token).
     payload.permisos = await getPermisosRol(payload.rol);
+    payload.profesionalId = usuario.profesionalId ?? null;
     // Acceso a sedes: si el usuario está VINCULADO a una ficha del roster (Movimientos), su acceso se
     // DERIVA EN VIVO de la sede donde el roster lo tiene HOY (una sola fuente de verdad → moverlo en
     // Movimientos cambia su acceso al instante). Si no está vinculado, usa sus UsuarioSede.

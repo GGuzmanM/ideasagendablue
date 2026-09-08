@@ -21,6 +21,9 @@ import { importarOcupacionOutlookTodos } from '../services/importarOcupacionOutl
 import { alertasDePacientes } from '../services/alertaPaciente';
 import { familiaresDePacientes } from '../services/familiaresPaciente';
 import { programarRecordatoriosDeCita, cancelarRecordatoriosDeCita, reprogramarRecordatorioDeCita, forzarEnvioRecordatorioAhora } from '../services/recordatorioService';
+// Historia clínica: la agenda solo CONSULTA (guard de cancelar/no_show/eliminar) y sincroniza la
+// fecha de la atención al mover (acción reservada a coordinación/admin). Nunca escribe contenido clínico.
+import { assertSinAtencionClinica, sincronizarFechaAtencion } from '../services/historiaClinicaService';
 import { sincronizarVideosDeCita, cancelarVideosDeCita } from '../services/videoEnvioService';
 import { consumirTokenAccion } from '../services/tokenAccionCita';
 import { sincronizarSesionPaquete } from '../services/paqueteSesionService';
@@ -1713,6 +1716,9 @@ router.patch('/:id/estado', requireAuth, requireAcceso('appointments:write', 'ci
   //    no salta pasos — se queda como está en vez de forzarla).
   const esCancelacion = estado === 'cancelada';
   const cambioReal = estado !== cita.estado;
+  // Historia clínica: una cita con atención registrada fue atendida de verdad → no se cancela ni se
+  // marca "no vino" (409 CITA_CON_ATENCION_CLINICA). Único punto donde la agenda consulta a la HC.
+  if (cambioReal && (esCancelacion || estado === 'no_show')) await assertSinAtencionClinica(cita.id);
   // `soloEsta` (flujo secuencial de bloque combinado) desactiva la cascada: avanza solo esta cita.
   const hermanas = (cita.slotGrupoId && cambioReal && !soloEsta)
     ? (await prisma.cita.findMany({
@@ -2123,6 +2129,12 @@ router.patch('/:id/mover', requireAuth, requireAcceso('appointments:write', 'cit
   if (ESTADOS_FINALES.includes(cita.estado)) {
     throw new AppError('No se puede mover una cita finalizada', 400, 'ESTADO_FINAL');
   }
+  // Historia clínica: mover una cita que YA tiene atención registrada es una acción reservada
+  // (no visible) de coordinación/admin; la fecha de la atención acompaña a la cita (ver tx).
+  const tieneAtencion = !!(await prisma.atencionClinica.findUnique({ where: { citaId: cita.id }, select: { id: true } }));
+  if (tieneAtencion && !['admin', 'coordinadora_sedes'].includes(req.user?.rol ?? '')) {
+    throw new AppError('La cita ya tiene atención clínica registrada: solo coordinación o administración pueden moverla', 403, 'CITA_CON_ATENCION_CLINICA');
+  }
 
   // Servicios de 1 hora solo en hora entera
   if (!horaInicioValidaParaDuracion(data.horaInicio, cita.duracionMinutos)) {
@@ -2231,6 +2243,7 @@ router.patch('/:id/mover', requireAuth, requireAcceso('appointments:write', 'cit
           ...(data.origenAsignacion ? { origenAsignacion: data.origenAsignacion } : {}),
         },
       });
+      if (tieneAtencion) await sincronizarFechaAtencion(tx, cita.id, fechaDb(data.fecha));
       await auditEnTx(tx, {
         citaId: cita.id,
         usuarioId,
@@ -2290,6 +2303,11 @@ router.patch('/grupo/:slotGrupoId/mover', requireAuth, requireAcceso('appointmen
   if (citas.length === 0) throw new AppError('Bloque combinado no encontrado', 404);
   if (citas.some(c => ESTADOS_FINALES.includes(c.estado))) {
     throw new AppError('No se puede mover un bloque con citas ya finalizadas', 400, 'ESTADO_FINAL');
+  }
+  // Historia clínica: bloque con atención registrada → mover solo coordinación/admin (acción no visible).
+  const bloqueConAtencion = !!(await prisma.atencionClinica.findFirst({ where: { citaId: { in: citas.map(c => c.id) } }, select: { id: true } }));
+  if (bloqueConAtencion && !['admin', 'coordinadora_sedes'].includes(req.user?.rol ?? '')) {
+    throw new AppError('El bloque ya tiene atención clínica registrada: solo coordinación o administración pueden moverlo', 403, 'CITA_CON_ATENCION_CLINICA');
   }
 
   const ancla = citas.find(c => c.slotRol === 'PRINCIPAL') ?? citas[0]!;
@@ -2352,6 +2370,7 @@ router.patch('/grupo/:slotGrupoId/mover', requireAuth, requireAcceso('appointmen
             ...(data.origenAsignacion ? { origenAsignacion: data.origenAsignacion } : {}),
           },
         });
+        if (bloqueConAtencion) await sincronizarFechaAtencion(tx, c.id, fechaDb(data.fecha));
         await auditEnTx(tx, {
           citaId: c.id, usuarioId, accion: 'mover', entidad: 'cita', entidadId: c.id,
           antes: { profesionalId: c.profesionalId, fecha: c.fecha, horaInicio: c.horaInicio },
@@ -2385,6 +2404,8 @@ router.delete('/:id', requireAuth, requireAcceso('appointments:write', 'citas.ca
   if (ESTADOS_FINALES.includes(cita.estado)) {
     throw new AppError('No se puede cancelar una cita finalizada', 400);
   }
+  // Historia clínica: con atención registrada no se cancela (409 CITA_CON_ATENCION_CLINICA).
+  await assertSinAtencionClinica(cita.id);
 
   // Bloque combinado: cancelar una mitad cancela TODO el grupo. Si es individual,
   // el grupo es solo esta cita. Solo se cancelan las que aún no están finalizadas.

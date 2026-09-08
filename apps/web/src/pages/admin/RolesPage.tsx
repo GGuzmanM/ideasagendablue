@@ -34,6 +34,7 @@ function aparienciaDeRol(nombre: string) {
 const GRUPO_META: Record<string, { icon: string; corto: string }> = {
   'Agenda':           { icon: 'calendar_today',       corto: 'Agenda' },
   'Pacientes':        { icon: 'groups',               corto: 'Pacientes' },
+  'Historia clínica': { icon: 'clinical_notes',       corto: 'Historia' },
   'Membresías':       { icon: 'loyalty',              corto: 'Membres.' },
   'Horarios y Restricciones': { icon: 'schedule',     corto: 'Horarios' },
   'Herramientas':     { icon: 'home_repair_service',  corto: 'Herram.' },

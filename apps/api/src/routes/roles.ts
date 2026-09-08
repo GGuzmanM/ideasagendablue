@@ -7,9 +7,13 @@ import { registrarAudit } from '../services/audit';
 
 const router = Router();
 
-// Catálogo GRANULAR (35). Cada permiso = una acción cableada a su candado. Espeja el seed y la
+// Catálogo GRANULAR (40). Cada permiso = una acción cableada a su candado. Espeja el seed y la
 // matriz aprobada. Si agregas uno, cablea su `requirePermiso` en el/los endpoint(s) o no hace nada.
+// Los 5 de "Historia clínica" se otorgan a los roles existentes por MIGRACIÓN de datos
+// (20260908120100_permisos_hc_rol_medico), que también crea el rol `medico`.
 const PERMISOS_VALIDOS = [
+  // Historia clínica y receta
+  'hc.ver', 'hc.registrar', 'hc.anular', 'receta.ver', 'receta.emitir',
   // Citas
   'citas.ver', 'citas.crear', 'citas.reprogramar', 'citas.cancelar', 'citas.estado', 'citas.revertir',
   // Pacientes
@@ -86,6 +90,13 @@ router.get('/permisos', requireAuth, async (_req, res) => {
       { id: 'pacientes.ver', label: 'Ver pacientes' },
       { id: 'pacientes.crear', label: 'Crear pacientes' },
       { id: 'pacientes.editar', label: 'Editar pacientes' },
+    ],
+    'Historia clínica': [
+      { id: 'hc.ver', label: 'Ver historia clínica (cada lectura queda auditada)' },
+      { id: 'hc.registrar', label: 'Registrar atenciones, evolución, diagnósticos, antecedentes y alergias' },
+      { id: 'hc.anular', label: 'Eliminar / corregir registros clínicos, anular recetas y ver el historial de versiones' },
+      { id: 'receta.ver', label: 'Ver recetas e indicaciones y su PDF' },
+      { id: 'receta.emitir', label: 'Emitir recetas médicas (solo médico colegiado vinculado) e indicaciones' },
     ],
     'Membresías': [
       { id: 'membresias.ver', label: 'Ver catálogo vendible' },

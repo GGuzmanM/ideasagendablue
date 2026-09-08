@@ -15,6 +15,8 @@ export interface Usuario {
   sedes: UsuarioSede[]; // sedes de login (a qué sedes puede acceder) — ignoradas si está vinculado al roster
   recepcionistaId: string | null;                       // vínculo con la ficha del roster (Movimientos)
   recepcionista: { id: string; nombre: string } | null; // datos de la ficha vinculada
+  profesionalId: string | null;                         // vínculo con la ficha de Profesional (médico con login → HC/receta)
+  profesional: { id: string; nombres: string; apellidos: string; tipo: string; colegiatura: string | null; esEquipo: boolean } | null;
 }
 
 export interface CrearUsuarioPayload {
@@ -25,6 +27,7 @@ export interface CrearUsuarioPayload {
   activo?: boolean;
   sedeIds?: string[];
   recepcionistaId?: string | null;
+  profesionalId?: string | null;
 }
 
 export interface EditarUsuarioPayload {
@@ -35,6 +38,7 @@ export interface EditarUsuarioPayload {
   activo?: boolean;
   sedeIds?: string[];
   recepcionistaId?: string | null;
+  profesionalId?: string | null;
 }
 
 export const usersApi = {

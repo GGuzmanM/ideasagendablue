@@ -10,6 +10,8 @@ import { usePromociones } from '../hooks/usePromociones';
 import { usePaquetesPaciente, paquetesElegibles, paquetesOtraSede, paquetesSesionesApi } from '../api/paquetesSesiones';
 import { useAgendaStore } from '../stores/agendaStore';
 import { generarSlotsDelDia, horaInicioValidaParaDuracion, esCitaInactiva } from '@limablue/shared';
+import { useAuthStore } from '../stores/authStore';
+import { useResumenAtencionCita } from '../api/historiaClinica';
 
 const SLOTS = generarSlotsDelDia('08:00', '20:00', 30);
 const ESTADOS_FINALES = ['completada', 'no_show', 'cancelada'];
@@ -383,6 +385,15 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
     }
   };
 
+  // ── Historia clínica: ÚNICO toque de la agenda al módulo clínico ──
+  // Resumen liviano (no audita en el backend) solo si el usuario puede ver HC y la cita ya fue
+  // atendida; el botón del modal navega a la página de dos paneles con ?cita= para abrir/registrar.
+  const tieneHc = useAuthStore((s) => s.tiene);
+  const puedeVerHc = tieneHc('hc.ver');
+  const puedeRegistrarHc = tieneHc('hc.registrar');
+  const { data: resumenAtencion } = useResumenAtencionCita(cita.id, puedeVerHc && ['llego', 'en_atencion', 'completada'].includes(estadoNorm));
+  const irAHistoriaClinica = () => { onClose(); navigate(`/historia-clinica/${cita.pacienteId}?cita=${cita.id}`); };
+
   return {
     cita,
     setCitaActiva,
@@ -453,5 +464,9 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
     equipoBaro,
     totalConsultorios,
     SLOTS,
+    resumenAtencion,
+    puedeVerHc,
+    puedeRegistrarHc,
+    irAHistoriaClinica,
   };
 }

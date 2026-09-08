@@ -9,7 +9,7 @@ import {
   type FormUsuarioState,
 } from '../../services/usersService';
 import { cn } from '../../utils/cn';
-import { sedesApi, type Usuario } from '../../api';
+import { sedesApi, profesionalesApi, type Usuario, type Profesional } from '../../api';
 import { composicionSedeApi } from '../../api/composicionSede';
 
 // ── Componente Tarjeta KPI ───────────────────────────────────────────────────
@@ -45,6 +45,7 @@ function FormularioUsuarioModal({
   roles,
   sedes,
   recepcionistas,
+  medicos,
   onSave,
   onCancel,
   isPending,
@@ -53,6 +54,7 @@ function FormularioUsuarioModal({
   roles: { nombre: string; label: string }[];
   sedes: { id: string; nombre: string }[];
   recepcionistas: { id: string; nombre: string }[];
+  medicos: Profesional[];
   onSave: (form: FormUsuarioState) => void;
   onCancel: () => void;
   isPending: boolean;
@@ -65,6 +67,7 @@ function FormularioUsuarioModal({
     activo: editing?.activo ?? true,
     sedeIds: editing?.sedes.map(s => s.id) ?? [],
     recepcionistaId: editing?.recepcionistaId ?? null,
+    profesionalId: editing?.profesionalId ?? null,
   });
 
   const toggleSede = (id: string) =>
@@ -176,6 +179,29 @@ function FormularioUsuarioModal({
             </p>
           </div>
 
+          {/* Vínculo con la ficha de PROFESIONAL (Historia clínica): médico con login → registra HC y emite recetas */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">
+              Vincular a profesional (médico)
+              <span className="text-slate-400 font-normal"> — necesario para emitir recetas</span>
+            </label>
+            <select
+              value={form.profesionalId ?? ''}
+              onChange={e => setForm(f => ({ ...f, profesionalId: e.target.value || null }))}
+              className="input w-full text-sm"
+            >
+              <option value="">Sin vincular</option>
+              {medicos.map(m => (
+                <option key={m.id} value={m.id}>
+                  {m.apellidos}, {m.nombres} — {m.colegiatura?.trim() ? m.colegiatura : 'sin colegiatura'}
+                </option>
+              ))}
+            </select>
+            <p className="text-[11px] text-slate-400 mt-1 leading-snug">
+              La historia clínica y las recetas saldrán a nombre de este profesional. Para recetar, su ficha debe tener la colegiatura (CMP) cargada.
+            </p>
+          </div>
+
           {form.recepcionistaId ? (
             <div className="rounded-xl bg-primary/5 border border-primary/20 px-3 py-2.5 text-xs text-primary flex items-start gap-2">
               <span className="material-symbols-outlined text-base shrink-0">link</span>
@@ -284,16 +310,20 @@ export function UsersPage() {
   const [usuarioAEliminar, setUsuarioAEliminar] = useState<Usuario | null>(null);
   const { data: sedes = [] } = useQuery({ queryKey: ['sedes'], queryFn: sedesApi.listar });
   const { data: recepcionistas = [] } = useQuery({ queryKey: ['recepcionistas-todas'], queryFn: composicionSedeApi.recepcionistas });
+  // Médicos vinculables (personas, no equipos Baro) para la historia clínica / receta.
+  const { data: profesionalesTodos = [] } = useQuery({ queryKey: ['profesionales-activos'], queryFn: () => profesionalesApi.listar({ activo: true }), staleTime: 300_000 });
+  const medicos = profesionalesTodos.filter((p) => p.tipo === 'medico' && !/^baro\b/i.test(p.nombres.trim()));
 
   const handleSaveUser = (formData: FormUsuarioState) => {
     if (usuarioEditando) {
-      const payload: { nombre: string; email: string; rol: string; activo: boolean; password?: string; sedeIds: string[]; recepcionistaId: string | null } = {
+      const payload: { nombre: string; email: string; rol: string; activo: boolean; password?: string; sedeIds: string[]; recepcionistaId: string | null; profesionalId: string | null } = {
         nombre: formData.nombre,
         email: formData.email,
         rol: formData.rol,
         activo: formData.activo,
         sedeIds: formData.sedeIds,
         recepcionistaId: formData.recepcionistaId,
+        profesionalId: formData.profesionalId,
       };
       if (formData.password) payload.password = formData.password;
       editarMut.mutate({ id: usuarioEditando.id, data: payload });
@@ -589,6 +619,7 @@ export function UsersPage() {
           roles={roles}
           sedes={sedes.map(s => ({ id: s.id, nombre: s.nombre }))}
           recepcionistas={recepcionistas.map(r => ({ id: r.id, nombre: r.nombre }))}
+          medicos={medicos}
           onSave={handleSaveUser}
           onCancel={cerrarModal}
           isPending={isSaving}

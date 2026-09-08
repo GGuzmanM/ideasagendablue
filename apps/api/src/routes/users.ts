@@ -18,6 +18,7 @@ const crearSchema = z.object({
   activo: z.boolean().optional().default(true),
   sedeIds: z.array(z.string().uuid()).optional(), // sedes de LOGIN (a qué sedes puede acceder)
   recepcionistaId: z.string().uuid().nullable().optional(), // vínculo con ficha del roster (Movimientos)
+  profesionalId: z.string().uuid().nullable().optional(), // vínculo con ficha de Profesional (médico con login → HC/receta)
 });
 
 const editarSchema = z.object({
@@ -28,13 +29,15 @@ const editarSchema = z.object({
   activo: z.boolean().optional(),
   sedeIds: z.array(z.string().uuid()).optional(),
   recepcionistaId: z.string().uuid().nullable().optional(),
+  profesionalId: z.string().uuid().nullable().optional(),
 });
 
-// Selección estándar de un usuario (incluye sedes de login + vínculo con el roster).
+// Selección estándar de un usuario (incluye sedes de login + vínculos con roster y profesional).
 const usuarioSelect = {
-  id: true, nombre: true, email: true, rol: true, activo: true, creadoEn: true, recepcionistaId: true,
+  id: true, nombre: true, email: true, rol: true, activo: true, creadoEn: true, recepcionistaId: true, profesionalId: true,
   sedes: { select: { sede: { select: { id: true, nombre: true } } } },
   recepcionista: { select: { id: true, nombre: true } },
+  profesional: { select: { id: true, nombres: true, apellidos: true, tipo: true, colegiatura: true, esEquipo: true } },
 } as const;
 // Aplana `sedes: [{ sede: {...} }]` → `sedes: [{ id, nombre }]`.
 const serializarUsuario = (u: { sedes: { sede: { id: string; nombre: string } }[] } & Record<string, unknown>) => ({
@@ -59,6 +62,19 @@ async function validarRecepcionistaLink(recepcionistaId: string, excluirUsuarioI
     select: { id: true, nombre: true },
   });
   if (tomada) throw new AppError(`Esa ficha ya está vinculada a ${tomada.nombre}`, 409, 'RECEPCIONISTA_YA_VINCULADA');
+}
+
+// Valida el vínculo con la ficha de PROFESIONAL (Historia clínica): existe, no es un equipo (Baro) y
+// no está tomada por OTRO usuario (1:1). La colegiatura NO se exige aquí (se exige al emitir receta).
+async function validarProfesionalLink(profesionalId: string, excluirUsuarioId?: string): Promise<void> {
+  const prof = await prisma.profesional.findFirst({ where: { id: profesionalId, deletedAt: null }, select: { id: true, esEquipo: true } });
+  if (!prof) throw new AppError('La ficha de profesional no existe', 400, 'PROFESIONAL_INVALIDO');
+  if (prof.esEquipo) throw new AppError('No se puede vincular un usuario a un equipo (Baro)', 400, 'PROFESIONAL_ES_EQUIPO');
+  const tomada = await prisma.usuario.findFirst({
+    where: { profesionalId, deletedAt: null, ...(excluirUsuarioId ? { id: { not: excluirUsuarioId } } : {}) },
+    select: { id: true, nombre: true },
+  });
+  if (tomada) throw new AppError(`Ese profesional ya está vinculado a ${tomada.nombre}`, 409, 'PROFESIONAL_YA_VINCULADO');
 }
 
 // GET /api/v1/users — lista todos los usuarios (con sus sedes de login)
@@ -97,6 +113,7 @@ router.post('/', ...editarAdmins, async (req, res) => {
   if (existe) throw new AppError('Ya existe un usuario con ese email', 409);
   const sedeIds = await validarSedes(data.sedeIds);
   if (data.recepcionistaId) await validarRecepcionistaLink(data.recepcionistaId);
+  if (data.profesionalId) await validarProfesionalLink(data.profesionalId);
   const passwordHash = await bcrypt.hash(data.password, 12);
   const usuario = await prisma.usuario.create({
     data: {
@@ -107,6 +124,7 @@ router.post('/', ...editarAdmins, async (req, res) => {
       activo: data.activo,
       creadoPor: req.user?.userId,
       recepcionistaId: data.recepcionistaId ?? null,
+      profesionalId: data.profesionalId ?? null,
       sedes: { create: sedeIds.map((sedeId) => ({ sedeId })) },
     },
     select: usuarioSelect,
@@ -173,6 +191,11 @@ router.put('/:id', ...editarAdmins, async (req, res) => {
   if (data.recepcionistaId !== undefined) {
     if (data.recepcionistaId) await validarRecepcionistaLink(data.recepcionistaId, id);
     update.recepcionistaId = data.recepcionistaId;
+  }
+  // Vínculo con la ficha de profesional (HC): null = desvincular; un id = vincular (1:1). undefined = no tocar.
+  if (data.profesionalId !== undefined) {
+    if (data.profesionalId) await validarProfesionalLink(data.profesionalId, id);
+    update.profesionalId = data.profesionalId;
   }
 
   const usuario = await prisma.usuario.update({

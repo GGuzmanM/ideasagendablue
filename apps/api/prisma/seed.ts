@@ -8,6 +8,8 @@ import * as path from 'path';
 import { aplicarListaFinal } from '../scripts/aplicar-csv-final';
 import { sembrarPromociones } from '../scripts/seed-promociones';
 import { sembrarUbigeo } from '../scripts/seed-ubigeo';
+import { sembrarCie10 } from '../scripts/seed-cie10';
+import { sembrarMedicamentos } from '../scripts/seed-medicamentos';
 
 const prisma = new PrismaClient();
 
@@ -324,6 +326,12 @@ async function main() {
  await sembrarUbigeo(prisma);
   console.log(`     ✓ promociones creadas: ${promoRes.creadas}`);
 
+  // ── Catálogos HCE (base de la receta): CIE-10 + vademécum de medicamentos ──
+  console.log('  → Catálogos clínicos (CIE-10 + medicamentos)...');
+  const cie10Res = await sembrarCie10(prisma);
+  const medRes = await sembrarMedicamentos(prisma);
+  console.log(`     ✓ CIE-10: ${cie10Res.total} · medicamentos: ${medRes.total}`);
+
   // ── Profesionales ───────────────────────────────────────────────────────────
   console.log('  → Profesionales (personal real)...');
 
@@ -617,6 +625,8 @@ async function main() {
   console.log('  → Roles del sistema...');
   // Lista MAESTRA completa (espeja PERMISOS_VALIDOS en routes/roles.ts). El admin lleva TODOS.
   const TODOS_PERMISOS = [
+    // Historia clínica y receta (el admin NO emite recetas: eso es solo del rol médico)
+    'hc.ver', 'hc.registrar', 'hc.anular', 'receta.ver',
     'agenda.ver', 'agenda.editar',
     'pacientes.ver', 'pacientes.editar',
     'membresias.vender',
@@ -631,10 +641,13 @@ async function main() {
   await prisma.rol.createMany({
     data: [
       { nombre: 'admin', label: 'Administrador', descripcion: 'Acceso total al sistema', permisos: TODOS_PERMISOS, esSistema: true },
-      { nombre: 'coordinadora_sedes', label: 'Coordinadora de Sedes', descripcion: 'Gestión de agenda, pacientes y reportes', permisos: ['agenda.ver','agenda.editar','pacientes.ver','pacientes.editar','membresias.vender','horarios.ver','horarios.editar','herramientas.operativas','herramientas.estrategicas','movimientos.ver','movimientos.editar','admin.ver','analytics.ver','analytics.agentes','notificaciones.ver'], esSistema: true },
+      { nombre: 'coordinadora_sedes', label: 'Coordinadora de Sedes', descripcion: 'Gestión de agenda, pacientes y reportes', permisos: ['agenda.ver','agenda.editar','pacientes.ver','pacientes.editar','membresias.vender','horarios.ver','horarios.editar','herramientas.operativas','herramientas.estrategicas','movimientos.ver','movimientos.editar','admin.ver','analytics.ver','analytics.agentes','notificaciones.ver','hc.ver','hc.registrar','hc.anular','receta.ver'], esSistema: true },
       // Recepción y contact center venden membresías; contact center ve TODAS las sedes (ROLES_TODAS_SEDES).
-      { nombre: 'recepcionista', label: 'Recepcionista', descripcion: 'Agenda, pacientes y venta de membresías (su sede)', permisos: ['agenda.ver','agenda.editar','pacientes.ver','pacientes.editar','membresias.vender','herramientas.operativas'], esSistema: true },
+      // Recepción registra HC a nombre de la podóloga; contact center NO tiene acceso clínico.
+      { nombre: 'recepcionista', label: 'Recepcionista', descripcion: 'Agenda, pacientes y venta de membresías (su sede)', permisos: ['agenda.ver','agenda.editar','pacientes.ver','pacientes.editar','membresias.vender','herramientas.operativas','hc.ver','hc.registrar','receta.ver'], esSistema: true },
       { nombre: 'contact_center', label: 'Contact Center', descripcion: 'Agenda, pacientes y venta de membresías (todas las sedes)', permisos: ['agenda.ver','agenda.editar','pacientes.ver','pacientes.editar','membresias.vender'], esSistema: false },
+      // Médico colegiado: el ÚNICO rol con receta.emitir (además exige Usuario.profesionalId + colegiatura).
+      { nombre: 'medico', label: 'Médico', descripcion: 'Médico colegiado: registra historia clínica y emite recetas', permisos: ['citas.ver','pacientes.ver','hc.ver','hc.registrar','receta.ver','receta.emitir'], esSistema: false },
     ],
     skipDuplicates: true,
   });

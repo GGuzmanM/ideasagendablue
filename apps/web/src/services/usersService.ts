@@ -11,6 +11,7 @@ export interface FormUsuarioState {
   activo: boolean;
   sedeIds: string[]; // sedes de login
   recepcionistaId: string | null; // vínculo con ficha del roster (Movimientos)
+  profesionalId: string | null; // vínculo con ficha de Profesional (médico con login → historia clínica / receta)
 }
 
 export const USER_ROLE_PALETTE = [

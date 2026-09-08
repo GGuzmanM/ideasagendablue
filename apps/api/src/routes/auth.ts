@@ -18,6 +18,23 @@ const loginSchema = z.object({
 // se usa este centinela para poder auditar igual sin romper la restricción de tipo.
 const UUID_CENTINELA = '00000000-0000-0000-0000-000000000000';
 
+// ─── Perfil clínico del usuario (Historia clínica) ────────────────────────────
+// Ficha de Profesional vinculada + si puede PRESCRIBIR: médico (no equipo), activo, con colegiatura
+// y con el permiso `receta.emitir`. Mismo cálculo que el candado del servicio de recetas, para que
+// el frontend muestre/oculte "Emitir receta" con la misma verdad.
+const profesionalSelect = { select: { id: true, nombres: true, apellidos: true, tipo: true, colegiatura: true, esEquipo: true, activo: true } } as const;
+type ProfesionalPerfil = { id: string; nombres: string; apellidos: string; tipo: string; colegiatura: string | null; esEquipo: boolean; activo: boolean } | null;
+function perfilClinico(profesional: ProfesionalPerfil, permisos: string[]) {
+  const esMedicoPrescriptor = !!profesional
+    && profesional.tipo === 'medico' && !profesional.esEquipo && profesional.activo
+    && !!(profesional.colegiatura ?? '').trim() && permisos.includes('receta.emitir');
+  return {
+    profesionalId: profesional?.id ?? null,
+    profesional: profesional ? { id: profesional.id, nombres: profesional.nombres, apellidos: profesional.apellidos, tipo: profesional.tipo, colegiatura: profesional.colegiatura } : null,
+    esMedicoPrescriptor,
+  };
+}
+
 // Barrera anti fuerza bruta: máx 5 intentos fallidos por IP cada 15 min (ver rateLimits.ts).
 router.post('/login', loginLimiter, async (req, res) => {
   const { email, password } = loginSchema.parse(req.body);
@@ -27,7 +44,7 @@ router.post('/login', loginLimiter, async (req, res) => {
 
   const usuario = await prisma.usuario.findUnique({
     where: { email, deletedAt: null },
-    include: { sedes: { include: { sede: { select: { id: true, nombre: true } } } } },
+    include: { sedes: { include: { sede: { select: { id: true, nombre: true } } } }, profesional: profesionalSelect },
   });
 
   // Auditar los intentos FALLIDOS también (detección de fuerza bruta / credential stuffing).
@@ -63,7 +80,7 @@ router.post('/login', loginLimiter, async (req, res) => {
   }
   const sedeIds = sedesResp.map((s) => s.id);
   const permisos = await getPermisosRol(usuario.rol);
-  const token = signToken({ userId: usuario.id, rol: usuario.rol, sedes: sedeIds, permisos });
+  const token = signToken({ userId: usuario.id, rol: usuario.rol, sedes: sedeIds, permisos, profesionalId: usuario.profesionalId ?? null });
 
   await registrarAudit({
     usuarioId: usuario.id,
@@ -84,6 +101,7 @@ router.post('/login', loginLimiter, async (req, res) => {
       rol: usuario.rol,
       permisos,
       sedes: sedesResp,
+      ...perfilClinico(usuario.profesional, permisos),
     },
   });
 });
@@ -91,7 +109,7 @@ router.post('/login', loginLimiter, async (req, res) => {
 router.get('/me', requireAuth, async (req, res) => {
   const usuario = await prisma.usuario.findUnique({
     where: { id: req.user!.userId },
-    include: { sedes: { include: { sede: { select: { id: true, nombre: true, color: true } } } } },
+    include: { sedes: { include: { sede: { select: { id: true, nombre: true, color: true } } } }, profesional: profesionalSelect },
   });
   if (!usuario) throw new AppError('Usuario no encontrado', 404);
 
@@ -114,6 +132,7 @@ router.get('/me', requireAuth, async (req, res) => {
     rol: usuario.rol,
     permisos,
     sedes,
+    ...perfilClinico(usuario.profesional, permisos),
   });
 });
 

@@ -25,6 +25,12 @@ export interface UsuarioAuth {
   rol: string;
   permisos: string[];
   sedes: SedeInfo[];
+  // Historia clínica: ficha de Profesional vinculada (médico con login) y si puede PRESCRIBIR
+  // (médico, no equipo, activo, con CMP y con receta.emitir). Opcionales: el estado persistido
+  // de sesiones anteriores no los trae; llegan con el próximo login o checkAuth.
+  profesionalId?: string | null;
+  profesional?: { id: string; nombres: string; apellidos: string; tipo: string; colegiatura: string | null } | null;
+  esMedicoPrescriptor?: boolean;
 }
 
 interface AuthState {

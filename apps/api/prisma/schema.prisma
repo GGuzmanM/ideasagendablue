@@ -55,11 +55,11 @@ model Canal {
   orden         Int       @default(0)
   activo        Boolean   @default(true)
   deletedAt     DateTime?
-  creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
+  creadoPor     String?   @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime  @default(now())
   actualizadoEn DateTime  @updatedAt
 
-  pacientes     Paciente[]
+  pacientes Paciente[]
 
   @@map("canales")
 }
@@ -68,13 +68,13 @@ model Canal {
 // promoción (FK `Cita.promocionId`). En un BLOQUE COMBINADO la promo aplica UNA sola vez y
 // vive solo en la cita PRINCIPAL (profilaxis) — ver `resolverCitaPortadora` en el backend.
 model Promocion {
-  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  nombre        String
-  descripcion   String?
-  tipo          TipoPromocion @default(OTRO)
-  valor         Decimal?      @db.Decimal(10, 2) // precio final (PRECIO_FIJO), % (PORCENTAJE) o S/ descuento (MONTO_DESCUENTO); null en OTRO
-  activo        Boolean       @default(true)
-  orden         Int           @default(0)
+  id          String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nombre      String
+  descripcion String?
+  tipo        TipoPromocion @default(OTRO)
+  valor       Decimal?      @db.Decimal(10, 2) // precio final (PRECIO_FIJO), % (PORCENTAJE) o S/ descuento (MONTO_DESCUENTO); null en OTRO
+  activo      Boolean       @default(true)
+  orden       Int           @default(0)
 
   // ─── Restricciones (Fase 1). En TODAS: null = SIN restricción (aplica a todo). ───────
   serviciosIds        Json? // lista de servicioIds a los que aplica (null = todos)
@@ -89,11 +89,11 @@ model Promocion {
   limitePorPaciente   Int? // máx de usos por paciente (null = ilimitado)
 
   deletedAt     DateTime?
-  creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
-  creadoEn      DateTime      @default(now())
-  actualizadoEn DateTime      @updatedAt
+  creadoPor     String?   @db.Uuid // Usuario que creó el registro (auditoría)
+  creadoEn      DateTime  @default(now())
+  actualizadoEn DateTime  @updatedAt
 
-  citas Cita[]
+  citas             Cita[]
   // Membresías (tipo=MEMBRESIA): plantilla de contabilidad de sesiones vinculada.
   paquetesPlantilla Paquete[]
 
@@ -180,22 +180,23 @@ model Sede {
   // Horario por día de semana (JSON: {lunes: {apertura: "08:00", cierre: "20:00"}, ...})
   horario Json @default("{}")
 
-  unidadesNegocio SedeUnidadNegocio[]
-  asignaciones    AsignacionSede[]
+  unidadesNegocio    SedeUnidadNegocio[]
+  asignaciones       AsignacionSede[]
   // Roster administrativo (doctores + recepcionistas) — solo informativo, no afecta reservas.
-  asignacionesAdmin AsignacionAdministrativa[]
-  citas           Cita[]
-  usuarios        UsuarioSede[]
-  usuariosAsignados Usuario[]           @relation("UsuarioSedeAsignada")
-  webhookSubs     WebhookSubscription[]
-  excepciones     ExcepcionHorario[]
-  agregados       AgregadoDiario[]
-  notificaciones  NotificacionSede[]
-  bloqueos        BloqueoAgenda[]
-  paquetesPaciente PaquetePaciente[]
-  baroMedicos     BaroMedicoSede[]
+  asignacionesAdmin  AsignacionAdministrativa[]
+  citas              Cita[]
+  usuarios           UsuarioSede[]
+  usuariosAsignados  Usuario[]                  @relation("UsuarioSedeAsignada")
+  webhookSubs        WebhookSubscription[]
+  excepciones        ExcepcionHorario[]
+  agregados          AgregadoDiario[]
+  notificaciones     NotificacionSede[]
+  bloqueos           BloqueoAgenda[]
+  paquetesPaciente   PaquetePaciente[]
+  baroMedicos        BaroMedicoSede[]
+  atencionesClinicas AtencionClinica[]
 
-  creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
+  creadoPor     String?  @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
@@ -213,7 +214,7 @@ model ExcepcionHorario {
   horaApertura String?
   horaCierre   String?
   nota         String?
-  creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
+  creadoPor    String?  @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn     DateTime @default(now())
 
   @@unique([sedeId, fecha])
@@ -236,7 +237,7 @@ model UnidadNegocio {
   citas         Cita[]
   agregados     AgregadoDiario[]
 
-  creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
+  creadoPor     String?  @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
@@ -282,25 +283,33 @@ model Profesional {
   emailAgenda      String?
   // Número de colegiatura profesional (ej: CMP/COP/CTMP 12345) - opcional
   colegiatura      String?
+  // true = fila que representa un EQUIPO (ej. "Baro 1"), no una persona. Un equipo nunca puede
+  // figurar como profesional de una atención clínica ni emitir recetas. Backfill en migración.
+  esEquipo         Boolean         @default(false)
   deletedAt        DateTime?
 
-  unidadNegocio    UnidadNegocio            @relation(fields: [unidadNegocioId], references: [id])
-  asignaciones     AsignacionSede[]         @relation("AsignacionProfesional")
-  reemplazado      AsignacionSede[]         @relation("Reemplazos")
+  unidadNegocio      UnidadNegocio              @relation(fields: [unidadNegocioId], references: [id])
+  asignaciones       AsignacionSede[]           @relation("AsignacionProfesional")
+  reemplazado        AsignacionSede[]           @relation("Reemplazos")
   // Roster administrativo cuando el profesional es un "doctor" (baropodometría por solicitud).
-  asignacionesAdmin AsignacionAdministrativa[] @relation("AsignacionAdminProfesional")
-  horarios         HorarioProfesional[]
-  bloqueos         BloqueoAgenda[]
-  competencias     CompetenciaProfesional[]
-  citas            Cita[]                   @relation("CitaProfesional")
-  citasSolicitadas Cita[]                   @relation("CitaSolicitado")
-  agregados        AgregadoDiario[]
-  entradas         EntradaPodologa[]
+  asignacionesAdmin  AsignacionAdministrativa[] @relation("AsignacionAdminProfesional")
+  horarios           HorarioProfesional[]
+  bloqueos           BloqueoAgenda[]
+  competencias       CompetenciaProfesional[]
+  citas              Cita[]                     @relation("CitaProfesional")
+  citasSolicitadas   Cita[]                     @relation("CitaSolicitado")
+  agregados          AgregadoDiario[]
+  entradas           EntradaPodologa[]
   // Sedes donde este médico atiende baropodometría "por solicitud" (independiente de su
   // asignación normal de podología). Solo se muestra/ofrece en esas sedes al reservar baro.
-  baroSedes        BaroMedicoSede[]
+  baroSedes          BaroMedicoSede[]
+  // Historia clínica
+  usuario            Usuario?
+  atencionesClinicas AtencionClinica[]
+  notasEvolucion     NotaEvolucion[]
+  recetasEmitidas    Receta[]
 
-  creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
+  creadoPor     String?  @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
@@ -351,19 +360,19 @@ model AsignacionSede {
 // hacer baro por solicitud en una sede sin estar asignado a ella para podología. El
 // selector de médico al reservar baro y el auto-adjuntar solo consideran esta tabla.
 model BaroMedicoSede {
-  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  profesionalId String   @db.Uuid
-  sedeId        String   @db.Uuid
-  activa        Boolean  @default(true)
+  id            String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  profesionalId String            @db.Uuid
+  sedeId        String            @db.Uuid
+  activa        Boolean           @default(true)
   // Asignación TEMPORAL del doctor a la baro de esta sede (independiente de su sede general).
   // Rige la sección "Baro" de movimientos y qué médicos lista el combo de Nueva Cita para baro
   // en esa sede+fecha. fechaFin null = indefinido. motivo null = asignación base (sin cambio).
-  fechaInicio   DateTime @default(now())
+  fechaInicio   DateTime          @default(now())
   fechaFin      DateTime?
   motivo        MotivoMovimiento?
-  creadoPor     String?  @db.Uuid
-  creadoEn      DateTime @default(now())
-  actualizadoEn DateTime @updatedAt
+  creadoPor     String?           @db.Uuid
+  creadoEn      DateTime          @default(now())
+  actualizadoEn DateTime          @updatedAt
 
   profesional Profesional @relation(fields: [profesionalId], references: [id])
   sede        Sede        @relation(fields: [sedeId], references: [id])
@@ -388,7 +397,7 @@ model Recepcionista {
   asignaciones AsignacionAdministrativa[]
   usuario      Usuario? // cuenta de login vinculada (1:1); su acceso deriva de esta ficha
 
-  creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
+  creadoPor     String?  @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
@@ -481,25 +490,25 @@ model BloqueoAgenda {
   deletedAt     DateTime?
 
   // Campos para almuerzos y bloqueos recurrentes
-  sedeId       String?     @db.Uuid
-  tipo         TipoBloqueo @default(OTRO)
-  esRecurrente Boolean     @default(false)
+  sedeId           String?     @db.Uuid
+  tipo             TipoBloqueo @default(OTRO)
+  esRecurrente     Boolean     @default(false)
   // Reunión administrativa de Daniel/Yasica: se pinta VERDE en la agenda (vs rojo del permiso).
-  esReunion    Boolean     @default(false)
+  esReunion        Boolean     @default(false)
   // Vacaciones planificadas: bloqueo de día completo (tipo PERMISO, esRecurrente=false) marcado
   // con esta bandera para pintarse como franja 🌴 "Vacaciones" en la agenda (vs rojo del permiso).
   // No cambia la semántica de disponibilidad (esta ya bloquea todo bloqueo no recurrente).
-  esVacaciones Boolean     @default(false)
+  esVacaciones     Boolean     @default(false)
   // Ausencia por enfermedad: bloquea agenda y se pinta como franja 🤒 "Enfermedad" (naranja).
-  esEnfermedad Boolean     @default(false)
+  esEnfermedad     Boolean     @default(false)
   // Sincronización con el calendario del celular del profesional (reuniones): id del evento
   // Outlook (Daniel) para update/cancel; último error de sync (null = OK) para el reintentador.
   outlookEventId   String?
   outlookSyncError String?
-  horaInicio   String? // "HH:MM" — para bloqueos recurrentes de almuerzo
-  horaFin      String? // "HH:MM" — calculado al crear
-  duracionMin  Int         @default(60)
-  creadoPor    String?     @db.Uuid
+  horaInicio       String? // "HH:MM" — para bloqueos recurrentes de almuerzo
+  horaFin          String? // "HH:MM" — calculado al crear
+  duracionMin      Int         @default(60)
+  creadoPor        String?     @db.Uuid
 
   profesional      Profesional @relation(fields: [profesionalId], references: [id])
   sede             Sede?       @relation(fields: [sedeId], references: [id])
@@ -529,19 +538,21 @@ model Servicio {
   orden             Int       @default(0)
   deletedAt         DateTime?
 
-  unidadNegocio UnidadNegocio            @relation(fields: [unidadNegocioId], references: [id])
-  competencias  CompetenciaProfesional[]
-  citas         Cita[]
-  paquetes      Paquete[]
-  agregados     AgregadoDiario[]
-  combinaciones     CombinacionPermitida[]  @relation("CombinacionExtra")
-  combinacionesComoAncla CombinacionPermitida[] @relation("CombinacionAncla")
-  anclaDe       ConfiguracionSistema[]
-  subcategorias SubcategoriaServicio[]
-  paquetesComoServicioNuevo PaquetePaciente[] @relation("PaqueteServicioNuevo")
-  videos        ServicioVideo[]
+  unidadNegocio             UnidadNegocio            @relation(fields: [unidadNegocioId], references: [id])
+  competencias              CompetenciaProfesional[]
+  citas                     Cita[]
+  paquetes                  Paquete[]
+  agregados                 AgregadoDiario[]
+  combinaciones             CombinacionPermitida[]   @relation("CombinacionExtra")
+  combinacionesComoAncla    CombinacionPermitida[]   @relation("CombinacionAncla")
+  anclaDe                   ConfiguracionSistema[]
+  subcategorias             SubcategoriaServicio[]
+  paquetesComoServicioNuevo PaquetePaciente[]        @relation("PaqueteServicioNuevo")
+  videos                    ServicioVideo[]
+  atencionesClinicas        AtencionClinica[]
+  recetaItems               RecetaItem[] // ítems tipo SERVICIO en indicaciones (profilaxis, láser)
 
-  creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
+  creadoPor     String?  @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
@@ -567,7 +578,7 @@ model SubcategoriaServicio {
   servicio Servicio @relation(fields: [servicioId], references: [id])
   citas    Cita[]
 
-  creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
+  creadoPor     String?  @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
@@ -583,7 +594,7 @@ model SubcategoriaServicio {
 // tener muchos extras. Cada bloque ancla→extras es independiente. Soft-delete + Audit.
 model CombinacionPermitida {
   id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  servicioAnclaId String?   @db.Uuid   // FK al servicio ancla (opcional para compat. legada)
+  servicioAnclaId String?   @db.Uuid // FK al servicio ancla (opcional para compat. legada)
   servicioExtraId String    @db.Uuid
   activo          Boolean   @default(true)
   deletedAt       DateTime?
@@ -591,7 +602,7 @@ model CombinacionPermitida {
   servicioAncla Servicio? @relation("CombinacionAncla", fields: [servicioAnclaId], references: [id])
   servicio      Servicio  @relation("CombinacionExtra", fields: [servicioExtraId], references: [id])
 
-  creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
+  creadoPor     String?  @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
@@ -611,7 +622,7 @@ model ConfiguracionSistema {
 
   servicioAncla Servicio? @relation(fields: [servicioAnclaId], references: [id])
 
-  creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
+  creadoPor     String?  @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
@@ -635,7 +646,7 @@ model CompetenciaProfesional {
   profesional Profesional @relation(fields: [profesionalId], references: [id])
   servicio    Servicio    @relation(fields: [servicioId], references: [id])
 
-  creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
+  creadoPor     String?  @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
@@ -697,14 +708,18 @@ model Paciente {
   // requiereActualizacionDatos es CALCULADA server-side (falta correo/teléfono/
   // fechaNacimiento) — nunca se setea manualmente desde el cliente.
   origenImportacion          String?
-  loteImportacionId          String?   @db.Uuid
-  requiereActualizacionDatos Boolean   @default(false)
+  loteImportacionId          String? @db.Uuid
+  requiereActualizacionDatos Boolean @default(false)
 
-  citas          Cita[]
-  paquetes       PaquetePaciente[]
-  conciliaciones ConciliacionApertura[]
+  citas              Cita[]
+  paquetes           PaquetePaciente[]
+  conciliaciones     ConciliacionApertura[]
+  // Historia clínica
+  historiaClinica    HistoriaClinica?
+  atencionesClinicas AtencionClinica[]
+  recetas            Receta[]
 
-  creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
+  creadoPor     String?  @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
@@ -766,19 +781,19 @@ model Cita {
   // ─── Bloque combinado (profilaxis + servicio extra en el mismo slot de 1 h) ──
   // null = cita individual. Si != null, esta cita pertenece a un bloque de 2 citas
   // que comparten el mismo intervalo horario. `slotRol` distingue ancla vs extra.
-  slotGrupoId             String?           @db.Uuid
-  slotRol                 SlotRol?
+  slotGrupoId String?  @db.Uuid
+  slotRol     SlotRol?
 
   // Promoción aplicada a la cita (opcional). En un bloque combinado vive SOLO en la cita
   // PRINCIPAL (profilaxis); la SECUNDARIO lleva null. FK en Restrict (ver Promocion).
-  promocionId             String?           @db.Uuid
+  promocionId String? @db.Uuid
 
   // Snapshot de precio al agendar (caja/reportes). Se calculan server-side: precio de lista
   // del servicio/combo, descuento aplicado por la promo y monto final a pagar. null = no
   // calculado (citas viejas o sin precio de referencia).
-  precioLista             Decimal?          @db.Decimal(10, 2)
-  montoDescuento          Decimal?          @db.Decimal(10, 2)
-  montoFinal              Decimal?          @db.Decimal(10, 2)
+  precioLista    Decimal? @db.Decimal(10, 2)
+  montoDescuento Decimal? @db.Decimal(10, 2)
+  montoFinal     Decimal? @db.Decimal(10, 2)
 
   // Comprobante de pago anticipado (opcional)
   comprobanteUrl       String?
@@ -809,24 +824,25 @@ model Cita {
   // (antes se metía dentro del comentario como [IK:...] y se filtraba a la vista).
   idempotencyKey String?
 
-  paciente              Paciente           @relation(fields: [pacienteId], references: [id])
-  creadoPorUsuario      Usuario?           @relation("CitasCreadas", fields: [creadoPorUsuarioId], references: [id])
-  profesional           Profesional?       @relation("CitaProfesional", fields: [profesionalId], references: [id])
-  solicitadoProfesional Profesional?       @relation("CitaSolicitado", fields: [solicitadoProfesionalId], references: [id])
-  sede                  Sede               @relation(fields: [sedeId], references: [id])
-  unidadNegocio         UnidadNegocio      @relation(fields: [unidadNegocioId], references: [id])
-  servicio              Servicio           @relation(fields: [servicioId], references: [id])
+  paciente              Paciente              @relation(fields: [pacienteId], references: [id])
+  creadoPorUsuario      Usuario?              @relation("CitasCreadas", fields: [creadoPorUsuarioId], references: [id])
+  profesional           Profesional?          @relation("CitaProfesional", fields: [profesionalId], references: [id])
+  solicitadoProfesional Profesional?          @relation("CitaSolicitado", fields: [solicitadoProfesionalId], references: [id])
+  sede                  Sede                  @relation(fields: [sedeId], references: [id])
+  unidadNegocio         UnidadNegocio         @relation(fields: [unidadNegocioId], references: [id])
+  servicio              Servicio              @relation(fields: [servicioId], references: [id])
   subcategoria          SubcategoriaServicio? @relation(fields: [subcategoriaId], references: [id])
-  paquetePaciente       PaquetePaciente?   @relation(fields: [paquetePacienteId], references: [id])
-  promocion             Promocion?         @relation(fields: [promocionId], references: [id], onDelete: Restrict)
-  citaOriginal          Cita?              @relation("Reprogramacion", fields: [citaOriginalId], references: [id])
-  reprogramaciones      Cita[]             @relation("Reprogramacion")
+  paquetePaciente       PaquetePaciente?      @relation(fields: [paquetePacienteId], references: [id])
+  promocion             Promocion?            @relation(fields: [promocionId], references: [id], onDelete: Restrict)
+  citaOriginal          Cita?                 @relation("Reprogramacion", fields: [citaOriginalId], references: [id])
+  reprogramaciones      Cita[]                @relation("Reprogramacion")
   auditLogs             AuditLog[]
   recordatorios         RecordatorioCita[]
   tokensAccion          TokenAccionCita[]
   comentarios           ComentarioCita[]
   consumosSesion        ConsumoSesion[]
   videoEnvios           VideoEnvioLog[]
+  atencionClinica       AtencionClinica? // Historia clínica: 1 atención por cita (PRINCIPAL del bloque)
 
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
@@ -891,13 +907,13 @@ model Paquete {
   // ─── Módulo Sesiones/Membresías (additive) ────────────────────────────────
   // tipo PAQUETE | MEMBRESIA | UNITARIA. `activo=false` desactiva la VENTA
   // (jamás se borra: instancias existentes/migradas siguen consumibles).
-  tipo             String  @default("PAQUETE")
+  tipo                 String  @default("PAQUETE")
   // Membresías: composición vigente [{servicioId, cantidad, etiqueta}] — al VENDER
   // se copia como snapshot al PaquetePaciente (editar aquí NO toca lo vendido).
-  composicion      Json?
-  duracionMeses    Int?
-  sedesHabilitadas Json? // lista de sedeIds donde se vende (null = todas)
-  promocionId      String? @db.Uuid // membresías viven en el módulo Promociones
+  composicion          Json?
+  duracionMeses        Int?
+  sedesHabilitadas     Json? // lista de sedeIds donde se vende (null = todas)
+  promocionId          String? @db.Uuid // membresías viven en el módulo Promociones
   // ─── Contrato de membresía (PDF pre-llenado) ──────────────────────────────
   // PDF plantilla subido (contrato para firmar). Se estampan los datos del paciente
   // en las posiciones de `contratoCampos` al vender/agendar.
@@ -911,7 +927,7 @@ model Paquete {
   promocion  Promocion?        @relation(fields: [promocionId], references: [id])
   instancias PaquetePaciente[]
 
-  creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
+  creadoPor     String?  @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
@@ -966,7 +982,7 @@ model PaquetePaciente {
   consumos       ConsumoSesion[]
   conciliaciones ConciliacionApertura[]
 
-  creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
+  creadoPor     String?  @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
@@ -1043,29 +1059,29 @@ model ConsumoSesion {
 // filas decididas.
 
 model ConciliacionApertura {
-  id                 String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  pacienteId         String  @db.Uuid
-  familiaId          String  @db.Uuid
-  paquetePacienteId  String? @db.Uuid // se llena al APROBAR
-  lecturaServicio    Int? // evidencia A (nombres)
-  lecturaObs         Int? // evidencia B (observaciones)
-  consumoPropuesto   Int? // null = ILEGIBLE (decisión 100% humana)
-  consumoAprobado    Int?
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  pacienteId          String    @db.Uuid
+  familiaId           String    @db.Uuid
+  paquetePacienteId   String?   @db.Uuid // se llena al APROBAR
+  lecturaServicio     Int? // evidencia A (nombres)
+  lecturaObs          Int? // evidencia B (observaciones)
+  consumoPropuesto    Int? // null = ILEGIBLE (decisión 100% humana)
+  consumoAprobado     Int?
   // Tamaño REAL del paquete detectado en la obs ("de paquete de N sesiones"): manda
   // sobre el tamaño de la familia (el nombre de servicio a veces dice P12 pero el
   // paciente compró un paquete de 4). null = usar el tamaño de la familia.
-  sesionesTotalReal  Int?
-  ajusteProCliente   Boolean @default(false)
-  confianza          String // VERDE | AMBAR | ROJO
-  sedeInferidaId     String? @db.Uuid
-  sedeAprobadaId     String? @db.Uuid
-  servicioResueltoId String? @db.Uuid // mapeo de la familia según sede inferida/aprobada
+  sesionesTotalReal   Int?
+  ajusteProCliente    Boolean   @default(false)
+  confianza           String // VERDE | AMBAR | ROJO
+  sedeInferidaId      String?   @db.Uuid
+  sedeAprobadaId      String?   @db.Uuid
+  servicioResueltoId  String?   @db.Uuid // mapeo de la familia según sede inferida/aprobada
   // Membresías: vigencia estimada (primera sesión + duración) y flag si ya
   // venció pero hay consumo 2026 (revisión humana de vigencia).
   vigenciaFinEstimada String?
-  flagVigencia        Boolean @default(false)
+  flagVigencia        Boolean   @default(false)
   evidenciaIds        Json // ids de historial_genexis usados
-  estado              String  @default("PENDIENTE") // PENDIENTE|APROBADA|EDITADA|DESCARTADA
+  estado              String    @default("PENDIENTE") // PENDIENTE|APROBADA|EDITADA|DESCARTADA
   valoresOriginales   Json? // snapshot pre-edición (EDITADA preserva el original)
   decididoPor         String?
   decididoEn          DateTime?
@@ -1108,6 +1124,12 @@ model Usuario {
   recepcionistaId String?        @unique @db.Uuid
   recepcionista   Recepcionista? @relation(fields: [recepcionistaId], references: [id])
 
+  // Vínculo con la ficha de PROFESIONAL (Historia clínica). Un médico con login queda ligado a su
+  // Profesional para registrar HC y emitir recetas a su nombre (candado: tipo=medico, !esEquipo,
+  // colegiatura cargada). 1:1, mismo patrón que recepcionistaId.
+  profesionalId String?      @unique @db.Uuid
+  profesional   Profesional? @relation(fields: [profesionalId], references: [id])
+
   sedes                 UsuarioSede[]
   apiKeys               ApiKey[]
   auditLogs             AuditLog[]
@@ -1118,7 +1140,7 @@ model Usuario {
   citasCreadas          Cita[]              @relation("CitasCreadas")
   comentariosCita       ComentarioCita[]
 
-  creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
+  creadoPor     String?  @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
@@ -1134,7 +1156,7 @@ model Rol {
   descripcion   String?
   permisos      String[]
   esSistema     Boolean  @default(false)
-  creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
+  creadoPor     String?  @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
@@ -1168,7 +1190,7 @@ model ApiKey {
 
   usuario Usuario? @relation(fields: [usuarioId], references: [id])
 
-  creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
+  creadoPor     String?  @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
@@ -1216,7 +1238,7 @@ model WebhookSubscription {
 
   sede Sede? @relation(fields: [sedeId], references: [id])
 
-  creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
+  creadoPor     String?  @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
@@ -1344,7 +1366,7 @@ model MailConfig {
   provider      String   @default("resend") // Resend (transporte actual). Gmail quedó DEPRECADO.
   refreshToken  String? // DEPRECADO (token OAuth Gmail) — se conserva, no se usa con Resend
   isActive      Boolean  @default(true)
-  creadoPor String? @db.Uuid // Usuario que creó el registro (auditoría)
+  creadoPor     String?  @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
@@ -1400,7 +1422,7 @@ model RecordatorioCita {
 // historial insertado referencia su lote vía `loteId` (FK débil, sin constraint).
 
 model ImportGenexisLote {
-  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id            String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   nombreArchivo String
   tipo          String // "INICIAL" | "DELTA"
   totalFilas    Int
@@ -1532,26 +1554,26 @@ model ServicioVideo {
 // migración (SQL crudo). Las transiciones de ciclo de vida ACTUALIZAN esta fila
 // (PENDIENTE↔CANCELADO, → ENVIADO); nunca insertan duplicados.
 model VideoEnvioLog {
-  id                 String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  citaId             String           @db.Uuid
-  servicioVideoId    String           @db.Uuid
-  pacienteEmail      String // snapshot del email al momento de programar
-  scheduledFor       DateTime // UTC — calculado desde fecha/hora civil (America/Lima) ± offset
-  estado             EstadoEnvioVideo @default(PENDIENTE)
-  sentAt             DateTime? // momento real de envío
-  errorDetalle       String? // último error (reintentos/ventana expirada)
+  id                String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  citaId            String           @db.Uuid
+  servicioVideoId   String           @db.Uuid
+  pacienteEmail     String // snapshot del email al momento de programar
+  scheduledFor      DateTime // UTC — calculado desde fecha/hora civil (America/Lima) ± offset
+  estado            EstadoEnvioVideo @default(PENDIENTE)
+  sentAt            DateTime? // momento real de envío
+  errorDetalle      String? // último error (reintentos/ventana expirada)
   // Motivo cuando estado=CANCELADO: distingue "fuera_de_ventana" (reactivable al
   // reprogramar/editar offset) de "cita_cancelada"/"video_pausado"/"video_eliminado"
   // (no reactivables). Necesario para R2 (reactivación inversa) y R1 (revalidación).
-  motivoCancelacion  String?
-  intentos           Int              @default(0)
-  resendEmailId      String? // id del correo en Resend (trazabilidad)
+  motivoCancelacion String?
+  intentos          Int              @default(0)
+  resendEmailId     String? // id del correo en Resend (trazabilidad)
   // Cuántas veces se ENVIÓ realmente al paciente (automático + reenvíos manuales). El
   // envío manual desde el tracking incrementa este contador y no crea filas nuevas.
-  vecesEnviado       Int              @default(0)
+  vecesEnviado      Int              @default(0)
   // Usuario que hizo el último envío MANUAL desde el tracking (null = solo automático).
-  enviadoManualPor   String?          @db.Uuid
-  deletedAt          DateTime?
+  enviadoManualPor  String?          @db.Uuid
+  deletedAt         DateTime?
 
   cita          Cita          @relation(fields: [citaId], references: [id], onDelete: Restrict)
   servicioVideo ServicioVideo @relation(fields: [servicioVideoId], references: [id], onDelete: Restrict)
@@ -1584,4 +1606,359 @@ model VideoSupresion {
   // Único por email mientras esté activo: índice único PARCIAL (WHERE deletedAt IS NULL)
   // creado vía SQL crudo en la migración: video_supresiones_email_unico.
   @@map("video_supresiones")
+}
+
+// ─── HISTORIA CLÍNICA — CATÁLOGOS DE REFERENCIA ────────────────────────────────
+// Base de la receta (Fase 2 del plan HCE). Son catálogos "de solo lectura" para el
+// personal: no dependen aún de los modelos clínicos (HistoriaClinica/Receta), por eso
+// se pueden sembrar y usar desde ya. Los índices de búsqueda difusa (pg_trgm GIN) van
+// como SQL crudo en la migración — no se representan en este schema.
+
+// Catálogo CIE-10 (diagnósticos). PK natural = el propio código CIE-10 (ej. "B35.1").
+// Subset curado para la clínica del pie (micosis, complicaciones diabéticas, uñas, etc.),
+// ampliable. La receta/HC exige el diagnóstico codificado en CIE-10.
+model Cie10 {
+  codigo      String   @id // "B35.1" — código CIE-10 (clave natural, con punto)
+  descripcion String // "Tiña de las uñas (onicomicosis)"
+  categoria   String? // agrupador legible para la UI (ej. "Micosis superficiales")
+  activo      Boolean  @default(true)
+  creadoEn    DateTime @default(now())
+
+  diagnosticos DiagnosticoAtencion[]
+  recetaItems  RecetaItem[]
+
+  // Búsqueda por `descripcion` (y por `codigo`) con similarity(): índice pg_trgm GIN
+  // creado vía SQL crudo en la migración: cie10_descripcion_trgm.
+  @@map("cie10")
+}
+
+// Catálogo de MEDICAMENTOS. PK natural = slug estable (dci-concentracion-forma) para
+// que el seed sea idempotente por upsert (mismo patrón que ubigeo). Se prescribe por
+// `dci` (lo que exige DIGEMID); `codigoAtc` es el estándar internacional (OMS) y
+// `codigoDigemid` queda como hueco para el código nacional/petitorio (PNUME) a futuro.
+// `nombresComerciales` es texto libre ("Lamisil, Terbisil") solo para BUSCAR por marca
+// y llegar al DCI — no se imprime en la receta.
+model Medicamento {
+  id                 String   @id // slug: "terbinafina-250-mg-tableta"
+  dci                String // Denominación Común Internacional (principio activo) — legal
+  codigoAtc          String? // código ATC OMS (ej. "D01BA02")
+  codigoDigemid      String? // hueco para código nacional / petitorio (PNUME)
+  concentracion      String? // "250 mg"
+  formaFarmaceutica  String? // "tableta", "crema", "solución"
+  viaAdministracion  String? // "oral", "tópica"
+  nombresComerciales String? // marcas separadas por coma, SOLO para búsqueda → DCI
+  grupo              String? // "Antifúngico sistémico", "Antibiótico", "AINE", etc.
+  activo             Boolean  @default(true)
+  creadoEn           DateTime @default(now())
+  actualizadoEn      DateTime @updatedAt
+
+  // Receta: true = venta bajo receta (solo puede ir en RECETA_MEDICA, firmada por médico).
+  requiereReceta    Boolean      @default(false)
+  // true = producto de cuidado (Sanytol, quitaesmalte, loción), no un fármaco.
+  esProducto        Boolean      @default(false)
+  // Texto de posología por defecto que se precarga al agregarlo a una receta (3.4).
+  posologiaSugerida String?
+  recetaItems       RecetaItem[]
+
+  @@index([dci])
+  @@index([grupo])
+  // Búsqueda difusa por `dci` y por `nombresComerciales` con similarity(): índices
+  // pg_trgm GIN creados vía SQL crudo en la migración: medicamentos_dci_trgm y
+  // medicamentos_comercial_trgm.
+  @@map("medicamentos")
+}
+
+// ─── HISTORIA CLÍNICA — NÚCLEO (Fase 1) Y RECETA (Fase 2) ─────────────────────
+// Módulo aparte que LEE la agenda (Cita) y nunca la escribe. Reglas:
+//  · Autores/registradores = uuid plano + etiqueta (snapshot del nombre), sin FK a Usuario
+//    (mismo patrón que ComentarioCita.autorEtiqueta).
+//  · Notas y diagnósticos son EDITABLES en la vista clínica (decisión médica), pero cada
+//    edición conserva la versión previa (NotaEvolucionVersion) y queda en AuditLog (NTS 139).
+//  · Recetas/indicaciones son INMUTABLES: corrección = anulación con motivo.
+//  · Nada clínico se borra físicamente: solo `deletedAt`.
+
+enum EstadoHC {
+  activa
+  pasiva
+}
+
+enum EstadoAtencion {
+  abierta
+  cerrada
+}
+
+enum TipoNota {
+  evolucion
+  procedimiento
+  indicacion
+  observacion
+}
+
+enum TipoDiagnostico {
+  presuntivo
+  definitivo
+}
+
+enum TipoAntecedente {
+  patologico
+  quirurgico
+  familiar
+  farmacologico
+  habito
+  otro
+}
+
+enum SeveridadAlergia {
+  leve
+  moderada
+  severa
+}
+
+enum EstadoReceta {
+  emitida
+  anulada
+}
+
+// Dos documentos del mismo flujo: RECETA MÉDICA (solo médico colegiado; ítems Rx) e
+// INDICACIONES PODOLÓGICAS (podóloga/fisio/médico: venta libre, productos y servicios).
+enum TipoDocumentoReceta {
+  RECETA_MEDICA
+  INDICACIONES_PODOLOGICAS
+}
+
+enum TipoItemReceta {
+  MEDICAMENTO_RX
+  MEDICAMENTO_OTC
+  PRODUCTO
+  SERVICIO
+}
+
+// Una historia por paciente. Se abre perezosamente en la primera atención/antecedente/alergia.
+model HistoriaClinica {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  numero             Int      @unique @default(autoincrement()) // N° de HC correlativo
+  pacienteId         String   @unique @db.Uuid
+  fechaApertura      DateTime @default(now())
+  sedeAperturaId     String?  @db.Uuid // sin relación (puede abrirse desde la ficha, sin cita)
+  estado             EstadoHC @default(activa)
+  creadoPorUsuarioId String?  @db.Uuid // sin relación, solo auditoría
+  creadoEn           DateTime @default(now())
+  actualizadoEn      DateTime @updatedAt
+
+  paciente     Paciente              @relation(fields: [pacienteId], references: [id], onDelete: Restrict)
+  atenciones   AtencionClinica[]
+  antecedentes AntecedentePaciente[]
+  alergias     AlergiaPaciente[]
+  recetas      Receta[]
+
+  @@map("historias_clinicas")
+}
+
+// El "encuentro" clínico: 1 por cita atendida (PRINCIPAL del bloque combinado).
+model AtencionClinica {
+  id                  String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  historiaClinicaId   String         @db.Uuid
+  citaId              String         @unique @db.Uuid
+  pacienteId          String         @db.Uuid
+  profesionalId       String         @db.Uuid // quien atendió (persona; nunca un equipo Baro)
+  sedeId              String         @db.Uuid
+  servicioId          String         @db.Uuid
+  subcategoriaId      String?        @db.Uuid // sin relación
+  fecha               DateTime       @db.Date // = cita.fecha
+  motivoConsulta      String // obligatorio (decisión médica B2)
+  estado              EstadoAtencion @default(abierta)
+  abiertaPorUsuarioId String?        @db.Uuid
+  abiertaEtiqueta     String?
+  cerradaEn           DateTime?
+  cerradaPorUsuarioId String?        @db.Uuid
+  creadoEn            DateTime       @default(now())
+  actualizadoEn       DateTime       @updatedAt
+
+  historiaClinica HistoriaClinica       @relation(fields: [historiaClinicaId], references: [id], onDelete: Restrict)
+  cita            Cita                  @relation(fields: [citaId], references: [id], onDelete: Restrict)
+  paciente        Paciente              @relation(fields: [pacienteId], references: [id], onDelete: Restrict)
+  profesional     Profesional           @relation(fields: [profesionalId], references: [id], onDelete: Restrict)
+  sede            Sede                  @relation(fields: [sedeId], references: [id], onDelete: Restrict)
+  servicio        Servicio              @relation(fields: [servicioId], references: [id], onDelete: Restrict)
+  notas           NotaEvolucion[]
+  diagnosticos    DiagnosticoAtencion[]
+  recetas         Receta[]
+
+  @@index([historiaClinicaId, fecha])
+  @@index([pacienteId])
+  @@index([profesionalId, fecha])
+  @@map("atenciones_clinicas")
+}
+
+// Evolución de una atención (Subjetivo / Objetivo / Apreciación / Plan + texto libre).
+// EDITABLE en la vista clínica; cada edición guarda la versión previa en NotaEvolucionVersion.
+model NotaEvolucion {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  atencionId          String    @db.Uuid
+  tipo                TipoNota  @default(evolucion)
+  subjetivo           String?
+  objetivo            String?
+  apreciacion         String?
+  plan                String?
+  texto               String? // texto libre adicional (o cuerpo de una observación tardía)
+  profesionalId       String?   @db.Uuid // a nombre de quién se registra (podóloga sin login)
+  autorUsuarioId      String?   @db.Uuid // quién tecleó
+  autorEtiqueta       String
+  version             Int       @default(1)
+  editadaEn           DateTime?
+  editadaPorUsuarioId String?   @db.Uuid
+  creadoEn            DateTime  @default(now())
+  actualizadoEn       DateTime  @updatedAt
+  deletedAt           DateTime?
+  deletedPorUsuarioId String?   @db.Uuid
+
+  atencion    AtencionClinica        @relation(fields: [atencionId], references: [id], onDelete: Restrict)
+  profesional Profesional?           @relation(fields: [profesionalId], references: [id], onDelete: Restrict)
+  versiones   NotaEvolucionVersion[]
+
+  @@index([atencionId, creadoEn])
+  @@map("notas_evolucion")
+}
+
+// Historial de versiones de una nota: solo administración/auditoría, invisible en la vista clínica.
+model NotaEvolucionVersion {
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  notaId               String   @db.Uuid
+  version              Int // versión que fue reemplazada
+  contenido            Json // snapshot: tipo, subjetivo, objetivo, apreciacion, plan, texto, profesionalId
+  guardadoEn           DateTime @default(now())
+  guardadoPorUsuarioId String?  @db.Uuid
+  guardadoEtiqueta     String?
+
+  nota NotaEvolucion @relation(fields: [notaId], references: [id], onDelete: Restrict)
+
+  @@unique([notaId, version])
+  @@map("notas_evolucion_versiones")
+}
+
+// Diagnóstico CIE-10 de una atención. Editable; soft delete; máx 1 principal vigente.
+model DiagnosticoAtencion {
+  id                     String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  atencionId             String          @db.Uuid
+  cie10Codigo            String
+  tipo                   TipoDiagnostico @default(presuntivo)
+  principal              Boolean         @default(false)
+  observacion            String?
+  registradoPorUsuarioId String?         @db.Uuid
+  registradoEtiqueta     String
+  creadoEn               DateTime        @default(now())
+  actualizadoEn          DateTime        @updatedAt
+  deletedAt              DateTime?
+
+  atencion AtencionClinica @relation(fields: [atencionId], references: [id], onDelete: Restrict)
+  cie10    Cie10           @relation(fields: [cie10Codigo], references: [codigo], onDelete: Restrict)
+
+  @@index([atencionId])
+  // Máx 1 diagnóstico PRINCIPAL vigente por atención: índice único PARCIAL (SQL crudo en la
+  // migración): diagnosticos_principal_unico ON (atencionId) WHERE principal AND "deletedAt" IS NULL
+  @@map("diagnosticos_atencion")
+}
+
+model AntecedentePaciente {
+  id                     String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  historiaClinicaId      String          @db.Uuid
+  tipo                   TipoAntecedente
+  descripcion            String
+  activo                 Boolean         @default(true)
+  registradoPorUsuarioId String?         @db.Uuid
+  registradoEtiqueta     String
+  creadoEn               DateTime        @default(now())
+  actualizadoEn          DateTime        @updatedAt
+  deletedAt              DateTime?
+
+  historiaClinica HistoriaClinica @relation(fields: [historiaClinicaId], references: [id], onDelete: Restrict)
+
+  @@index([historiaClinicaId])
+  @@map("antecedentes_paciente")
+}
+
+// Alergias (RAM). Se muestran destacadas en HC, atención y receta (seguridad al prescribir).
+model AlergiaPaciente {
+  id                     String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  historiaClinicaId      String           @db.Uuid
+  sustancia              String
+  reaccion               String?
+  severidad              SeveridadAlergia @default(moderada)
+  activa                 Boolean          @default(true)
+  registradoPorUsuarioId String?          @db.Uuid
+  registradoEtiqueta     String
+  creadoEn               DateTime         @default(now())
+  actualizadoEn          DateTime         @updatedAt
+  deletedAt              DateTime?
+
+  historiaClinica HistoriaClinica @relation(fields: [historiaClinicaId], references: [id], onDelete: Restrict)
+
+  @@index([historiaClinicaId])
+  @@map("alergias_paciente")
+}
+
+// RECETA MÉDICA / INDICACIONES PODOLÓGICAS. Inmutable: corrección = anulación con motivo.
+// RECETA_MEDICA: emisor = médico (tipo=medico, !esEquipo, colegiatura obligatoria → snapshot).
+// INDICACIONES_PODOLOGICAS: emisor = profesional que atendió; NO admite ítems MEDICAMENTO_RX.
+model Receta {
+  id                    String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  numero                Int                 @unique @default(autoincrement())
+  tipoDocumento         TipoDocumentoReceta @default(RECETA_MEDICA)
+  atencionId            String              @db.Uuid
+  historiaClinicaId     String              @db.Uuid
+  pacienteId            String              @db.Uuid
+  sedeId                String              @db.Uuid // copiado de la atención; sin relación
+  emisorProfesionalId   String              @db.Uuid
+  emisorUsuarioId       String?             @db.Uuid
+  emisorNombre          String // snapshot
+  emisorRegistro        String? // snapshot: CMP (obligatorio en RECETA_MEDICA) o registro de podóloga
+  indicacionesGenerales String?
+  fechaEmision          DateTime            @default(now())
+  vigenciaDias          Int?
+  estado                EstadoReceta        @default(emitida)
+  codigoVerificacion    String              @unique // corto, para el QR / verificación
+  anuladaEn             DateTime?
+  anuladaPorUsuarioId   String?             @db.Uuid
+  motivoAnulacion       String?
+  creadoEn              DateTime            @default(now())
+
+  atencion        AtencionClinica @relation(fields: [atencionId], references: [id], onDelete: Restrict)
+  historiaClinica HistoriaClinica @relation(fields: [historiaClinicaId], references: [id], onDelete: Restrict)
+  paciente        Paciente        @relation(fields: [pacienteId], references: [id], onDelete: Restrict)
+  emisor          Profesional     @relation(fields: [emisorProfesionalId], references: [id], onDelete: Restrict)
+  items           RecetaItem[]
+
+  @@index([pacienteId, fechaEmision])
+  @@index([atencionId])
+  @@map("recetas")
+}
+
+// Ítem de receta/indicaciones, agrupado por diagnóstico. `nombre` = texto impreso (DCI o nombre
+// del producto/servicio); `marcaImpresa` va junto al genérico (decisión F2).
+model RecetaItem {
+  id                     String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  recetaId               String         @db.Uuid
+  tipo                   TipoItemReceta @default(MEDICAMENTO_OTC)
+  diagnosticoCie10Codigo String?
+  medicamentoId          String? // slug del vademécum; null = fuera de catálogo
+  servicioId             String?        @db.Uuid // ítems SERVICIO (profilaxis, láser)
+  nombre                 String
+  marcaImpresa           String?
+  concentracionSnapshot  String?
+  formaSnapshot          String?
+  dosis                  String?
+  via                    String?
+  frecuencia             String?
+  duracion               String?
+  cantidad               String?
+  indicaciones           String?
+  orden                  Int            @default(0)
+
+  receta      Receta       @relation(fields: [recetaId], references: [id], onDelete: Restrict)
+  diagnostico Cie10?       @relation(fields: [diagnosticoCie10Codigo], references: [codigo], onDelete: Restrict)
+  medicamento Medicamento? @relation(fields: [medicamentoId], references: [id], onDelete: Restrict)
+  servicio    Servicio?    @relation(fields: [servicioId], references: [id], onDelete: Restrict)
+
+  @@index([recetaId])
+  @@map("receta_items")
 }
