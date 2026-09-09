@@ -30,7 +30,7 @@ import { outlookConfigurado, reintentarOutlookFallidos } from './services/outloo
 import { importarOcupacionOutlookTodos } from './services/importarOcupacionOutlook';
 import { errorHandler } from './middleware/errorHandler';
 import { firmarUrlsRespuesta, servirUploadFirmado } from './middleware/firmaArchivos';
-import { swaggerSpec } from './swagger';
+import { construirSwaggerSpec } from './swagger';
 import { verificarSecretosAlArranque } from './utils/verificarSecretos';
 import { globalLimiter, analyticsLimiter } from './middleware/rateLimits';
 
@@ -159,10 +159,18 @@ if (swaggerHabilitado) {
       upgradeInsecureRequests: null,
     },
   }));
-  app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
-    customCss: '.swagger-ui .topbar { background-color: #1e40af; }',
-    customSiteTitle: 'Limablue Agenda API',
-  }));
+  // El spec OpenAPI se construye PEREZOSAMENTE en la primera visita (swagger-jsdoc parsea todas
+  // las rutas, ~10 s). Así el arranque del API no lo paga nunca; solo quien abre /api/docs.
+  let docsUi: express.RequestHandler | null = null;
+  app.use('/api/docs', swaggerUi.serve, (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (!docsUi) {
+      docsUi = swaggerUi.setup(construirSwaggerSpec(), {
+        customCss: '.swagger-ui .topbar { background-color: #1e40af; }',
+        customSiteTitle: 'Limablue Agenda API',
+      });
+    }
+    docsUi(req, res, next);
+  });
 }
 
 // ─── Health check ─────────────────────────────────────────────────────────────

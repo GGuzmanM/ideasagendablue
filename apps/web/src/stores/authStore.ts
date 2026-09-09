@@ -66,14 +66,26 @@ export const useAuthStore = create<AuthState>()(
       },
 
       login: async (email, password) => {
-        const res = await fetch(`${API_BASE}/auth/login`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password }),
-        });
+        // Distinguir "el servidor no responde" de "credenciales inválidas". Mientras el API
+        // arranca, el proxy de Vite (o nginx en producción) devuelve 502/504 sin JSON; antes
+        // cualquier respuesta no exitosa se mostraba como credenciales inválidas y confundía.
+        const SERVIDOR_NO_RESPONDE = 'El servidor no responde (puede estar iniciando). Espera unos segundos e intenta de nuevo.';
+        let res: Response;
+        try {
+          res = await fetch(`${API_BASE}/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password }),
+          });
+        } catch {
+          throw new Error(SERVIDOR_NO_RESPONDE);
+        }
         if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error((err as { message?: string }).message || 'Credenciales inválidas');
+          const err = (await res.json().catch(() => null)) as { message?: string } | null;
+          if (res.status === 401) throw new Error(err?.message || 'Credenciales inválidas');
+          // 4xx con mensaje del API (p. ej. 429 demasiados intentos, 403 usuario inactivo).
+          if (res.status < 500 && err?.message) throw new Error(err.message);
+          throw new Error(SERVIDOR_NO_RESPONDE);
         }
         const data = await res.json() as { token: string; usuario: UsuarioAuth };
         limpiarEstadoDeSesion(); // arranca en limpio: sin sede/fecha/caché heredadas de otra sesión

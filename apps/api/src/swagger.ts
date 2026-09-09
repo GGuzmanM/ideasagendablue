@@ -47,4 +47,12 @@ const options: swaggerJsdoc.Options = {
   apis: ['./src/routes/*.ts'],
 };
 
-export const swaggerSpec = swaggerJsdoc(options);
+// El spec NO se construye al importar este módulo: swagger-jsdoc parsea todos los archivos de
+// ./src/routes/*.ts y tarda ~10 s. Antes eso corría en cada arranque (también en producción,
+// con Swagger apagado) y retrasaba el momento en que el API empieza a atender. Ahora se
+// construye una sola vez, bajo demanda, en la primera visita a /api/docs.
+let cache: object | null = null;
+export function construirSwaggerSpec(): object {
+  if (!cache) cache = swaggerJsdoc(options);
+  return cache;
+}
