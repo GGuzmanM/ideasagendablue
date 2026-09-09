@@ -113,6 +113,12 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
   // quien puede REVERTIR (permiso citas.revertir → admin/coordinadora) conserva los desplegables
   // para corregir errores. Recepción/contact center los ven bloqueados.
   const permisos = useAuthStore((s) => s.usuario?.permisos ?? []);
+  // Roles de solo lectura en la agenda (p. ej. médico): ven la cita y abren la historia clínica,
+  // pero no gestionan el flujo. El backend igual lo exige (403); aquí se OCULTAN los botones para
+  // no ofrecer acciones que el rol no puede ejecutar.
+  const puedeEstado = permisos.includes('citas.estado');
+  const puedeReprogramar = permisos.includes('citas.reprogramar');
+  const puedeCancelar = permisos.includes('citas.cancelar');
   const puedeCorregir = permisos.includes('citas.revertir');
 
   return (
@@ -182,7 +188,7 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
               </span>
 
               {/* En bloque combinado, la llegada se marca en el flujo secuencial de abajo (no aquí). */}
-              {!esCombo && estadoNorm !== 'llego' && estadoNorm !== 'completada' && (
+              {puedeEstado && !esCombo && estadoNorm !== 'llego' && estadoNorm !== 'completada' && (
                 <button
                   type="button"
                   data-testid="popover-cita-btn-llego"
@@ -594,7 +600,7 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                 <p className="font-headline-sm text-headline-sm text-on-surface text-sm font-bold">
                   ¿Vino el paciente?
                 </p>
-                {(estadoNorm === 'agendada' || estadoNorm === 'confirmada') && (
+                {puedeEstado && (estadoNorm === 'agendada' || estadoNorm === 'confirmada') && (
                   <div className="grid grid-cols-2 gap-4">
                     <button
                       onClick={() => estadoMutation.mutate({ estado: 'llego' })}
@@ -618,7 +624,7 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                     </button>
                   </div>
                 )}
-                {estadoNorm === 'llego' && (
+                {puedeEstado && estadoNorm === 'llego' && (
                   <button
                     onClick={() => estadoMutation.mutate({ estado: 'en_atencion' })}
                     disabled={estadoMutation.isPending}
@@ -628,7 +634,7 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                     En atención
                   </button>
                 )}
-                {estadoNorm === 'en_atencion' && (
+                {puedeEstado && estadoNorm === 'en_atencion' && (
                   <button
                     onClick={() => estadoMutation.mutate({ estado: 'completada' })}
                     disabled={estadoMutation.isPending}
@@ -642,7 +648,7 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
             )}
 
             {/* FLUJO SECUENCIAL DEL BLOQUE COMBINADO: 1º tratamiento → (continuar/cancelar) → 2º tratamiento */}
-            {esCombo && bloquePrincipal && bloqueSecundaria && (() => {
+            {puedeEstado && esCombo && bloquePrincipal && bloqueSecundaria && (() => {
               if (!bloquePrincipal || !bloqueSecundaria) return null;
               const norm = (e?: string) => (e || '').toLowerCase().replace(/\s+/g, '_');
               const pE = norm(bloquePrincipal.estado);
@@ -732,7 +738,7 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
             })()}
 
             {/* REPROGRAMAR — solo AGENDADAS: enviar a otro día/hora con validación de disponibilidad */}
-            {!esCombo && estadoNorm === 'agendada' && !reprogramando && (
+            {puedeReprogramar && !esCombo && estadoNorm === 'agendada' && !reprogramando && (
               <button
                 onClick={() => setReprogramando(true)}
                 className="w-full flex items-center justify-center gap-2 p-3 border border-primary/40 text-primary bg-primary/5 hover:bg-primary/10 rounded-2xl transition-all font-bold text-sm cursor-pointer"
@@ -1118,7 +1124,7 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
 
           {/* FOOTER ACTION */}
           <div className="p-6 border-t border-outline-variant/20 space-y-3 bg-surface-container-lowest rounded-b-2xl">
-            {!esFinal && (
+            {puedeCancelar && !esFinal && (
               <>
                 {!cancelando ? (
                   <button

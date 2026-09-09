@@ -12,6 +12,7 @@ import {
   type AtencionClinica, type AtencionCompleta, type CamposNota, type TipoNota, type TipoDiagnostico,
   type TipoAntecedente, type SeveridadAlergia, type NotaEvolucion, type DiagnosticoAtencion,
   type TipoProcedimiento, type TipoEscala, type TipoLesion, type Pie, type PiePodograma,
+  type VistaPodograma, type ImagenPodograma, VISTAS_PODOGRAMA, VISTA_PODOGRAMA_LABEL,
 } from '../api/historiaClinica';
 import { recetasApi, verRecetaPdf, imprimirReceta, type ItemEntrada, type TipoDocumentoReceta, type RecetaCompleta, type TipoItemReceta } from '../api/recetas';
 import type { Cie10Item, MedicamentoItem } from '../api/catalogos';
@@ -444,7 +445,11 @@ export function useEscalas(atencion: AtencionCompleta | null, puedeRegistrar: bo
 }
 
 // ─── Bloque 3 · Podograma (1.3 mapa interactivo + 1.3b imagen de la Baro con anotaciones) ──
-export type HerramientaPodograma = 'lapiz' | 'texto' | 'borrador';
+export type HerramientaPodograma = 'mover' | 'lapiz' | 'texto' | 'borrador';
+// En pantallas táctiles (tablet) el editor arranca en "mover": el primer gesto desplaza la página
+// en vez de dejar un trazo por accidente; se toca "Lápiz" cuando se quiere dibujar.
+const herramientaInicial = (): HerramientaPodograma =>
+  (typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches ? 'mover' : 'lapiz');
 type AnotacionPodograma = AtencionCompleta['imagenesPodograma'][number]['anotaciones'][number];
 const MAX_IMAGEN_BYTES = 10 * 1024 * 1024;
 
@@ -486,11 +491,14 @@ export function usePodograma(atencion: AtencionCompleta | null, puedeRegistrar: 
     onError: (e: Error) => toast.error(e.message),
   });
 
-  // ── Imágenes de la Baro ──
+  // ── Imágenes de la Baro: 4 vistas fijas (frontal/posterior × izq/der) + sueltas por compatibilidad ──
   const imagenes = atencion?.imagenesPodograma ?? [];
+  const porVista = Object.fromEntries(VISTAS_PODOGRAMA.map((v) => [v, imagenes.find((i) => i.vista === v)])) as Record<VistaPodograma, ImagenPodograma | undefined>;
+  const otras = imagenes.filter((i) => !i.vista);
   const [imagenSelId, setImagenSelId] = useState<string | null>(null);
   const [verSilueta, setVerSilueta] = useState(false);
-  const imagenSel = imagenes.find((i) => i.id === imagenSelId) ?? imagenes[0] ?? null;
+  const primera = VISTAS_PODOGRAMA.map((v) => porVista[v]).find(Boolean) ?? otras[0] ?? null;
+  const imagenSel = imagenes.find((i) => i.id === imagenSelId) ?? primera;
   const imagenSelIdReal = imagenSel?.id ?? null;
   useEffect(() => { setImagenSelId(null); setVerSilueta(false); setPendiente(null); setNota(''); }, [atencionId]);
 
@@ -511,7 +519,7 @@ export function usePodograma(atencion: AtencionCompleta | null, puedeRegistrar: 
   }, [imagenSelIdReal]);
 
   // ── Editor de anotaciones (capa vectorial local hasta "Guardar") ──
-  const [herramienta, setHerramienta] = useState<HerramientaPodograma>('lapiz');
+  const [herramienta, setHerramienta] = useState<HerramientaPodograma>(herramientaInicial);
   const [color, setColor] = useState('#ef4444');
   const [grosor, setGrosor] = useState(4);
   const [anotaciones, setAnotaciones] = useState<AnotacionPodograma[]>([]);
@@ -532,21 +540,22 @@ export function usePodograma(atencion: AtencionCompleta | null, puedeRegistrar: 
 
   // ── Subir / eliminar imagen ──
   const subirMut = useMutation({
-    mutationFn: (archivo: File) => historiaClinicaApi.subirImagenPodograma(atencionId!, archivo),
-    onSuccess: (a) => {
+    mutationFn: (v: { archivo: File; vista: VistaPodograma | null }) => historiaClinicaApi.subirImagenPodograma(atencionId!, v.archivo, { vista: v.vista }),
+    onSuccess: (a, v) => {
       inval();
-      const ultima = a.imagenesPodograma?.[a.imagenesPodograma.length - 1];
-      if (ultima) setImagenSelId(ultima.id);
+      const nueva = v.vista ? a.imagenesPodograma?.find((i) => i.vista === v.vista) : a.imagenesPodograma?.[a.imagenesPodograma.length - 1];
+      if (nueva) setImagenSelId(nueva.id);
       setVerSilueta(false);
-      toast.success('Podograma cargado');
+      toast.success(v.vista ? `${VISTA_PODOGRAMA_LABEL[v.vista]}: imagen cargada` : 'Podograma cargado');
     },
     onError: (e: Error) => toast.error(e.message),
   });
-  const subirArchivo = (f: File | null | undefined) => {
+  /** Sube (o reemplaza) la imagen de una vista. Sin vista = imagen suelta. */
+  const subirArchivo = (f: File | null | undefined, vista: VistaPodograma | null = null) => {
     if (!f || !puedeEditar) return;
     if (!/^image\/(png|jpeg|webp)$/.test(f.type)) { toast.error('Solo se aceptan imágenes JPG, PNG o WEBP'); return; }
     if (f.size > MAX_IMAGEN_BYTES) { toast.error('La imagen supera los 10 MB'); return; }
-    subirMut.mutate(f);
+    subirMut.mutate({ archivo: f, vista });
   };
   const eliminarImagenMut = useMutation({
     mutationFn: (id: string) => historiaClinicaApi.eliminarImagenPodograma(id),
@@ -559,11 +568,21 @@ export function usePodograma(atencion: AtencionCompleta | null, puedeRegistrar: 
     // silueta
     marcas: atencion?.marcasPodograma ?? [], pendiente, marcarPunto, cancelar, tipoLesion, setTipoLesion, nota, setNota, agregarMut, eliminarMut,
     // imágenes
-    imagenes, imagenSel, setImagenSelId, verSilueta, setVerSilueta, urlImagen, cargandoImagen, subirArchivo, subirMut, eliminarImagenMut,
+    imagenes, porVista, otras, imagenSel, setImagenSelId, verSilueta, setVerSilueta, urlImagen, cargandoImagen, subirArchivo, subirMut, eliminarImagenMut,
     // editor
     herramienta, setHerramienta, color, setColor, grosor, setGrosor, anotaciones, sucio,
     agregarAnotacion, borrarEn, deshacer, limpiarAnotaciones, descartar, guardarAnotaciones, guardarAnotacionesMut,
   };
+}
+
+/** Miniatura de una imagen del podograma: blob autenticado → object URL (cacheado por id). */
+export function useMiniaturaPodograma(imagenId: string | undefined) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['podograma-miniatura', imagenId],
+    queryFn: async () => URL.createObjectURL(await historiaClinicaApi.blobImagenPodograma(imagenId!)),
+    enabled: !!imagenId, staleTime: Infinity, gcTime: 10 * 60_000,
+  });
+  return { url: data ?? null, cargando: isLoading };
 }
 
 export type { AtencionClinica };

@@ -11,11 +11,12 @@ import { RegistrarAtencionModal } from '../components/historiaClinica/RegistrarA
 import { EmitirRecetaModal } from '../components/historiaClinica/EmitirRecetaModal';
 import { DialogoMotivo } from '../components/historiaClinica/DialogoMotivo';
 import { BotonHistorialGenexis } from '../components/pacientes/HistorialGenexis';
-import { useHistoriaClinicaPage, useEvolucionForm, useAntecedentesAlergias, useRecetasAtencion, useProcedimientos, useEscalas, usePodograma, MF_ETIQUETAS, type TabHc } from '../services/historiaClinicaService';
-import { TIPO_ANTECEDENTE_LABEL, TIPO_NOTA_LABEL, TIPO_PROCEDIMIENTO_LABEL, TIPO_ESCALA_LABEL, TIPO_LESION_LABEL, PIE_LABEL, edadDe, nombreProfesional, type AtencionClinica, type AtencionCompleta, type TipoAntecedente, type TipoNota, type SeveridadAlergia, type TipoProcedimiento, type TipoEscala, type TipoLesion, type MarcaPodograma } from '../api/historiaClinica';
+import { useHistoriaClinicaPage, useEvolucionForm, useAntecedentesAlergias, useRecetasAtencion, useProcedimientos, useEscalas, usePodograma, useMiniaturaPodograma, MF_ETIQUETAS, type TabHc } from '../services/historiaClinicaService';
+import { TIPO_ANTECEDENTE_LABEL, TIPO_NOTA_LABEL, TIPO_PROCEDIMIENTO_LABEL, TIPO_ESCALA_LABEL, TIPO_LESION_LABEL, PIE_LABEL, VISTAS_PODOGRAMA, VISTA_PODOGRAMA_LABEL, edadDe, nombreProfesional, type AtencionClinica, type AtencionCompleta, type TipoAntecedente, type TipoNota, type SeveridadAlergia, type TipoProcedimiento, type TipoEscala, type TipoLesion, type MarcaPodograma, type ImagenPodograma, type VistaPodograma } from '../api/historiaClinica';
 import { TIPO_DOC_LABEL } from '../api/recetas';
 
-const INPUT = 'w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2 text-sm text-on-surface outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all';
+// text-base en pantallas chicas: con menos de 16px iOS hace zoom al enfocar un campo (molesto en tablet).
+const INPUT = 'w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2.5 lg:py-2 text-base lg:text-sm text-on-surface outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all';
 const LBL = 'block text-[10px] font-semibold uppercase tracking-wide text-on-surface-variant mb-1';
 const fmtFecha = (iso: string) => iso.slice(0, 10).split('-').reverse().join('/');
 const fmtFechaHora = (iso: string) => new Date(iso).toLocaleString('es-PE', { timeZone: 'America/Lima', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -57,8 +58,8 @@ export function HistoriaClinicaPage() {
         </div>
         {h.puedeRegistrar && (
           <div className="relative">
-            <button onClick={() => h.setMostrarCandidatas((v) => !v)} className="px-5 py-2.5 bg-primary text-on-primary font-bold rounded-xl shadow-lg shadow-primary/20 hover:opacity-90 active:scale-95 transition-all flex items-center text-sm">
-              <span className="material-symbols-outlined mr-2 text-base">add_circle</span>Nueva atención
+            <button onClick={() => h.setMostrarCandidatas((v) => !v)} title="Nueva atención" className="px-3 lg:px-5 py-2.5 bg-primary text-on-primary font-bold rounded-xl shadow-lg shadow-primary/20 hover:opacity-90 active:scale-95 transition-all flex items-center text-sm whitespace-nowrap">
+              <span className="material-symbols-outlined lg:mr-2 text-base">add_circle</span><span className="hidden lg:inline">Nueva atención</span>
             </button>
             {h.mostrarCandidatas && (
               <div className="absolute right-0 mt-2 w-[380px] bg-surface-container-lowest border border-outline-variant/40 rounded-2xl shadow-xl z-50 overflow-hidden">
@@ -78,12 +79,15 @@ export function HistoriaClinicaPage() {
         )}
       </header>
 
-      <div className="flex-1 flex overflow-hidden">
+      {/* Escritorio (≥1024px): dos paneles lado a lado, cada uno con su propio scroll.
+          Tablet vertical / celular: se APILAN (paciente arriba, compacto; pestañas debajo) y
+          la página entera desplaza como una sola. */}
+      <div className="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden">
         {/* ── Panel izquierdo ── */}
-        <aside className="w-[380px] shrink-0 border-r border-outline-variant/20 bg-surface-container-lowest overflow-y-auto">
-          <div className="p-5 space-y-4">
+        <aside className="w-full lg:w-[380px] shrink-0 border-b lg:border-b-0 lg:border-r border-outline-variant/20 bg-surface-container-lowest lg:overflow-y-auto">
+          <div className="p-4 lg:p-5 space-y-3 lg:space-y-4">
             <div className="flex items-start gap-3">
-              <div className="w-14 h-14 rounded-2xl bg-primary-fixed flex items-center justify-center text-primary font-bold text-lg shrink-0">{(p.nombres[0] ?? '') + (p.apellidoPaterno[0] ?? '')}</div>
+              <div className="w-12 h-12 lg:w-14 lg:h-14 rounded-2xl bg-primary-fixed flex items-center justify-center text-primary font-bold text-lg shrink-0">{(p.nombres[0] ?? '') + (p.apellidoPaterno[0] ?? '')}</div>
               <div className="min-w-0">
                 <h2 className="font-headline-sm text-headline-sm font-bold text-on-surface leading-tight">{nombre}</h2>
                 <p className="text-xs text-on-surface-variant mt-0.5">{p.tipoDocumento} {p.numeroDocumento}</p>
@@ -96,8 +100,8 @@ export function HistoriaClinicaPage() {
             </div>
             <AlergiasBanner alergias={alergias} compacto />
 
-            {/* Accesos */}
-            <div className="grid grid-cols-2 gap-2">
+            {/* Accesos: en pantallas chicas se ocultan (ya existen como pestañas) */}
+            <div className="hidden lg:grid grid-cols-2 gap-2">
               {[
                 { t: 'antecedentes' as TabHc, l: 'Antecedentes y alergias', i: 'health_and_safety' },
                 { t: 'receta' as TabHc, l: 'Recetas', i: 'prescriptions' },
@@ -109,7 +113,7 @@ export function HistoriaClinicaPage() {
             </div>
             <div className="[&>button]:w-full"><BotonHistorialGenexis pacienteId={p.id} nombrePaciente={nombre} documento={`${p.tipoDocumento} ${p.numeroDocumento}`} /></div>
 
-            {/* Atenciones */}
+            {/* Atenciones: lista vertical en escritorio; tira horizontal deslizable en tablet/celular */}
             <div>
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-[11px] font-semibold uppercase tracking-wide text-on-surface-variant">Atenciones ({atenciones.length})</h3>
@@ -117,9 +121,9 @@ export function HistoriaClinicaPage() {
               {atenciones.length === 0 ? (
                 <div className="text-xs text-on-surface-variant border border-dashed border-outline-variant/40 rounded-xl p-4 text-center">Sin atenciones registradas</div>
               ) : (
-                <div className="space-y-1.5">
+                <div className="flex lg:flex-col gap-2 lg:gap-1.5 overflow-x-auto lg:overflow-visible snap-x -mx-4 px-4 pb-1 lg:mx-0 lg:px-0 lg:pb-0">
                   {atenciones.map((a: AtencionClinica) => (
-                    <button key={a.id} onClick={() => h.seleccionarAtencion(a.id)} className={`w-full text-left rounded-xl border px-3 py-2 transition-all ${h.atencionSel === a.id ? 'border-primary bg-primary/5' : 'border-outline-variant/20 hover:bg-surface-container-low'}`}>
+                    <button key={a.id} onClick={() => h.seleccionarAtencion(a.id)} className={`shrink-0 w-[270px] lg:w-full snap-start text-left rounded-xl border px-3 py-2 transition-all ${h.atencionSel === a.id ? 'border-primary bg-primary/5' : 'border-outline-variant/20 hover:bg-surface-container-low'}`}>
                       <div className="flex items-center gap-2">
                         <span className="w-1 h-8 rounded-full shrink-0" style={{ background: a.servicio.color }} />
                         <div className="min-w-0 flex-1">
@@ -140,16 +144,17 @@ export function HistoriaClinicaPage() {
         </aside>
 
         {/* ── Panel derecho ── */}
-        <main className="flex-1 overflow-y-auto">
-          <div className="border-b border-outline-variant/20 bg-surface-container-lowest px-6 pt-3 flex gap-1 overflow-x-auto">
+        <main className="flex-1 lg:overflow-y-auto">
+          {/* Pestañas: pegadas arriba al desplazar (en tablet la página entera es la que scrollea) */}
+          <div className="sticky top-0 z-10 border-b border-outline-variant/20 bg-surface-container-lowest px-3 lg:px-6 pt-2 lg:pt-3 flex gap-1 overflow-x-auto">
             {TABS.map((t) => (
               <button key={t.id} disabled={t.pronto} onClick={() => h.setTab(t.id)} title={t.pronto ? 'Próximamente' : undefined}
-                className={`px-4 py-2.5 text-sm font-semibold border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${h.tab === t.id ? 'border-primary text-primary' : 'border-transparent text-on-surface-variant hover:text-on-surface'} ${t.pronto ? 'opacity-40 cursor-not-allowed' : ''}`}>
+                className={`px-3 lg:px-4 py-3 lg:py-2.5 text-sm font-semibold border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${h.tab === t.id ? 'border-primary text-primary' : 'border-transparent text-on-surface-variant hover:text-on-surface'} ${t.pronto ? 'opacity-40 cursor-not-allowed' : ''}`}>
                 <span className="material-symbols-outlined text-base">{t.icon}</span>{t.label}
               </button>
             ))}
           </div>
-          <div className="p-6 max-w-[1100px]">
+          <div className="p-3 sm:p-4 lg:p-6 max-w-[1100px]">
             {h.tab === 'antecedentes' && <PanelAntecedentes h={h} />}
             {(h.tab === 'evolucion' || h.tab === 'receta' || h.tab === 'procedimientos' || h.tab === 'escalas' || h.tab === 'podograma') && (
               !h.atencionSel ? (
@@ -582,16 +587,34 @@ const COLOR_LESION: Record<TipoLesion, string> = {
   fisura: '#0891b2', micosis: '#65a30d', ampolla: '#ec4899', verruga: '#7c3aed', otro: '#64748b',
 };
 
+// Vista PLANTAR (planta del pie) del pie izquierdo: dedo gordo al lado medial (derecha), dedos
+// menores decreciendo hacia el lateral, arco medial y talón redondeado. El derecho es el espejo →
+// mostrados lado a lado, los dedos gordos quedan hacia el centro, como en una impresión de Baro.
 function SiluetaPie({ espejo }: { espejo?: boolean }) {
+  const gid = espejo ? 'piel-der' : 'piel-izq'; // un gradiente por instancia (ids únicos en el DOM)
+  const piel = `url(#${gid})`;
+  const borde = { stroke: '#c9a58f', strokeWidth: 1.6 };
   return (
     <svg viewBox="0 0 100 240" className="w-full h-full" style={espejo ? { transform: 'scaleX(-1)' } : undefined} aria-hidden>
-      <path d="M50 14 C34 14 27 30 29 54 C22 64 17 104 21 152 C24 200 32 232 50 232 C68 232 76 200 79 152 C83 104 78 64 71 54 C73 30 66 14 50 14 Z"
-        fill="#eef2f7" stroke="#cbd5e1" strokeWidth="2" />
-      <ellipse cx="50" cy="10" rx="8" ry="7" fill="#eef2f7" stroke="#cbd5e1" strokeWidth="1.5" />
-      <ellipse cx="33" cy="18" rx="5.5" ry="5" fill="#eef2f7" stroke="#cbd5e1" strokeWidth="1.5" />
-      <ellipse cx="22" cy="30" rx="4.5" ry="4.5" fill="#eef2f7" stroke="#cbd5e1" strokeWidth="1.5" />
-      <ellipse cx="15" cy="45" rx="4" ry="4" fill="#eef2f7" stroke="#cbd5e1" strokeWidth="1.5" />
-      <ellipse cx="11" cy="62" rx="3.5" ry="4" fill="#eef2f7" stroke="#cbd5e1" strokeWidth="1.5" />
+      <defs>
+        <radialGradient id={gid} cx="50%" cy="45%" r="70%">
+          <stop offset="0%" stopColor="#fbeee4" />
+          <stop offset="100%" stopColor="#f0dac9" />
+        </radialGradient>
+      </defs>
+      {/* Planta: antepié ancho, arco medial cóncavo, talón redondeado */}
+      <path d="M16 62 C20 46 36 38 54 40 C68 41 80 46 86 56 C92 68 90 88 84 106 C76 122 72 142 75 166 C77 192 74 220 58 232 C46 240 30 234 24 220 C16 202 12 172 12 142 C12 112 10 82 16 62 Z"
+        fill={piel} {...borde} strokeWidth="1.8" strokeLinejoin="round" />
+      {/* Zonas de apoyo (antepié y talón), sutiles */}
+      <ellipse cx="54" cy="66" rx="30" ry="14" fill="#e3b39c" opacity="0.28" />
+      <ellipse cx="48" cy="206" rx="18" ry="20" fill="#e3b39c" opacity="0.28" />
+      <path d="M22 96 C30 120 30 150 26 178" fill="none" stroke="#dcb8a3" strokeWidth="1.2" opacity="0.6" />
+      {/* Dedos: gordo (medial, grande) → 5º dedo (lateral, pequeño) */}
+      <ellipse cx="70" cy="26" rx="12" ry="15" fill={piel} {...borde} />
+      <ellipse cx="50" cy="26" rx="6.5" ry="9" fill={piel} {...borde} />
+      <ellipse cx="37" cy="29" rx="6" ry="8" fill={piel} {...borde} />
+      <ellipse cx="26" cy="37" rx="5.5" ry="7" fill={piel} {...borde} />
+      <ellipse cx="17" cy="49" rx="5" ry="6" fill={piel} {...borde} />
     </svg>
   );
 }
@@ -619,77 +642,127 @@ function MapaPie({ pie, marcas, pendiente, onClick }: { pie: 'izquierdo' | 'dere
 }
 
 const COLORES_ANOTACION = ['#ef4444', '#f59e0b', '#22c55e', '#3b82f6', '#111827', '#ffffff'];
-const HERRAMIENTAS: { id: 'lapiz' | 'texto' | 'borrador'; icon: string; label: string }[] = [
+// Herramientas del lienzo. "Mover" no dibuja: deja desplazar la página con el dedo (en tablet es
+// la herramienta inicial, para no dejar trazos por accidente).
+const HERRAMIENTAS: { id: 'mover' | 'lapiz' | 'texto' | 'borrador'; icon: string; label: string }[] = [
+  { id: 'mover', icon: 'pan_tool', label: 'Mover' },
   { id: 'lapiz', icon: 'edit', label: 'Lápiz' },
   { id: 'texto', icon: 'text_fields', label: 'Texto' },
   { id: 'borrador', icon: 'ink_eraser', label: 'Borrador' },
 ];
-const BTN_TOOL = (activo: boolean) => `px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 border disabled:opacity-40 ${activo ? 'bg-primary text-on-primary border-primary' : 'border-outline-variant/40 text-on-surface hover:bg-surface-container-high'}`;
+// Botones de 44px de alto en pantallas táctiles (mínimo cómodo para el dedo); compactos en escritorio.
+const BTN_TOOL = (activo: boolean) => `min-h-[44px] lg:min-h-0 px-3 lg:px-2.5 py-2 lg:py-1.5 rounded-lg text-sm lg:text-xs font-semibold flex items-center gap-1 border disabled:opacity-40 ${activo ? 'bg-primary text-on-primary border-primary' : 'border-outline-variant/40 text-on-surface hover:bg-surface-container-high'}`;
+
+// Casilla de una de las 4 vistas del podograma (miniatura, seleccionar para anotar, cargar/reemplazar).
+function CasillaVista({ vista, img, seleccionada, puedeEditar, subiendo, onSeleccionar, onCargar }: {
+  vista: VistaPodograma; img: ImagenPodograma | undefined; seleccionada: boolean; puedeEditar: boolean; subiendo: boolean;
+  onSeleccionar: () => void; onCargar: () => void;
+}) {
+  const mini = useMiniaturaPodograma(img?.id);
+  return (
+    <div className={`rounded-xl border-2 overflow-hidden flex flex-col ${seleccionada ? 'border-primary shadow-md shadow-primary/10' : 'border-outline-variant/30'}`}>
+      <button onClick={img ? onSeleccionar : onCargar} disabled={!img && !puedeEditar} className="relative aspect-[4/3] bg-surface-container-low flex items-center justify-center overflow-hidden disabled:cursor-default">
+        {img
+          ? (mini.url ? <img src={mini.url} alt={VISTA_PODOGRAMA_LABEL[vista]} className="w-full h-full object-cover" /> : <Skeleton className="w-full h-full" />)
+          : <span className="flex flex-col items-center gap-1 text-on-surface-variant"><span className="material-symbols-outlined text-3xl">add_photo_alternate</span><span className="text-xs font-semibold">{puedeEditar ? 'Cargar imagen' : 'Sin imagen'}</span></span>}
+        {img && img.anotaciones.length > 0 && <span className="absolute top-1.5 right-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded bg-primary text-on-primary">{img.anotaciones.length}</span>}
+      </button>
+      <div className="flex items-center justify-between gap-1 px-2 py-1.5 bg-surface-container-lowest">
+        <span className="text-xs font-bold text-on-surface truncate">{VISTA_PODOGRAMA_LABEL[vista]}</span>
+        {puedeEditar && img && <button onClick={onCargar} disabled={subiendo} title="Reemplazar imagen" className="text-[11px] font-semibold text-primary hover:underline shrink-0 flex items-center gap-0.5 disabled:opacity-50"><span className="material-symbols-outlined text-sm">sync</span>Reemplazar</button>}
+      </div>
+    </div>
+  );
+}
 
 function PanelPodograma({ h, a }: { h: H; a: AtencionCompleta }) {
   const pod = usePodograma(a, h.puedeRegistrar);
   const inputRef = useRef<HTMLInputElement>(null);
-  const hayImagenes = pod.imagenes.length > 0;
-  const mostrarImagen = hayImagenes && !pod.verSilueta;
+  // Un solo <input type=file> oculto para las 4 casillas: se recuerda a qué vista va antes de abrirlo.
+  const vistaPendienteRef = useRef<VistaPodograma | null>(null);
+  const abrirSelector = (vista: VistaPodograma | null) => { vistaPendienteRef.current = vista; inputRef.current?.click(); };
+  const mostrarImagen = !pod.verSilueta;
+  const cargadas = VISTAS_PODOGRAMA.filter((v) => pod.porVista[v]).length;
   return (
     <div className="space-y-5">
       <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5">
         <div className="flex items-start justify-between gap-3 flex-wrap mb-1">
           <h3 className="font-headline-sm text-headline-sm font-semibold text-on-surface flex items-center"><span className="material-symbols-outlined mr-2 text-primary">footprint</span>Podograma</h3>
           <div className="flex items-center gap-2">
-            {hayImagenes && (
-              <button onClick={() => pod.setVerSilueta(!pod.verSilueta)} className="px-3 py-1.5 border border-outline-variant rounded-lg text-xs font-semibold text-on-surface hover:bg-surface-container-high flex items-center gap-1">
-                <span className="material-symbols-outlined text-base">{pod.verSilueta ? 'image' : 'footprint'}</span>{pod.verSilueta ? 'Ver imagen' : 'Ver silueta'}
-              </button>
-            )}
-            {pod.puedeEditar && (
-              <>
-                <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => { pod.subirArchivo(e.target.files?.[0]); e.target.value = ''; }} />
-                <button onClick={() => inputRef.current?.click()} disabled={pod.subirMut.isPending} className="px-3 py-1.5 bg-primary text-on-primary rounded-lg text-xs font-bold flex items-center gap-1 disabled:opacity-50">
-                  <span className="material-symbols-outlined text-base">upload</span>{pod.subirMut.isPending ? 'Subiendo…' : 'Cargar podograma'}
-                </button>
-              </>
-            )}
+            <button onClick={() => pod.setVerSilueta(!pod.verSilueta)} className="px-3 py-1.5 border border-outline-variant rounded-lg text-xs font-semibold text-on-surface hover:bg-surface-container-high flex items-center gap-1">
+              <span className="material-symbols-outlined text-base">{pod.verSilueta ? 'image' : 'footprint'}</span>{pod.verSilueta ? 'Ver imágenes' : 'Ver silueta'}
+            </button>
+            {pod.puedeEditar && <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => { pod.subirArchivo(e.target.files?.[0], vistaPendienteRef.current); vistaPendienteRef.current = null; e.target.value = ''; }} />}
           </div>
         </div>
         <p className="text-xs text-on-surface-variant mb-4">
           {mostrarImagen
-            ? (pod.puedeEditar ? 'Dibuja o escribe sobre la imagen de la Baro; el borrador quita un trazo completo. Guarda al terminar.' : 'Imagen del podograma con sus anotaciones.')
-            : (pod.puedeEditar ? 'Haz clic sobre la silueta para ubicar una lesión, o carga la imagen del podograma de la Baro.' : 'Mapa de lesiones de la atención.')}
+            ? `La Baro entrega 4 imágenes: frontal y posterior de cada pie (${cargadas} de 4 cargadas). Toca una casilla para ${pod.puedeEditar ? 'cargar o anotar' : 'ver'} esa vista.`
+            : (pod.puedeEditar ? 'Haz clic sobre la silueta para ubicar una lesión.' : 'Mapa de lesiones de la atención.')}
         </p>
 
         {mostrarImagen ? (
           <>
-            {pod.imagenes.length > 1 && (
+            {/* Las 4 vistas fijas, siempre visibles (vacías o con miniatura) */}
+            <div className="grid grid-cols-2 gap-3 mb-4 max-w-[560px]">
+              {VISTAS_PODOGRAMA.map((v) => (
+                <CasillaVista key={v} vista={v} img={pod.porVista[v]} seleccionada={!!pod.porVista[v] && pod.imagenSel?.id === pod.porVista[v]?.id} puedeEditar={pod.puedeEditar} subiendo={pod.subirMut.isPending}
+                  onSeleccionar={() => { const img = pod.porVista[v]; if (img) pod.setImagenSelId(img.id); }} onCargar={() => abrirSelector(v)} />
+              ))}
+            </div>
+            {pod.otras.length > 0 && (
               <div className="flex gap-2 flex-wrap mb-3">
-                {pod.imagenes.map((img, i) => (
+                <span className="text-[11px] text-on-surface-variant self-center">Otras imágenes:</span>
+                {pod.otras.map((img, i) => (
                   <button key={img.id} onClick={() => pod.setImagenSelId(img.id)} className={`px-2.5 py-1 rounded-lg text-xs font-semibold border max-w-[220px] truncate ${pod.imagenSel?.id === img.id ? 'border-primary bg-primary/5 text-primary' : 'border-outline-variant/40 text-on-surface hover:bg-surface-container-low'}`}>
                     {i + 1}. {img.descripcion || img.nombreArchivo}
                   </button>
                 ))}
               </div>
             )}
+            {pod.subirMut.isPending && <p className="text-xs text-primary mb-3 flex items-center gap-1"><span className="material-symbols-outlined text-base animate-spin">progress_activity</span>Subiendo imagen…</p>}
+            {pod.imagenSel && (<>
+            <h4 className="text-sm font-semibold text-on-surface mb-2 flex items-center gap-1"><span className="material-symbols-outlined text-base text-primary">edit_square</span>{pod.imagenSel.vista ? VISTA_PODOGRAMA_LABEL[pod.imagenSel.vista] : (pod.imagenSel.descripcion || pod.imagenSel.nombreArchivo)}</h4>
             {pod.puedeEditar && (
-              <div className="flex flex-wrap items-center gap-2 mb-3">
-                {HERRAMIENTAS.map((t) => <button key={t.id} onClick={() => pod.setHerramienta(t.id)} className={BTN_TOOL(pod.herramienta === t.id)} title={t.label}><span className="material-symbols-outlined text-base">{t.icon}</span>{t.label}</button>)}
-                <span className="w-px h-6 bg-outline-variant/30 mx-1" />
-                {COLORES_ANOTACION.map((c) => <button key={c} onClick={() => pod.setColor(c)} title={c} className={`w-6 h-6 rounded-full border-2 ${pod.color === c ? 'border-primary scale-110' : 'border-outline-variant/40'}`} style={{ background: c }} />)}
-                <span className="w-px h-6 bg-outline-variant/30 mx-1" />
-                <label className="text-[10px] font-semibold uppercase text-on-surface-variant flex items-center gap-1">Grosor<input type="range" min={1} max={20} value={pod.grosor} onChange={(e) => pod.setGrosor(Number(e.target.value))} className="w-20 accent-primary" /></label>
-                <span className="w-px h-6 bg-outline-variant/30 mx-1" />
-                <button onClick={pod.deshacer} disabled={!pod.anotaciones.length} className={BTN_TOOL(false)} title="Deshacer"><span className="material-symbols-outlined text-base">undo</span></button>
-                <button onClick={pod.limpiarAnotaciones} disabled={!pod.anotaciones.length} className={BTN_TOOL(false)} title="Limpiar anotaciones"><span className="material-symbols-outlined text-base">delete_sweep</span></button>
-                <span className="flex-1" />
-                {pod.sucio && <button onClick={pod.descartar} className="px-3 py-1.5 border border-outline-variant rounded-lg text-xs font-semibold text-on-surface hover:bg-surface-container-high">Descartar</button>}
-                <button onClick={pod.guardarAnotaciones} disabled={!pod.sucio || pod.guardarAnotacionesMut.isPending} className="px-4 py-1.5 bg-primary text-on-primary rounded-lg text-xs font-bold flex items-center gap-1 disabled:opacity-50"><span className="material-symbols-outlined text-base">save</span>Guardar anotaciones</button>
+              <div className="space-y-2 mb-3">
+                {/* Fila 1: herramientas grandes, en una sola línea deslizable si no entran */}
+                <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                  {HERRAMIENTAS.map((t) => <button key={t.id} onClick={() => pod.setHerramienta(t.id)} className={`${BTN_TOOL(pod.herramienta === t.id)} shrink-0`} title={t.label}><span className="material-symbols-outlined text-base">{t.icon}</span>{t.label}</button>)}
+                  <span className="w-px h-6 bg-outline-variant/30 mx-1 shrink-0" />
+                  <button onClick={pod.deshacer} disabled={!pod.anotaciones.length} className={`${BTN_TOOL(false)} shrink-0`} title="Deshacer"><span className="material-symbols-outlined text-base">undo</span><span className="hidden sm:inline">Deshacer</span></button>
+                  <button onClick={pod.limpiarAnotaciones} disabled={!pod.anotaciones.length} className={`${BTN_TOOL(false)} shrink-0`} title="Limpiar anotaciones"><span className="material-symbols-outlined text-base">delete_sweep</span><span className="hidden sm:inline">Limpiar</span></button>
+                </div>
+                {/* Fila 2: color y grosor, solo cuando la herramienta los usa (menos ruido en pantalla) */}
+                {(pod.herramienta === 'lapiz' || pod.herramienta === 'texto') && (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {COLORES_ANOTACION.map((c) => <button key={c} onClick={() => pod.setColor(c)} title={c} className={`w-9 h-9 lg:w-6 lg:h-6 rounded-full border-2 ${pod.color === c ? 'border-primary scale-110' : 'border-outline-variant/40'}`} style={{ background: c }} />)}
+                    {pod.herramienta === 'lapiz' && (
+                      <label className="text-[10px] font-semibold uppercase text-on-surface-variant flex items-center gap-2 ml-2">Grosor<input type="range" min={1} max={20} value={pod.grosor} onChange={(e) => pod.setGrosor(Number(e.target.value))} className="w-28 lg:w-20 h-8 accent-primary" /></label>
+                    )}
+                  </div>
+                )}
+                <p className="text-[11px] text-on-surface-variant">
+                  {pod.herramienta === 'mover' ? 'Modo mover: desplaza la página con el dedo sin dibujar. Toca "Lápiz" para marcar.'
+                    : pod.herramienta === 'lapiz' ? 'Dibuja con el dedo, el lápiz o el mouse.'
+                    : pod.herramienta === 'texto' ? 'Toca el punto donde va el texto, escribe y confirma con Enter.'
+                    : 'Toca un trazo o un texto para quitarlo.'}
+                </p>
               </div>
             )}
-            <div className="max-w-[760px] mx-auto rounded-xl overflow-hidden border border-outline-variant/30">
+            <div className="w-full">
               {pod.cargandoImagen || !pod.urlImagen
                 ? <Skeleton className="h-80 w-full" />
                 : <PodogramaEditor url={pod.urlImagen} anotaciones={pod.anotaciones} herramienta={pod.herramienta} color={pod.color} grosor={pod.grosor} editable={pod.puedeEditar}
                     onTrazo={pod.agregarAnotacion} onTexto={(x, y, texto) => pod.agregarAnotacion({ tipo: 'texto', x, y, texto, color: pod.color })} onBorrar={pod.borrarEn} />}
             </div>
+            {/* Guardar / Descartar: barra pegada abajo mientras haya cambios; en tablet nunca queda fuera de vista */}
+            {pod.puedeEditar && pod.sucio && (
+              <div className="sticky bottom-2 z-10 mt-3 flex items-center justify-end gap-2 rounded-xl border border-primary/30 bg-surface-container-lowest/95 backdrop-blur p-2 shadow-lg">
+                <span className="text-xs text-on-surface-variant mr-auto pl-1">Cambios sin guardar</span>
+                <button onClick={pod.descartar} className="min-h-[44px] lg:min-h-0 px-4 py-2 border border-outline-variant rounded-lg text-sm lg:text-xs font-semibold text-on-surface hover:bg-surface-container-high">Descartar</button>
+                <button onClick={pod.guardarAnotaciones} disabled={pod.guardarAnotacionesMut.isPending} className="min-h-[44px] lg:min-h-0 px-5 py-2 bg-primary text-on-primary rounded-lg text-sm lg:text-xs font-bold flex items-center gap-1 disabled:opacity-50"><span className="material-symbols-outlined text-base">save</span>Guardar anotaciones</button>
+              </div>
+            )}
             {pod.imagenSel && (
               <div className="flex items-center gap-2 flex-wrap mt-3 text-[11px] text-on-surface-variant">
                 <span className="material-symbols-outlined text-sm">image</span>
@@ -701,6 +774,7 @@ function PanelPodograma({ h, a }: { h: H; a: AtencionCompleta }) {
                 {pod.puedeEditar && <button onClick={() => pod.eliminarImagenMut.mutate(pod.imagenSel!.id)} disabled={pod.eliminarImagenMut.isPending} className="text-rose-600 font-semibold hover:underline flex items-center gap-1"><span className="material-symbols-outlined text-sm">delete</span>Quitar imagen</button>}
               </div>
             )}
+            </>)}
           </>
         ) : (
           <>

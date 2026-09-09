@@ -100,7 +100,7 @@ export function PodogramaEditor({ url, anotaciones, herramienta, color, grosor, 
   const textoArmadoRef = useRef<Punto | null>(null);
 
   const onDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!editable || !img) return;
+    if (!editable || !img || herramienta === 'mover') return;
     const [x, y] = coords(e);
     if (herramienta === 'lapiz') {
       e.currentTarget.setPointerCapture(e.pointerId);
@@ -147,15 +147,22 @@ export function PodogramaEditor({ url, anotaciones, herramienta, color, grosor, 
     setTextoValor('');
   };
 
-  const cursor = !editable ? 'default' : herramienta === 'borrador' ? 'pointer' : herramienta === 'texto' ? 'text' : 'crosshair';
-  const aspect = img ? `${img.naturalWidth} / ${img.naturalHeight}` : '4 / 3';
+  // "Pasivo" = el dedo/mouse NO dibuja: modo solo lectura o herramienta "mover". En ese caso el
+  // lienzo deja pasar el gesto para que la página se desplace (touch-action pan-y); si no, lo
+  // captura (none) para que el trazo no mueva la pantalla.
+  const pasivo = !editable || herramienta === 'mover';
+  const cursor = pasivo ? 'grab' : herramienta === 'borrador' ? 'pointer' : herramienta === 'texto' ? 'text' : 'crosshair';
+  const ratio = img ? img.naturalWidth / img.naturalHeight : 4 / 3;
 
   return (
-    <div className="relative w-full bg-surface-container-low" style={{ aspectRatio: aspect }}>
+    // Ancho = 100% del contenedor, pero nunca más alto que ~62 % de la pantalla: en tablet vertical
+    // una imagen alta dejaría el lienzo ocupando todo y no habría dónde tocar para desplazarse.
+    <div className="relative bg-surface-container-low mx-auto rounded-xl overflow-hidden border border-outline-variant/30"
+      style={{ aspectRatio: `${ratio}`, width: '100%', maxWidth: `calc(62vh * ${ratio})` }}>
       <canvas
         ref={canvasRef}
         className="absolute inset-0 w-full h-full select-none"
-        style={{ touchAction: 'none', cursor }}
+        style={{ touchAction: pasivo ? 'pan-y' : 'none', cursor }}
         onPointerDown={onDown}
         onPointerMove={onMove}
         onPointerUp={onUp}

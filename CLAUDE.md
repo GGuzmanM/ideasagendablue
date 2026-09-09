@@ -34,7 +34,7 @@ Reemplaza un ERP de escritorio de 14 años. 5 sedes, ~400 citas diarias, 40 pod�
 - **Estructura va en migraciones, NO en `seed.ts`.** El seed es SOLO datos (sedes, roles,
   profesionales). Los índices/constraints viven en las migraciones.
 - **Índices únicos PARCIALES** (con `WHERE`): Prisma no los representa en el schema, así que
-  viven como SQL crudo dentro de las migraciones. Son 9 (verificados contra `pg_indexes`):
+  viven como SQL crudo dentro de las migraciones. Son 11 (verificados contra `pg_indexes`):
   - En la baseline (`00000000000000_baseline/migration.sql`): `recordatorios_cita_unico`,
     `asignaciones_sede_una_abierta`, `pacientes_documento_unico`, `citas_idempotency_unico`.
   - En `20260624120000_bloques_combinados`: `citas_slot_primario_unique` y
@@ -44,6 +44,8 @@ Reemplaza un ERP de escritorio de 14 años. 5 sedes, ~400 citas diarias, 40 pod�
   - En `20260705193100_modulo_sesiones`: `consumos_cita_unico` (máx 1 consumo vivo por cita).
   - En `20260908120000_historia_clinica_receta`: `diagnosticos_principal_unico` (máx 1 diagnóstico
     principal vigente por atención clínica).
+  - En `20260909120000_podograma_vista`: `imagenes_podograma_vista_unica` (máx 1 imagen VIVA del
+    podograma por atención y vista: frontal/posterior × izquierdo/derecho).
   - Además, índices **GIN pg_trgm** (no únicos, tampoco en el schema) en
     `20260903120000_catalogos_hce_cie10_medicamento`: `cie10_descripcion_trgm`,
     `medicamentos_dci_trgm`, `medicamentos_comercial_trgm`.

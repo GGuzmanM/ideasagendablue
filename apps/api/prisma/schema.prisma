@@ -2061,6 +2061,10 @@ model MarcaPodograma {
 model ImagenPodograma {
   id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   atencionId         String    @db.Uuid
+  // Vista fija del podograma (la Baro entrega 4 imágenes): frontal_izquierdo | frontal_derecho |
+  // posterior_izquierdo | posterior_derecho. Máx. 1 imagen VIVA por (atención, vista): índice
+  // parcial `imagenes_podograma_vista_unica` (SQL crudo en la migración). null = imagen suelta.
+  vista              String?
   nombreArchivo      String // nombre original (solo para mostrar)
   ruta               String // relativa a uploads/ (p. ej. podogramas/<atencionId>/<archivo>)
   mime               String

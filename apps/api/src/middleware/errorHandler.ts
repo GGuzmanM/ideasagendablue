@@ -36,6 +36,9 @@ export function conflictoUnicidad(target: string): { error: string; message: str
   if (target.includes('asignaciones_sede_una_abierta') || target.includes('profesionalId')) {
     return { error: 'CONFLICTO_ASIGNACION', message: 'El profesional ya tiene una asignación abierta. Ciérrala antes de crear otra.' };
   }
+  if (target.includes('imagenes_podograma_vista_unica')) {
+    return { error: 'IMAGEN_VISTA_DUPLICADA', message: 'Esa vista del podograma ya tiene una imagen; vuelve a intentar (se reemplaza la anterior).' };
+  }
   return { error: 'CONFLICT', message: 'El registro ya existe (conflicto de unicidad)' };
 }
 

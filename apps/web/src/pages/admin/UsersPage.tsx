@@ -183,12 +183,14 @@ function FormularioUsuarioModal({
           <div>
             <label className="block text-xs font-semibold text-slate-600 mb-1">
               Vincular a profesional (médico)
-              <span className="text-slate-400 font-normal"> — necesario para emitir recetas</span>
+              {form.rol === 'medico'
+                ? <span className="text-rose-600 font-semibold"> — obligatorio para el rol médico</span>
+                : <span className="text-slate-400 font-normal"> — necesario para emitir recetas</span>}
             </label>
             <select
               value={form.profesionalId ?? ''}
               onChange={e => setForm(f => ({ ...f, profesionalId: e.target.value || null }))}
-              className="input w-full text-sm"
+              className={`input w-full text-sm ${form.rol === 'medico' && !form.profesionalId ? 'border-rose-400' : ''}`}
             >
               <option value="">Sin vincular</option>
               {medicos.map(m => (
@@ -197,9 +199,16 @@ function FormularioUsuarioModal({
                 </option>
               ))}
             </select>
-            <p className="text-[11px] text-slate-400 mt-1 leading-snug">
-              La historia clínica y las recetas saldrán a nombre de este profesional. Para recetar, su ficha debe tener la colegiatura (CMP) cargada.
-            </p>
+            {(() => {
+              const sel = medicos.find(m => m.id === form.profesionalId);
+              if (form.rol === 'medico' && !form.profesionalId) {
+                return <p className="text-[11px] text-rose-600 mt-1 leading-snug">Elige la ficha del médico: sin este vínculo la cuenta no puede registrar historia clínica ni recetar.</p>;
+              }
+              if (sel && !sel.colegiatura?.trim()) {
+                return <p className="text-[11px] text-amber-700 mt-1 leading-snug">Este médico no tiene colegiatura (CMP) cargada: podrá registrar historia clínica pero NO emitir recetas hasta cargarla en Administración → Profesionales.</p>;
+              }
+              return <p className="text-[11px] text-slate-400 mt-1 leading-snug">La historia clínica y las recetas saldrán a nombre de este profesional. Para recetar, su ficha debe tener la colegiatura (CMP) cargada.</p>;
+            })()}
           </div>
 
           {form.recepcionistaId ? (

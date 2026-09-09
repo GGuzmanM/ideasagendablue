@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuthStore } from '../stores/authStore';
 import { format, subDays, addDays } from 'date-fns';
 import { Idea1Sidebar } from '../components/layout/Idea1Sidebar';
 import { useSocket } from '../hooks/useSocket';
@@ -85,8 +86,13 @@ export function Idea1AgendaPage() {
   const [modalHorarioOpen, setModalHorarioOpen] = useState(false);
   const [buscadorOpen, setBuscadorOpen] = useState(false);
   const [dragOverSlot, setDragOverSlot] = useState<{ doctorId: string; hora: string } | null>(null);
+  // Roles de solo lectura en la agenda (p. ej. médico): no crean citas ni las arrastran. El
+  // backend lo exige igual (403); aquí se evita ofrecer la acción.
+  const puedeCrearCita = useAuthStore((s) => s.tiene('citas.crear'));
+  const puedeArrastrarCita = useAuthStore((s) => s.tiene('citas.reprogramar'));
 
   const handleAbrirNuevaCita = (params?: { horaInicio?: string; profesionalId?: string }) => {
+    if (!puedeCrearCita) return;
     setNuevaCitaParams(params);
     setIsNuevaCitaOpen(true);
   };
@@ -250,14 +256,20 @@ export function Idea1AgendaPage() {
           </div>
 
           <div className="flex items-center gap-4">
-            <button
-              data-testid="btn-nueva-cita"
-              onClick={() => handleAbrirNuevaCita()}
-              className="bg-primary text-white px-4 py-2 rounded-lg font-body-md font-semibold hover:opacity-90 active:scale-95 transition-all shadow-md shadow-primary/20 flex items-center gap-2 cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-lg">add_circle</span>
-              Nueva Cita
-            </button>
+            {puedeCrearCita ? (
+              <button
+                data-testid="btn-nueva-cita"
+                onClick={() => handleAbrirNuevaCita()}
+                className="bg-primary text-white px-4 py-2 rounded-lg font-body-md font-semibold hover:opacity-90 active:scale-95 transition-all shadow-md shadow-primary/20 flex items-center gap-2 cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-lg">add_circle</span>
+                Nueva Cita
+              </button>
+            ) : (
+              <span className="px-3 py-1.5 rounded-lg bg-surface-container text-on-surface-variant text-xs font-semibold flex items-center gap-1" title="Tu rol ve la agenda pero no gestiona citas">
+                <span className="material-symbols-outlined text-base">visibility</span>Solo lectura
+              </span>
+            )}
           </div>
         </header>
 
@@ -648,7 +660,7 @@ export function Idea1AgendaPage() {
                                 </span>
                               )}
 
-                              {!isBloqueado && !isHoveredSlot && (
+                              {puedeCrearCita && !isBloqueado && !isHoveredSlot && (
                                 <div className="opacity-0 group-hover:opacity-100 transition-all duration-200 scale-90 group-hover:scale-100 flex items-center gap-1 bg-[#0044ab] text-white text-[10px] font-bold px-2 py-1 rounded-lg shadow-md shadow-primary/30 z-20 pointer-events-none select-none">
                                   <span className="material-symbols-outlined text-xs font-bold">add</span>
                                   <span>{slot.hora}</span>
@@ -869,6 +881,7 @@ export function Idea1AgendaPage() {
                             const isCompact = heightPx < 60;
                             const isMicro = heightPx < 42;
                             const esDraggable =
+                              puedeArrastrarCita &&
                               cita.estado !== 'COMPLETADA' &&
                               cita.estado !== 'NO SHOW' &&
                               cita.estado !== 'CANCELADA';

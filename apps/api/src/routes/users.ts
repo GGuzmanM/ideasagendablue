@@ -97,9 +97,26 @@ router.get('/:id', ...soloAdmins, async (req, res) => {
   res.json(serializarUsuario(usuario));
 });
 
+/**
+ * Un usuario con rol MÉDICO debe estar vinculado a su ficha de Profesional (persona, tipo médico):
+ * sin ese vínculo no hay a nombre de quién registrar la historia clínica ni emitir recetas (el
+ * candado de receta exige Usuario.profesionalId → tipo=medico, !esEquipo, colegiatura cargada).
+ */
+async function validarRolMedico(rol: string | undefined, profesionalId: string | null | undefined): Promise<void> {
+  if (rol !== 'medico') return;
+  if (!profesionalId) {
+    throw new AppError('Un usuario con rol médico debe vincularse a su ficha de profesional (médico)', 400, 'MEDICO_REQUIERE_PROFESIONAL');
+  }
+  const prof = await prisma.profesional.findFirst({ where: { id: profesionalId, deletedAt: null }, select: { tipo: true } });
+  if (prof?.tipo !== 'medico') {
+    throw new AppError('El profesional vinculado a un usuario médico debe ser de tipo médico', 400, 'MEDICO_REQUIERE_PROFESIONAL_MEDICO');
+  }
+}
+
 // POST /api/v1/users
 router.post('/', ...editarAdmins, async (req, res) => {
   const data = crearSchema.parse(req.body);
+  await validarRolMedico(data.rol, data.profesionalId ?? null);
   // #7 · Solo un admin puede CREAR una cuenta admin (cierra la escalada: un rol con
   // `usuarios.editar` que no sea admin no puede fabricarse un admin nuevo).
   if (data.rol === 'admin' && (req.user as AuthPayload).rol !== 'admin') {
@@ -151,7 +168,9 @@ router.put('/:id', ...editarAdmins, async (req, res) => {
   // Estado actual del objetivo — SIEMPRE (no solo cuando el payload trae rol/activo). CLAVE: sin
   // esto, un payload que solo cambia `password`/`email` de un admin se saltaba las guardas y
   // permitía RESETEAR la contraseña del admin → tomar su cuenta.
-  const objetivo = await prisma.usuario.findFirst({ where: { id, deletedAt: null }, select: { rol: true } });
+  const objetivo = await prisma.usuario.findFirst({ where: { id, deletedAt: null }, select: { rol: true, profesionalId: true } });
+  // Rol médico: se valida con los valores EFECTIVOS (lo que trae el payload o lo que ya tiene el usuario).
+  await validarRolMedico(data.rol ?? objetivo?.rol, data.profesionalId !== undefined ? data.profesionalId : objetivo?.profesionalId);
 
   // (a) Un NO-admin NO puede tocar a un usuario admin por NINGUNA vía (password/email/rol/sedes/…),
   //     ni asignar el rol admin a nadie. Solo un admin gestiona cuentas admin.

@@ -199,7 +199,7 @@ export async function getAtencionCompleta(id: string) {
       // Imágenes del podograma: sin `ruta` (el archivo solo se entrega por endpoint autenticado).
       imagenesPodograma: {
         where: { deletedAt: null }, orderBy: { creadoEn: 'asc' },
-        select: { id: true, nombreArchivo: true, mime: true, tamano: true, descripcion: true, anotaciones: true, subidoEtiqueta: true, creadoEn: true },
+        select: { id: true, vista: true, nombreArchivo: true, mime: true, tamano: true, descripcion: true, anotaciones: true, subidoEtiqueta: true, creadoEn: true },
       },
       historiaClinica: {
         select: {

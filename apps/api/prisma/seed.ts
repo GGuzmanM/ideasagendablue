@@ -647,7 +647,9 @@ async function main() {
       { nombre: 'recepcionista', label: 'Recepcionista', descripcion: 'Agenda, pacientes y venta de membresías (su sede)', permisos: ['agenda.ver','agenda.editar','pacientes.ver','pacientes.editar','membresias.vender','herramientas.operativas','hc.ver','hc.registrar','receta.ver'], esSistema: true },
       { nombre: 'contact_center', label: 'Contact Center', descripcion: 'Agenda, pacientes y venta de membresías (todas las sedes)', permisos: ['agenda.ver','agenda.editar','pacientes.ver','pacientes.editar','membresias.vender'], esSistema: false },
       // Médico colegiado: el ÚNICO rol con receta.emitir (además exige Usuario.profesionalId + colegiatura).
-      { nombre: 'medico', label: 'Médico', descripcion: 'Médico colegiado: registra historia clínica y emite recetas', permisos: ['citas.ver','pacientes.ver','hc.ver','hc.registrar','receta.ver','receta.emitir'], esSistema: false },
+      // Médico: agenda y pacientes SOLO lectura (ve quién llegó, abre la ficha), membresías en lectura
+      // (sesiones de láser), historia clínica completa y el ÚNICO rol que emite recetas.
+      { nombre: 'medico', label: 'Médico', descripcion: 'Médico colegiado: registra historia clínica y emite recetas', permisos: ['citas.ver','pacientes.ver','membresias.ver','hc.ver','hc.registrar','receta.ver','receta.emitir'], esSistema: false },
     ],
     skipDuplicates: true,
   });

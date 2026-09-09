@@ -352,18 +352,37 @@ export async function paquetesLaserVivos(pacienteId: string) {
 // ─────────────────────────────────────────────────────────────────────────────
 export interface ArchivoSubido { path: string; originalname: string; mimetype: string; size: number }
 
-export async function registrarImagenPodograma(p: Ctx & { atencionId: string; archivo: ArchivoSubido; descripcion?: string | null }) {
+// Las 4 vistas fijas que entrega la Baro. Máx. 1 imagen viva por (atención, vista): al subir otra
+// a la misma vista, la anterior se REEMPLAZA (borrado suave, archivo conservado, auditado).
+export const VISTAS_PODOGRAMA = ['frontal_izquierdo', 'frontal_derecho', 'posterior_izquierdo', 'posterior_derecho'] as const;
+export type VistaPodograma = (typeof VISTAS_PODOGRAMA)[number];
+function assertVista(v?: string | null): VistaPodograma | null {
+  const s = limpiar(v)?.toLowerCase() ?? null;
+  if (!s) return null;
+  if (!VISTAS_PODOGRAMA.includes(s as VistaPodograma)) throw new AppError(`Vista de podograma no válida: ${v}`, 400, 'VISTA_INVALIDA');
+  return s as VistaPodograma;
+}
+
+export async function registrarImagenPodograma(p: Ctx & { atencionId: string; archivo: ArchivoSubido; descripcion?: string | null; vista?: string | null }) {
   const at = await atencionOr404(p.atencionId);
+  const vista = assertVista(p.vista);
   const etiqueta = await etiquetaUsuario(prisma, p.usuarioId);
   const ruta = rutaRelativaUpload(p.archivo.path);
   await prisma.$transaction(async (tx) => {
+    if (vista) {
+      const previa = await tx.imagenPodograma.findFirst({ where: { atencionId: at.id, vista, deletedAt: null }, select: { id: true, nombreArchivo: true } });
+      if (previa) {
+        await tx.imagenPodograma.update({ where: { id: previa.id }, data: { deletedAt: new Date() } });
+        await auditEnTx(tx, { ...ctxAudit(p), citaId: at.citaId, accion: 'reemplazar_imagen_podograma', entidad: 'imagen_podograma', entidadId: previa.id, sedeId: at.sedeId, antes: { nombreArchivo: previa.nombreArchivo, vista } });
+      }
+    }
     const row = await tx.imagenPodograma.create({
       data: {
-        atencionId: at.id, nombreArchivo: (p.archivo.originalname || 'podograma').slice(0, 200), ruta, mime: p.archivo.mimetype,
+        atencionId: at.id, vista, nombreArchivo: (p.archivo.originalname || 'podograma').slice(0, 200), ruta, mime: p.archivo.mimetype,
         tamano: p.archivo.size, descripcion: limpiar(p.descripcion), subidoPorUsuarioId: p.usuarioId ?? null, subidoEtiqueta: etiqueta,
       },
     });
-    await auditEnTx(tx, { ...ctxAudit(p), citaId: at.citaId, accion: 'subir_imagen_podograma', entidad: 'imagen_podograma', entidadId: row.id, sedeId: at.sedeId, despues: { nombreArchivo: row.nombreArchivo, mime: row.mime, tamano: row.tamano } });
+    await auditEnTx(tx, { ...ctxAudit(p), citaId: at.citaId, accion: 'subir_imagen_podograma', entidad: 'imagen_podograma', entidadId: row.id, sedeId: at.sedeId, despues: { nombreArchivo: row.nombreArchivo, mime: row.mime, tamano: row.tamano, vista } });
   });
   return getAtencionCompleta(at.id);
 }

@@ -114,8 +114,15 @@ export interface CamposMarca { pie: PiePodograma; x: number; y: number; zona?: s
 export type AnotacionPodograma =
   | { tipo: 'trazo'; color: string; grosor: number; puntos: [number, number][] }
   | { tipo: 'texto'; x: number; y: number; texto: string; color: string };
+// Las 4 vistas fijas que entrega la Baro (frontal / posterior × izquierdo / derecho).
+export type VistaPodograma = 'frontal_izquierdo' | 'frontal_derecho' | 'posterior_izquierdo' | 'posterior_derecho';
+export const VISTAS_PODOGRAMA: VistaPodograma[] = ['frontal_izquierdo', 'frontal_derecho', 'posterior_izquierdo', 'posterior_derecho'];
+export const VISTA_PODOGRAMA_LABEL: Record<VistaPodograma, string> = {
+  frontal_izquierdo: 'Frontal izquierdo', frontal_derecho: 'Frontal derecho',
+  posterior_izquierdo: 'Posterior izquierdo', posterior_derecho: 'Posterior derecho',
+};
 export interface ImagenPodograma {
-  id: string; nombreArchivo: string; mime: string; tamano: number; descripcion: string | null;
+  id: string; vista: VistaPodograma | null; nombreArchivo: string; mime: string; tamano: number; descripcion: string | null;
   anotaciones: AnotacionPodograma[]; subidoEtiqueta: string | null; creadoEn: string;
 }
 
@@ -183,10 +190,11 @@ export const historiaClinicaApi = {
   editarMarca: (id: string, data: Partial<CamposMarca>) => api.patch<AtencionCompleta>(`${B}/marcas/${id}`, data),
   eliminarMarca: (id: string) => api.delete<AtencionCompleta>(`${B}/marcas/${id}`),
   // Imágenes del podograma
-  subirImagenPodograma: (atencionId: string, archivo: File, descripcion?: string) => {
+  subirImagenPodograma: (atencionId: string, archivo: File, opts: { vista?: VistaPodograma | null; descripcion?: string } = {}) => {
     const fd = new FormData();
     fd.append('imagen', archivo);
-    if (descripcion?.trim()) fd.append('descripcion', descripcion.trim());
+    if (opts.vista) fd.append('vista', opts.vista);
+    if (opts.descripcion?.trim()) fd.append('descripcion', opts.descripcion.trim());
     return api.upload<AtencionCompleta>(`${B}/atenciones/${atencionId}/podograma/imagenes`, fd);
   },
   // El <img>/<canvas> no puede mandar Authorization → fetch autenticado a blob (patrón del PDF de receta).

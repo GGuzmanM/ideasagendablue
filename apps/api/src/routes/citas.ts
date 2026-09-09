@@ -9,7 +9,7 @@ import { seleccionarProfesionalOptimo, turnosDelDia } from '../services/disponib
 import { registrarAudit, auditEnTx } from '../services/audit';
 import { dispararWebhooks } from '../services/webhooks';
 import { emitirEventoCita } from '../socket';
-import { requireAuth, requireScope, requireAcceso, requirePermiso, assertSede, puedeTodasLasSedes } from '../middleware/auth';
+import { requireAuth, requireScope, requireAcceso, requirePermiso, assertSede, puedeTodasLasSedes, alcanceAgendaMedico } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { withDeadlockRetry, esDeadlockTransitorio, esConflictoDeSlot } from '../utils/dbRetry';
 import { agregarRango } from '../services/agregacion';
@@ -463,6 +463,9 @@ router.get('/', requireAuth, async (req, res) => {
   if (unidadNegocioId) where.unidadNegocioId = unidadNegocioId;
   if (pacienteId) where.pacienteId = pacienteId;
   if (estado) where.estado = estado as never;
+  // Médico con login: SOLO su agenda (su columna, o citas de baro donde él es el médico solicitado).
+  const propio = alcanceAgendaMedico(req.user);
+  if (propio) where.AND = [...(where.AND ?? []), { OR: [{ profesionalId: propio }, { solicitadoProfesionalId: propio }] }];
 
   const citas = await prisma.cita.findMany({
     where,

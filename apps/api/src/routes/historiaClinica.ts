@@ -343,7 +343,11 @@ router.delete('/marcas/:id', ...registrar, async (req, res) => {
 // Subida multipart (campo "imagen"); el archivo se entrega SOLO por GET autenticado con hc.ver
 // + sede (nunca por /uploads firmado). Anotaciones = capa vectorial editable, auditada.
 const anotacionesSchema = z.object({ anotaciones: z.array(z.unknown()).max(3000) });
-const subirImagenSchema = z.object({ descripcion: z.string().trim().max(300).optional() });
+const subirImagenSchema = z.object({
+  descripcion: z.string().trim().max(300).optional(),
+  // Las 4 vistas fijas de la Baro; sin vista = imagen suelta (compatibilidad).
+  vista: z.enum(['frontal_izquierdo', 'frontal_derecho', 'posterior_izquierdo', 'posterior_derecho']).optional(),
+});
 
 async function sedeDeImagenPodograma(id: string) {
   const r = await prisma.imagenPodograma.findUnique({ where: { id }, select: { atencion: { select: { sedeId: true } } } });
@@ -364,8 +368,8 @@ router.post(
     const archivo = req.file;
     if (!archivo) throw new AppError('Adjunta la imagen en el campo "imagen"', 400, 'ARCHIVO_REQUERIDO');
     try {
-      const { descripcion } = subirImagenSchema.parse(req.body ?? {});
-      res.status(201).json(await b3.registrarImagenPodograma({ ...ctx(req), atencionId: req.params.id, archivo, descripcion }));
+      const { descripcion, vista } = subirImagenSchema.parse(req.body ?? {});
+      res.status(201).json(await b3.registrarImagenPodograma({ ...ctx(req), atencionId: req.params.id, archivo, descripcion, vista }));
     } catch (e) {
       fs.unlink(archivo.path, () => { /* sin huérfanos si falló el registro en BD */ });
       throw e;
