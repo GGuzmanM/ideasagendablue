@@ -4,6 +4,9 @@ import { prisma } from '../db';
 import { requireAuth, requirePermiso, assertSede, AuthPayload } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import * as hc from '../services/historiaClinicaService';
+import * as b3 from '../services/bloque3Service';
+import fs from 'fs';
+import { subirImagenPodograma, validarImagenPodogramaReal } from '../middleware/uploadPodograma';
 
 // ─── Historia clínica (Fase 1) ────────────────────────────────────────────────
 // Todas las rutas exigen usuario + permiso (`requirePermiso`, nunca `requireAcceso`: las API keys
@@ -227,6 +230,167 @@ router.patch('/alergias/:id', ...registrar, async (req, res) => {
 router.delete('/alergias/:id', ...anular, async (req, res) => {
   await hc.assertAccesoPaciente(user(req), await pacienteDeAlergia(req.params.id));
   res.json(await hc.eliminarAlergia({ ...ctx(req), alergiaId: req.params.id }));
+});
+
+// ─── Bloque 3 · Procedimientos, escalas y podograma ──────────────────────────
+// Datos de trabajo clínico EDITABLES (decisión médica "editable sin tachones"): añadir,
+// editar y quitar van bajo hc.registrar (el borrado es suave + auditado, no una anulación
+// legal como en notas/dx). Todo cuelga de la atención → assertSede por su sede.
+const pieOpc = z.enum(['izquierdo', 'derecho', 'ambos']).nullable().optional();
+const procedimientoSchema = z.object({
+  tipo: z.enum(['matricectomia', 'laser', 'curacion', 'debridacion', 'onicotomia', 'quiropodia', 'infiltracion', 'otro']),
+  nombre: z.string().trim().max(200).optional(),
+  pie: pieOpc,
+  ubicacion: texto(200),
+  detalle: texto(2000),
+  parametros: z.record(z.any()).nullable().optional(),
+  anestesia: texto(200),
+  paquetePacienteId: uuid.nullable().optional(),
+  sesionNumero: z.number().int().min(1).max(200).nullable().optional(),
+  profesionalId: uuid.nullable().optional(),
+});
+const procedimientoEditarSchema = procedimientoSchema.partial();
+const escalaSchema = z.object({
+  tipo: z.enum(['eva', 'wagner', 'texas', 'iwgdf', 'monofilamento']),
+  datos: z.record(z.any()),
+  pie: pieOpc,
+});
+const escalaEditarSchema = z.object({ datos: z.record(z.any()).optional(), pie: pieOpc });
+const marcaSchema = z.object({
+  pie: z.enum(['izquierdo', 'derecho']),
+  x: z.number().min(0).max(1),
+  y: z.number().min(0).max(1),
+  zona: texto(120),
+  tipoLesion: z.enum(['hiperqueratosis', 'heloma', 'onicocriptosis', 'ulcera', 'fisura', 'micosis', 'ampolla', 'verruga', 'otro']),
+  nota: texto(500),
+});
+const marcaEditarSchema = marcaSchema.partial();
+
+async function sedeDeProcedimiento(id: string) {
+  const r = await prisma.procedimientoAtencion.findUnique({ where: { id }, select: { atencion: { select: { sedeId: true } } } });
+  if (!r) throw new AppError('Procedimiento no encontrado', 404);
+  return r.atencion.sedeId;
+}
+async function sedeDeEscala(id: string) {
+  const r = await prisma.escalaClinica.findUnique({ where: { id }, select: { atencion: { select: { sedeId: true } } } });
+  if (!r) throw new AppError('Escala no encontrada', 404);
+  return r.atencion.sedeId;
+}
+async function sedeDeMarca(id: string) {
+  const r = await prisma.marcaPodograma.findUnique({ where: { id }, select: { atencion: { select: { sedeId: true } } } });
+  if (!r) throw new AppError('Marca no encontrada', 404);
+  return r.atencion.sedeId;
+}
+
+// Membresías/paquetes de láser vivos del paciente (para ligar un procedimiento láser, 1.12)
+router.get('/paciente/:pacienteId/paquetes-laser', ...verHc, async (req, res) => {
+  await hc.assertAccesoPaciente(user(req), req.params.pacienteId);
+  res.json(await b3.paquetesLaserVivos(req.params.pacienteId));
+});
+
+// Procedimientos (1.11 / 1.12)
+router.post('/atenciones/:id/procedimientos', ...registrar, async (req, res) => {
+  const data = procedimientoSchema.parse(req.body);
+  const { sedeId } = await sedeDeAtencion(req.params.id);
+  assertSede(req, sedeId);
+  res.status(201).json(await b3.agregarProcedimiento({ ...ctx(req), atencionId: req.params.id, ...data }));
+});
+router.patch('/procedimientos/:id', ...registrar, async (req, res) => {
+  const data = procedimientoEditarSchema.parse(req.body);
+  assertSede(req, await sedeDeProcedimiento(req.params.id));
+  res.json(await b3.editarProcedimiento({ ...ctx(req), procedimientoId: req.params.id, ...data }));
+});
+router.delete('/procedimientos/:id', ...registrar, async (req, res) => {
+  assertSede(req, await sedeDeProcedimiento(req.params.id));
+  res.json(await b3.eliminarProcedimiento({ ...ctx(req), procedimientoId: req.params.id }));
+});
+
+// Escalas (2.1 EVA · 2.2 Wagner/Texas · 2.3 IWGDF · 2.5 monofilamento)
+router.post('/atenciones/:id/escalas', ...registrar, async (req, res) => {
+  const data = escalaSchema.parse(req.body);
+  const { sedeId } = await sedeDeAtencion(req.params.id);
+  assertSede(req, sedeId);
+  res.status(201).json(await b3.guardarEscala({ ...ctx(req), atencionId: req.params.id, ...data }));
+});
+router.patch('/escalas/:id', ...registrar, async (req, res) => {
+  const data = escalaEditarSchema.parse(req.body);
+  assertSede(req, await sedeDeEscala(req.params.id));
+  res.json(await b3.editarEscala({ ...ctx(req), escalaId: req.params.id, ...data }));
+});
+router.delete('/escalas/:id', ...registrar, async (req, res) => {
+  assertSede(req, await sedeDeEscala(req.params.id));
+  res.json(await b3.eliminarEscala({ ...ctx(req), escalaId: req.params.id }));
+});
+
+// Podograma (1.3)
+router.post('/atenciones/:id/marcas', ...registrar, async (req, res) => {
+  const data = marcaSchema.parse(req.body);
+  const { sedeId } = await sedeDeAtencion(req.params.id);
+  assertSede(req, sedeId);
+  res.status(201).json(await b3.agregarMarca({ ...ctx(req), atencionId: req.params.id, ...data }));
+});
+router.patch('/marcas/:id', ...registrar, async (req, res) => {
+  const data = marcaEditarSchema.parse(req.body);
+  assertSede(req, await sedeDeMarca(req.params.id));
+  res.json(await b3.editarMarca({ ...ctx(req), marcaId: req.params.id, ...data }));
+});
+router.delete('/marcas/:id', ...registrar, async (req, res) => {
+  assertSede(req, await sedeDeMarca(req.params.id));
+  res.json(await b3.eliminarMarca({ ...ctx(req), marcaId: req.params.id }));
+});
+
+// ─── Imágenes del podograma (1.3b) ───────────────────────────────────────────
+// Subida multipart (campo "imagen"); el archivo se entrega SOLO por GET autenticado con hc.ver
+// + sede (nunca por /uploads firmado). Anotaciones = capa vectorial editable, auditada.
+const anotacionesSchema = z.object({ anotaciones: z.array(z.unknown()).max(3000) });
+const subirImagenSchema = z.object({ descripcion: z.string().trim().max(300).optional() });
+
+async function sedeDeImagenPodograma(id: string) {
+  const r = await prisma.imagenPodograma.findUnique({ where: { id }, select: { atencion: { select: { sedeId: true } } } });
+  if (!r) throw new AppError('Imagen no encontrada', 404);
+  return r.atencion.sedeId;
+}
+
+router.post(
+  '/atenciones/:id/podograma/imagenes',
+  ...registrar,
+  // Autorización ANTES de aceptar bytes: si la sede no corresponde, no se escribe nada en disco.
+  async (req, _res, next) => {
+    try { const { sedeId } = await sedeDeAtencion(req.params.id); assertSede(req, sedeId); next(); } catch (e) { next(e); }
+  },
+  subirImagenPodograma,
+  validarImagenPodogramaReal,
+  async (req, res) => {
+    const archivo = req.file;
+    if (!archivo) throw new AppError('Adjunta la imagen en el campo "imagen"', 400, 'ARCHIVO_REQUERIDO');
+    try {
+      const { descripcion } = subirImagenSchema.parse(req.body ?? {});
+      res.status(201).json(await b3.registrarImagenPodograma({ ...ctx(req), atencionId: req.params.id, archivo, descripcion }));
+    } catch (e) {
+      fs.unlink(archivo.path, () => { /* sin huérfanos si falló el registro en BD */ });
+      throw e;
+    }
+  },
+);
+
+router.get('/podograma/imagenes/:id', ...verHc, async (req, res) => {
+  const img = await b3.archivoImagenPodograma(req.params.id);
+  assertSede(req, img.atencion.sedeId);
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.setHeader('Content-Disposition', `inline; filename="${img.nombreArchivo.replace(/[^\w.\-]+/g, '_')}"`);
+  res.type(img.mime);
+  res.sendFile(img.rutaAbsoluta);
+});
+
+router.patch('/podograma/imagenes/:id/anotaciones', ...registrar, async (req, res) => {
+  const { anotaciones } = anotacionesSchema.parse(req.body);
+  assertSede(req, await sedeDeImagenPodograma(req.params.id));
+  res.json(await b3.guardarAnotacionesPodograma({ ...ctx(req), imagenId: req.params.id, anotaciones }));
+});
+
+router.delete('/podograma/imagenes/:id', ...registrar, async (req, res) => {
+  assertSede(req, await sedeDeImagenPodograma(req.params.id));
+  res.json(await b3.eliminarImagenPodograma({ ...ctx(req), imagenId: req.params.id }));
 });
 
 export default router;

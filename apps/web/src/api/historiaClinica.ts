@@ -2,6 +2,7 @@
 // Las lecturas de HC quedan AUDITADAS en el backend: staleTime alto y sin refetch al enfocar
 // la ventana, para no generar "ver_hc" de más. Las escrituras devuelven la entidad completa.
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useAuthStore } from '../stores/authStore';
 import { api } from './client';
 
 export type EstadoAtencion = 'abierta' | 'cerrada';
@@ -57,11 +58,65 @@ export interface AtencionClinica {
   cita: { id: string; horaInicio: string; estado: string; duracionMinutos: number };
   profesional: ProfesionalMini; sede: { id: string; nombre: string; color: string }; servicio: { id: string; nombre: string; color: string };
   notas: NotaEvolucion[]; diagnosticos: DiagnosticoAtencion[]; recetas: RecetaResumen[];
+  _count?: { procedimientos: number; escalas: number; marcasPodograma: number };
 }
 
 export interface AtencionCompleta extends AtencionClinica {
+  procedimientos: Procedimiento[]; escalas: Escala[]; marcasPodograma: MarcaPodograma[]; imagenesPodograma: ImagenPodograma[];
   historiaClinica: { id: string; numero: number; pacienteId: string; alergias: Alergia[] };
   paciente: PacienteHc;
+}
+
+// ─── Bloque 3 · procedimientos, escalas y podograma ──────────────────────────
+export type TipoProcedimiento = 'matricectomia' | 'laser' | 'curacion' | 'debridacion' | 'onicotomia' | 'quiropodia' | 'infiltracion' | 'otro';
+export type TipoEscala = 'eva' | 'wagner' | 'texas' | 'iwgdf' | 'monofilamento';
+export type Pie = 'izquierdo' | 'derecho' | 'ambos';
+export type PiePodograma = 'izquierdo' | 'derecho';
+export type TipoLesion = 'hiperqueratosis' | 'heloma' | 'onicocriptosis' | 'ulcera' | 'fisura' | 'micosis' | 'ampolla' | 'verruga' | 'otro';
+
+export const TIPO_PROCEDIMIENTO_LABEL: Record<TipoProcedimiento, string> = {
+  matricectomia: 'Matricectomía', laser: 'Láser', curacion: 'Curación', debridacion: 'Debridación',
+  onicotomia: 'Onicotomía', quiropodia: 'Quiropodia', infiltracion: 'Infiltración', otro: 'Otro',
+};
+export const TIPO_ESCALA_LABEL: Record<TipoEscala, string> = {
+  eva: 'EVA (dolor)', wagner: 'Wagner', texas: 'Texas', iwgdf: 'IWGDF (riesgo)', monofilamento: 'Monofilamento',
+};
+export const TIPO_LESION_LABEL: Record<TipoLesion, string> = {
+  hiperqueratosis: 'Hiperqueratosis', heloma: 'Heloma', onicocriptosis: 'Onicocriptosis', ulcera: 'Úlcera',
+  fisura: 'Fisura', micosis: 'Micosis', ampolla: 'Ampolla', verruga: 'Verruga', otro: 'Otro',
+};
+export const PIE_LABEL: Record<Pie, string> = { izquierdo: 'Izquierdo', derecho: 'Derecho', ambos: 'Ambos' };
+
+export interface Procedimiento {
+  id: string; atencionId: string; tipo: TipoProcedimiento; nombre: string; pie: Pie | null; ubicacion: string | null;
+  detalle: string | null; parametros: Record<string, unknown> | null; anestesia: string | null;
+  paquetePacienteId: string | null; sesionNumero: number | null; sesionesTotales: number | null;
+  profesionalId: string | null; profesionalEtiqueta: string | null; registradoEtiqueta: string | null; creadoEn: string;
+}
+export interface Escala {
+  id: string; atencionId: string; tipo: TipoEscala; datos: Record<string, unknown>; resultado: string | null;
+  pie: Pie | null; registradoEtiqueta: string | null; creadoEn: string;
+}
+export interface MarcaPodograma {
+  id: string; atencionId: string; pie: PiePodograma; x: number; y: number; zona: string | null;
+  tipoLesion: TipoLesion; nota: string | null; registradoEtiqueta: string | null; creadoEn: string;
+}
+export interface PaqueteLaser {
+  id: string; nombre: string; sesionesTotal: number; sesionesUsadas: number; sesionesRestantes: number; vigenciaFin: string | null;
+}
+export interface CamposProcedimiento {
+  tipo: TipoProcedimiento; nombre?: string; pie?: Pie | null; ubicacion?: string | null; detalle?: string | null;
+  parametros?: Record<string, unknown> | null; anestesia?: string | null; paquetePacienteId?: string | null; sesionNumero?: number | null; profesionalId?: string | null;
+}
+export interface CamposMarca { pie: PiePodograma; x: number; y: number; zona?: string | null; tipoLesion: TipoLesion; nota?: string | null }
+
+// Imagen del podograma (Baro) + capa de anotaciones vectoriales (coordenadas 0..1 sobre la imagen).
+export type AnotacionPodograma =
+  | { tipo: 'trazo'; color: string; grosor: number; puntos: [number, number][] }
+  | { tipo: 'texto'; x: number; y: number; texto: string; color: string };
+export interface ImagenPodograma {
+  id: string; nombreArchivo: string; mime: string; tamano: number; descripcion: string | null;
+  anotaciones: AnotacionPodograma[]; subidoEtiqueta: string | null; creadoEn: string;
 }
 
 export interface HistoriaCompleta {
@@ -116,6 +171,36 @@ export const historiaClinicaApi = {
     api.post<HistoriaCompleta>(`${B}/paciente/${pacienteId}/alergias`, data),
   editarAlergia: (id: string, data: { sustancia?: string; reaccion?: string | null; severidad?: SeveridadAlergia; activa?: boolean }) => api.patch<HistoriaCompleta>(`${B}/alergias/${id}`, data),
   eliminarAlergia: (id: string) => api.delete<HistoriaCompleta>(`${B}/alergias/${id}`),
+  // Bloque 3
+  paquetesLaser: (pacienteId: string) => api.get<PaqueteLaser[]>(`${B}/paciente/${pacienteId}/paquetes-laser`),
+  agregarProcedimiento: (atencionId: string, data: CamposProcedimiento) => api.post<AtencionCompleta>(`${B}/atenciones/${atencionId}/procedimientos`, data),
+  editarProcedimiento: (id: string, data: Partial<CamposProcedimiento>) => api.patch<AtencionCompleta>(`${B}/procedimientos/${id}`, data),
+  eliminarProcedimiento: (id: string) => api.delete<AtencionCompleta>(`${B}/procedimientos/${id}`),
+  guardarEscala: (atencionId: string, data: { tipo: TipoEscala; datos: Record<string, unknown>; pie?: Pie | null }) => api.post<AtencionCompleta>(`${B}/atenciones/${atencionId}/escalas`, data),
+  editarEscala: (id: string, data: { datos?: Record<string, unknown>; pie?: Pie | null }) => api.patch<AtencionCompleta>(`${B}/escalas/${id}`, data),
+  eliminarEscala: (id: string) => api.delete<AtencionCompleta>(`${B}/escalas/${id}`),
+  agregarMarca: (atencionId: string, data: CamposMarca) => api.post<AtencionCompleta>(`${B}/atenciones/${atencionId}/marcas`, data),
+  editarMarca: (id: string, data: Partial<CamposMarca>) => api.patch<AtencionCompleta>(`${B}/marcas/${id}`, data),
+  eliminarMarca: (id: string) => api.delete<AtencionCompleta>(`${B}/marcas/${id}`),
+  // Imágenes del podograma
+  subirImagenPodograma: (atencionId: string, archivo: File, descripcion?: string) => {
+    const fd = new FormData();
+    fd.append('imagen', archivo);
+    if (descripcion?.trim()) fd.append('descripcion', descripcion.trim());
+    return api.upload<AtencionCompleta>(`${B}/atenciones/${atencionId}/podograma/imagenes`, fd);
+  },
+  // El <img>/<canvas> no puede mandar Authorization → fetch autenticado a blob (patrón del PDF de receta).
+  blobImagenPodograma: async (id: string): Promise<Blob> => {
+    const token = useAuthStore.getState().token;
+    const res = await fetch(`/api/v1${B}/podograma/imagenes/${id}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: 'No se pudo cargar la imagen' }));
+      throw new Error((err as { message?: string }).message ?? 'No se pudo cargar la imagen');
+    }
+    return res.blob();
+  },
+  guardarAnotacionesPodograma: (id: string, anotaciones: AnotacionPodograma[]) => api.patch<AtencionCompleta>(`${B}/podograma/imagenes/${id}/anotaciones`, { anotaciones }),
+  eliminarImagenPodograma: (id: string) => api.delete<AtencionCompleta>(`${B}/podograma/imagenes/${id}`),
 };
 
 const OPCIONES_HC = { staleTime: 300_000, refetchOnWindowFocus: false } as const;

@@ -973,14 +973,15 @@ model PaquetePaciente {
   // Contrato PDF generado (pre-llenado con los datos del paciente) al vender. Registro.
   contratoUrl     String?
 
-  paciente       Paciente               @relation(fields: [pacienteId], references: [id])
-  paquete        Paquete                @relation(fields: [paqueteId], references: [id])
-  sede           Sede?                  @relation(fields: [sedeId], references: [id])
-  servicioNuevo  Servicio?              @relation("PaqueteServicioNuevo", fields: [servicioNuevoId], references: [id])
-  familia        FamiliaPaqueteGenexis? @relation(fields: [familiaId], references: [id])
+  paciente       Paciente                @relation(fields: [pacienteId], references: [id])
+  paquete        Paquete                 @relation(fields: [paqueteId], references: [id])
+  sede           Sede?                   @relation(fields: [sedeId], references: [id])
+  servicioNuevo  Servicio?               @relation("PaqueteServicioNuevo", fields: [servicioNuevoId], references: [id])
+  familia        FamiliaPaqueteGenexis?  @relation(fields: [familiaId], references: [id])
   citas          Cita[]
   consumos       ConsumoSesion[]
   conciliaciones ConciliacionApertura[]
+  procedimientos ProcedimientoAtencion[]
 
   creadoPor     String?  @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
@@ -1774,15 +1775,19 @@ model AtencionClinica {
   creadoEn            DateTime       @default(now())
   actualizadoEn       DateTime       @updatedAt
 
-  historiaClinica HistoriaClinica       @relation(fields: [historiaClinicaId], references: [id], onDelete: Restrict)
-  cita            Cita                  @relation(fields: [citaId], references: [id], onDelete: Restrict)
-  paciente        Paciente              @relation(fields: [pacienteId], references: [id], onDelete: Restrict)
-  profesional     Profesional           @relation(fields: [profesionalId], references: [id], onDelete: Restrict)
-  sede            Sede                  @relation(fields: [sedeId], references: [id], onDelete: Restrict)
-  servicio        Servicio              @relation(fields: [servicioId], references: [id], onDelete: Restrict)
-  notas           NotaEvolucion[]
-  diagnosticos    DiagnosticoAtencion[]
-  recetas         Receta[]
+  historiaClinica   HistoriaClinica         @relation(fields: [historiaClinicaId], references: [id], onDelete: Restrict)
+  cita              Cita                    @relation(fields: [citaId], references: [id], onDelete: Restrict)
+  paciente          Paciente                @relation(fields: [pacienteId], references: [id], onDelete: Restrict)
+  profesional       Profesional             @relation(fields: [profesionalId], references: [id], onDelete: Restrict)
+  sede              Sede                    @relation(fields: [sedeId], references: [id], onDelete: Restrict)
+  servicio          Servicio                @relation(fields: [servicioId], references: [id], onDelete: Restrict)
+  notas             NotaEvolucion[]
+  diagnosticos      DiagnosticoAtencion[]
+  recetas           Receta[]
+  procedimientos    ProcedimientoAtencion[]
+  escalas           EscalaClinica[]
+  marcasPodograma   MarcaPodograma[]
+  imagenesPodograma ImagenPodograma[]
 
   @@index([historiaClinicaId, fecha])
   @@index([pacienteId])
@@ -1961,4 +1966,115 @@ model RecetaItem {
 
   @@index([recetaId])
   @@map("receta_items")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Bloque 3 — Consulta enriquecida: procedimientos, escalas clínicas y podograma.
+// Todo aditivo, ligado a AtencionClinica. EDITABLE en la vista clínica con soft
+// delete (deletedAt) + auditoría; autores como uuid plano + etiqueta (sin FK).
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Procedimiento realizado en una atención (matricectomía, láser, curación, etc.).
+// Los ítems de tipo láser pueden ligarse a una membresía (PaquetePaciente) para el
+// conteo de sesiones (1.12). `parametros` guarda el detalle estructurado por tipo.
+model ProcedimientoAtencion {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  atencionId             String    @db.Uuid
+  tipo                   String // slug: matricectomia | laser | curacion | debridacion | otro
+  nombre                 String // etiqueta legible (snapshot del catálogo o texto libre)
+  pie                    String? // izquierdo | derecho | ambos | null
+  ubicacion              String? // dedo/zona ("1er ortejo", "borde lateral", ...)
+  detalle                String? // descripción libre del procedimiento
+  parametros             Json? // parámetros estructurados (láser: longitud de onda, potencia, J/cm²...)
+  anestesia              String? // tipo/estado de anestesia, si aplica
+  // Ligado a membresía (1.12): conteo de sesiones (típico láser 1/sem x 12)
+  paquetePacienteId      String?   @db.Uuid
+  sesionNumero           Int? // nº de sesión dentro del paquete
+  sesionesTotales        Int? // snapshot del total del paquete al registrar
+  // Profesional que realizó (snapshot; puede diferir del de la atención)
+  profesionalId          String?   @db.Uuid
+  profesionalEtiqueta    String?
+  registradoPorUsuarioId String?   @db.Uuid
+  registradoEtiqueta     String?
+  creadoEn               DateTime  @default(now())
+  actualizadoEn          DateTime  @updatedAt
+  deletedAt              DateTime?
+
+  atencion        AtencionClinica  @relation(fields: [atencionId], references: [id], onDelete: Restrict)
+  paquetePaciente PaquetePaciente? @relation(fields: [paquetePacienteId], references: [id], onDelete: Restrict)
+
+  @@index([atencionId])
+  @@index([paquetePacienteId])
+  @@map("procedimientos_atencion")
+}
+
+// Escala clínica aplicada en una atención (EVA dolor, Wagner, Texas, IWGDF riesgo de
+// pie diabético, monofilamento). El detalle estructurado va en `datos` (Json);
+// `resultado` guarda la etiqueta legible calculada en el backend.
+model EscalaClinica {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  atencionId             String    @db.Uuid
+  tipo                   String // eva | wagner | texas | iwgdf | monofilamento
+  datos                  Json // entradas estructuradas de la escala
+  resultado              String? // etiqueta legible calculada ("Wagner grado 2", "EVA 7/10")
+  pie                    String? // izquierdo | derecho | ambos (escalas por pie)
+  registradoPorUsuarioId String?   @db.Uuid
+  registradoEtiqueta     String?
+  creadoEn               DateTime  @default(now())
+  actualizadoEn          DateTime  @updatedAt
+  deletedAt              DateTime?
+
+  atencion AtencionClinica @relation(fields: [atencionId], references: [id], onDelete: Restrict)
+
+  @@index([atencionId])
+  @@map("escalas_clinicas")
+}
+
+// Marca sobre el mapa podográfico (podograma) de una atención. Coordenadas
+// normalizadas (0..1) sobre la silueta del pie. 1.3 mapa interactivo.
+model MarcaPodograma {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  atencionId             String    @db.Uuid
+  pie                    String // izquierdo | derecho
+  x                      Float // 0..1 (fracción del ancho de la silueta)
+  y                      Float // 0..1 (fracción del alto)
+  zona                   String? // región anatómica derivada (opcional)
+  tipoLesion             String // hiperqueratosis | heloma | onicocriptosis | ulcera | fisura | micosis | otro
+  nota                   String?
+  registradoPorUsuarioId String?   @db.Uuid
+  registradoEtiqueta     String?
+  creadoEn               DateTime  @default(now())
+  actualizadoEn          DateTime  @updatedAt
+  deletedAt              DateTime?
+
+  atencion AtencionClinica @relation(fields: [atencionId], references: [id], onDelete: Restrict)
+
+  @@index([atencionId])
+  @@map("marcas_podograma")
+}
+
+// Imagen del podograma (plataforma Baro u otra fuente) subida a una atención. Las
+// anotaciones (trazos/textos en coordenadas 0..1) van en `anotaciones` como capa vectorial
+// APARTE del archivo: la imagen original nunca se modifica (evidencia) y cada cambio de
+// anotaciones queda auditado. `ruta` es relativa a uploads/ y NUNCA se expone al cliente:
+// el archivo se entrega solo por endpoint autenticado (hc.ver + sede).
+model ImagenPodograma {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  atencionId         String    @db.Uuid
+  nombreArchivo      String // nombre original (solo para mostrar)
+  ruta               String // relativa a uploads/ (p. ej. podogramas/<atencionId>/<archivo>)
+  mime               String
+  tamano             Int
+  descripcion        String?
+  anotaciones        Json      @default("[]")
+  subidoPorUsuarioId String?   @db.Uuid
+  subidoEtiqueta     String?
+  creadoEn           DateTime  @default(now())
+  actualizadoEn      DateTime  @updatedAt
+  deletedAt          DateTime?
+
+  atencion AtencionClinica @relation(fields: [atencionId], references: [id], onDelete: Restrict)
+
+  @@index([atencionId])
+  @@map("imagenes_podograma")
 }

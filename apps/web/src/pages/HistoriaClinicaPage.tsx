@@ -2,16 +2,17 @@
 // Izquierda: paciente, alergias, accesos, "Nueva atención" y tabla de atenciones.
 // Derecha: pestañas Evolución · Receta · Antecedentes y alergias (+ próximas: procedimientos, escalas, podograma, consentimientos).
 // Vista PURA: toda la lógica vive en services/historiaClinicaService.ts.
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Skeleton } from '../components/ui/Skeleton';
+import { PodogramaEditor } from '../components/historiaClinica/PodogramaEditor';
 import { AlergiasBanner } from '../components/historiaClinica/AlergiasBanner';
 import { BuscadorCie10 } from '../components/historiaClinica/Buscadores';
 import { RegistrarAtencionModal } from '../components/historiaClinica/RegistrarAtencionModal';
 import { EmitirRecetaModal } from '../components/historiaClinica/EmitirRecetaModal';
 import { DialogoMotivo } from '../components/historiaClinica/DialogoMotivo';
 import { BotonHistorialGenexis } from '../components/pacientes/HistorialGenexis';
-import { useHistoriaClinicaPage, useEvolucionForm, useAntecedentesAlergias, useRecetasAtencion, type TabHc } from '../services/historiaClinicaService';
-import { TIPO_ANTECEDENTE_LABEL, TIPO_NOTA_LABEL, edadDe, nombreProfesional, type AtencionClinica, type AtencionCompleta, type TipoAntecedente, type TipoNota, type SeveridadAlergia } from '../api/historiaClinica';
+import { useHistoriaClinicaPage, useEvolucionForm, useAntecedentesAlergias, useRecetasAtencion, useProcedimientos, useEscalas, usePodograma, MF_ETIQUETAS, type TabHc } from '../services/historiaClinicaService';
+import { TIPO_ANTECEDENTE_LABEL, TIPO_NOTA_LABEL, TIPO_PROCEDIMIENTO_LABEL, TIPO_ESCALA_LABEL, TIPO_LESION_LABEL, PIE_LABEL, edadDe, nombreProfesional, type AtencionClinica, type AtencionCompleta, type TipoAntecedente, type TipoNota, type SeveridadAlergia, type TipoProcedimiento, type TipoEscala, type TipoLesion, type MarcaPodograma } from '../api/historiaClinica';
 import { TIPO_DOC_LABEL } from '../api/recetas';
 
 const INPUT = 'w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2 text-sm text-on-surface outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all';
@@ -23,9 +24,9 @@ const TABS: { id: TabHc; label: string; icon: string; pronto?: boolean }[] = [
   { id: 'evolucion', label: 'Evolución', icon: 'clinical_notes' },
   { id: 'receta', label: 'Receta', icon: 'prescriptions' },
   { id: 'antecedentes', label: 'Antecedentes y alergias', icon: 'health_and_safety' },
-  { id: 'procedimientos', label: 'Procedimientos', icon: 'medical_services', pronto: true },
-  { id: 'escalas', label: 'Escalas', icon: 'monitor_heart', pronto: true },
-  { id: 'podograma', label: 'Podograma', icon: 'footprint', pronto: true },
+  { id: 'procedimientos', label: 'Procedimientos', icon: 'medical_services' },
+  { id: 'escalas', label: 'Escalas', icon: 'monitor_heart' },
+  { id: 'podograma', label: 'Podograma', icon: 'footprint' },
   { id: 'consentimientos', label: 'Consentimientos', icon: 'contract', pronto: true },
 ];
 
@@ -150,7 +151,7 @@ export function HistoriaClinicaPage() {
           </div>
           <div className="p-6 max-w-[1100px]">
             {h.tab === 'antecedentes' && <PanelAntecedentes h={h} />}
-            {(h.tab === 'evolucion' || h.tab === 'receta') && (
+            {(h.tab === 'evolucion' || h.tab === 'receta' || h.tab === 'procedimientos' || h.tab === 'escalas' || h.tab === 'podograma') && (
               !h.atencionSel ? (
                 <div className="text-center py-20 text-on-surface-variant">
                   <span className="material-symbols-outlined text-5xl mb-2">clinical_notes</span>
@@ -161,6 +162,9 @@ export function HistoriaClinicaPage() {
                   <CabeceraAtencion h={h} a={h.atencion} />
                   {h.tab === 'evolucion' && <PanelEvolucion h={h} a={h.atencion} />}
                   {h.tab === 'receta' && <PanelReceta h={h} a={h.atencion} />}
+                  {h.tab === 'procedimientos' && <PanelProcedimientos h={h} a={h.atencion} />}
+                  {h.tab === 'escalas' && <PanelEscalas h={h} a={h.atencion} />}
+                  {h.tab === 'podograma' && <PanelPodograma h={h} a={h.atencion} />}
                 </>
               )
             )}
@@ -389,6 +393,357 @@ function PanelAntecedentes({ h }: { h: H }) {
             <button disabled={!f.puedeGuardarAntecedente || f.antecedenteMut.isPending} onClick={() => f.antecedenteMut.mutate()} className="px-4 py-2 bg-primary text-on-primary rounded-xl text-sm font-bold disabled:opacity-50">Agregar</button>
           </div>
         )}
+      </section>
+    </div>
+  );
+}
+
+// ─── Bloque 3 · Procedimientos ───────────────────────────────────────────────
+function PanelProcedimientos({ h, a }: { h: H; a: AtencionCompleta }) {
+  const p = useProcedimientos(a, h.puedeRegistrar);
+  return (
+    <div className="space-y-5">
+      <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5">
+        <h3 className="font-headline-sm text-headline-sm font-semibold text-on-surface flex items-center mb-3"><span className="material-symbols-outlined mr-2 text-primary">medical_services</span>Procedimientos realizados</h3>
+        {p.procedimientos.length === 0 && <p className="text-sm text-on-surface-variant">Ninguno registrado en esta atención.</p>}
+        <div className="space-y-2">
+          {p.procedimientos.map((x) => (
+            <div key={x.id} className="rounded-xl border border-outline-variant/20 px-4 py-3">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm font-bold text-on-surface">{TIPO_PROCEDIMIENTO_LABEL[x.tipo]}{x.nombre && x.nombre !== TIPO_PROCEDIMIENTO_LABEL[x.tipo] ? ` · ${x.nombre}` : ''}</span>
+                {x.pie && <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-primary/10 text-primary">{PIE_LABEL[x.pie]}</span>}
+                {x.ubicacion && <span className="text-xs text-on-surface-variant">{x.ubicacion}</span>}
+                {x.sesionNumero != null && <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">Sesión {x.sesionNumero}{x.sesionesTotales ? ` / ${x.sesionesTotales}` : ''}</span>}
+                <span className="flex-1" />
+                {h.puedeRegistrar && <button onClick={() => p.eliminarMut.mutate(x.id)} className="material-symbols-outlined text-on-surface-variant/60 hover:text-rose-600 text-lg">delete</button>}
+              </div>
+              {x.detalle && <p className="text-sm text-on-surface mt-1">{x.detalle}</p>}
+              {x.anestesia && <p className="text-xs text-on-surface-variant mt-0.5">Anestesia: {x.anestesia}</p>}
+              {x.parametros && Object.keys(x.parametros).length > 0 && (
+                <p className="text-xs text-on-surface-variant mt-0.5">{Object.entries(x.parametros).filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`).join(' · ')}</p>
+              )}
+              {x.registradoEtiqueta && <p className="text-[11px] text-on-surface-variant/70 mt-1">Registró: {x.registradoEtiqueta}</p>}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {h.puedeRegistrar && !p.cerrada && (
+        <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5">
+          <h4 className="text-sm font-semibold text-on-surface mb-3">Registrar procedimiento</h4>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div><label className={LBL}>Tipo</label>
+              <select value={p.tipo} onChange={(e) => p.setTipo(e.target.value as TipoProcedimiento | '')} className={INPUT}>
+                <option value="">Selecciona…</option>
+                {(Object.keys(TIPO_PROCEDIMIENTO_LABEL) as TipoProcedimiento[]).map((t) => <option key={t} value={t}>{TIPO_PROCEDIMIENTO_LABEL[t]}</option>)}
+              </select>
+            </div>
+            <div><label className={LBL}>Lado</label>
+              <select value={p.pie} onChange={(e) => p.setPie(e.target.value as never)} className={INPUT}>
+                <option value="">—</option><option value="izquierdo">Izquierdo</option><option value="derecho">Derecho</option><option value="ambos">Ambos</option>
+              </select>
+            </div>
+            <div><label className={LBL}>Ubicación</label><input value={p.ubicacion} onChange={(e) => p.setUbicacion(e.target.value)} placeholder="Ej. 1er ortejo, borde lateral" className={INPUT} /></div>
+          </div>
+          <div className="mt-3"><label className={LBL}>Detalle</label><textarea value={p.detalle} onChange={(e) => p.setDetalle(e.target.value)} rows={2} placeholder="Descripción del procedimiento" className={INPUT} /></div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+            <div><label className={LBL}>Anestesia</label><input value={p.anestesia} onChange={(e) => p.setAnestesia(e.target.value)} placeholder="Ej. Lidocaína 2% troncular" className={INPUT} /></div>
+          </div>
+
+          {p.esLaser && (
+            <div className="mt-4 rounded-xl border border-primary/20 bg-primary/5 p-4">
+              <p className="text-xs font-semibold text-primary mb-2 flex items-center gap-1"><span className="material-symbols-outlined text-sm">cardiology</span>Láser — parámetros y membresía (1.12)</p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div><label className={LBL}>Longitud de onda</label><input value={p.laserLongitud} onChange={(e) => p.setLaserLongitud(e.target.value)} placeholder="Ej. 1064 nm" className={INPUT} /></div>
+                <div><label className={LBL}>Energía</label><input value={p.laserEnergia} onChange={(e) => p.setLaserEnergia(e.target.value)} placeholder="Ej. 8 J/cm²" className={INPUT} /></div>
+                <div><label className={LBL}>Disparos / notas</label><input value={p.laserDisparos} onChange={(e) => p.setLaserDisparos(e.target.value)} placeholder="Ej. 200 disparos" className={INPUT} /></div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+                <div><label className={LBL}>Membresía / paquete</label>
+                  <select value={p.paqueteId} onChange={(e) => p.elegirPaquete(e.target.value)} className={INPUT}>
+                    <option value="">Sin membresía</option>
+                    {p.paquetes.map((q) => <option key={q.id} value={q.id}>{q.nombre} · {q.sesionesRestantes}/{q.sesionesTotal} disponibles</option>)}
+                  </select>
+                </div>
+                <div><label className={LBL}>N.º de sesión</label><input value={p.sesionNumero} onChange={(e) => p.setSesionNumero(e.target.value)} type="number" min={1} placeholder="—" className={INPUT} /></div>
+              </div>
+              {p.paquetes.length === 0 && <p className="text-[11px] text-on-surface-variant mt-2">Este paciente no tiene membresías de láser activas.</p>}
+            </div>
+          )}
+
+          <div className="flex justify-end mt-4">
+            <button disabled={!p.puedeGuardar || p.agregarMut.isPending} onClick={() => p.agregarMut.mutate()} className="px-5 py-2 bg-primary text-on-primary rounded-xl text-sm font-bold disabled:opacity-50">Registrar procedimiento</button>
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+// ─── Bloque 3 · Escalas clínicas ─────────────────────────────────────────────
+function PanelEscalas({ h, a }: { h: H; a: AtencionCompleta }) {
+  const e = useEscalas(a, h.puedeRegistrar);
+  return (
+    <div className="space-y-5">
+      <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5">
+        <h3 className="font-headline-sm text-headline-sm font-semibold text-on-surface flex items-center mb-3"><span className="material-symbols-outlined mr-2 text-primary">monitor_heart</span>Escalas registradas</h3>
+        {e.escalas.length === 0 && <p className="text-sm text-on-surface-variant">Ninguna registrada en esta atención.</p>}
+        <div className="space-y-2">
+          {e.escalas.map((x) => (
+            <div key={x.id} className="flex items-center gap-3 rounded-xl border border-outline-variant/20 px-4 py-2.5">
+              <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-primary/10 text-primary shrink-0">{TIPO_ESCALA_LABEL[x.tipo]}</span>
+              <span className="text-sm font-semibold text-on-surface flex-1">{x.resultado ?? '—'}</span>
+              {x.registradoEtiqueta && <span className="text-[11px] text-on-surface-variant/70 hidden md:block">{x.registradoEtiqueta}</span>}
+              {h.puedeRegistrar && <button onClick={() => e.eliminarMut.mutate(x.id)} className="material-symbols-outlined text-on-surface-variant/60 hover:text-rose-600 text-lg">delete</button>}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {h.puedeRegistrar && !e.cerrada && (
+        <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5">
+          <h4 className="text-sm font-semibold text-on-surface mb-3">Aplicar escala</h4>
+          <div className="max-w-xs mb-4"><label className={LBL}>Escala</label>
+            <select value={e.tipo} onChange={(ev) => e.setTipo(ev.target.value as TipoEscala | '')} className={INPUT}>
+              <option value="">Selecciona…</option>
+              {(Object.keys(TIPO_ESCALA_LABEL) as TipoEscala[]).map((t) => <option key={t} value={t}>{TIPO_ESCALA_LABEL[t]}</option>)}
+            </select>
+          </div>
+
+          {e.tipo === 'eva' && (
+            <div className="mb-4">
+              <label className={LBL}>Intensidad del dolor: <b className="text-primary text-sm">{e.eva}/10</b></label>
+              <input type="range" min={0} max={10} value={e.eva} onChange={(ev) => e.setEva(Number(ev.target.value))} className="w-full accent-primary" />
+              <div className="flex justify-between text-[10px] text-on-surface-variant"><span>Sin dolor</span><span>Máximo</span></div>
+            </div>
+          )}
+          {e.tipo === 'wagner' && (
+            <div className="mb-4 max-w-md"><label className={LBL}>Grado Wagner</label>
+              <select value={e.wagner} onChange={(ev) => e.setWagner(Number(ev.target.value))} className={INPUT}>
+                {['Piel intacta / sin lesión', 'Úlcera superficial', 'Úlcera profunda (tendón/cápsula)', 'Absceso u osteomielitis', 'Gangrena localizada', 'Gangrena extensa'].map((d, i) => <option key={i} value={i}>Grado {i} — {d}</option>)}
+              </select>
+            </div>
+          )}
+          {e.tipo === 'texas' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+              <div><label className={LBL}>Grado</label>
+                <select value={e.texasGrado} onChange={(ev) => e.setTexasGrado(Number(ev.target.value))} className={INPUT}>
+                  {['Pre/post-ulcerativa', 'Superficial', 'Tendón o cápsula', 'Hueso o articulación'].map((d, i) => <option key={i} value={i}>{i} — {d}</option>)}
+                </select>
+              </div>
+              <div><label className={LBL}>Estadio</label>
+                <select value={e.texasEstadio} onChange={(ev) => e.setTexasEstadio(ev.target.value as 'A' | 'B' | 'C' | 'D')} className={INPUT}>
+                  {[['A', 'Sin infección ni isquemia'], ['B', 'Infección'], ['C', 'Isquemia'], ['D', 'Infección + isquemia']].map(([k, d]) => <option key={k} value={k}>{k} — {d}</option>)}
+                </select>
+              </div>
+            </div>
+          )}
+          {e.tipo === 'iwgdf' && (
+            <div className="mb-4 max-w-md"><label className={LBL}>Categoría de riesgo (pie diabético)</label>
+              <select value={e.iwgdf} onChange={(ev) => e.setIwgdf(Number(ev.target.value))} className={INPUT}>
+                {[['Muy bajo', 'control anual'], ['Bajo', 'control 6–12 meses'], ['Moderado', 'control 3–6 meses'], ['Alto', 'control 1–3 meses']].map((d, i) => <option key={i} value={i}>Categoría {i} — Riesgo {d[0]} ({d[1]})</option>)}
+              </select>
+            </div>
+          )}
+          {e.tipo === 'monofilamento' && (
+            <div className="mb-4 space-y-3">
+              <p className="text-xs text-on-surface-variant">Marca los puntos donde el paciente <b>SÍ percibe</b> el monofilamento (verde = percibe, rojo = no percibe).</p>
+              {(['izq', 'der'] as const).map((lado) => {
+                const arr = lado === 'izq' ? e.mfIzq : e.mfDer;
+                return (
+                  <div key={lado} className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-bold text-on-surface w-20">{lado === 'izq' ? 'Izquierdo' : 'Derecho'}</span>
+                    {arr.map((v, i) => (
+                      <button key={i} onClick={() => e.toggleMf(lado, i)} title={MF_ETIQUETAS[i]}
+                        className={`px-2 py-1 rounded-lg text-[10px] font-semibold border ${v ? 'bg-emerald-100 text-emerald-700 border-emerald-300' : 'bg-rose-100 text-rose-700 border-rose-300'}`}>
+                        {MF_ETIQUETAS[i]}
+                      </button>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {e.tipo && (
+            <div className="flex justify-end">
+              <button disabled={!e.puedeGuardar || e.guardarMut.isPending} onClick={() => e.guardarMut.mutate()} className="px-5 py-2 bg-primary text-on-primary rounded-xl text-sm font-bold disabled:opacity-50">Registrar escala</button>
+            </div>
+          )}
+        </section>
+      )}
+    </div>
+  );
+}
+
+// ─── Bloque 3 · Podograma (mapa interactivo) ─────────────────────────────────
+const COLOR_LESION: Record<TipoLesion, string> = {
+  hiperqueratosis: '#f59e0b', heloma: '#ef4444', onicocriptosis: '#8b5cf6', ulcera: '#dc2626',
+  fisura: '#0891b2', micosis: '#65a30d', ampolla: '#ec4899', verruga: '#7c3aed', otro: '#64748b',
+};
+
+function SiluetaPie({ espejo }: { espejo?: boolean }) {
+  return (
+    <svg viewBox="0 0 100 240" className="w-full h-full" style={espejo ? { transform: 'scaleX(-1)' } : undefined} aria-hidden>
+      <path d="M50 14 C34 14 27 30 29 54 C22 64 17 104 21 152 C24 200 32 232 50 232 C68 232 76 200 79 152 C83 104 78 64 71 54 C73 30 66 14 50 14 Z"
+        fill="#eef2f7" stroke="#cbd5e1" strokeWidth="2" />
+      <ellipse cx="50" cy="10" rx="8" ry="7" fill="#eef2f7" stroke="#cbd5e1" strokeWidth="1.5" />
+      <ellipse cx="33" cy="18" rx="5.5" ry="5" fill="#eef2f7" stroke="#cbd5e1" strokeWidth="1.5" />
+      <ellipse cx="22" cy="30" rx="4.5" ry="4.5" fill="#eef2f7" stroke="#cbd5e1" strokeWidth="1.5" />
+      <ellipse cx="15" cy="45" rx="4" ry="4" fill="#eef2f7" stroke="#cbd5e1" strokeWidth="1.5" />
+      <ellipse cx="11" cy="62" rx="3.5" ry="4" fill="#eef2f7" stroke="#cbd5e1" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
+function MapaPie({ pie, marcas, pendiente, onClick }: { pie: 'izquierdo' | 'derecho'; marcas: MarcaPodograma[]; pendiente: { pie: string; x: number; y: number } | null; onClick: (x: number, y: number) => void }) {
+  const propias = marcas.filter((m) => m.pie === pie);
+  return (
+    <div className="flex-1 min-w-[130px] max-w-[200px]">
+      <p className="text-center text-xs font-bold text-on-surface-variant mb-1">{pie === 'izquierdo' ? 'Izquierdo' : 'Derecho'}</p>
+      <div className="relative aspect-[100/240] cursor-crosshair select-none"
+        onClick={(ev) => { const r = ev.currentTarget.getBoundingClientRect(); onClick((ev.clientX - r.left) / r.width, (ev.clientY - r.top) / r.height); }}>
+        <SiluetaPie espejo={pie === 'derecho'} />
+        {propias.map((m) => (
+          <span key={m.id} title={`${TIPO_LESION_LABEL[m.tipoLesion]}${m.nota ? ` · ${m.nota}` : ''}`}
+            className="absolute -translate-x-1/2 -translate-y-1/2 w-3 h-3 rounded-full border-2 border-white shadow"
+            style={{ left: `${m.x * 100}%`, top: `${m.y * 100}%`, background: COLOR_LESION[m.tipoLesion] }} />
+        ))}
+        {pendiente && pendiente.pie === pie && (
+          <span className="absolute -translate-x-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full border-2 border-primary bg-primary/40 animate-pulse"
+            style={{ left: `${pendiente.x * 100}%`, top: `${pendiente.y * 100}%` }} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+const COLORES_ANOTACION = ['#ef4444', '#f59e0b', '#22c55e', '#3b82f6', '#111827', '#ffffff'];
+const HERRAMIENTAS: { id: 'lapiz' | 'texto' | 'borrador'; icon: string; label: string }[] = [
+  { id: 'lapiz', icon: 'edit', label: 'Lápiz' },
+  { id: 'texto', icon: 'text_fields', label: 'Texto' },
+  { id: 'borrador', icon: 'ink_eraser', label: 'Borrador' },
+];
+const BTN_TOOL = (activo: boolean) => `px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 border disabled:opacity-40 ${activo ? 'bg-primary text-on-primary border-primary' : 'border-outline-variant/40 text-on-surface hover:bg-surface-container-high'}`;
+
+function PanelPodograma({ h, a }: { h: H; a: AtencionCompleta }) {
+  const pod = usePodograma(a, h.puedeRegistrar);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const hayImagenes = pod.imagenes.length > 0;
+  const mostrarImagen = hayImagenes && !pod.verSilueta;
+  return (
+    <div className="space-y-5">
+      <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5">
+        <div className="flex items-start justify-between gap-3 flex-wrap mb-1">
+          <h3 className="font-headline-sm text-headline-sm font-semibold text-on-surface flex items-center"><span className="material-symbols-outlined mr-2 text-primary">footprint</span>Podograma</h3>
+          <div className="flex items-center gap-2">
+            {hayImagenes && (
+              <button onClick={() => pod.setVerSilueta(!pod.verSilueta)} className="px-3 py-1.5 border border-outline-variant rounded-lg text-xs font-semibold text-on-surface hover:bg-surface-container-high flex items-center gap-1">
+                <span className="material-symbols-outlined text-base">{pod.verSilueta ? 'image' : 'footprint'}</span>{pod.verSilueta ? 'Ver imagen' : 'Ver silueta'}
+              </button>
+            )}
+            {pod.puedeEditar && (
+              <>
+                <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => { pod.subirArchivo(e.target.files?.[0]); e.target.value = ''; }} />
+                <button onClick={() => inputRef.current?.click()} disabled={pod.subirMut.isPending} className="px-3 py-1.5 bg-primary text-on-primary rounded-lg text-xs font-bold flex items-center gap-1 disabled:opacity-50">
+                  <span className="material-symbols-outlined text-base">upload</span>{pod.subirMut.isPending ? 'Subiendo…' : 'Cargar podograma'}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+        <p className="text-xs text-on-surface-variant mb-4">
+          {mostrarImagen
+            ? (pod.puedeEditar ? 'Dibuja o escribe sobre la imagen de la Baro; el borrador quita un trazo completo. Guarda al terminar.' : 'Imagen del podograma con sus anotaciones.')
+            : (pod.puedeEditar ? 'Haz clic sobre la silueta para ubicar una lesión, o carga la imagen del podograma de la Baro.' : 'Mapa de lesiones de la atención.')}
+        </p>
+
+        {mostrarImagen ? (
+          <>
+            {pod.imagenes.length > 1 && (
+              <div className="flex gap-2 flex-wrap mb-3">
+                {pod.imagenes.map((img, i) => (
+                  <button key={img.id} onClick={() => pod.setImagenSelId(img.id)} className={`px-2.5 py-1 rounded-lg text-xs font-semibold border max-w-[220px] truncate ${pod.imagenSel?.id === img.id ? 'border-primary bg-primary/5 text-primary' : 'border-outline-variant/40 text-on-surface hover:bg-surface-container-low'}`}>
+                    {i + 1}. {img.descripcion || img.nombreArchivo}
+                  </button>
+                ))}
+              </div>
+            )}
+            {pod.puedeEditar && (
+              <div className="flex flex-wrap items-center gap-2 mb-3">
+                {HERRAMIENTAS.map((t) => <button key={t.id} onClick={() => pod.setHerramienta(t.id)} className={BTN_TOOL(pod.herramienta === t.id)} title={t.label}><span className="material-symbols-outlined text-base">{t.icon}</span>{t.label}</button>)}
+                <span className="w-px h-6 bg-outline-variant/30 mx-1" />
+                {COLORES_ANOTACION.map((c) => <button key={c} onClick={() => pod.setColor(c)} title={c} className={`w-6 h-6 rounded-full border-2 ${pod.color === c ? 'border-primary scale-110' : 'border-outline-variant/40'}`} style={{ background: c }} />)}
+                <span className="w-px h-6 bg-outline-variant/30 mx-1" />
+                <label className="text-[10px] font-semibold uppercase text-on-surface-variant flex items-center gap-1">Grosor<input type="range" min={1} max={20} value={pod.grosor} onChange={(e) => pod.setGrosor(Number(e.target.value))} className="w-20 accent-primary" /></label>
+                <span className="w-px h-6 bg-outline-variant/30 mx-1" />
+                <button onClick={pod.deshacer} disabled={!pod.anotaciones.length} className={BTN_TOOL(false)} title="Deshacer"><span className="material-symbols-outlined text-base">undo</span></button>
+                <button onClick={pod.limpiarAnotaciones} disabled={!pod.anotaciones.length} className={BTN_TOOL(false)} title="Limpiar anotaciones"><span className="material-symbols-outlined text-base">delete_sweep</span></button>
+                <span className="flex-1" />
+                {pod.sucio && <button onClick={pod.descartar} className="px-3 py-1.5 border border-outline-variant rounded-lg text-xs font-semibold text-on-surface hover:bg-surface-container-high">Descartar</button>}
+                <button onClick={pod.guardarAnotaciones} disabled={!pod.sucio || pod.guardarAnotacionesMut.isPending} className="px-4 py-1.5 bg-primary text-on-primary rounded-lg text-xs font-bold flex items-center gap-1 disabled:opacity-50"><span className="material-symbols-outlined text-base">save</span>Guardar anotaciones</button>
+              </div>
+            )}
+            <div className="max-w-[760px] mx-auto rounded-xl overflow-hidden border border-outline-variant/30">
+              {pod.cargandoImagen || !pod.urlImagen
+                ? <Skeleton className="h-80 w-full" />
+                : <PodogramaEditor url={pod.urlImagen} anotaciones={pod.anotaciones} herramienta={pod.herramienta} color={pod.color} grosor={pod.grosor} editable={pod.puedeEditar}
+                    onTrazo={pod.agregarAnotacion} onTexto={(x, y, texto) => pod.agregarAnotacion({ tipo: 'texto', x, y, texto, color: pod.color })} onBorrar={pod.borrarEn} />}
+            </div>
+            {pod.imagenSel && (
+              <div className="flex items-center gap-2 flex-wrap mt-3 text-[11px] text-on-surface-variant">
+                <span className="material-symbols-outlined text-sm">image</span>
+                <span className="font-semibold text-on-surface truncate max-w-[260px]">{pod.imagenSel.nombreArchivo}</span>
+                <span>· {(pod.imagenSel.tamano / 1024).toFixed(0)} KB</span>
+                {pod.imagenSel.subidoEtiqueta && <span>· subida por {pod.imagenSel.subidoEtiqueta}</span>}
+                <span>· {pod.anotaciones.length} anotación(es){pod.sucio ? ' (sin guardar)' : ''}</span>
+                <span className="flex-1" />
+                {pod.puedeEditar && <button onClick={() => pod.eliminarImagenMut.mutate(pod.imagenSel!.id)} disabled={pod.eliminarImagenMut.isPending} className="text-rose-600 font-semibold hover:underline flex items-center gap-1"><span className="material-symbols-outlined text-sm">delete</span>Quitar imagen</button>}
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="flex justify-center gap-8">
+              <MapaPie pie="izquierdo" marcas={pod.marcas} pendiente={pod.pendiente} onClick={(x, y) => pod.marcarPunto('izquierdo', x, y)} />
+              <MapaPie pie="derecho" marcas={pod.marcas} pendiente={pod.pendiente} onClick={(x, y) => pod.marcarPunto('derecho', x, y)} />
+            </div>
+            {pod.pendiente && (
+              <div className="mt-5 rounded-xl border border-primary/30 bg-primary/5 p-4">
+                <p className="text-xs font-semibold text-primary mb-2">Nueva marca en pie {pod.pendiente.pie}</p>
+                <div className="grid grid-cols-1 md:grid-cols-[200px_1fr_auto] gap-3 items-end">
+                  <div><label className={LBL}>Tipo de lesión</label>
+                    <select value={pod.tipoLesion} onChange={(ev) => pod.setTipoLesion(ev.target.value as TipoLesion)} className={INPUT}>
+                      {(Object.keys(TIPO_LESION_LABEL) as TipoLesion[]).map((t) => <option key={t} value={t}>{TIPO_LESION_LABEL[t]}</option>)}
+                    </select>
+                  </div>
+                  <div><label className={LBL}>Nota</label><input value={pod.nota} onChange={(ev) => pod.setNota(ev.target.value)} placeholder="Opcional" className={INPUT} /></div>
+                  <div className="flex gap-2">
+                    <button onClick={() => pod.cancelar()} className="px-3 py-2 border border-outline-variant rounded-xl text-sm font-semibold text-on-surface hover:bg-surface-container-high">Cancelar</button>
+                    <button disabled={pod.agregarMut.isPending} onClick={() => pod.agregarMut.mutate()} className="px-4 py-2 bg-primary text-on-primary rounded-xl text-sm font-bold disabled:opacity-50">Guardar</button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </section>
+
+      <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5">
+        <h4 className="text-sm font-semibold text-on-surface mb-3">Lesiones marcadas ({pod.marcas.length})</h4>
+        {pod.marcas.length === 0 && <p className="text-sm text-on-surface-variant">Sin lesiones marcadas.</p>}
+        <div className="space-y-1.5">
+          {pod.marcas.map((m) => (
+            <div key={m.id} className="flex items-center gap-2 rounded-xl border border-outline-variant/20 px-3 py-2">
+              <span className="w-3 h-3 rounded-full border border-white shadow shrink-0" style={{ background: COLOR_LESION[m.tipoLesion] }} />
+              <span className="text-sm font-semibold text-on-surface">{TIPO_LESION_LABEL[m.tipoLesion]}</span>
+              <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-primary/10 text-primary">{m.pie === 'izquierdo' ? 'Izq' : 'Der'}</span>
+              {m.nota && <span className="text-xs text-on-surface-variant">· {m.nota}</span>}
+              <span className="flex-1" />
+              {h.puedeRegistrar && <button onClick={() => pod.eliminarMut.mutate(m.id)} className="material-symbols-outlined text-on-surface-variant/60 hover:text-rose-600 text-lg">delete</button>}
+            </div>
+          ))}
+        </div>
       </section>
     </div>
   );

@@ -30,7 +30,7 @@ export interface Ctx {
 // Estados de cita en los que existe un "encuentro" clínico real.
 const ESTADOS_ATENDIDA = ['llego', 'en_atencion', 'completada'];
 
-const ctxAudit = (c: Ctx) => ({ usuarioId: c.usuarioId, ip: c.ip, userAgent: c.userAgent });
+export const ctxAudit = (c: Ctx) => ({ usuarioId: c.usuarioId, ip: c.ip, userAgent: c.userAgent });
 
 export async function etiquetaUsuario(tx: Tx, usuarioId?: string | null): Promise<string> {
   if (!usuarioId) return 'Sistema';
@@ -173,6 +173,10 @@ const recetasResumenInclude = {
     codigoVerificacion: true, _count: { select: { items: true } },
   },
 } as const;
+// Colecciones del Bloque 3 (procedimientos, escalas, podograma). orderBy simple → `as const` ok.
+const procedimientosInclude = { where: { deletedAt: null }, orderBy: { creadoEn: 'asc' } } as const;
+const escalasInclude = { where: { deletedAt: null }, orderBy: { creadoEn: 'asc' } } as const;
+const marcasInclude = { where: { deletedAt: null }, orderBy: { creadoEn: 'asc' } } as const;
 const atencionInclude = {
   cita: { select: { id: true, horaInicio: true, estado: true, duracionMinutos: true } },
   profesional: { select: { id: true, nombres: true, apellidos: true, tipo: true } },
@@ -181,6 +185,7 @@ const atencionInclude = {
   notas: notasInclude,
   diagnosticos: diagnosticosInclude,
   recetas: recetasResumenInclude,
+  _count: { select: { procedimientos: { where: { deletedAt: null } }, escalas: { where: { deletedAt: null } }, marcasPodograma: { where: { deletedAt: null } } } },
 } as const;
 
 export async function getAtencionCompleta(id: string) {
@@ -188,6 +193,14 @@ export async function getAtencionCompleta(id: string) {
     where: { id },
     include: {
       ...atencionInclude,
+      procedimientos: procedimientosInclude,
+      escalas: escalasInclude,
+      marcasPodograma: marcasInclude,
+      // Imágenes del podograma: sin `ruta` (el archivo solo se entrega por endpoint autenticado).
+      imagenesPodograma: {
+        where: { deletedAt: null }, orderBy: { creadoEn: 'asc' },
+        select: { id: true, nombreArchivo: true, mime: true, tamano: true, descripcion: true, anotaciones: true, subidoEtiqueta: true, creadoEn: true },
+      },
       historiaClinica: {
         select: {
           id: true, numero: true, pacienteId: true,
@@ -244,7 +257,7 @@ export async function auditarLecturaHC(p: Ctx & { pacienteId: string; origen: 'f
   });
 }
 
-async function atencionOr404(id: string) {
+export async function atencionOr404(id: string) {
   const at = await prisma.atencionClinica.findUnique({ where: { id }, select: { id: true, citaId: true, sedeId: true, estado: true, pacienteId: true, historiaClinicaId: true } });
   if (!at) throw new AppError('Atención no encontrada', 404);
   return at;

@@ -11,6 +11,7 @@ import {
   historiaClinicaApi, useHistoriaClinica, useAtencionClinica, useInvalidarHistoriaClinica,
   type AtencionClinica, type AtencionCompleta, type CamposNota, type TipoNota, type TipoDiagnostico,
   type TipoAntecedente, type SeveridadAlergia, type NotaEvolucion, type DiagnosticoAtencion,
+  type TipoProcedimiento, type TipoEscala, type TipoLesion, type Pie, type PiePodograma,
 } from '../api/historiaClinica';
 import { recetasApi, verRecetaPdf, imprimirReceta, type ItemEntrada, type TipoDocumentoReceta, type RecetaCompleta, type TipoItemReceta } from '../api/recetas';
 import type { Cie10Item, MedicamentoItem } from '../api/catalogos';
@@ -326,6 +327,243 @@ export function useRecetasAtencion(atencion: AtencionCompleta | null) {
   const ver = async (id: string) => { try { await verRecetaPdf(id); } catch (e) { toast.error((e as Error).message); } };
   const imprimir = async (id: string) => { try { await imprimirReceta(id); } catch (e) { toast.error((e as Error).message); } };
   return { recetas: atencion?.recetas ?? [], anulando, setAnulando, anularMut, ver, imprimir };
+}
+
+// ─── Bloque 3 · Procedimientos (1.11 / 1.12) ─────────────────────────────────
+export function useProcedimientos(atencion: AtencionCompleta | null, puedeRegistrar: boolean) {
+  const invalidar = useInvalidarHistoriaClinica();
+  const atencionId = atencion?.id;
+  const pacienteId = atencion?.pacienteId;
+  const inval = () => invalidar({ pacienteId, atencionId, citaId: atencion?.citaId });
+
+  const [tipo, setTipo] = useState<TipoProcedimiento | ''>('');
+  const [pie, setPie] = useState<Pie | ''>('');
+  const [ubicacion, setUbicacion] = useState('');
+  const [detalle, setDetalle] = useState('');
+  const [anestesia, setAnestesia] = useState('');
+  const [laserLongitud, setLaserLongitud] = useState('');
+  const [laserEnergia, setLaserEnergia] = useState('');
+  const [laserDisparos, setLaserDisparos] = useState('');
+  const [paqueteId, setPaqueteId] = useState('');
+  const [sesionNumero, setSesionNumero] = useState('');
+  useEffect(() => { limpiar(); /* eslint-disable-line react-hooks/exhaustive-deps */ }, [atencionId]);
+  const limpiar = () => { setTipo(''); setPie(''); setUbicacion(''); setDetalle(''); setAnestesia(''); setLaserLongitud(''); setLaserEnergia(''); setLaserDisparos(''); setPaqueteId(''); setSesionNumero(''); };
+
+  const { data: paquetes = [] } = useQuery({
+    queryKey: ['paquetes-laser', pacienteId], queryFn: () => historiaClinicaApi.paquetesLaser(pacienteId!),
+    enabled: !!pacienteId && puedeRegistrar, staleTime: 300_000,
+  });
+  const elegirPaquete = (id: string) => {
+    setPaqueteId(id);
+    const q = paquetes.find((x) => x.id === id);
+    if (q) setSesionNumero(String(Math.min(q.sesionesUsadas + 1, q.sesionesTotal)));
+  };
+
+  const esLaser = tipo === 'laser';
+  const puedeGuardar = puedeRegistrar && !!tipo && atencion?.estado !== 'cerrada';
+  const agregarMut = useMutation({
+    mutationFn: () => {
+      const parametros = esLaser && (laserLongitud || laserEnergia || laserDisparos)
+        ? { longitudOnda: laserLongitud || undefined, energia: laserEnergia || undefined, disparos: laserDisparos || undefined }
+        : null;
+      return historiaClinicaApi.agregarProcedimiento(atencionId!, {
+        tipo: tipo as TipoProcedimiento, pie: pie || null, ubicacion: ubicacion.trim() || null, detalle: detalle.trim() || null,
+        anestesia: anestesia.trim() || null, parametros, paquetePacienteId: esLaser && paqueteId ? paqueteId : null,
+        sesionNumero: sesionNumero ? Number(sesionNumero) : null,
+      });
+    },
+    onSuccess: () => { inval(); limpiar(); toast.success('Procedimiento registrado'); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const eliminarMut = useMutation({
+    mutationFn: (id: string) => historiaClinicaApi.eliminarProcedimiento(id),
+    onSuccess: () => { inval(); toast.success('Procedimiento eliminado'); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return {
+    procedimientos: atencion?.procedimientos ?? [], cerrada: atencion?.estado === 'cerrada',
+    tipo, setTipo, pie, setPie, ubicacion, setUbicacion, detalle, setDetalle, anestesia, setAnestesia,
+    laserLongitud, setLaserLongitud, laserEnergia, setLaserEnergia, laserDisparos, setLaserDisparos,
+    esLaser, paquetes, paqueteId, elegirPaquete, sesionNumero, setSesionNumero,
+    puedeGuardar, agregarMut, eliminarMut,
+  };
+}
+
+// ─── Bloque 3 · Escalas clínicas (2.1 EVA · 2.2 Wagner/Texas · 2.3 IWGDF · 2.5 monofilamento) ──
+const MF_PUNTOS = 6; // sitios plantares por pie (hallux, 1º/3º/5º metatarsiano, mediopié, talón)
+export const MF_ETIQUETAS = ['Hallux', '1er meta', '3er meta', '5º meta', 'Mediopié', 'Talón'];
+
+export function useEscalas(atencion: AtencionCompleta | null, puedeRegistrar: boolean) {
+  const invalidar = useInvalidarHistoriaClinica();
+  const atencionId = atencion?.id;
+  const inval = () => invalidar({ pacienteId: atencion?.pacienteId, atencionId, citaId: atencion?.citaId });
+
+  const [tipo, setTipo] = useState<TipoEscala | ''>('');
+  const [eva, setEva] = useState(5);
+  const [wagner, setWagner] = useState(0);
+  const [texasGrado, setTexasGrado] = useState(0);
+  const [texasEstadio, setTexasEstadio] = useState<'A' | 'B' | 'C' | 'D'>('A');
+  const [iwgdf, setIwgdf] = useState(0);
+  const [mfIzq, setMfIzq] = useState<boolean[]>(() => Array(MF_PUNTOS).fill(true));
+  const [mfDer, setMfDer] = useState<boolean[]>(() => Array(MF_PUNTOS).fill(true));
+  useEffect(() => { limpiar(); /* eslint-disable-line react-hooks/exhaustive-deps */ }, [atencionId]);
+  const limpiar = () => { setTipo(''); setEva(5); setWagner(0); setTexasGrado(0); setTexasEstadio('A'); setIwgdf(0); setMfIzq(Array(MF_PUNTOS).fill(true)); setMfDer(Array(MF_PUNTOS).fill(true)); };
+  const toggleMf = (lado: 'izq' | 'der', i: number) => {
+    const set = lado === 'izq' ? setMfIzq : setMfDer;
+    set((prev) => prev.map((v, idx) => (idx === i ? !v : v)));
+  };
+
+  const datos = (): Record<string, unknown> => {
+    switch (tipo) {
+      case 'eva': return { valor: eva };
+      case 'wagner': return { grado: wagner };
+      case 'texas': return { grado: texasGrado, estadio: texasEstadio };
+      case 'iwgdf': return { categoria: iwgdf };
+      case 'monofilamento': return { izquierdo: mfIzq, derecho: mfDer };
+      default: return {};
+    }
+  };
+  const puedeGuardar = puedeRegistrar && !!tipo && atencion?.estado !== 'cerrada';
+  const guardarMut = useMutation({
+    mutationFn: () => historiaClinicaApi.guardarEscala(atencionId!, { tipo: tipo as TipoEscala, datos: datos() }),
+    onSuccess: () => { inval(); limpiar(); toast.success('Escala registrada'); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const eliminarMut = useMutation({
+    mutationFn: (id: string) => historiaClinicaApi.eliminarEscala(id),
+    onSuccess: () => { inval(); toast.success('Escala eliminada'); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return {
+    escalas: atencion?.escalas ?? [], cerrada: atencion?.estado === 'cerrada',
+    tipo, setTipo, eva, setEva, wagner, setWagner, texasGrado, setTexasGrado, texasEstadio, setTexasEstadio, iwgdf, setIwgdf,
+    mfIzq, mfDer, toggleMf, puedeGuardar, guardarMut, eliminarMut,
+  };
+}
+
+// ─── Bloque 3 · Podograma (1.3 mapa interactivo + 1.3b imagen de la Baro con anotaciones) ──
+export type HerramientaPodograma = 'lapiz' | 'texto' | 'borrador';
+type AnotacionPodograma = AtencionCompleta['imagenesPodograma'][number]['anotaciones'][number];
+const MAX_IMAGEN_BYTES = 10 * 1024 * 1024;
+
+/** Índice de la anotación que está bajo (x,y) en coordenadas 0..1; la última dibujada gana. */
+function indiceAnotacionEn(lista: AnotacionPodograma[], x: number, y: number): number {
+  for (let i = lista.length - 1; i >= 0; i--) {
+    const a = lista[i];
+    if (a.tipo === 'texto') {
+      if (x >= a.x - 0.01 && x <= a.x + 0.12 && y >= a.y - 0.035 && y <= a.y + 0.012) return i;
+    } else {
+      const tol = 0.012 + a.grosor / 2000;
+      if (a.puntos.some(([px, py]) => Math.hypot(px - x, py - y) <= tol)) return i;
+    }
+  }
+  return -1;
+}
+
+export function usePodograma(atencion: AtencionCompleta | null, puedeRegistrar: boolean) {
+  const invalidar = useInvalidarHistoriaClinica();
+  const atencionId = atencion?.id;
+  const inval = () => invalidar({ pacienteId: atencion?.pacienteId, atencionId, citaId: atencion?.citaId });
+  const cerrada = atencion?.estado === 'cerrada';
+  const puedeEditar = puedeRegistrar && !cerrada;
+
+  // ── Silueta + marcas tipificadas (cuando no hay imagen de la Baro) ──
+  const [pendiente, setPendiente] = useState<{ pie: PiePodograma; x: number; y: number } | null>(null);
+  const [tipoLesion, setTipoLesion] = useState<TipoLesion>('hiperqueratosis');
+  const [nota, setNota] = useState('');
+  const marcarPunto = (pie: PiePodograma, x: number, y: number) => { if (!puedeEditar) return; setPendiente({ pie, x: Math.min(1, Math.max(0, x)), y: Math.min(1, Math.max(0, y)) }); };
+  const cancelar = () => { setPendiente(null); setNota(''); };
+  const agregarMut = useMutation({
+    mutationFn: () => historiaClinicaApi.agregarMarca(atencionId!, { pie: pendiente!.pie, x: pendiente!.x, y: pendiente!.y, tipoLesion, nota: nota.trim() || null }),
+    onSuccess: () => { inval(); setPendiente(null); setNota(''); toast.success('Marca agregada'); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const eliminarMut = useMutation({
+    mutationFn: (id: string) => historiaClinicaApi.eliminarMarca(id),
+    onSuccess: () => { inval(); toast.success('Marca eliminada'); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // ── Imágenes de la Baro ──
+  const imagenes = atencion?.imagenesPodograma ?? [];
+  const [imagenSelId, setImagenSelId] = useState<string | null>(null);
+  const [verSilueta, setVerSilueta] = useState(false);
+  const imagenSel = imagenes.find((i) => i.id === imagenSelId) ?? imagenes[0] ?? null;
+  const imagenSelIdReal = imagenSel?.id ?? null;
+  useEffect(() => { setImagenSelId(null); setVerSilueta(false); setPendiente(null); setNota(''); }, [atencionId]);
+
+  // Blob autenticado → object URL (se revoca al cambiar de imagen o desmontar).
+  const [urlImagen, setUrlImagen] = useState<string | null>(null);
+  const [cargandoImagen, setCargandoImagen] = useState(false);
+  useEffect(() => {
+    let url: string | null = null;
+    let cancelado = false;
+    setUrlImagen(null);
+    if (!imagenSelIdReal) return;
+    setCargandoImagen(true);
+    historiaClinicaApi.blobImagenPodograma(imagenSelIdReal)
+      .then((b) => { if (cancelado) return; url = URL.createObjectURL(b); setUrlImagen(url); })
+      .catch((e: Error) => { if (!cancelado) toast.error(e.message); })
+      .finally(() => { if (!cancelado) setCargandoImagen(false); });
+    return () => { cancelado = true; if (url) URL.revokeObjectURL(url); };
+  }, [imagenSelIdReal]);
+
+  // ── Editor de anotaciones (capa vectorial local hasta "Guardar") ──
+  const [herramienta, setHerramienta] = useState<HerramientaPodograma>('lapiz');
+  const [color, setColor] = useState('#ef4444');
+  const [grosor, setGrosor] = useState(4);
+  const [anotaciones, setAnotaciones] = useState<AnotacionPodograma[]>([]);
+  const [guardadas, setGuardadas] = useState<AnotacionPodograma[]>([]);
+  useEffect(() => { const a = imagenSel?.anotaciones ?? []; setAnotaciones(a); setGuardadas(a); /* eslint-disable-line react-hooks/exhaustive-deps */ }, [imagenSelIdReal]);
+  const sucio = anotaciones !== guardadas;
+  const agregarAnotacion = (a: AnotacionPodograma) => { if (puedeEditar) setAnotaciones((prev) => [...prev, a]); };
+  const borrarEn = (x: number, y: number) => { if (!puedeEditar) return; setAnotaciones((prev) => { const i = indiceAnotacionEn(prev, x, y); return i < 0 ? prev : prev.filter((_, k) => k !== i); }); };
+  const deshacer = () => setAnotaciones((prev) => (prev.length ? prev.slice(0, -1) : prev));
+  const limpiarAnotaciones = () => setAnotaciones((prev) => (prev.length ? [] : prev));
+  const descartar = () => setAnotaciones(guardadas);
+  const guardarAnotacionesMut = useMutation({
+    mutationFn: (a: AnotacionPodograma[]) => historiaClinicaApi.guardarAnotacionesPodograma(imagenSel!.id, a),
+    onSuccess: (_d, a) => { setGuardadas(a); setAnotaciones(a); inval(); toast.success('Anotaciones guardadas'); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const guardarAnotaciones = () => { if (imagenSel && sucio) guardarAnotacionesMut.mutate(anotaciones); };
+
+  // ── Subir / eliminar imagen ──
+  const subirMut = useMutation({
+    mutationFn: (archivo: File) => historiaClinicaApi.subirImagenPodograma(atencionId!, archivo),
+    onSuccess: (a) => {
+      inval();
+      const ultima = a.imagenesPodograma?.[a.imagenesPodograma.length - 1];
+      if (ultima) setImagenSelId(ultima.id);
+      setVerSilueta(false);
+      toast.success('Podograma cargado');
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const subirArchivo = (f: File | null | undefined) => {
+    if (!f || !puedeEditar) return;
+    if (!/^image\/(png|jpeg|webp)$/.test(f.type)) { toast.error('Solo se aceptan imágenes JPG, PNG o WEBP'); return; }
+    if (f.size > MAX_IMAGEN_BYTES) { toast.error('La imagen supera los 10 MB'); return; }
+    subirMut.mutate(f);
+  };
+  const eliminarImagenMut = useMutation({
+    mutationFn: (id: string) => historiaClinicaApi.eliminarImagenPodograma(id),
+    onSuccess: () => { inval(); setImagenSelId(null); toast.success('Imagen eliminada'); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return {
+    cerrada, puedeEditar,
+    // silueta
+    marcas: atencion?.marcasPodograma ?? [], pendiente, marcarPunto, cancelar, tipoLesion, setTipoLesion, nota, setNota, agregarMut, eliminarMut,
+    // imágenes
+    imagenes, imagenSel, setImagenSelId, verSilueta, setVerSilueta, urlImagen, cargandoImagen, subirArchivo, subirMut, eliminarImagenMut,
+    // editor
+    herramienta, setHerramienta, color, setColor, grosor, setGrosor, anotaciones, sucio,
+    agregarAnotacion, borrarEn, deshacer, limpiarAnotaciones, descartar, guardarAnotaciones, guardarAnotacionesMut,
+  };
 }
 
 export type { AtencionClinica };
