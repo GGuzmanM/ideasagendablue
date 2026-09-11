@@ -124,3 +124,27 @@ export async function escalasDePaciente(pacienteId: string, tipo?: string) {
     .map(({ atencion, ...e }) => ({ ...e, fecha: atencion.fecha }))
     .sort((a, b) => (a.fecha.getTime() - b.fecha.getTime()) || (a.creadoEn.getTime() - b.creadoEn.getTime()));
 }
+
+/**
+ * Historial del podograma: todo lo registrado sobre el pie del paciente, atención por atención
+ * (puntos, dibujos, fotos, procedimientos y mediciones de úlcera). El front lo reparte por zona.
+ */
+export async function historialPodograma(pacienteId: string) {
+  const atenciones = await prisma.atencionClinica.findMany({
+    where: { pacienteId },
+    orderBy: [{ fecha: 'asc' }, { creadoEn: 'asc' }],
+    select: {
+      id: true, fecha: true,
+      profesional: { select: { nombres: true, apellidos: true } },
+      marcasPodograma: { where: { deletedAt: null }, orderBy: { creadoEn: 'asc' }, select: { id: true, pie: true, vista: true, x: true, y: true, zona: true, tipoLesion: true, nota: true } },
+      dibujosSilueta: { where: { deletedAt: null }, select: { vista: true, pie: true, anotaciones: true } },
+      fotos: { where: { deletedAt: null }, orderBy: { tomadaEn: 'asc' }, select: { id: true, pie: true, zona: true, categoria: true, descripcion: true, tomadaEn: true } },
+      procedimientos: { where: { deletedAt: null }, orderBy: { creadoEn: 'asc' }, select: { id: true, tipo: true, nombre: true, pie: true, ubicacion: true, detalle: true } },
+      escalas: { where: { deletedAt: null, tipo: 'ulcera' }, orderBy: { creadoEn: 'asc' }, select: { id: true, datos: true, resultado: true, pie: true } },
+    },
+  });
+  return atenciones.map((a) => ({
+    atencionId: a.id, fecha: a.fecha, profesional: `${a.profesional.nombres} ${a.profesional.apellidos}`.trim(),
+    marcas: a.marcasPodograma, dibujos: a.dibujosSilueta, fotos: a.fotos, procedimientos: a.procedimientos, ulceras: a.escalas,
+  }));
+}

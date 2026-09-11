@@ -196,6 +196,8 @@ export async function getAtencionCompleta(id: string) {
       procedimientos: procedimientosInclude,
       escalas: escalasInclude,
       marcasPodograma: marcasInclude,
+      // Dibujos a mano alzada sobre la silueta (modo "Pintar"): una capa por vista y pie.
+      dibujosSilueta: { where: { deletedAt: null }, orderBy: { creadoEn: 'asc' }, select: { id: true, vista: true, pie: true, anotaciones: true, registradoEtiqueta: true, actualizadoEn: true } },
       // Imágenes del podograma: sin `ruta` (el archivo solo se entrega por endpoint autenticado).
       imagenesPodograma: {
         where: { deletedAt: null }, orderBy: { creadoEn: 'asc' },
@@ -254,7 +256,7 @@ export async function resumenAtencionPorCita(citaId: string) {
 }
 
 /** Auditoría de LECTURA (awaited, nunca lanza): quién abrió qué historia y desde dónde. */
-export async function auditarLecturaHC(p: Ctx & { pacienteId: string; origen: 'ficha' | 'ficha_previa' | 'atencion' | 'receta' | 'pdf'; atencionId?: string; recetaId?: string; sedeId?: string }) {
+export async function auditarLecturaHC(p: Ctx & { pacienteId: string; origen: 'ficha' | 'ficha_previa' | 'historial_podograma' | 'atencion' | 'receta' | 'pdf'; atencionId?: string; recetaId?: string; sedeId?: string }) {
   await registrarAudit({
     ...ctxAudit(p), accion: p.origen === 'receta' || p.origen === 'pdf' ? 'ver_receta' : 'ver_hc',
     entidad: 'historia_clinica', entidadId: p.pacienteId, sedeId: p.sedeId,

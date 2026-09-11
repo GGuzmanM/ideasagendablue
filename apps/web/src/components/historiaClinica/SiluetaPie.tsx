@@ -1,35 +1,34 @@
-// Silueta PLANTAR del pie (vista pura, SVG) + monofilamento dibujado sobre ella.
-// Vista plantar del pie izquierdo: dedo gordo al lado medial (derecha), dedos menores decreciendo
-// hacia el lateral, arco medial y talón redondeado. El derecho es el espejo → mostrados lado a lado,
-// los dedos gordos quedan hacia el centro, como en una impresión de Baro.
+// Silueta del pie (vista pura) + monofilamento dibujado sobre ella. Son FOTOS reales de ambos pies:
+//  · plantar (public/Silueta.jpg): las plantas, dedos arriba; cada pie en una caja de 744×1843.
+//  · dorsal  (public/Silueta-dorsal.jpg): el dorso visto desde arriba, dedos abajo y uñas visibles;
+//    cada pie en una caja de 874×1960. Sirve para marcar uñas (onicocriptosis, onicomicosis…) y empeine.
+// En ambas el pie izquierdo va a la izquierda y el derecho a la derecha, con los dedos gordos hacia el
+// centro. Un solo archivo por vista sirve para los dos pies recortando con background-size/position.
+// Las zonas de cada vista (y su calibración) viven en utils/zonasPie.ts.
+import type { VistaSilueta } from '../../api/historiaClinica';
 import { SITIOS_MONOFILAMENTO, coordZona, zonaPorId } from '../../utils/zonasPie';
 
-export function SiluetaPie({ espejo }: { espejo?: boolean }) {
-  const gid = espejo ? 'piel-der' : 'piel-izq'; // un gradiente por instancia (ids únicos en el DOM)
-  const piel = `url(#${gid})`;
-  const borde = { stroke: '#c9a58f', strokeWidth: 1.6 };
+// Geometría de cada foto (misma unidad que el recorte original): ancho total y ancho de la caja de un pie.
+const FOTOS: Record<VistaSilueta, { url: string; anchoImagen: number; anchoPie: number; aspecto: string }> = {
+  plantar: { url: '/Silueta.jpg', anchoImagen: 1544, anchoPie: 744, aspecto: '744 / 1843' },
+  dorsal: { url: '/Silueta-dorsal.jpg', anchoImagen: 1748, anchoPie: 874, aspecto: '874 / 1960' },
+};
+/** Proporción ancho/alto de la caja de un pie (usar como `aspectRatio` del contenedor). */
+export const aspectoSilueta = (vista: VistaSilueta = 'plantar') => FOTOS[vista].aspecto;
+export const ASPECTO_SILUETA = FOTOS.plantar.aspecto;
+/** Lo mismo como número (ancho / alto), para la capa de dibujo. */
+export const proporcionSilueta = (vista: VistaSilueta = 'plantar') => { const [a, b] = FOTOS[vista].aspecto.split('/').map(Number); return a! / b!; };
+
+export function SiluetaPie({ espejo, vista = 'plantar' }: { espejo?: boolean; vista?: VistaSilueta }) {
+  const f = FOTOS[vista];
   return (
-    <svg viewBox="0 0 100 240" className="w-full h-full" style={espejo ? { transform: 'scaleX(-1)' } : undefined} aria-hidden>
-      <defs>
-        <radialGradient id={gid} cx="50%" cy="45%" r="70%">
-          <stop offset="0%" stopColor="#fbeee4" />
-          <stop offset="100%" stopColor="#f0dac9" />
-        </radialGradient>
-      </defs>
-      {/* Planta: antepié ancho, arco medial cóncavo, talón redondeado */}
-      <path d="M16 62 C20 46 36 38 54 40 C68 41 80 46 86 56 C92 68 90 88 84 106 C76 122 72 142 75 166 C77 192 74 220 58 232 C46 240 30 234 24 220 C16 202 12 172 12 142 C12 112 10 82 16 62 Z"
-        fill={piel} {...borde} strokeWidth="1.8" strokeLinejoin="round" />
-      {/* Zonas de apoyo (antepié y talón), sutiles */}
-      <ellipse cx="54" cy="66" rx="30" ry="14" fill="#e3b39c" opacity="0.28" />
-      <ellipse cx="48" cy="206" rx="18" ry="20" fill="#e3b39c" opacity="0.28" />
-      <path d="M22 96 C30 120 30 150 26 178" fill="none" stroke="#dcb8a3" strokeWidth="1.2" opacity="0.6" />
-      {/* Dedos: gordo (medial, grande) → 5º dedo (lateral, pequeño) */}
-      <ellipse cx="70" cy="26" rx="12" ry="15" fill={piel} {...borde} />
-      <ellipse cx="50" cy="26" rx="6.5" ry="9" fill={piel} {...borde} />
-      <ellipse cx="37" cy="29" rx="6" ry="8" fill={piel} {...borde} />
-      <ellipse cx="26" cy="37" rx="5.5" ry="7" fill={piel} {...borde} />
-      <ellipse cx="17" cy="49" rx="5" ry="6" fill={piel} {...borde} />
-    </svg>
+    <div aria-hidden className="w-full h-full bg-no-repeat"
+      style={{
+        backgroundImage: `url(${f.url})`,
+        backgroundSize: `${(f.anchoImagen / f.anchoPie) * 100}% 100%`,
+        backgroundPosition: espejo ? '100% 0%' : '0% 0%', // derecho = mitad derecha de la foto
+        mixBlendMode: 'multiply', // el fondo casi blanco de la foto se funde con la tarjeta (sin recuadro)
+      }} />
   );
 }
 
@@ -45,7 +44,7 @@ export function MonofilamentoPie({ pie, valores, anterior, onToggle, titulo, com
   return (
     <div className={compacto ? 'w-[52px]' : 'flex-1 min-w-[120px] max-w-[190px]'}>
       {!compacto && <p className="text-center text-xs font-bold text-on-surface-variant mb-1">{titulo ?? (pie === 'izquierdo' ? 'Izquierdo' : 'Derecho')}</p>}
-      <div className="relative aspect-[100/240] select-none">
+      <div className="relative select-none" style={{ aspectRatio: ASPECTO_SILUETA }}>
         <SiluetaPie espejo={pie === 'derecho'} />
         {SITIOS_MONOFILAMENTO.map((zid, i) => {
           const z = zonaPorId(zid);

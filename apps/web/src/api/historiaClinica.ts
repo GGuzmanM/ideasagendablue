@@ -62,7 +62,7 @@ export interface AtencionClinica {
 }
 
 export interface AtencionCompleta extends AtencionClinica {
-  procedimientos: Procedimiento[]; escalas: Escala[]; marcasPodograma: MarcaPodograma[]; imagenesPodograma: ImagenPodograma[]; fotos: FotoClinica[];
+  procedimientos: Procedimiento[]; escalas: Escala[]; marcasPodograma: MarcaPodograma[]; imagenesPodograma: ImagenPodograma[]; fotos: FotoClinica[]; dibujosSilueta?: DibujoSilueta[];
   historiaClinica: { id: string; numero: number; pacienteId: string; alergias: Alergia[] };
   paciente: PacienteHc;
 }
@@ -72,7 +72,10 @@ export type TipoProcedimiento = 'matricectomia' | 'laser' | 'curacion' | 'debrid
 export type TipoEscala = 'eva' | 'wagner' | 'texas' | 'iwgdf' | 'monofilamento' | 'termometria' | 'ulcera';
 export type Pie = 'izquierdo' | 'derecho' | 'ambos';
 export type PiePodograma = 'izquierdo' | 'derecho';
-export type TipoLesion = 'hiperqueratosis' | 'heloma' | 'onicocriptosis' | 'ulcera' | 'fisura' | 'micosis' | 'ampolla' | 'verruga' | 'otro';
+/** Silueta sobre la que se marca: planta del pie o dorso (uñas, empeine). */
+export type VistaSilueta = 'plantar' | 'dorsal';
+export const VISTA_SILUETA_LABEL: Record<VistaSilueta, string> = { plantar: 'Planta', dorsal: 'Dorso' };
+export type TipoLesion = 'hiperqueratosis' | 'heloma' | 'onicocriptosis' | 'ulcera' | 'fisura' | 'micosis' | 'ampolla' | 'verruga' | 'dolor' | 'inflamacion' | 'otro';
 
 export const TIPO_PROCEDIMIENTO_LABEL: Record<TipoProcedimiento, string> = {
   matricectomia: 'Matricectomía', laser: 'Láser', curacion: 'Curación', debridacion: 'Debridación',
@@ -83,8 +86,21 @@ export const TIPO_ESCALA_LABEL: Record<TipoEscala, string> = {
 };
 export const TIPO_LESION_LABEL: Record<TipoLesion, string> = {
   hiperqueratosis: 'Hiperqueratosis', heloma: 'Heloma', onicocriptosis: 'Onicocriptosis', ulcera: 'Úlcera',
-  fisura: 'Fisura', micosis: 'Micosis', ampolla: 'Ampolla', verruga: 'Verruga', otro: 'Otro',
+  fisura: 'Fisura', micosis: 'Micosis', ampolla: 'Ampolla', verruga: 'Verruga', dolor: 'Dolor', inflamacion: 'Inflamación', otro: 'Otro',
 };
+/** Nombre común de cada lesión (como lo dice el paciente), para que el significado de la marca sea claro. */
+export const TIPO_LESION_AYUDA: Record<TipoLesion, string> = {
+  hiperqueratosis: 'callosidad, dureza', heloma: 'callo, ojo de gallo', onicocriptosis: 'uñero, uña encarnada', ulcera: 'herida abierta',
+  fisura: 'grieta', micosis: 'hongos en piel o uña', ampolla: 'flictena', verruga: 'mezquino', dolor: 'punto de dolor',
+  inflamacion: 'hinchazón, edema', otro: 'escribe qué es en el detalle',
+};
+/** Color fijo por tipo de lesión: el mismo en los puntos, los dibujos y la leyenda. */
+export const COLOR_LESION: Record<TipoLesion, string> = {
+  hiperqueratosis: '#f59e0b', heloma: '#ea580c', onicocriptosis: '#8b5cf6', ulcera: '#dc2626', fisura: '#0891b2',
+  micosis: '#65a30d', ampolla: '#f472b6', verruga: '#92400e', dolor: '#2563eb', inflamacion: '#c026d3', otro: '#64748b',
+};
+/** "Heloma · callo, ojo de gallo" (para desplegables y títulos). */
+export const etiquetaLesion = (t: TipoLesion) => `${TIPO_LESION_LABEL[t]} · ${TIPO_LESION_AYUDA[t]}`;
 export const PIE_LABEL: Record<Pie, string> = { izquierdo: 'Izquierdo', derecho: 'Derecho', ambos: 'Ambos' };
 
 export interface Procedimiento {
@@ -98,7 +114,7 @@ export interface Escala {
   pie: Pie | null; registradoEtiqueta: string | null; creadoEn: string;
 }
 export interface MarcaPodograma {
-  id: string; atencionId: string; pie: PiePodograma; x: number; y: number; zona: string | null;
+  id: string; atencionId: string; pie: PiePodograma; vista: VistaSilueta; x: number; y: number; zona: string | null;
   tipoLesion: TipoLesion; nota: string | null; registradoEtiqueta: string | null; creadoEn: string;
 }
 export interface PaqueteLaser {
@@ -108,7 +124,7 @@ export interface CamposProcedimiento {
   tipo: TipoProcedimiento; nombre?: string; pie?: Pie | null; ubicacion?: string | null; detalle?: string | null;
   parametros?: Record<string, unknown> | null; anestesia?: string | null; paquetePacienteId?: string | null; sesionNumero?: number | null; profesionalId?: string | null;
 }
-export interface CamposMarca { pie: PiePodograma; x: number; y: number; zona?: string | null; tipoLesion: TipoLesion; nota?: string | null }
+export interface CamposMarca { pie: PiePodograma; vista?: VistaSilueta; x: number; y: number; zona?: string | null; tipoLesion: TipoLesion; nota?: string | null }
 
 // ─── 2.8 Ficha previa · escalas por paciente · plantillas y autotextos (1.1 / 1.2) ───
 export type NivelBandera = 'alto' | 'medio' | 'info';
@@ -127,6 +143,15 @@ export interface FichaPrevia {
 }
 /** Escala con la fecha de su atención (lista por paciente, de la más antigua a la más nueva). */
 export interface EscalaPaciente extends Escala { fecha: string }
+/** Historial del podograma: lo registrado en el pie en cada atención del paciente (para el historial por zona). */
+export interface HistorialPodograma {
+  atencionId: string; fecha: string; profesional: string;
+  marcas: { id: string; pie: PiePodograma; vista: VistaSilueta; x: number; y: number; zona: string | null; tipoLesion: TipoLesion; nota: string | null }[];
+  dibujos: { vista: VistaSilueta; pie: PiePodograma; anotaciones: AnotacionPodograma[] }[];
+  fotos: { id: string; pie: Pie | null; zona: string | null; categoria: CategoriaFoto; descripcion: string | null; tomadaEn: string }[];
+  procedimientos: { id: string; tipo: TipoProcedimiento; nombre: string; pie: Pie | null; ubicacion: string | null; detalle: string | null }[];
+  ulceras: { id: string; datos: Record<string, unknown>; resultado: string | null; pie: Pie | null }[];
+}
 export type TipoPlantilla = 'nota' | 'autotexto';
 export interface PlantillaClinica {
   id: string; tipo: TipoPlantilla; clave: string | null; nombre: string; contenido: Record<string, string>;
@@ -150,7 +175,7 @@ export interface Bandeja { diasSinVolver: number; abiertas: BandejaAtencion[]; s
 
 // Imagen del podograma (Baro) + capa de anotaciones vectoriales (coordenadas 0..1 sobre la imagen).
 export type AnotacionPodograma =
-  | { tipo: 'trazo'; color: string; grosor: number; puntos: [number, number][] }
+  | { tipo: 'trazo'; color: string; grosor: number; puntos: [number, number][]; tipoLesion?: TipoLesion; nota?: string }
   | { tipo: 'texto'; x: number; y: number; texto: string; color: string };
 // Las 4 vistas fijas que entrega la Baro (frontal / posterior × izquierdo / derecho).
 export type VistaPodograma = 'frontal_izquierdo' | 'frontal_derecho' | 'posterior_izquierdo' | 'posterior_derecho';
@@ -159,6 +184,10 @@ export const VISTA_PODOGRAMA_LABEL: Record<VistaPodograma, string> = {
   frontal_izquierdo: 'Frontal izquierdo', frontal_derecho: 'Frontal derecho',
   posterior_izquierdo: 'Posterior izquierdo', posterior_derecho: 'Posterior derecho',
 };
+/** Dibujo a mano alzada sobre la silueta (modo "Pintar"): una capa de trazos por vista y pie. */
+export interface DibujoSilueta {
+  id: string; vista: VistaSilueta; pie: PiePodograma; anotaciones: AnotacionPodograma[]; registradoEtiqueta: string | null; actualizadoEn: string;
+}
 export interface ImagenPodograma {
   id: string; vista: VistaPodograma | null; nombreArchivo: string; mime: string; tamano: number; descripcion: string | null;
   anotaciones: AnotacionPodograma[]; subidoEtiqueta: string | null; creadoEn: string;
@@ -230,6 +259,7 @@ export const historiaClinicaApi = {
   bandeja: (dias = 45) => api.get<Bandeja>(`${B}/bandeja`, { dias: String(dias) }),
   // 2.8 ficha previa, escalas por paciente y plantillas
   fichaPrevia: (pacienteId: string) => api.get<FichaPrevia>(`${B}/paciente/${pacienteId}/ficha-previa`),
+  historialPodograma: (pacienteId: string) => api.get<HistorialPodograma[]>(`${B}/paciente/${pacienteId}/podograma-historial`),
   escalasPaciente: (pacienteId: string, tipo?: TipoEscala) => api.get<EscalaPaciente[]>(`${B}/paciente/${pacienteId}/escalas`, tipo ? { tipo } : undefined),
   plantillas: (tipo?: TipoPlantilla) => api.get<PlantillaClinica[]>(`${B}/plantillas`, tipo ? { tipo } : undefined),
   crearPlantilla: (data: CamposPlantilla) => api.post<PlantillaClinica>(`${B}/plantillas`, data),
@@ -263,6 +293,8 @@ export const historiaClinicaApi = {
     }
     return res.blob();
   },
+  guardarDibujoSilueta: (atencionId: string, data: { vista: VistaSilueta; pie: PiePodograma; anotaciones: AnotacionPodograma[] }) =>
+    api.put<AtencionCompleta>(`${B}/atenciones/${atencionId}/dibujos`, data),
   guardarAnotacionesPodograma: (id: string, anotaciones: AnotacionPodograma[]) => api.patch<AtencionCompleta>(`${B}/podograma/imagenes/${id}/anotaciones`, { anotaciones }),
   eliminarImagenPodograma: (id: string) => api.delete<AtencionCompleta>(`${B}/podograma/imagenes/${id}`),
   // Fotos clínicas
@@ -349,4 +381,8 @@ export function useFichaPrevia(pacienteId: string | undefined, enabled = true) {
 }
 export function usePlantillas(tipo?: TipoPlantilla) {
   return useQuery({ queryKey: ['plantillas', tipo ?? 'todas'], queryFn: () => historiaClinicaApi.plantillas(tipo), staleTime: 300_000 });
+}
+/** Historial del podograma del paciente (solo mientras se usa el modo Historial; se refresca al volver a él). */
+export function useHistorialPodograma(pacienteId: string | undefined, enabled = true) {
+  return useQuery({ queryKey: ['podograma-historial', pacienteId], queryFn: () => historiaClinicaApi.historialPodograma(pacienteId!), enabled: !!pacienteId && enabled, staleTime: 0 });
 }

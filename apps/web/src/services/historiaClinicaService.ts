@@ -1,6 +1,6 @@
 // Historia clínica — LÓGICA (hooks). Las vistas (.tsx) son puras y consumen estos hooks.
 // Un useState por campo, `puedeGuardar` derivado, useMutation → invalidar + toast (patrón de la casa).
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -13,14 +13,16 @@ import {
   type TipoAntecedente, type SeveridadAlergia, type NotaEvolucion, type DiagnosticoAtencion,
   type TipoProcedimiento, type TipoEscala, type TipoLesion, type Pie, type PiePodograma,
   type VistaPodograma, type ImagenPodograma, VISTAS_PODOGRAMA, VISTA_PODOGRAMA_LABEL,
-  usePlantillas, TIPO_LESION_LABEL, PIE_LABEL, type PlantillaClinica, type TipoPlantilla, type CamposMarca,
+  usePlantillas, TIPO_LESION_LABEL, PIE_LABEL, type PlantillaClinica, type TipoPlantilla, type CamposMarca, type VistaSilueta, atencionKey, COLOR_LESION, useHistorialPodograma,
 } from '../api/historiaClinica';
 import { recetasApi, verRecetaPdf, imprimirReceta, type ItemEntrada, type TipoDocumentoReceta, type RecetaCompleta, type TipoItemReceta } from '../api/recetas';
 import type { Cie10Item, MedicamentoItem } from '../api/catalogos';
 import { useDictado, anexarDictado } from '../hooks/useDictado';
 import { useDictadoConsulta } from '../hooks/useDictadoConsulta';
 import { adivinarTipoProcedimiento, type DiagnosticoDictado } from '../utils/dictadoEstructurado';
-import { coordZona } from '../utils/zonasPie';
+import { coordZona, zonaMasCercana } from '../utils/zonasPie';
+import { eventosPorZona, resumenZonas, claveZona } from '../utils/historialZonas';
+import { indiceTrazoEn } from '../utils/trazos';
 import { useAutotextoStore } from '../stores/autotextoStore';
 
 export type TabHc = 'evolucion' | 'receta' | 'antecedentes' | 'procedimientos' | 'escalas' | 'podograma' | 'fotos' | 'consentimientos';
@@ -126,7 +128,7 @@ export function useHistoriaClinicaPage() {
   // Lesión dictada ("lesión heloma quinto dedo izquierdo") → marca del podograma en la zona dicha.
   const marcaDictadoMut = useMutation({
     mutationFn: (d: CamposMarca) => historiaClinicaApi.agregarMarca(atencionSel!, d),
-    onSuccess: (_r, d) => { invalidar({ pacienteId, atencionId: atencionSel! }); toast.success(`Podograma: ${TIPO_LESION_LABEL[d.tipoLesion]} · ${PIE_LABEL[d.pie]}${d.zona ? ` · ${d.zona}` : ''}`); },
+    onSuccess: (_r, d) => { invalidar({ pacienteId, atencionId: atencionSel! }); toast.success(`Podograma: ${TIPO_LESION_LABEL[d.tipoLesion]} · ${PIE_LABEL[d.pie]}${d.vista === 'dorsal' ? ' · dorso' : ''}${d.zona ? ` · ${d.zona}` : ''}`); },
     onError: (e: Error) => toast.error(e.message),
   });
   const consulta = useDictadoConsulta(dictado, {
@@ -147,7 +149,7 @@ export function useHistoriaClinicaPage() {
         return;
       }
       const c = coordZona(l.zona.id, l.pie);
-      marcaDictadoMut.mutate({ pie: l.pie, x: c.x, y: c.y, zona: l.zona.etiqueta, tipoLesion: l.tipoLesion ?? 'otro', nota: `${l.texto}${l.grado != null ? ` · grado ${l.grado}` : ''}` });
+      marcaDictadoMut.mutate({ pie: l.pie, vista: c.vista, x: c.x, y: c.y, zona: l.zona.etiqueta, tipoLesion: l.tipoLesion ?? 'otro', nota: `${l.texto}${l.grado != null ? ` · grado ${l.grado}` : ''}` });
     },
   });
 
@@ -497,7 +499,7 @@ export function useEscalas(atencion: AtencionCompleta | null, puedeRegistrar: bo
       if (!Number.isFinite(l) || !Number.isFinite(a)) continue;
       const nombre = [typeof d.pie === 'string' && d.pie ? PIE_LABEL[d.pie as Pie] : null, typeof d.ubicacion === 'string' && d.ubicacion ? d.ubicacion : null].filter(Boolean).join(' · ') || 'Úlcera';
       if (!grupos.has(nombre)) grupos.set(nombre, { nombre, puntos: [] });
-      grupos.get(nombre)!.puntos.push({ fecha: u.fecha.slice(0, 10), area: Math.round(l * a * 10) / 10, largo: l, ancho: a, atencionId: u.atencionId });
+      grupos.get(nombre)!.puntos.push({ fecha: u.fecha.slice(0, 10), area: Math.round((typeof d.area === 'number' && Number.isFinite(d.area) ? d.area : l * a) * 10) / 10, largo: l, ancho: a, atencionId: u.atencionId });
     }
     return [...grupos.values()];
   }, [ulceraHist]);
@@ -585,7 +587,7 @@ export function useEscalas(atencion: AtencionCompleta | null, puedeRegistrar: bo
 }
 
 // ─── Bloque 3 · Podograma (1.3 mapa interactivo + 1.3b imagen de la Baro con anotaciones) ──
-export type HerramientaPodograma = 'mover' | 'lapiz' | 'texto' | 'borrador';
+export type HerramientaPodograma = 'mover' | 'lapiz' | 'texto' | 'borrador' | 'etiquetar';
 // En pantallas táctiles (tablet) el editor arranca en "mover": el primer gesto desplaza la página
 // en vez de dejar un trazo por accidente; se toca "Lápiz" cuando se quiere dibujar.
 const herramientaInicial = (): HerramientaPodograma =>
@@ -594,9 +596,10 @@ type AnotacionPodograma = AtencionCompleta['imagenesPodograma'][number]['anotaci
 const MAX_IMAGEN_BYTES = 10 * 1024 * 1024;
 
 /** Índice de la anotación que está bajo (x,y) en coordenadas 0..1; la última dibujada gana. */
-function indiceAnotacionEn(lista: AnotacionPodograma[], x: number, y: number): number {
+function indiceAnotacionEn(lista: AnotacionPodograma[], x: number, y: number, saltar?: (a: AnotacionPodograma) => boolean): number {
   for (let i = lista.length - 1; i >= 0; i--) {
     const a = lista[i];
+    if (saltar?.(a)) continue;
     if (a.tipo === 'texto') {
       if (x >= a.x - 0.01 && x <= a.x + 0.12 && y >= a.y - 0.035 && y <= a.y + 0.012) return i;
     } else {
@@ -608,6 +611,7 @@ function indiceAnotacionEn(lista: AnotacionPodograma[], x: number, y: number): n
 }
 
 export function usePodograma(atencion: AtencionCompleta | null, puedeRegistrar: boolean) {
+  const qc = useQueryClient();
   const invalidar = useInvalidarHistoriaClinica();
   const atencionId = atencion?.id;
   const inval = () => invalidar({ pacienteId: atencion?.pacienteId, atencionId, citaId: atencion?.citaId });
@@ -615,19 +619,132 @@ export function usePodograma(atencion: AtencionCompleta | null, puedeRegistrar: 
   const puedeEditar = puedeRegistrar && !cerrada;
 
   // ── Silueta + marcas tipificadas (cuando no hay imagen de la Baro) ──
-  const [pendiente, setPendiente] = useState<{ pie: PiePodograma; x: number; y: number } | null>(null);
+  const [pendiente, setPendiente] = useState<{ pie: PiePodograma; vista: VistaSilueta; x: number; y: number } | null>(null);
   const [tipoLesion, setTipoLesion] = useState<TipoLesion>('hiperqueratosis');
+  // Planta o dorso (uñas / empeine). Al pasar al dorso se propone onicocriptosis (lo más común en uñas).
+  const [vistaSilueta, setVistaSiluetaRaw] = useState<VistaSilueta>('plantar');
+  const cambiarVistaSilueta = (v: VistaSilueta) => { setVistaSiluetaRaw(v); setPendiente(null); setTrazoSel(null); setZonaHist(null); if (v === 'dorsal' && tipoLesion === 'hiperqueratosis') setTipoLesion('onicocriptosis'); };
+
+  // ── Modo de la silueta: "Punto" (marca tipificada) o "Pintar" (trazos a mano alzada) ──
+  const [modoSilueta, setModoSiluetaRaw] = useState<'punto' | 'pintar' | 'historial'>('punto');
+  const cambiarModoSilueta = (m: 'punto' | 'pintar' | 'historial') => { setModoSiluetaRaw(m); setPendiente(null); setTrazoSel(null); };
+  // ── Capas: tipos ocultos en el mapa (clave = tipo de lesión o "sin" para trazos sin significado) ──
+  const [capasOcultas, setCapasOcultas] = useState<string[]>([]);
+  const alternarCapa = (clave: string) => setCapasOcultas((xs) => (xs.includes(clave) ? xs.filter((x) => x !== clave) : [...xs, clave]));
+  const mostrarTodasCapas = () => setCapasOcultas([]);
+  const capaVisible = (tipo: TipoLesion | null | undefined) => !capasOcultas.includes(tipo ?? 'sin');
+  const trazoOculto = (a: AnotacionPodograma) => a.tipo === 'trazo' && !capaVisible(a.tipoLesion);
+  // ── Historial por zona: lo registrado en el pie en TODAS las atenciones del paciente ──
+  const { data: historial = [], isFetching: cargandoHistorial } = useHistorialPodograma(atencion?.pacienteId, modoSilueta === 'historial');
+  const eventosHistorial = useMemo(() => eventosPorZona(historial), [historial]);
+  const [zonaHist, setZonaHist] = useState<{ vista: VistaSilueta; pie: PiePodograma; zonaId: string } | null>(null);
+  const elegirZonaHistorial = (pie: PiePodograma, x: number, y: number) => { const z = zonaMasCercana(vistaSilueta, pie, x, y); setZonaHist({ vista: vistaSilueta, pie, zonaId: z.id }); };
+  const [herrDibujo, setHerrDibujoRaw] = useState<'lapiz' | 'borrador' | 'etiquetar'>('lapiz');
+  // Qué se está pintando (callo, uñero, dolor…): define el color del pincel y queda guardado en cada trazo.
+  const [tipoDibujo, setTipoDibujo] = useState<TipoLesion>('hiperqueratosis');
+  const [grosorDibujo, setGrosorDibujo] = useState(16);
+  // "Etiquetar": trazo elegido (pie + índice en su capa) y el significado/detalle que se le va a poner.
+  const [trazoSel, setTrazoSel] = useState<{ pie: PiePodograma; indice: number } | null>(null);
+  const [selTipo, setSelTipo] = useState<TipoLesion>('otro');
+  const [selNota, setSelNota] = useState('');
+  const setHerrDibujo = (hh: 'lapiz' | 'borrador' | 'etiquetar') => { setHerrDibujoRaw(hh); setTrazoSel(null); };
+  // Capas guardadas por "vista:pie" y borrador local (solo las capas tocadas) hasta "Guardar dibujo".
+  const guardadosDibujo = useMemo(() => Object.fromEntries((atencion?.dibujosSilueta ?? []).map((d) => [`${d.vista}:${d.pie}`, d.anotaciones ?? []])) as Record<string, AnotacionPodograma[]>, [atencion?.dibujosSilueta]);
+  const borradorDibujoRef = useRef<Record<string, AnotacionPodograma[]>>({});
+  const [borradorDibujo, setBorradorDibujo] = useState<Record<string, AnotacionPodograma[]>>({});
+  const pilaDibujoRef = useRef<{ clave: string; previa: AnotacionPodograma[] }[]>([]);
+  const [pilaDibujoLen, setPilaDibujoLen] = useState(0);
+  const capaActual = (clave: string) => borradorDibujoRef.current[clave] ?? guardadosDibujo[clave] ?? [];
+  const dibujoDe = (vista: VistaSilueta, pie: PiePodograma) => borradorDibujo[`${vista}:${pie}`] ?? guardadosDibujo[`${vista}:${pie}`] ?? [];
+  const aplicarDibujo = (clave: string, nueva: AnotacionPodograma[]) => {
+    pilaDibujoRef.current.push({ clave, previa: capaActual(clave) });
+    borradorDibujoRef.current = { ...borradorDibujoRef.current, [clave]: nueva };
+    setBorradorDibujo(borradorDibujoRef.current);
+    setPilaDibujoLen(pilaDibujoRef.current.length);
+  };
+  const agregarTrazoSilueta = (pie: PiePodograma, t: AnotacionPodograma) => {
+    if (!puedeEditar) return;
+    const k = `${vistaSilueta}:${pie}`;
+    aplicarDibujo(k, [...capaActual(k), t.tipo === 'trazo' ? { ...t, tipoLesion: tipoDibujo } : t]);
+  };
+  const borrarTrazoSilueta = (pie: PiePodograma, x: number, y: number, aspecto: number) => {
+    if (!puedeEditar) return;
+    const k = `${vistaSilueta}:${pie}`;
+    const lista = capaActual(k);
+    const i = indiceTrazoEn(lista, x, y, aspecto, trazoOculto);
+    if (i >= 0) aplicarDibujo(k, lista.filter((_, j) => j !== i));
+  };
+  const seleccionarTrazoSilueta = (pie: PiePodograma, x: number, y: number, aspecto: number) => {
+    const lista = capaActual(`${vistaSilueta}:${pie}`);
+    const i = indiceTrazoEn(lista, x, y, aspecto, trazoOculto);
+    const t = i >= 0 ? lista[i] : null;
+    if (!t || t.tipo !== 'trazo') { setTrazoSel(null); return; }
+    setTrazoSel({ pie, indice: i }); setSelTipo(t.tipoLesion ?? 'otro'); setSelNota(t.nota ?? '');
+  };
+  /** Pone al trazo elegido su significado (y el color de ese tipo) y un detalle; queda en borrador hasta guardar. */
+  const aplicarEtiquetaTrazo = () => {
+    if (!trazoSel || !puedeEditar) return;
+    const k = `${vistaSilueta}:${trazoSel.pie}`;
+    aplicarDibujo(k, capaActual(k).map((a, j) => (j === trazoSel.indice && a.tipo === 'trazo' ? { ...a, tipoLesion: selTipo, color: COLOR_LESION[selTipo], nota: selNota.trim() || undefined } : a)));
+    toast.success('Listo: recuerda «Guardar dibujo»');
+  };
+  const quitarTrazoSel = () => {
+    if (!trazoSel) return;
+    const k = `${vistaSilueta}:${trazoSel.pie}`;
+    aplicarDibujo(k, capaActual(k).filter((_, j) => j !== trazoSel.indice));
+    setTrazoSel(null);
+  };
+  const deshacerDibujo = () => {
+    const u = pilaDibujoRef.current.pop();
+    if (!u) return;
+    setTrazoSel(null);
+    borradorDibujoRef.current = { ...borradorDibujoRef.current, [u.clave]: u.previa };
+    setBorradorDibujo(borradorDibujoRef.current);
+    setPilaDibujoLen(pilaDibujoRef.current.length);
+  };
+  /** Vacía los dos pies de la vista actual (queda en borrador hasta guardar). */
+  const limpiarDibujo = () => {
+    setTrazoSel(null);
+    for (const pie of ['izquierdo', 'derecho'] as const) { const k = `${vistaSilueta}:${pie}`; if (capaActual(k).length) aplicarDibujo(k, []); }
+  };
+  const clavesDibujoSucias = Object.keys(borradorDibujo).filter((k) => JSON.stringify(borradorDibujo[k]) !== JSON.stringify(guardadosDibujo[k] ?? []));
+  const descartarDibujo = () => {
+    borradorDibujoRef.current = {}; pilaDibujoRef.current = [];
+    setBorradorDibujo({}); setPilaDibujoLen(0); setTrazoSel(null);
+  };
+  const guardarDibujoMut = useMutation({
+    mutationFn: async () => {
+      let ultima: AtencionCompleta | null = null;
+      for (const k of clavesDibujoSucias) {
+        const [vista, pie] = k.split(':') as [VistaSilueta, PiePodograma];
+        ultima = await historiaClinicaApi.guardarDibujoSilueta(atencionId!, { vista, pie, anotaciones: borradorDibujoRef.current[k] ?? [] });
+      }
+      return ultima;
+    },
+    // El borrador se conserva (ya es lo guardado); al volver la atención refrescada deja de estar "sucio".
+    // El servidor redondea las coordenadas: se carga la atención que devolvió (ya con lo guardado) y se
+    // descarta el borrador, así la capa deja de figurar "sin guardar" sin parpadeos.
+    onSuccess: (ultima) => { if (ultima && atencionId) qc.setQueryData(atencionKey(atencionId), ultima); descartarDibujo(); inval(); toast.success('Dibujo guardado'); },
+    onError: (e: Error) => toast.error(e.message),
+  });
   const [nota, setNota] = useState('');
-  const marcarPunto = (pie: PiePodograma, x: number, y: number) => { if (!puedeEditar) return; setPendiente({ pie, x: Math.min(1, Math.max(0, x)), y: Math.min(1, Math.max(0, y)) }); };
+  const marcarPunto = (pie: PiePodograma, x: number, y: number) => { if (!puedeEditar) return; setPendiente({ pie, vista: vistaSilueta, x: Math.min(1, Math.max(0, x)), y: Math.min(1, Math.max(0, y)) }); };
   const cancelar = () => { setPendiente(null); setNota(''); };
   const agregarMut = useMutation({
-    mutationFn: () => historiaClinicaApi.agregarMarca(atencionId!, { pie: pendiente!.pie, x: pendiente!.x, y: pendiente!.y, tipoLesion, nota: nota.trim() || null }),
+    mutationFn: () => historiaClinicaApi.agregarMarca(atencionId!, { pie: pendiente!.pie, vista: pendiente!.vista, x: pendiente!.x, y: pendiente!.y, tipoLesion, nota: nota.trim() || null }),
     onSuccess: () => { inval(); setPendiente(null); setNota(''); toast.success('Marca agregada'); },
     onError: (e: Error) => toast.error(e.message),
   });
   const eliminarMut = useMutation({
     mutationFn: (id: string) => historiaClinicaApi.eliminarMarca(id),
     onSuccess: () => { inval(); toast.success('Marca eliminada'); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  // Editar qué es un punto ya guardado (tipo y detalle).
+  const [marcaEdit, setMarcaEdit] = useState<{ id: string; tipo: TipoLesion; nota: string } | null>(null);
+  const editarMarcaMut = useMutation({
+    mutationFn: (m: { id: string; tipo: TipoLesion; nota: string }) => historiaClinicaApi.editarMarca(m.id, { tipoLesion: m.tipo, nota: m.nota.trim() || null }),
+    onSuccess: () => { inval(); setMarcaEdit(null); toast.success('Marca actualizada'); },
     onError: (e: Error) => toast.error(e.message),
   });
 
@@ -640,7 +757,7 @@ export function usePodograma(atencion: AtencionCompleta | null, puedeRegistrar: 
   const primera = VISTAS_PODOGRAMA.map((v) => porVista[v]).find(Boolean) ?? otras[0] ?? null;
   const imagenSel = imagenes.find((i) => i.id === imagenSelId) ?? primera;
   const imagenSelIdReal = imagenSel?.id ?? null;
-  useEffect(() => { setImagenSelId(null); setVerSilueta(false); setPendiente(null); setNota(''); }, [atencionId]);
+  useEffect(() => { setImagenSelId(null); setVerSilueta(false); setPendiente(null); setNota(''); setVistaSiluetaRaw('plantar'); setModoSiluetaRaw('punto'); setZonaHist(null); descartarDibujo(); /* eslint-disable-line react-hooks/exhaustive-deps */ }, [atencionId]);
 
   // Blob autenticado → object URL (se revoca al cambiar de imagen o desmontar).
   const [urlImagen, setUrlImagen] = useState<string | null>(null);
@@ -662,15 +779,35 @@ export function usePodograma(atencion: AtencionCompleta | null, puedeRegistrar: 
   const [herramienta, setHerramienta] = useState<HerramientaPodograma>(herramientaInicial);
   const [color, setColor] = useState('#ef4444');
   const [grosor, setGrosor] = useState(4);
+  // Qué se marca en la imagen de la Baro (color fijo por tipo) y trazo elegido con "Etiquetar".
+  const [tipoBaro, setTipoBaro] = useState<TipoLesion>('hiperqueratosis');
+  const [anotSel, setAnotSel] = useState<number | null>(null);
+  const [anotSelTipo, setAnotSelTipo] = useState<TipoLesion>('otro');
+  const [anotSelNota, setAnotSelNota] = useState('');
   const [anotaciones, setAnotaciones] = useState<AnotacionPodograma[]>([]);
   const [guardadas, setGuardadas] = useState<AnotacionPodograma[]>([]);
-  useEffect(() => { const a = imagenSel?.anotaciones ?? []; setAnotaciones(a); setGuardadas(a); /* eslint-disable-line react-hooks/exhaustive-deps */ }, [imagenSelIdReal]);
+  useEffect(() => { const a = imagenSel?.anotaciones ?? []; setAnotaciones(a); setGuardadas(a); setAnotSel(null); /* eslint-disable-line react-hooks/exhaustive-deps */ }, [imagenSelIdReal]);
   const sucio = anotaciones !== guardadas;
-  const agregarAnotacion = (a: AnotacionPodograma) => { if (puedeEditar) setAnotaciones((prev) => [...prev, a]); };
-  const borrarEn = (x: number, y: number) => { if (!puedeEditar) return; setAnotaciones((prev) => { const i = indiceAnotacionEn(prev, x, y); return i < 0 ? prev : prev.filter((_, k) => k !== i); }); };
-  const deshacer = () => setAnotaciones((prev) => (prev.length ? prev.slice(0, -1) : prev));
-  const limpiarAnotaciones = () => setAnotaciones((prev) => (prev.length ? [] : prev));
-  const descartar = () => setAnotaciones(guardadas);
+  const agregarAnotacion = (a: AnotacionPodograma) => {
+    if (!puedeEditar) return;
+    // Los trazos del lápiz llevan lo que significan (y el color de ese tipo); los textos, su color libre.
+    const conSignificado = a.tipo === 'trazo' ? { ...a, tipoLesion: tipoBaro, color: COLOR_LESION[tipoBaro] } : a;
+    setAnotaciones((prev) => [...prev, conSignificado]);
+  };
+  const borrarEn = (x: number, y: number) => { if (!puedeEditar) return; setAnotSel(null); setAnotaciones((prev) => { const i = indiceAnotacionEn(prev, x, y, trazoOculto); return i < 0 ? prev : prev.filter((_, k) => k !== i); }); };
+  const deshacer = () => { setAnotSel(null); setAnotaciones((prev) => (prev.length ? prev.slice(0, -1) : prev)); };
+  const limpiarAnotaciones = () => { setAnotSel(null); setAnotaciones((prev) => (prev.length ? [] : prev)); };
+  const descartar = () => { setAnotSel(null); setAnotaciones(guardadas); };
+  const seleccionarEn = (x: number, y: number) => {
+    const i = indiceAnotacionEn(anotaciones, x, y, trazoOculto);
+    const a = i >= 0 ? anotaciones[i] : null;
+    if (!a || a.tipo !== 'trazo') { setAnotSel(null); return; }
+    setAnotSel(i); setAnotSelTipo(a.tipoLesion ?? 'otro'); setAnotSelNota(a.nota ?? '');
+  };
+  const aplicarEtiquetaAnotacion = () => {
+    if (anotSel == null || !puedeEditar) return;
+    setAnotaciones((prev) => prev.map((a, i) => (i === anotSel && a.tipo === 'trazo' ? { ...a, tipoLesion: anotSelTipo, color: COLOR_LESION[anotSelTipo], nota: anotSelNota.trim() || undefined } : a)));
+  };
   const guardarAnotacionesMut = useMutation({
     mutationFn: (a: AnotacionPodograma[]) => historiaClinicaApi.guardarAnotacionesPodograma(imagenSel!.id, a),
     onSuccess: (_d, a) => { setGuardadas(a); setAnotaciones(a); inval(); toast.success('Anotaciones guardadas'); },
@@ -706,11 +843,30 @@ export function usePodograma(atencion: AtencionCompleta | null, puedeRegistrar: 
   return {
     cerrada, puedeEditar,
     // silueta
+    vistaSilueta, setVistaSilueta: cambiarVistaSilueta,
+    // capas
+    capasOcultas, alternarCapa, mostrarTodasCapas, capaVisible, trazoOculto,
+    // historial por zona
+    cargandoHistorial, eventosHistorial, zonaHist, setZonaHist, elegirZonaHistorial,
+    puntosHistorial: (pie: PiePodograma) => eventosHistorial.filter((e) => e.vista === vistaSilueta && e.pie === pie),
+    zonasHistorial: resumenZonas(eventosHistorial, vistaSilueta),
+    eventosZonaHist: zonaHist
+      ? eventosHistorial.filter((e) => claveZona(e.vista, e.pie, e.zonaId) === claveZona(zonaHist.vista, zonaHist.pie, zonaHist.zonaId)).sort((x, y) => y.fecha.localeCompare(x.fecha))
+      : [],
+    // modo pintar
+    modoSilueta, setModoSilueta: cambiarModoSilueta, herrDibujo, setHerrDibujo, tipoDibujo, setTipoDibujo, grosorDibujo, setGrosorDibujo,
+    trazoSel, selTipo, setSelTipo, selNota, setSelNota, seleccionarTrazoSilueta, aplicarEtiquetaTrazo, quitarTrazoSel,
+    marcaEdit, setMarcaEdit, editarMarcaMut,
+    dibujoDe, agregarTrazoSilueta, borrarTrazoSilueta, deshacerDibujo, limpiarDibujo, descartarDibujo, guardarDibujoMut,
+    puedeDeshacerDibujo: pilaDibujoLen > 0, dibujoSucio: clavesDibujoSucias.length > 0,
+    hayDibujoEnVista: dibujoDe(vistaSilueta, 'izquierdo').length + dibujoDe(vistaSilueta, 'derecho').length > 0,
+    dibujosGuardados: (atencion?.dibujosSilueta ?? []).filter((d) => d.anotaciones?.length),
     marcas: atencion?.marcasPodograma ?? [], pendiente, marcarPunto, cancelar, tipoLesion, setTipoLesion, nota, setNota, agregarMut, eliminarMut,
     // imágenes
     imagenes, porVista, otras, imagenSel, setImagenSelId, verSilueta, setVerSilueta, urlImagen, cargandoImagen, subirArchivo, subirMut, eliminarImagenMut,
     // editor
-    herramienta, setHerramienta, color, setColor, grosor, setGrosor, anotaciones, sucio,
+    herramienta, setHerramienta: (hh: HerramientaPodograma) => { setHerramienta(hh); setAnotSel(null); }, color, setColor, grosor, setGrosor, anotaciones, sucio,
+    tipoBaro, setTipoBaro, anotSel, anotSelTipo, setAnotSelTipo, anotSelNota, setAnotSelNota, seleccionarEn, aplicarEtiquetaAnotacion,
     agregarAnotacion, borrarEn, deshacer, limpiarAnotaciones, descartar, guardarAnotaciones, guardarAnotacionesMut,
   };
 }
@@ -796,6 +952,22 @@ export function useFotosClinicas(atencion: AtencionCompleta | null, puedeRegistr
     onError: (e: Error) => toast.error(e.message),
   });
 
+  // Medición de úlcera sobre una foto de esta atención (se guarda como escala "Úlcera (medidas)").
+  const qcFotos = useQueryClient();
+  const [fotoMedir, setFotoMedir] = useState<FotoClinica | null>(null);
+  const medirMut = useMutation({
+    mutationFn: (m: { foto: FotoClinica; largo: number; ancho: number; area: number; profundidad: number | null; referenciaCm: number }) =>
+      historiaClinicaApi.guardarEscala(atencionId!, {
+        tipo: 'ulcera', pie: m.foto.pie,
+        datos: { largo: m.largo, ancho: m.ancho, area: m.area, profundidad: m.profundidad, pie: m.foto.pie === 'izquierdo' || m.foto.pie === 'derecho' ? m.foto.pie : null, ubicacion: m.foto.zona, fotoId: m.foto.id, metodo: 'foto', referenciaCm: m.referenciaCm },
+      }),
+    onSuccess: () => { inval(); void qcFotos.invalidateQueries({ queryKey: ['escalas-paciente'] }); setFotoMedir(null); toast.success('Medición guardada en Escalas'); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  // Pedal Bluetooth / teclado: con el pedal activo, Av Pág o flechas disparan "Tomar foto". Se recuerda en este equipo.
+  const [pedalActivo, setPedalActivoRaw] = useState<boolean>(() => { try { return localStorage.getItem('limablue-pedal-fotos') === '1'; } catch { return false; } });
+  const setPedalActivo = (v: boolean) => { setPedalActivoRaw(v); try { localStorage.setItem('limablue-pedal-fotos', v ? '1' : '0'); } catch { /* sin almacenamiento */ } };
+
   // Antes / después: todas las fotos del paciente; se elige zona y dos fotos (por defecto primera y última).
   const { data: todas = [] } = useQuery({ queryKey: ['fotos-paciente', pacienteId], queryFn: () => historiaClinicaApi.fotosDePaciente(pacienteId!), enabled: !!pacienteId, staleTime: 60_000 });
   const zonas = [...new Set(todas.map((f) => (f.zona ?? '').trim()).filter(Boolean))];
@@ -809,6 +981,7 @@ export function useFotosClinicas(atencion: AtencionCompleta | null, puedeRegistr
 
   return {
     fotos, cerrada, puedeEditar,
+    fotoMedir, setFotoMedir, medirMut, pedalActivo, setPedalActivo,
     pie, setPie, zona, setZona, categoria, setCategoria, descripcion, setDescripcion, subirArchivo, subirMut, eliminarMut, editarMut,
     todas, zonas, zonaComparar, elegirZona, enZona, antes, despues, setAntesId, setDespuesId,
   };

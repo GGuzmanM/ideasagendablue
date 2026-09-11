@@ -252,9 +252,12 @@ export function calcularResultadoEscala(tipo: TipoEscala, datos: Record<string, 
         // Medición de la úlcera por visita: largo × ancho (cm) → área simple (cm²), profundidad opcional.
         const l = num(datos.largo), a = num(datos.ancho), pr = num(datos.profundidad);
         if (l == null || a == null) return 'Úlcera sin medidas';
+        // Medida sobre la foto (contorno + marcador de referencia): llega el área real del contorno.
+        const ar = num(datos.area) ?? l * a;
         const ubic = typeof datos.ubicacion === 'string' && datos.ubicacion.trim() ? ` — ${datos.ubicacion.trim()}` : '';
         const pie = typeof datos.pie === 'string' && datos.pie ? ` (${datos.pie})` : '';
-        return `Úlcera ${l.toFixed(1)} × ${a.toFixed(1)} cm · área ${(l * a).toFixed(1)} cm²${pr != null ? ` · prof. ${pr.toFixed(1)} cm` : ''}${ubic}${pie}`;
+        const metodo = datos.metodo === 'foto' ? ' · medida sobre foto' : '';
+        return `Úlcera ${l.toFixed(1)} × ${a.toFixed(1)} cm · área ${ar.toFixed(1)} cm²${pr != null ? ` · prof. ${pr.toFixed(1)} cm` : ''}${ubic}${pie}${metodo}`;
       }
       default:
         return '—';
@@ -313,12 +316,19 @@ export async function eliminarEscala(p: Ctx & { escalaId: string }) {
 // 1.3 · Podograma (marcas sobre la silueta del pie)
 // ─────────────────────────────────────────────────────────────────────────────
 const PIES_PODOGRAMA = ['izquierdo', 'derecho'] as const;
-const TIPOS_LESION = ['hiperqueratosis', 'heloma', 'onicocriptosis', 'ulcera', 'fisura', 'micosis', 'ampolla', 'verruga', 'otro'] as const;
+const TIPOS_LESION = ['hiperqueratosis', 'heloma', 'onicocriptosis', 'ulcera', 'fisura', 'micosis', 'ampolla', 'verruga', 'dolor', 'inflamacion', 'otro'] as const;
 
 function assertPiePodograma(pie: string): string {
   const p = (pie ?? '').trim().toLowerCase();
   if (!PIES_PODOGRAMA.includes(p as (typeof PIES_PODOGRAMA)[number])) throw new AppError('Indica el pie (izquierdo o derecho)', 400, 'PIE_INVALIDO');
   return p;
+}
+// Silueta sobre la que se marca: planta (plantar) o dorso (uñas, empeine). Por defecto plantar.
+const VISTAS_SILUETA = ['plantar', 'dorsal'] as const;
+function assertVistaSilueta(v?: string | null): string {
+  const s = (v ?? '').trim().toLowerCase() || 'plantar';
+  if (!VISTAS_SILUETA.includes(s as (typeof VISTAS_SILUETA)[number])) throw new AppError('Vista de la silueta no válida (plantar o dorsal)', 400, 'VISTA_SILUETA_INVALIDA');
+  return s;
 }
 function assertTipoLesion(tipo: string): string {
   const t = (tipo ?? '').trim().toLowerCase();
@@ -330,29 +340,31 @@ function assertCoord(v: unknown, eje: string): number {
   return v;
 }
 
-export async function agregarMarca(p: Ctx & { atencionId: string; pie: string; x: number; y: number; zona?: string | null; tipoLesion: string; nota?: string | null }) {
+export async function agregarMarca(p: Ctx & { atencionId: string; pie: string; vista?: string | null; x: number; y: number; zona?: string | null; tipoLesion: string; nota?: string | null }) {
   const at = await atencionOr404(p.atencionId);
   const pie = assertPiePodograma(p.pie);
+  const vista = assertVistaSilueta(p.vista);
   const tipoLesion = assertTipoLesion(p.tipoLesion);
   const x = assertCoord(p.x, 'x');
   const y = assertCoord(p.y, 'y');
   const etiqueta = await etiquetaUsuario(prisma, p.usuarioId);
   const creado = await prisma.$transaction(async (tx) => {
     const row = await tx.marcaPodograma.create({
-      data: { atencionId: at.id, pie, x, y, zona: limpiar(p.zona), tipoLesion, nota: limpiar(p.nota), registradoPorUsuarioId: p.usuarioId ?? null, registradoEtiqueta: etiqueta },
+      data: { atencionId: at.id, pie, vista, x, y, zona: limpiar(p.zona), tipoLesion, nota: limpiar(p.nota), registradoPorUsuarioId: p.usuarioId ?? null, registradoEtiqueta: etiqueta },
     });
-    await auditEnTx(tx, { ...ctxAudit(p), citaId: at.citaId, accion: 'agregar_marca_podograma', entidad: 'marca_podograma', entidadId: row.id, sedeId: at.sedeId, despues: { pie, tipoLesion, x, y } });
+    await auditEnTx(tx, { ...ctxAudit(p), citaId: at.citaId, accion: 'agregar_marca_podograma', entidad: 'marca_podograma', entidadId: row.id, sedeId: at.sedeId, despues: { pie, vista, tipoLesion, x, y } });
     return row;
   });
   void creado;
   return getAtencionCompleta(at.id);
 }
 
-export async function editarMarca(p: Ctx & { marcaId: string; pie?: string; x?: number; y?: number; zona?: string | null; tipoLesion?: string; nota?: string | null }) {
+export async function editarMarca(p: Ctx & { marcaId: string; pie?: string; vista?: string | null; x?: number; y?: number; zona?: string | null; tipoLesion?: string; nota?: string | null }) {
   const row = await prisma.marcaPodograma.findFirst({ where: { id: p.marcaId, deletedAt: null }, include: { atencion: { select: { id: true, citaId: true, sedeId: true } } } });
   if (!row) throw new AppError('Marca no encontrada', 404);
   const data: Prisma.MarcaPodogramaUpdateInput = {};
   if (p.pie !== undefined) data.pie = assertPiePodograma(p.pie);
+  if (p.vista !== undefined) data.vista = assertVistaSilueta(p.vista);
   if (p.tipoLesion !== undefined) data.tipoLesion = assertTipoLesion(p.tipoLesion);
   if (p.x !== undefined) data.x = assertCoord(p.x, 'x');
   if (p.y !== undefined) data.y = assertCoord(p.y, 'y');
@@ -471,7 +483,10 @@ export function validarAnotaciones(raw: unknown): Prisma.InputJsonValue {
         return [redondear(pt[0]), redondear(pt[1])];
       });
       const grosor = typeof o.grosor === 'number' && o.grosor >= 1 && o.grosor <= 40 ? Math.round(o.grosor) : 4;
-      out.push({ tipo: 'trazo', color, grosor, puntos: limpios });
+      // Significado opcional del trazo (qué representa: callo, uñero, dolor…) y un detalle corto.
+      const tipoLesion = typeof o.tipoLesion === 'string' && TIPOS_LESION.includes(o.tipoLesion as (typeof TIPOS_LESION)[number]) ? o.tipoLesion : undefined;
+      const nota = typeof o.nota === 'string' && o.nota.trim() ? o.nota.trim().slice(0, 200) : undefined;
+      out.push({ tipo: 'trazo', color, grosor, puntos: limpios, ...(tipoLesion ? { tipoLesion } : {}), ...(nota ? { nota } : {}) });
     } else if (o.tipo === 'texto') {
       if (!esCoord(o.x) || !esCoord(o.y)) throw invalida('Texto fuera de la imagen');
       const texto = typeof o.texto === 'string' ? o.texto.trim().slice(0, 200) : '';
@@ -497,6 +512,32 @@ export async function guardarAnotacionesPodograma(p: Ctx & { imagenId: string; a
   return getAtencionCompleta(img.atencion.id);
 }
 
+/**
+ * Modo "Pintar" de la silueta: reemplaza la capa de trazos de un pie en una vista (planta/dorso).
+ * Mismo formato y validación que las anotaciones de la Baro. Una fila por (atención, vista, pie):
+ * se hace upsert; vaciar = guardar lista vacía. Cada guardado se audita (dibujar_silueta).
+ */
+export async function guardarDibujoSilueta(p: Ctx & { atencionId: string; vista: string; pie: string; anotaciones: unknown }) {
+  const at = await atencionOr404(p.atencionId);
+  const vista = assertVistaSilueta(p.vista);
+  const pie = assertPiePodograma(p.pie);
+  const anotaciones = validarAnotaciones(p.anotaciones);
+  const trazos = (anotaciones as unknown[]).length;
+  const etiqueta = await etiquetaUsuario(prisma, p.usuarioId);
+  const clave = { atencionId_vista_pie: { atencionId: at.id, vista, pie } };
+  await prisma.$transaction(async (tx) => {
+    const previo = await tx.dibujoSilueta.findUnique({ where: clave, select: { anotaciones: true } });
+    const row = await tx.dibujoSilueta.upsert({
+      where: clave,
+      create: { atencionId: at.id, vista, pie, anotaciones, registradoPorUsuarioId: p.usuarioId ?? null, registradoEtiqueta: etiqueta },
+      update: { anotaciones, registradoPorUsuarioId: p.usuarioId ?? null, registradoEtiqueta: etiqueta, deletedAt: null },
+    });
+    const antes = previo && Array.isArray(previo.anotaciones) ? previo.anotaciones.length : 0;
+    await auditEnTx(tx, { ...ctxAudit(p), citaId: at.citaId, accion: 'dibujar_silueta', entidad: 'dibujo_silueta', entidadId: row.id, sedeId: at.sedeId, antes: { trazos: antes }, despues: { vista, pie, trazos } });
+  });
+  return getAtencionCompleta(at.id);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Bandeja del día (ronda del médico): atenciones abiertas para cerrar en lote + abandono
 // ─────────────────────────────────────────────────────────────────────────────
@@ -504,13 +545,15 @@ export async function guardarAnotacionesPodograma(p: Ctx & { imagenId: string; a
 export function faltantesDeAtencion(a: {
   diagnosticos: { principal: boolean }[]; notas: unknown[]; procedimientos: unknown[];
   marcasPodograma: unknown[]; imagenesPodograma: unknown[]; recetas: unknown[];
+  dibujosSilueta?: { anotaciones: unknown }[];
 }): string[] {
   const f: string[] = [];
   if (!a.diagnosticos.length) f.push('Sin diagnóstico');
   else if (!a.diagnosticos.some((d) => d.principal)) f.push('Sin diagnóstico principal');
   if (!a.notas.length) f.push('Sin nota');
   if (!a.procedimientos.length) f.push('Sin procedimiento');
-  if (!a.marcasPodograma.length && !a.imagenesPodograma.length) f.push('Podograma vacío');
+  const dibujado = (a.dibujosSilueta ?? []).some((d) => Array.isArray(d.anotaciones) && d.anotaciones.length > 0);
+  if (!a.marcasPodograma.length && !a.imagenesPodograma.length && !dibujado) f.push('Podograma vacío');
   if (!a.recetas.length) f.push('Sin receta ni indicaciones');
   return f;
 }
@@ -531,6 +574,7 @@ export async function bandejaDelDia(p: { sedeIds: string[] | null; profesionalId
       diagnosticos: { where: { deletedAt: null }, select: { principal: true } },
       procedimientos: { where: { deletedAt: null }, select: { id: true } },
       marcasPodograma: { where: { deletedAt: null }, select: { id: true } },
+      dibujosSilueta: { where: { deletedAt: null }, select: { anotaciones: true } },
       imagenesPodograma: { where: { deletedAt: null }, select: { id: true } },
       recetas: { select: { id: true } },
     },

@@ -260,10 +260,11 @@ const escalaSchema = z.object({
 const escalaEditarSchema = z.object({ datos: z.record(z.any()).optional(), pie: pieOpc });
 const marcaSchema = z.object({
   pie: z.enum(['izquierdo', 'derecho']),
+  vista: z.enum(['plantar', 'dorsal']).optional(),
   x: z.number().min(0).max(1),
   y: z.number().min(0).max(1),
   zona: texto(120),
-  tipoLesion: z.enum(['hiperqueratosis', 'heloma', 'onicocriptosis', 'ulcera', 'fisura', 'micosis', 'ampolla', 'verruga', 'otro']),
+  tipoLesion: z.enum(['hiperqueratosis', 'heloma', 'onicocriptosis', 'ulcera', 'fisura', 'micosis', 'ampolla', 'verruga', 'dolor', 'inflamacion', 'otro']),
   nota: texto(500),
 });
 const marcaEditarSchema = marcaSchema.partial();
@@ -312,6 +313,15 @@ router.get('/paciente/:pacienteId/escalas', ...verHc, async (req, res) => {
   await hc.assertAccesoPaciente(user(req), req.params.pacienteId);
   const tipo = typeof req.query.tipo === 'string' ? req.query.tipo : undefined;
   res.json(await fp.escalasDePaciente(req.params.pacienteId, tipo));
+});
+
+// Historial del podograma por zona: todo lo registrado en el pie del paciente, atención por atención
+router.get('/paciente/:pacienteId/podograma-historial', ...verHc, async (req, res) => {
+  const { pacienteId } = req.params;
+  await hc.assertAccesoPaciente(user(req), pacienteId);
+  const historial = await fp.historialPodograma(pacienteId);
+  if (historial.length) await hc.auditarLecturaHC({ ...ctx(req), pacienteId, origen: 'historial_podograma' });
+  res.json(historial);
 });
 
 // Plantillas de nota por diagnóstico (1.1) y autotextos (1.2): las lee cualquiera con hc.ver;
@@ -445,6 +455,19 @@ router.get('/podograma/imagenes/:id', ...verHc, async (req, res) => {
   res.setHeader('Content-Disposition', `inline; filename="${img.nombreArchivo.replace(/[^\w.\-]+/g, '_')}"`);
   res.type(img.mime);
   res.sendFile(img.rutaAbsoluta);
+});
+
+// Modo "Pintar" de la silueta: reemplaza la capa de trazos de un pie en una vista
+const dibujoSiluetaSchema = z.object({
+  vista: z.enum(['plantar', 'dorsal']),
+  pie: z.enum(['izquierdo', 'derecho']),
+  anotaciones: z.array(z.unknown()).max(3000),
+});
+router.put('/atenciones/:id/dibujos', ...registrar, async (req, res) => {
+  const data = dibujoSiluetaSchema.parse(req.body);
+  const { sedeId } = await sedeDeAtencion(req.params.id);
+  assertSede(req, sedeId);
+  res.json(await b3.guardarDibujoSilueta({ ...ctx(req), atencionId: req.params.id, ...data }));
 });
 
 router.patch('/podograma/imagenes/:id/anotaciones', ...registrar, async (req, res) => {

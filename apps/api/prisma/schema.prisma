@@ -1789,6 +1789,7 @@ model AtencionClinica {
   marcasPodograma   MarcaPodograma[]
   imagenesPodograma ImagenPodograma[]
   fotos             FotoClinica[]
+  dibujosSilueta    DibujoSilueta[]
 
   @@index([historiaClinicaId, fecha])
   @@index([pacienteId])
@@ -2037,6 +2038,7 @@ model MarcaPodograma {
   id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   atencionId             String    @db.Uuid
   pie                    String // izquierdo | derecho
+  vista                  String    @default("plantar") // plantar | dorsal: silueta sobre la que se marcó
   x                      Float // 0..1 (fracción del ancho de la silueta)
   y                      Float // 0..1 (fracción del alto)
   zona                   String? // región anatómica derivada (opcional)
@@ -2131,4 +2133,26 @@ model PlantillaClinica {
 
   @@index([tipo, clave])
   @@map("plantillas_clinicas")
+}
+
+// Dibujo a mano alzada sobre la silueta del podograma (modo "Pintar"): una capa de trazos por
+// atención, vista (plantar | dorsal) y pie. Mismo formato que las anotaciones de las imágenes de la
+// Baro (trazos con puntos 0..1, validados por validarAnotaciones). Guardar = reemplazar la capa
+// (auditado, dibujar_silueta); vaciarla = lista vacía. No se borra la fila.
+model DibujoSilueta {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  atencionId             String    @db.Uuid
+  vista                  String // plantar | dorsal
+  pie                    String // izquierdo | derecho
+  anotaciones            Json      @default("[]")
+  registradoPorUsuarioId String?   @db.Uuid
+  registradoEtiqueta     String?
+  creadoEn               DateTime  @default(now())
+  actualizadoEn          DateTime  @updatedAt
+  deletedAt              DateTime?
+
+  atencion AtencionClinica @relation(fields: [atencionId], references: [id], onDelete: Restrict)
+
+  @@unique([atencionId, vista, pie])
+  @@map("dibujos_silueta")
 }

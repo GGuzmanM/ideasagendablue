@@ -2,7 +2,7 @@
 // Izquierda: paciente, alergias, accesos, "Nueva atención" y tabla de atenciones.
 // Derecha: pestañas Evolución · Receta · Antecedentes y alergias (+ próximas: procedimientos, escalas, podograma, consentimientos).
 // Vista PURA: toda la lógica vive en services/historiaClinicaService.ts.
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Skeleton } from '../components/ui/Skeleton';
 import { PodogramaEditor } from '../components/historiaClinica/PodogramaEditor';
 import { TextareaDictado } from '../components/historiaClinica/BotonDictado';
@@ -15,12 +15,16 @@ import { EmitirRecetaModal } from '../components/historiaClinica/EmitirRecetaMod
 import { DialogoMotivo } from '../components/historiaClinica/DialogoMotivo';
 import { BotonHistorialGenexis } from '../components/pacientes/HistorialGenexis';
 import { ComparadorFotos } from '../components/historiaClinica/ComparadorFotos';
-import { SiluetaPie, MonofilamentoPie } from '../components/historiaClinica/SiluetaPie';
+import { SiluetaPie, MonofilamentoPie, aspectoSilueta, proporcionSilueta } from '../components/historiaClinica/SiluetaPie';
+import { LienzoSilueta } from '../components/historiaClinica/LienzoSilueta';
+import { SelectorLesion, LeyendaLesiones, calcularLeyenda, trazosComoLeyenda, resumenTipos } from '../components/historiaClinica/Lesiones';
+import { MedidorUlcera } from '../components/historiaClinica/MedidorUlcera';
+import { FUENTE_ICONO, FUENTE_LABEL, type EventoZona } from '../utils/historialZonas';
 import { PlantillasDialog } from '../components/historiaClinica/PlantillasDialog';
-import { ZONAS_PIE } from '../utils/zonasPie';
+import { ZONAS_PIE, coordZona, zonaPorId } from '../utils/zonasPie';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useHistoriaClinicaPage, useAntecedentesAlergias, useRecetasAtencion, useEscalas, usePodograma, useMiniaturaPodograma, useFotosClinicas, useFotoUrl, MF_ETIQUETAS, IWGDF_CONTROL, type TabHc } from '../services/historiaClinicaService';
-import { TIPO_ANTECEDENTE_LABEL, TIPO_NOTA_LABEL, TIPO_PROCEDIMIENTO_LABEL, TIPO_ESCALA_LABEL, TIPO_LESION_LABEL, PIE_LABEL, VISTAS_PODOGRAMA, VISTA_PODOGRAMA_LABEL, CATEGORIA_FOTO_LABEL, edadDe, nombreProfesional, type AtencionClinica, type AtencionCompleta, type TipoAntecedente, type TipoNota, type SeveridadAlergia, type TipoProcedimiento, type TipoEscala, type TipoLesion, type MarcaPodograma, type ImagenPodograma, type VistaPodograma, type CategoriaFoto, type FotoClinica, type Pie } from '../api/historiaClinica';
+import { VISTA_SILUETA_LABEL, TIPO_ANTECEDENTE_LABEL, TIPO_NOTA_LABEL, TIPO_PROCEDIMIENTO_LABEL, TIPO_ESCALA_LABEL, TIPO_LESION_LABEL, COLOR_LESION, etiquetaLesion, PIE_LABEL, VISTAS_PODOGRAMA, VISTA_PODOGRAMA_LABEL, CATEGORIA_FOTO_LABEL, edadDe, nombreProfesional, type AtencionClinica, type AtencionCompleta, type TipoAntecedente, type TipoNota, type SeveridadAlergia, type TipoProcedimiento, type TipoEscala, type TipoLesion, type MarcaPodograma, type VistaSilueta, type AnotacionPodograma, type ImagenPodograma, type VistaPodograma, type CategoriaFoto, type FotoClinica, type Pie } from '../api/historiaClinica';
 import { TIPO_DOC_LABEL } from '../api/recetas';
 
 // text-base en pantallas chicas: con menos de 16px iOS hace zoom al enfocar un campo (molesto en tablet).
@@ -202,7 +206,8 @@ function faltantesParaCerrar(a: AtencionCompleta): string[] {
   else if (!a.diagnosticos.some((d) => d.principal)) f.push('Ningún diagnóstico marcado como principal');
   if (!a.notas.length) f.push('Sin nota de evolución');
   if (!a.procedimientos.length) f.push('Sin procedimiento registrado (si hubo tratamiento)');
-  if (!a.marcasPodograma.length && !a.imagenesPodograma.length) f.push('Podograma vacío (sin marcas ni imágenes de la Baro)');
+  const dibujado = (a.dibujosSilueta ?? []).some((d) => d.anotaciones?.length);
+  if (!a.marcasPodograma.length && !a.imagenesPodograma.length && !dibujado) f.push('Podograma vacío (sin marcas, dibujo ni imágenes de la Baro)');
   if (!a.recetas.length) f.push('Sin receta ni indicaciones para el paciente');
   return f;
 }
@@ -770,30 +775,128 @@ function PanelEscalas({ h, a }: { h: H; a: AtencionCompleta }) {
 }
 
 // ─── Bloque 3 · Podograma (mapa interactivo) ─────────────────────────────────
-const COLOR_LESION: Record<TipoLesion, string> = {
-  hiperqueratosis: '#f59e0b', heloma: '#ef4444', onicocriptosis: '#8b5cf6', ulcera: '#dc2626',
-  fisura: '#0891b2', micosis: '#65a30d', ampolla: '#ec4899', verruga: '#7c3aed', otro: '#64748b',
-};
-
 // Vista PLANTAR (planta del pie) del pie izquierdo: dedo gordo al lado medial (derecha), dedos
 // menores decreciendo hacia el lateral, arco medial y talón redondeado. El derecho es el espejo →
 // mostrados lado a lado, los dedos gordos quedan hacia el centro, como en una impresión de Baro.
-function MapaPie({ pie, marcas, pendiente, onClick }: { pie: 'izquierdo' | 'derecho'; marcas: MarcaPodograma[]; pendiente: { pie: string; x: number; y: number } | null; onClick: (x: number, y: number) => void }) {
-  const propias = marcas.filter((m) => m.pie === pie);
+function MapaPie({ pie, vista, marcas, pendiente, onClick, modo = 'punto', dibujo = [], pincel, visible, historial }: {
+  pie: 'izquierdo' | 'derecho'; vista: VistaSilueta; marcas: MarcaPodograma[]; pendiente: { pie: string; vista: VistaSilueta; x: number; y: number } | null;
+  onClick: (x: number, y: number) => void;
+  modo?: ModoSilueta; dibujo?: AnotacionPodograma[];
+  pincel?: { herramienta: 'lapiz' | 'borrador' | 'etiquetar'; color: string; grosor: number; onTrazo: (t: AnotacionPodograma) => void; onBorrar: (x: number, y: number, aspecto: number) => void; onSeleccionar: (x: number, y: number, aspecto: number) => void; seleccionado: number | null };
+  /** Capas: si devuelve false, ese tipo de lesión no se muestra. */
+  visible?: (tipo: TipoLesion | null | undefined) => boolean;
+  /** Modo Historial: registros de todas las visitas en este pie y la zona elegida. */
+  historial?: { eventos: EventoZona[]; atencionActual: string; zonaSel: { x: number; y: number } | null; onElegir: (x: number, y: number) => void };
+}) {
+  const ver = visible ?? (() => true);
+  // Solo las marcas de ESTA silueta (planta o dorso) y de las capas visibles; las antiguas sin vista son de la planta.
+  const propias = marcas.filter((m) => m.pie === pie && (m.vista ?? 'plantar') === vista && ver(m.tipoLesion));
+  const pintando = modo === 'pintar' && !!pincel;
+  const enHistorial = modo === 'historial' && !!historial;
+  const aspecto = proporcionSilueta(vista);
   return (
     <div className="flex-1 min-w-[130px] max-w-[200px]">
       <p className="text-center text-xs font-bold text-on-surface-variant mb-1">{pie === 'izquierdo' ? 'Izquierdo' : 'Derecho'}</p>
-      <div className="relative aspect-[100/240] cursor-crosshair select-none"
-        onClick={(ev) => { const r = ev.currentTarget.getBoundingClientRect(); onClick((ev.clientX - r.left) / r.width, (ev.clientY - r.top) / r.height); }}>
-        <SiluetaPie espejo={pie === 'derecho'} />
-        {propias.map((m) => (
-          <span key={m.id} title={`${TIPO_LESION_LABEL[m.tipoLesion]}${m.nota ? ` · ${m.nota}` : ''}`}
-            className="absolute -translate-x-1/2 -translate-y-1/2 w-3 h-3 rounded-full border-2 border-white shadow"
-            style={{ left: `${m.x * 100}%`, top: `${m.y * 100}%`, background: COLOR_LESION[m.tipoLesion] }} />
-        ))}
-        {pendiente && pendiente.pie === pie && (
-          <span className="absolute -translate-x-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full border-2 border-primary bg-primary/40 animate-pulse"
-            style={{ left: `${pendiente.x * 100}%`, top: `${pendiente.y * 100}%` }} />
+      <div data-testid={`mapa-pie-${pie}`} className={`relative select-none ${pintando ? '' : 'cursor-crosshair'}`} style={{ aspectRatio: aspectoSilueta(vista) }}
+        onClick={(ev) => {
+          if (pintando) return;
+          const r = ev.currentTarget.getBoundingClientRect();
+          const x = (ev.clientX - r.left) / r.width, y = (ev.clientY - r.top) / r.height;
+          if (enHistorial) historial!.onElegir(x, y); else onClick(x, y);
+        }}>
+        <SiluetaPie espejo={pie === 'derecho'} vista={vista} />
+        {enHistorial ? (
+          <>
+            {historial!.eventos.map((e, i) => (
+              <span key={i} title={`${fmtFecha(e.fecha)} · ${e.texto}`} className="absolute -translate-x-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full border border-white shadow pointer-events-none"
+                style={{ left: `${e.x * 100}%`, top: `${e.y * 100}%`, background: e.color, opacity: e.atencionId === historial!.atencionActual ? 1 : 0.55 }} />
+            ))}
+            {historial!.zonaSel && (
+              <span data-testid="zona-elegida" className="absolute -translate-x-1/2 -translate-y-1/2 w-9 h-9 rounded-full border-[3px] border-primary bg-primary/15 pointer-events-none animate-pulse"
+                style={{ left: `${historial!.zonaSel.x * 100}%`, top: `${historial!.zonaSel.y * 100}%` }} />
+            )}
+          </>
+        ) : (
+          <>
+            <LienzoSilueta anotaciones={dibujo} aspecto={aspecto} editable={pintando} herramienta={pincel?.herramienta ?? 'lapiz'} color={pincel?.color ?? '#ef4444'} grosor={pincel?.grosor ?? 16}
+              onTrazo={(t) => pincel?.onTrazo(t)} onBorrar={(x, y) => pincel?.onBorrar(x, y, aspecto)}
+              onSeleccionar={(x, y) => pincel?.onSeleccionar(x, y, aspecto)} seleccionado={pintando ? pincel?.seleccionado ?? null : null}
+              oculto={(a) => a.tipo === 'trazo' && !ver(a.tipoLesion)} />
+            {propias.map((m) => (
+              <span key={m.id} title={`${TIPO_LESION_LABEL[m.tipoLesion]}${m.nota ? ` · ${m.nota}` : ''}`}
+                className={`absolute -translate-x-1/2 -translate-y-1/2 w-3 h-3 rounded-full border-2 border-white shadow ${pintando ? 'pointer-events-none' : ''}`}
+                style={{ left: `${m.x * 100}%`, top: `${m.y * 100}%`, background: COLOR_LESION[m.tipoLesion] }} />
+            ))}
+            {pendiente && pendiente.pie === pie && pendiente.vista === vista && (
+              <span className="absolute -translate-x-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full border-2 border-primary bg-primary/40 animate-pulse"
+                style={{ left: `${pendiente.x * 100}%`, top: `${pendiente.y * 100}%` }} />
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+type ModoSilueta = 'punto' | 'pintar' | 'historial';
+const MODOS_EDITAR: [ModoSilueta, string, string][] = [['punto', 'location_on', 'Punto'], ['pintar', 'brush', 'Pintar'], ['historial', 'history', 'Historial']];
+const MODOS_VER: [ModoSilueta, string, string][] = [['punto', 'visibility', 'Ver'], ['historial', 'history', 'Historial']];
+type Pod = ReturnType<typeof usePodograma>;
+
+function FotoHistorial({ id }: { id: string }) {
+  const { url } = useFotoUrl(id);
+  return <span className="w-14 h-10 rounded-md overflow-hidden bg-surface-container-low border border-outline-variant/30 shrink-0 inline-block">{url && <img src={url} alt="" className="w-full h-full object-cover" />}</span>;
+}
+
+/** Modo Historial: zonas con registros (todas las visitas) y la línea de tiempo de la zona elegida. */
+function HistorialZona({ pod }: { pod: Pod }) {
+  const sel = pod.zonaHist;
+  const porFecha = new Map<string, EventoZona[]>();
+  for (const e of pod.eventosZonaHist) { if (!porFecha.has(e.fecha)) porFecha.set(e.fecha, []); porFecha.get(e.fecha)!.push(e); }
+  return (
+    <div className="mt-4 grid grid-cols-1 md:grid-cols-[270px_1fr] gap-4" data-testid="historial-zonas">
+      <div>
+        <p className={LBL}>Zonas con registros · {VISTA_SILUETA_LABEL[pod.vistaSilueta]}</p>
+        {pod.cargandoHistorial && !pod.zonasHistorial.length && <p className="text-xs text-on-surface-variant">Cargando historial…</p>}
+        {!pod.cargandoHistorial && !pod.zonasHistorial.length && <p className="text-xs text-on-surface-variant">Todavía no hay registros en esta vista.</p>}
+        <div className="space-y-1">
+          {pod.zonasHistorial.map((z) => {
+            const activa = !!sel && sel.vista === z.vista && sel.pie === z.pie && sel.zonaId === z.zonaId;
+            return (
+              <button key={z.clave} onClick={() => pod.setZonaHist({ vista: z.vista, pie: z.pie, zonaId: z.zonaId })}
+                className={`w-full min-h-[40px] lg:min-h-0 flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left ${activa ? 'border-primary bg-primary/5' : 'border-outline-variant/30 hover:bg-surface-container-low'}`}>
+                <span className="flex -space-x-1 shrink-0">{z.colores.map((c) => <span key={c} className="w-2.5 h-2.5 rounded-full border border-white" style={{ background: c }} />)}</span>
+                <span className="flex-1 text-xs text-on-surface"><b>{z.etiqueta}</b> · {z.pie === 'izquierdo' ? 'Izq' : 'Der'}</span>
+                <span className="text-[10px] text-on-surface-variant whitespace-nowrap">{z.total} · {fmtFecha(z.ultima)}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <div>
+        {!sel ? <p className="text-sm text-on-surface-variant">Toca una zona del pie o elige una de la lista para ver qué pasó ahí en cada visita.</p> : (
+          <>
+            <h4 className="text-sm font-semibold text-on-surface mb-3 flex items-center gap-1.5"><span className="material-symbols-outlined text-primary text-base">history</span>{zonaPorId(sel.zonaId).etiqueta} · pie {sel.pie} · {VISTA_SILUETA_LABEL[sel.vista]}</h4>
+            {!pod.eventosZonaHist.length && <p className="text-sm text-on-surface-variant">Sin registros en esta zona.</p>}
+            <ol className="border-l-2 border-outline-variant/40 ml-2 space-y-3" data-testid="linea-tiempo-zona">
+              {[...porFecha.entries()].map(([fecha, evs]) => (
+                <li key={fecha} className="ml-4 relative">
+                  <span className="absolute -left-[23px] top-1 w-3 h-3 rounded-full bg-primary border-2 border-white" />
+                  <p className="text-xs font-bold text-on-surface">{fmtFecha(fecha)} <span className="font-normal text-on-surface-variant">· {evs[0]!.profesional}</span></p>
+                  <ul className="mt-1 space-y-1">
+                    {evs.map((e, i) => (
+                      <li key={i} className="flex items-center gap-2 text-xs text-on-surface">
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: e.color }} />
+                        <span className="material-symbols-outlined text-sm text-on-surface-variant" title={FUENTE_LABEL[e.fuente]}>{FUENTE_ICONO[e.fuente]}</span>
+                        <span className="flex-1">{e.texto}</span>
+                        {e.fotoId && <FotoHistorial id={e.fotoId} />}
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ol>
+          </>
         )}
       </div>
     </div>
@@ -803,11 +906,12 @@ function MapaPie({ pie, marcas, pendiente, onClick }: { pie: 'izquierdo' | 'dere
 const COLORES_ANOTACION = ['#ef4444', '#f59e0b', '#22c55e', '#3b82f6', '#111827', '#ffffff'];
 // Herramientas del lienzo. "Mover" no dibuja: deja desplazar la página con el dedo (en tablet es
 // la herramienta inicial, para no dejar trazos por accidente).
-const HERRAMIENTAS: { id: 'mover' | 'lapiz' | 'texto' | 'borrador'; icon: string; label: string }[] = [
+const HERRAMIENTAS: { id: 'mover' | 'lapiz' | 'texto' | 'borrador' | 'etiquetar'; icon: string; label: string }[] = [
   { id: 'mover', icon: 'pan_tool', label: 'Mover' },
   { id: 'lapiz', icon: 'edit', label: 'Lápiz' },
   { id: 'texto', icon: 'text_fields', label: 'Texto' },
   { id: 'borrador', icon: 'ink_eraser', label: 'Borrador' },
+  { id: 'etiquetar', icon: 'label', label: 'Etiquetar' },
 ];
 // Botones de 44px de alto en pantallas táctiles (mínimo cómodo para el dedo); compactos en escritorio.
 const BTN_TOOL = (activo: boolean) => `min-h-[44px] lg:min-h-0 px-3 lg:px-2.5 py-2 lg:py-1.5 rounded-lg text-sm lg:text-xs font-semibold flex items-center gap-1 border disabled:opacity-40 ${activo ? 'bg-primary text-on-primary border-primary' : 'border-outline-variant/40 text-on-surface hover:bg-surface-container-high'}`;
@@ -857,7 +961,7 @@ function PanelPodograma({ h, a }: { h: H; a: AtencionCompleta }) {
         <p className="text-xs text-on-surface-variant mb-4">
           {mostrarImagen
             ? `La Baro entrega 4 imágenes: frontal y posterior de cada pie (${cargadas} de 4 cargadas). Toca una casilla para ${pod.puedeEditar ? 'cargar o anotar' : 'ver'} esa vista.`
-            : (pod.puedeEditar ? 'Haz clic sobre la silueta para ubicar una lesión.' : 'Mapa de lesiones de la atención.')}
+            : (pod.puedeEditar ? 'Con «Punto» ubicas una lesión con un clic; con «Pintar» dibujas a mano sobre el pie. «Dorso» es para las uñas y el empeine.' : 'Mapa de lesiones de la atención.')}
         </p>
 
         {mostrarImagen ? (
@@ -891,19 +995,32 @@ function PanelPodograma({ h, a }: { h: H; a: AtencionCompleta }) {
                   <button onClick={pod.deshacer} disabled={!pod.anotaciones.length} className={`${BTN_TOOL(false)} shrink-0`} title="Deshacer"><span className="material-symbols-outlined text-base">undo</span><span className="hidden sm:inline">Deshacer</span></button>
                   <button onClick={pod.limpiarAnotaciones} disabled={!pod.anotaciones.length} className={`${BTN_TOOL(false)} shrink-0`} title="Limpiar anotaciones"><span className="material-symbols-outlined text-base">delete_sweep</span><span className="hidden sm:inline">Limpiar</span></button>
                 </div>
-                {/* Fila 2: color y grosor, solo cuando la herramienta los usa (menos ruido en pantalla) */}
-                {(pod.herramienta === 'lapiz' || pod.herramienta === 'texto') && (
+                {/* Fila 2: qué se marca (lápiz), color (texto) o el trazo a etiquetar; solo lo que la herramienta usa */}
+                {pod.herramienta === 'lapiz' && (
+                  <div className="flex flex-col items-center gap-2">
+                    <SelectorLesion titulo="¿Qué estás marcando?" valor={pod.tipoBaro} onCambio={pod.setTipoBaro} />
+                    <label className="text-[10px] font-semibold uppercase text-on-surface-variant flex items-center gap-2">Grosor<input type="range" min={1} max={20} value={pod.grosor} onChange={(e) => pod.setGrosor(Number(e.target.value))} className="w-28 lg:w-20 h-8 accent-primary" /></label>
+                  </div>
+                )}
+                {pod.herramienta === 'texto' && (
                   <div className="flex items-center gap-2 flex-wrap">
                     {COLORES_ANOTACION.map((c) => <button key={c} onClick={() => pod.setColor(c)} title={c} className={`w-9 h-9 lg:w-6 lg:h-6 rounded-full border-2 ${pod.color === c ? 'border-primary scale-110' : 'border-outline-variant/40'}`} style={{ background: c }} />)}
-                    {pod.herramienta === 'lapiz' && (
-                      <label className="text-[10px] font-semibold uppercase text-on-surface-variant flex items-center gap-2 ml-2">Grosor<input type="range" min={1} max={20} value={pod.grosor} onChange={(e) => pod.setGrosor(Number(e.target.value))} className="w-28 lg:w-20 h-8 accent-primary" /></label>
-                    )}
+                  </div>
+                )}
+                {pod.herramienta === 'etiquetar' && pod.anotSel != null && (
+                  <div className="rounded-xl border border-primary/30 bg-primary/5 p-3 flex flex-wrap items-end gap-2">
+                    <div className="flex-1 min-w-[180px]"><label className={LBL}>Qué es</label>
+                      <select value={pod.anotSelTipo} onChange={(ev) => pod.setAnotSelTipo(ev.target.value as TipoLesion)} className={INPUT}>{(Object.keys(TIPO_LESION_LABEL) as TipoLesion[]).map((t) => <option key={t} value={t}>{etiquetaLesion(t)}</option>)}</select>
+                    </div>
+                    <div className="flex-[2] min-w-[180px]"><label className={LBL}>Detalle</label><input value={pod.anotSelNota} onChange={(ev) => pod.setAnotSelNota(ev.target.value)} maxLength={200} placeholder="Opcional (ej. borde lateral inflamado)" className={INPUT} /></div>
+                    <button onClick={pod.aplicarEtiquetaAnotacion} className="min-h-[44px] lg:min-h-0 px-4 py-2 bg-primary text-on-primary rounded-lg text-sm lg:text-xs font-bold">Aplicar</button>
                   </div>
                 )}
                 <p className="text-[11px] text-on-surface-variant">
                   {pod.herramienta === 'mover' ? 'Modo mover: desplaza la página con el dedo sin dibujar. Toca "Lápiz" para marcar.'
-                    : pod.herramienta === 'lapiz' ? 'Dibuja con el dedo, el lápiz o el mouse.'
+                    : pod.herramienta === 'lapiz' ? 'Elige qué es y dibuja con el dedo, el lápiz o el mouse.'
                     : pod.herramienta === 'texto' ? 'Toca el punto donde va el texto, escribe y confirma con Enter.'
+                    : pod.herramienta === 'etiquetar' ? (pod.anotSel != null ? 'Cambia qué es o agrega un detalle y toca «Aplicar»; luego «Guardar anotaciones».' : 'Toca un trazo para indicar qué es (callo, uñero, dolor…).')
                     : 'Toca un trazo o un texto para quitarlo.'}
                 </p>
               </div>
@@ -911,9 +1028,11 @@ function PanelPodograma({ h, a }: { h: H; a: AtencionCompleta }) {
             <div className="w-full">
               {pod.cargandoImagen || !pod.urlImagen
                 ? <Skeleton className="h-80 w-full" />
-                : <PodogramaEditor url={pod.urlImagen} anotaciones={pod.anotaciones} herramienta={pod.herramienta} color={pod.color} grosor={pod.grosor} editable={pod.puedeEditar}
-                    onTrazo={pod.agregarAnotacion} onTexto={(x, y, texto) => pod.agregarAnotacion({ tipo: 'texto', x, y, texto, color: pod.color })} onBorrar={pod.borrarEn} />}
+                : <PodogramaEditor url={pod.urlImagen} anotaciones={pod.anotaciones} herramienta={pod.herramienta} color={pod.herramienta === 'lapiz' ? COLOR_LESION[pod.tipoBaro] : pod.color} grosor={pod.grosor} editable={pod.puedeEditar}
+                    onTrazo={pod.agregarAnotacion} onTexto={(x, y, texto) => pod.agregarAnotacion({ tipo: 'texto', x, y, texto, color: pod.color })} onBorrar={pod.borrarEn}
+                    onSeleccionar={pod.seleccionarEn} seleccion={pod.herramienta === 'etiquetar' ? pod.anotSel : null} oculto={pod.trazoOculto} />}
             </div>
+            <LeyendaLesiones items={calcularLeyenda(trazosComoLeyenda(pod.anotaciones))} ocultos={pod.capasOcultas} onAlternar={pod.alternarCapa} onMostrarTodo={pod.mostrarTodasCapas} />
             {/* Guardar / Descartar: barra pegada abajo mientras haya cambios; en tablet nunca queda fuera de vista */}
             {pod.puedeEditar && pod.sucio && (
               <div className="sticky bottom-2 z-10 mt-3 flex items-center justify-end gap-2 rounded-xl border border-primary/30 bg-surface-container-lowest/95 backdrop-blur p-2 shadow-lg">
@@ -937,20 +1056,109 @@ function PanelPodograma({ h, a }: { h: H; a: AtencionCompleta }) {
           </>
         ) : (
           <>
-            <div className="flex justify-center gap-8">
-              <MapaPie pie="izquierdo" marcas={pod.marcas} pendiente={pod.pendiente} onClick={(x, y) => pod.marcarPunto('izquierdo', x, y)} />
-              <MapaPie pie="derecho" marcas={pod.marcas} pendiente={pod.pendiente} onClick={(x, y) => pod.marcarPunto('derecho', x, y)} />
+            {/* Planta / Dorso: dos siluetas, cada una con sus propias marcas */}
+            <div className="flex justify-center mb-4">
+              <div className="inline-flex rounded-xl border border-outline-variant/40 p-1 bg-surface-container-low" role="tablist">
+                {(['plantar', 'dorsal'] as const).map((v) => {
+                  const n = pod.marcas.filter((m) => (m.vista ?? 'plantar') === v).length;
+                  return (
+                    <button key={v} role="tab" aria-selected={pod.vistaSilueta === v} onClick={() => pod.setVistaSilueta(v)}
+                      className={`min-h-[44px] lg:min-h-0 px-4 py-2 lg:py-1.5 rounded-lg text-sm lg:text-xs font-semibold flex items-center gap-1.5 transition-colors ${pod.vistaSilueta === v ? 'bg-primary text-on-primary shadow' : 'text-on-surface-variant hover:text-on-surface'}`}>
+                      {v === 'plantar' ? 'Planta' : 'Dorso (uñas)'}
+                      {n > 0 && <span className={`text-[10px] px-1.5 rounded ${pod.vistaSilueta === v ? 'bg-on-primary/20' : 'bg-surface-container-high'}`}>{n}</span>}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-            {pod.pendiente && (
+            {/* Punto (marca con un clic) · Pintar (trazos a mano) · Historial (todas las visitas, por zona) */}
+            {(
+              <div className="flex flex-col items-center gap-2 mb-4">
+                <div className="inline-flex rounded-xl border border-outline-variant/40 p-1 bg-surface-container-low">
+                  {(pod.puedeEditar ? MODOS_EDITAR : MODOS_VER).map(([m, icon, label]) => (
+                    <button key={m} onClick={() => pod.setModoSilueta(m)} aria-pressed={pod.modoSilueta === m}
+                      className={`min-h-[44px] lg:min-h-0 px-4 py-2 lg:py-1.5 rounded-lg text-sm lg:text-xs font-semibold flex items-center gap-1.5 transition-colors ${pod.modoSilueta === m ? 'bg-surface-container-lowest text-primary border border-primary/30 shadow' : 'text-on-surface-variant hover:text-on-surface border border-transparent'}`}>
+                      <span className="material-symbols-outlined text-base">{icon}</span>{label}
+                    </button>
+                  ))}
+                </div>
+                {pod.modoSilueta === 'pintar' && (
+                  <>
+                    <div className="flex items-center justify-center gap-2 flex-wrap">
+                      {([['lapiz', 'brush', 'Pincel'], ['borrador', 'ink_eraser', 'Borrador'], ['etiquetar', 'label', 'Etiquetar']] as const).map(([t, icon, label]) => (
+                        <button key={t} onClick={() => pod.setHerrDibujo(t)} className={BTN_TOOL(pod.herrDibujo === t)} title={t === 'etiquetar' ? 'Toca un trazo para indicar qué es' : undefined}>
+                          <span className="material-symbols-outlined text-base">{icon}</span>{label}
+                        </button>
+                      ))}
+                      {pod.herrDibujo === 'lapiz' && (
+                        <label className="text-[10px] font-semibold uppercase text-on-surface-variant flex items-center gap-2">Grosor<input type="range" min={4} max={40} value={pod.grosorDibujo} onChange={(e) => pod.setGrosorDibujo(Number(e.target.value))} className="w-28 lg:w-20 h-8 accent-primary" /></label>
+                      )}
+                      <span className="w-px h-6 bg-outline-variant/30 mx-1" />
+                      <button onClick={pod.deshacerDibujo} disabled={!pod.puedeDeshacerDibujo} className={BTN_TOOL(false)} title="Deshacer"><span className="material-symbols-outlined text-base">undo</span><span className="hidden sm:inline">Deshacer</span></button>
+                      <button onClick={pod.limpiarDibujo} disabled={!pod.hayDibujoEnVista} className={BTN_TOOL(false)} title="Limpiar esta vista"><span className="material-symbols-outlined text-base">delete_sweep</span><span className="hidden sm:inline">Limpiar</span></button>
+                      {/* Guardar / Descartar junto a las herramientas: nunca tapan el pie mientras se pinta */}
+                      {pod.dibujoSucio && (
+                        <>
+                          <button onClick={pod.descartarDibujo} className={BTN_TOOL(false)} title="Descartar cambios"><span className="material-symbols-outlined text-base">close</span><span className="hidden sm:inline">Descartar</span></button>
+                          <button onClick={() => pod.guardarDibujoMut.mutate()} disabled={pod.guardarDibujoMut.isPending} className="min-h-[44px] lg:min-h-0 px-4 py-2 lg:py-1.5 bg-primary text-on-primary rounded-lg text-sm lg:text-xs font-bold flex items-center gap-1 disabled:opacity-50"><span className="material-symbols-outlined text-base">save</span>{pod.guardarDibujoMut.isPending ? 'Guardando…' : 'Guardar dibujo'}</button>
+                        </>
+                      )}
+                    </div>
+                    {pod.herrDibujo === 'lapiz' && <SelectorLesion titulo="¿Qué estás pintando?" valor={pod.tipoDibujo} onCambio={pod.setTipoDibujo} />}
+                    {pod.herrDibujo === 'etiquetar' && pod.trazoSel && (
+                      <div className="w-full max-w-2xl rounded-xl border border-primary/30 bg-primary/5 p-3 flex flex-wrap items-end gap-2" data-testid="editor-trazo">
+                        <p className="w-full text-xs font-semibold text-primary">Trazo elegido · pie {pod.trazoSel.pie} · {VISTA_SILUETA_LABEL[pod.vistaSilueta]}</p>
+                        <div className="flex-1 min-w-[180px]"><label className={LBL}>Qué es</label>
+                          <select value={pod.selTipo} onChange={(ev) => pod.setSelTipo(ev.target.value as TipoLesion)} className={INPUT}>{(Object.keys(TIPO_LESION_LABEL) as TipoLesion[]).map((t) => <option key={t} value={t}>{etiquetaLesion(t)}</option>)}</select>
+                        </div>
+                        <div className="flex-[2] min-w-[180px]"><label className={LBL}>Detalle</label><input value={pod.selNota} onChange={(ev) => pod.setSelNota(ev.target.value)} maxLength={200} placeholder="Opcional (ej. doloroso al apoyar)" className={INPUT} /></div>
+                        <button onClick={pod.aplicarEtiquetaTrazo} className="min-h-[44px] lg:min-h-0 px-4 py-2 bg-primary text-on-primary rounded-lg text-sm lg:text-xs font-bold">Aplicar</button>
+                        <button onClick={pod.quitarTrazoSel} className={BTN_TOOL(false)}><span className="material-symbols-outlined text-base">delete</span>Quitar trazo</button>
+                      </div>
+                    )}
+                    <p className="text-[11px] text-on-surface-variant">
+                      {pod.herrDibujo === 'lapiz' ? 'Elige qué es y pinta con el dedo, el lápiz o el mouse sobre el pie.'
+                        : pod.herrDibujo === 'borrador' ? 'Toca un trazo para quitarlo.'
+                        : pod.trazoSel ? 'Cambia qué es o agrega un detalle y toca «Aplicar».' : 'Toca un trazo para indicar qué es (callo, uñero, dolor…) o agregarle un detalle.'}
+                      {pod.dibujoSucio ? ' Hay cambios sin guardar.' : ''}
+                    </p>
+                  </>
+                )}
+                {pod.modoSilueta === 'historial' && <p className="text-[11px] text-on-surface-variant text-center">Todas las visitas del paciente en esta vista (lo de hoy más intenso). Toca una zona del pie para ver su historial.</p>}
+              </div>
+            )}
+            <div className="flex justify-center gap-8">
+              {(['izquierdo', 'derecho'] as const).map((pie) => (
+                <MapaPie key={pie} pie={pie} vista={pod.vistaSilueta} marcas={pod.marcas} pendiente={pod.pendiente} onClick={(x, y) => pod.marcarPunto(pie, x, y)}
+                  modo={pod.modoSilueta} dibujo={pod.dibujoDe(pod.vistaSilueta, pie)} visible={pod.capaVisible}
+                  historial={{ eventos: pod.puntosHistorial(pie), atencionActual: a.id, zonaSel: pod.zonaHist && pod.zonaHist.pie === pie && pod.zonaHist.vista === pod.vistaSilueta ? coordZona(pod.zonaHist.zonaId, pie) : null, onElegir: (x, y) => pod.elegirZonaHistorial(pie, x, y) }}
+                  pincel={pod.puedeEditar ? { herramienta: pod.herrDibujo, color: COLOR_LESION[pod.tipoDibujo], grosor: pod.grosorDibujo, onTrazo: (t) => pod.agregarTrazoSilueta(pie, t), onBorrar: (x, y, asp) => pod.borrarTrazoSilueta(pie, x, y, asp), onSeleccionar: (x, y, asp) => pod.seleccionarTrazoSilueta(pie, x, y, asp), seleccionado: pod.trazoSel?.pie === pie ? pod.trazoSel.indice : null } : undefined} />
+              ))}
+            </div>
+            {/* Leyenda: qué significa cada color (puntos y trazos de esta vista), con los detalles escritos */}
+            {pod.modoSilueta !== 'historial' && <LeyendaLesiones items={calcularLeyenda([
+              ...(['izquierdo', 'derecho'] as const).flatMap((pie) => trazosComoLeyenda(pod.dibujoDe(pod.vistaSilueta, pie), pie === 'izquierdo' ? 'Izq' : 'Der')),
+              ...pod.marcas.filter((m) => (m.vista ?? 'plantar') === pod.vistaSilueta).map((m) => ({ tipo: m.tipoLesion, color: COLOR_LESION[m.tipoLesion], nota: m.nota, clase: 'punto' as const, lugar: m.pie === 'izquierdo' ? 'Izq' : 'Der' })),
+            ])} ocultos={pod.capasOcultas} onAlternar={pod.alternarCapa} onMostrarTodo={pod.mostrarTodasCapas} />}
+            {pod.modoSilueta === 'historial' && <HistorialZona pod={pod} />}
+            {/* Guardar / Descartar el dibujo: barra pegada abajo mientras haya cambios */}
+            {pod.puedeEditar && pod.dibujoSucio && pod.modoSilueta !== 'pintar' && (
+              <div className="mt-3 flex items-center justify-end gap-2 rounded-xl border border-primary/30 bg-primary/5 p-2">
+                <span className="text-xs text-on-surface-variant mr-auto pl-1">Dibujo sin guardar</span>
+                <button onClick={pod.descartarDibujo} className="min-h-[44px] lg:min-h-0 px-4 py-2 border border-outline-variant rounded-lg text-sm lg:text-xs font-semibold text-on-surface hover:bg-surface-container-high">Descartar</button>
+                <button onClick={() => pod.guardarDibujoMut.mutate()} disabled={pod.guardarDibujoMut.isPending} className="min-h-[44px] lg:min-h-0 px-5 py-2 bg-primary text-on-primary rounded-lg text-sm lg:text-xs font-bold flex items-center gap-1 disabled:opacity-50"><span className="material-symbols-outlined text-base">save</span>{pod.guardarDibujoMut.isPending ? 'Guardando…' : 'Guardar dibujo'}</button>
+              </div>
+            )}
+            {pod.modoSilueta === 'punto' && pod.pendiente && (
               <div className="mt-5 rounded-xl border border-primary/30 bg-primary/5 p-4">
-                <p className="text-xs font-semibold text-primary mb-2">Nueva marca en pie {pod.pendiente.pie}</p>
-                <div className="grid grid-cols-1 md:grid-cols-[200px_1fr_auto] gap-3 items-end">
-                  <div><label className={LBL}>Tipo de lesión</label>
+                <p className="text-xs font-semibold text-primary mb-2">Nueva marca en pie {pod.pendiente.pie} · {VISTA_SILUETA_LABEL[pod.pendiente.vista]}</p>
+                <div className="grid grid-cols-1 md:grid-cols-[280px_1fr_auto] gap-3 items-end">
+                  <div><label className={LBL}>Qué es</label>
                     <select value={pod.tipoLesion} onChange={(ev) => pod.setTipoLesion(ev.target.value as TipoLesion)} className={INPUT}>
-                      {(Object.keys(TIPO_LESION_LABEL) as TipoLesion[]).map((t) => <option key={t} value={t}>{TIPO_LESION_LABEL[t]}</option>)}
+                      {(Object.keys(TIPO_LESION_LABEL) as TipoLesion[]).map((t) => <option key={t} value={t}>{etiquetaLesion(t)}</option>)}
                     </select>
                   </div>
-                  <div><label className={LBL}>Nota</label><input value={pod.nota} onChange={(ev) => pod.setNota(ev.target.value)} placeholder="Opcional" className={INPUT} /></div>
+                  <div><label className={LBL}>Detalle</label><input value={pod.nota} onChange={(ev) => pod.setNota(ev.target.value)} placeholder="Opcional (ej. doloroso al apoyar)" className={INPUT} /></div>
                   <div className="flex gap-2">
                     <button onClick={() => pod.cancelar()} className="px-3 py-2 border border-outline-variant rounded-xl text-sm font-semibold text-on-surface hover:bg-surface-container-high">Cancelar</button>
                     <button disabled={pod.agregarMut.isPending} onClick={() => pod.agregarMut.mutate()} className="px-4 py-2 bg-primary text-on-primary rounded-xl text-sm font-bold disabled:opacity-50">Guardar</button>
@@ -964,26 +1172,49 @@ function PanelPodograma({ h, a }: { h: H; a: AtencionCompleta }) {
 
       <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5">
         <h4 className="text-sm font-semibold text-on-surface mb-3">Lesiones marcadas ({pod.marcas.length})</h4>
-        {pod.marcas.length === 0 && <p className="text-sm text-on-surface-variant">Sin lesiones marcadas.</p>}
+        {pod.marcas.length === 0 && !pod.dibujosGuardados.length && <p className="text-sm text-on-surface-variant">Sin lesiones marcadas.</p>}
         <div className="space-y-1.5">
           {pod.marcas.map((m) => (
-            <div key={m.id} className="flex items-center gap-2 rounded-xl border border-outline-variant/20 px-3 py-2">
+            <div key={m.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-outline-variant/20 px-3 py-2">
               <span className="w-3 h-3 rounded-full border border-white shadow shrink-0" style={{ background: COLOR_LESION[m.tipoLesion] }} />
               <span className="text-sm font-semibold text-on-surface">{TIPO_LESION_LABEL[m.tipoLesion]}</span>
               <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-primary/10 text-primary">{m.pie === 'izquierdo' ? 'Izq' : 'Der'}</span>
+              <button onClick={() => { pod.setVerSilueta(true); pod.setVistaSilueta(m.vista ?? 'plantar'); }} title="Ver en la silueta" className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-surface-container text-on-surface-variant hover:bg-surface-container-high">{VISTA_SILUETA_LABEL[m.vista ?? 'plantar']}</button>
+              {m.zona && <span className="text-xs text-on-surface-variant">{m.zona}</span>}
               {m.nota && <span className="text-xs text-on-surface-variant">· {m.nota}</span>}
               <span className="flex-1" />
+              {pod.puedeEditar && <button onClick={() => pod.setMarcaEdit({ id: m.id, tipo: m.tipoLesion, nota: m.nota ?? '' })} title="Cambiar qué es o el detalle" className="material-symbols-outlined text-on-surface-variant/60 hover:text-primary text-lg">edit</button>}
               {h.puedeRegistrar && <button onClick={() => pod.eliminarMut.mutate(m.id)} className="material-symbols-outlined text-on-surface-variant/60 hover:text-rose-600 text-lg">delete</button>}
+              {pod.marcaEdit?.id === m.id && (
+                <div className="basis-full flex flex-wrap items-end gap-2 mt-2">
+                  <div className="flex-1 min-w-[180px]"><label className={LBL}>Qué es</label>
+                    <select value={pod.marcaEdit.tipo} onChange={(ev) => pod.setMarcaEdit({ ...pod.marcaEdit!, tipo: ev.target.value as TipoLesion })} className={INPUT}>{(Object.keys(TIPO_LESION_LABEL) as TipoLesion[]).map((t) => <option key={t} value={t}>{etiquetaLesion(t)}</option>)}</select>
+                  </div>
+                  <div className="flex-[2] min-w-[180px]"><label className={LBL}>Detalle</label><input value={pod.marcaEdit.nota} onChange={(ev) => pod.setMarcaEdit({ ...pod.marcaEdit!, nota: ev.target.value })} maxLength={500} className={INPUT} /></div>
+                  <button onClick={() => pod.setMarcaEdit(null)} className={BTN_TOOL(false)}>Cancelar</button>
+                  <button onClick={() => pod.editarMarcaMut.mutate(pod.marcaEdit!)} disabled={pod.editarMarcaMut.isPending} className="min-h-[44px] lg:min-h-0 px-4 py-2 bg-primary text-on-primary rounded-lg text-sm lg:text-xs font-bold disabled:opacity-50">Guardar</button>
+                </div>
+              )}
             </div>
           ))}
         </div>
+        {pod.dibujosGuardados.length > 0 && (
+          <div className="flex gap-2 flex-wrap mt-3">
+            {pod.dibujosGuardados.map((d) => (
+              <button key={d.id} onClick={() => { pod.setVerSilueta(true); pod.setVistaSilueta(d.vista); }} title={d.registradoEtiqueta ? `Dibujó ${d.registradoEtiqueta}` : undefined}
+                className="text-xs px-2.5 py-1 rounded-lg border border-outline-variant/40 text-on-surface hover:bg-surface-container-low flex items-center gap-1">
+                <span className="material-symbols-outlined text-sm text-primary">brush</span>Dibujo · {VISTA_SILUETA_LABEL[d.vista]} · {d.pie === 'izquierdo' ? 'Izq' : 'Der'} · {d.anotaciones.length} trazo{d.anotaciones.length === 1 ? '' : 's'}{resumenTipos(d.anotaciones) ? ` · ${resumenTipos(d.anotaciones)}` : ''}
+              </button>
+            ))}
+          </div>
+        )}
       </section>
     </div>
   );
 }
 
 // ─── 1.8 · Fotos clínicas por atención + 1.9 antes/después ──────────────────
-function MiniaturaFoto({ foto, puedeEditar, onEliminar }: { foto: FotoClinica; puedeEditar: boolean; onEliminar: () => void }) {
+function MiniaturaFoto({ foto, puedeEditar, onEliminar, onMedir }: { foto: FotoClinica; puedeEditar: boolean; onEliminar: () => void; onMedir?: () => void }) {
   const { url } = useFotoUrl(foto.id);
   return (
     <div className="rounded-xl border border-outline-variant/30 overflow-hidden bg-surface-container-lowest">
@@ -995,6 +1226,7 @@ function MiniaturaFoto({ foto, puedeEditar, onEliminar }: { foto: FotoClinica; p
         {foto.pie && <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-bold uppercase text-[9px]">{PIE_LABEL[foto.pie]}</span>}
         <span>· {fmtFecha(foto.tomadaEn)}</span>
         <span className="flex-1" />
+        {onMedir && <button onClick={onMedir} title="Medir úlcera sobre la foto" className="material-symbols-outlined text-on-surface-variant/60 hover:text-primary text-base">straighten</button>}
         {puedeEditar && <button onClick={onEliminar} title="Quitar foto" className="material-symbols-outlined text-on-surface-variant/60 hover:text-rose-600 text-base">delete</button>}
         {foto.descripcion && <span className="w-full truncate">{foto.descripcion}</span>}
       </div>
@@ -1011,6 +1243,23 @@ function PanelFotos({ h, a }: { h: H; a: AtencionCompleta }) {
   const galRef = useRef<HTMLInputElement>(null);
   const antesUrl = useFotoUrl(f.antes?.id);
   const despuesUrl = useFotoUrl(f.despues?.id);
+  // Pedal Bluetooth (o teclado): con el pedal activo, Av Pág o las flechas disparan "Tomar foto".
+  // Un pedal de pasar páginas es un teclado de un botón; no se toma si se está escribiendo en un campo.
+  useEffect(() => {
+    if (!f.puedeEditar || !f.pedalActivo) return;
+    const alPresionar = (ev: KeyboardEvent) => {
+      if (!['PageDown', 'PageUp', 'ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp'].includes(ev.key) || ev.ctrlKey || ev.altKey || ev.metaKey) return;
+      // Solo se ignora mientras se escribe (texto, números, listas); casillas y botones dejan pasar el pedal.
+      const t = ev.target as HTMLElement | null;
+      const escribiendo = !!t && (t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable
+        || (t.tagName === 'INPUT' && !['checkbox', 'radio', 'button', 'submit', 'range', 'file'].includes((t as HTMLInputElement).type)));
+      if (escribiendo) return;
+      ev.preventDefault();
+      if (!f.subirMut.isPending) camRef.current?.click();
+    };
+    window.addEventListener('keydown', alPresionar);
+    return () => window.removeEventListener('keydown', alPresionar);
+  }, [f.puedeEditar, f.pedalActivo, f.subirMut.isPending]);
   return (
     <div className="space-y-5">
       {f.puedeEditar && (
@@ -1043,6 +1292,10 @@ function PanelFotos({ h, a }: { h: H; a: AtencionCompleta }) {
             <button onClick={() => galRef.current?.click()} disabled={f.subirMut.isPending} className="min-h-[44px] lg:min-h-0 px-4 py-2 border border-outline-variant rounded-xl text-sm font-semibold text-on-surface hover:bg-surface-container-high flex items-center gap-1.5 disabled:opacity-50">
               <span className="material-symbols-outlined text-base">upload</span>Subir de la galería
             </button>
+            <label className="ml-auto flex items-center gap-2 text-xs text-on-surface-variant min-h-[44px] lg:min-h-0" title="Un pedal Bluetooth de pasar páginas envía Av Pág o flechas">
+              <input type="checkbox" checked={f.pedalActivo} onChange={(e) => { f.setPedalActivo(e.target.checked); e.currentTarget.blur(); }} className="accent-primary w-4 h-4" data-testid="pedal-fotos" />
+              <span className="material-symbols-outlined text-base">keyboard</span>Pedal o teclado: Av Pág o flechas toman la foto
+            </label>
           </div>
           <p className="text-[11px] text-on-surface-variant mt-2">En la tablet, "Tomar foto" abre la cámara. Pon la zona antes de tomarla: así el antes/después la encuentra en la próxima visita.</p>
         </section>
@@ -1052,7 +1305,7 @@ function PanelFotos({ h, a }: { h: H; a: AtencionCompleta }) {
         <h3 className="font-headline-sm text-headline-sm font-semibold text-on-surface flex items-center mb-3"><span className="material-symbols-outlined mr-2 text-primary">photo_library</span>Fotos de esta atención ({f.fotos.length})</h3>
         {f.fotos.length === 0 && <p className="text-sm text-on-surface-variant">Sin fotos en esta atención.</p>}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-          {f.fotos.map((foto) => <MiniaturaFoto key={foto.id} foto={foto} puedeEditar={f.puedeEditar} onEliminar={() => f.eliminarMut.mutate(foto.id)} />)}
+          {f.fotos.map((foto) => <MiniaturaFoto key={foto.id} foto={foto} puedeEditar={f.puedeEditar} onEliminar={() => f.eliminarMut.mutate(foto.id)} onMedir={f.puedeEditar && foto.categoria === 'lesion' ? () => f.setFotoMedir(foto) : undefined} />)}
         </div>
       </section>
 
@@ -1087,6 +1340,10 @@ function PanelFotos({ h, a }: { h: H; a: AtencionCompleta }) {
           </>
         )}
       </section>
+      {f.fotoMedir && (
+        <MedidorUlcera fotoId={f.fotoMedir.id} titulo={`${f.fotoMedir.zona || 'Foto'}${f.fotoMedir.pie ? ` · ${PIE_LABEL[f.fotoMedir.pie]}` : ''} · ${fmtFecha(f.fotoMedir.tomadaEn)}`}
+          guardando={f.medirMut.isPending} onClose={() => f.setFotoMedir(null)} onGuardar={(m) => f.medirMut.mutate({ foto: f.fotoMedir!, ...m })} />
+      )}
     </div>
   );
 }

@@ -16,11 +16,16 @@ interface Props {
   onTrazo: (t: AnotacionPodograma) => void;
   onTexto: (x: number, y: number, texto: string) => void;
   onBorrar: (x: number, y: number) => void;
+  /** Herramienta "Etiquetar": toca un trazo para elegirlo y decir qué es. */
+  onSeleccionar?: (x: number, y: number) => void;
+  seleccion?: number | null;
+  /** Capas ocultas: esos trazos no se dibujan. */
+  oculto?: (a: AnotacionPodograma) => boolean;
 }
 
 type Punto = [number, number];
 
-function pintar(ctx: CanvasRenderingContext2D, img: HTMLImageElement, W: number, H: number, lista: AnotacionPodograma[], enCurso: Punto[] | null, color: string, grosor: number) {
+function pintar(ctx: CanvasRenderingContext2D, img: HTMLImageElement, W: number, H: number, lista: AnotacionPodograma[], enCurso: Punto[] | null, color: string, grosor: number, sel: number | null = null, oculto?: (a: AnotacionPodograma) => boolean) {
   ctx.clearRect(0, 0, W, H);
   ctx.drawImage(img, 0, 0, W, H);
   const trazar = (puntos: Punto[], c: string, g: number) => {
@@ -35,6 +40,7 @@ function pintar(ctx: CanvasRenderingContext2D, img: HTMLImageElement, W: number,
     ctx.stroke();
   };
   for (const a of lista) {
+    if (oculto?.(a)) continue;
     if (a.tipo === 'trazo') trazar(a.puntos, a.color, a.grosor);
     else {
       ctx.font = `600 ${Math.max(12, W / 42)}px system-ui, sans-serif`;
@@ -48,9 +54,17 @@ function pintar(ctx: CanvasRenderingContext2D, img: HTMLImageElement, W: number,
     }
   }
   if (enCurso) trazar(enCurso, color, grosor);
+  // Trazo elegido con "Etiquetar": contorno punteado encima para que se vea cuál es.
+  const s = sel != null ? lista[sel] : null;
+  if (s && s.tipo === 'trazo') {
+    ctx.save();
+    ctx.setLineDash([Math.max(6, W / 90), Math.max(4, W / 140)]);
+    trazar(s.puntos, '#111827', s.grosor + 6);
+    ctx.restore();
+  }
 }
 
-export function PodogramaEditor({ url, anotaciones, herramienta, color, grosor, editable, onTrazo, onTexto, onBorrar }: Props) {
+export function PodogramaEditor({ url, anotaciones, herramienta, color, grosor, editable, onTrazo, onTexto, onBorrar, onSeleccionar, seleccion = null, oculto }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [img, setImg] = useState<HTMLImageElement | null>(null);
   const [tam, setTam] = useState({ w: 0, h: 0 });
@@ -85,9 +99,9 @@ export function PodogramaEditor({ url, anotaciones, herramienta, color, grosor, 
     const H = Math.round(tam.h * dpr);
     if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
     const ctx = c.getContext('2d');
-    if (ctx) pintar(ctx, img, W, H, anotaciones, enCursoRef.current, color, grosor);
+    if (ctx) pintar(ctx, img, W, H, anotaciones, enCursoRef.current, color, grosor, seleccion, oculto);
   };
-  useEffect(redibujar, [img, tam, anotaciones, color, grosor]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(redibujar, [img, tam, anotaciones, color, grosor, seleccion, oculto]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const coords = (e: React.PointerEvent<HTMLCanvasElement>): Punto => {
     const r = e.currentTarget.getBoundingClientRect();
@@ -110,6 +124,8 @@ export function PodogramaEditor({ url, anotaciones, herramienta, color, grosor, 
       onBorrar(x, y);
     } else if (herramienta === 'texto') {
       textoArmadoRef.current = [x, y];
+    } else if (herramienta === 'etiquetar') {
+      onSeleccionar?.(x, y);
     }
   };
   const onMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -151,7 +167,7 @@ export function PodogramaEditor({ url, anotaciones, herramienta, color, grosor, 
   // lienzo deja pasar el gesto para que la página se desplace (touch-action pan-y); si no, lo
   // captura (none) para que el trazo no mueva la pantalla.
   const pasivo = !editable || herramienta === 'mover';
-  const cursor = pasivo ? 'grab' : herramienta === 'borrador' ? 'pointer' : herramienta === 'texto' ? 'text' : 'crosshair';
+  const cursor = pasivo ? 'grab' : herramienta === 'borrador' || herramienta === 'etiquetar' ? 'pointer' : herramienta === 'texto' ? 'text' : 'crosshair';
   const ratio = img ? img.naturalWidth / img.naturalHeight : 4 / 3;
 
   return (

@@ -19,7 +19,7 @@
 //  · Todo lo dicho sin pista ni palabra clave va a la sección vigente (la última usada).
 //  · Es texto: el usuario siempre puede corregir el campo a mano.
 import type { TipoDiagnostico, TipoProcedimiento, TipoLesion } from '../api/historiaClinica';
-import { ZONAS_PIE, type ZonaPie } from './zonasPie';
+import { ZONAS_PIE, ajustarZonaDictada, type ZonaPie } from './zonasPie';
 
 export type SeccionDictado = 'subjetivo' | 'objetivo' | 'apreciacion' | 'plan' | 'indicaciones' | 'observacion' | 'procedimiento' | 'diagnostico' | 'lesion';
 
@@ -172,7 +172,7 @@ export function interpretarDiagnostico(texto: string): DiagnosticoDictado {
 export interface LesionDictada { tipoLesion: TipoLesion | null; pie: 'izquierdo' | 'derecho' | null; zona: ZonaPie | null; grado: number | null; texto: string }
 
 const LESIONES: [RegExp, TipoLesion][] = [
-  [/onicocriptosis|una encarnada|una enterrada|una incarnada|una clavada/, 'onicocriptosis'],
+  [/onicocriptosis|una encarnada|una enterrada|una incarnada|una clavada|uneros?\b/, 'onicocriptosis'],
   [/hiperqueratosis|callosidad|callos?\b|queratosis|durezas?\b/, 'hiperqueratosis'],
   [/helomas?\b|ojo de gallo|clavo plantar|clavos plantares/, 'heloma'],
   [/ulceras?\b|llagas?\b|herida abierta/, 'ulcera'],
@@ -180,6 +180,9 @@ const LESIONES: [RegExp, TipoLesion][] = [
   [/onicomicosis|micosis|hongos?\b|tina\b|pie de atleta|dermatofit/, 'micosis'],
   [/ampollas?\b|flictenas?\b/, 'ampolla'],
   [/verrugas?\b|papilomas?\b|mezquinos?\b/, 'verruga'],
+  // Al final: "heloma doloroso" sigue siendo heloma; solo si no hay otra lesión es un punto de dolor.
+  [/\bdolor|\bduele|doloros/, 'dolor'],
+  [/inflamac|inflamad|edema|hinchaz|hinchad/, 'inflamacion'],
 ];
 const NUMEROS: Record<string, number> = { uno: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, i: 1, ii: 2, iii: 3, iv: 4, v: 5 };
 // Zonas con sus alias normalizados, más largos primero ("hallux borde medial" antes que "borde medial").
@@ -196,7 +199,12 @@ export function interpretarLesion(texto: string): LesionDictada {
   const grado = g ? (NUMEROS[g[1]!] ?? Number(g[1])) : null;
   // Sin las palabras del pie, "hallux derecho borde medial" vuelve a ser "hallux borde medial".
   const sinPie = t.replace(/\b(pie|del pie|derecho|derecha|izquierdo|izquierda|ambos pies)\b/g, ' ').replace(/\s+/g, ' ');
-  const zona = ZONAS_ORDENADAS.find((z) => z.re.test(sinPie))?.zona ?? null;
+  const encontrada = ZONAS_ORDENADAS.find((z) => z.re.test(sinPie))?.zona ?? null;
+  // Uña: la onicocriptosis siempre es de la uña; también si se dice «uña» u «onico…». «Dorsal/dorso/encima»
+  // = la cara de arriba del dedo. Ambos casos van a la silueta del DORSO.
+  const una = tipoLesion === 'onicocriptosis' || /(^|[^a-zñ])uñas?([^a-zñ]|$)/.test(texto.toLowerCase()) || /onico/.test(t);
+  const dorsal = /\bdors|\bencima\b|\barriba\b/.test(t);
+  const zona = encontrada ? ajustarZonaDictada(encontrada, { una, dorsal }) : null;
   return { tipoLesion, pie, zona, grado, texto: texto.trim() };
 }
 
