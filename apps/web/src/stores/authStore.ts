@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { useAgendaStore } from './agendaStore';
+import { useFotosPendientesStore } from './fotosPendientesStore';
 import { queryClient } from '../lib/queryClient';
 
 const API_BASE = '/api/v1';
@@ -13,6 +14,7 @@ const API_BASE = '/api/v1';
  */
 function limpiarEstadoDeSesion() {
   useAgendaStore.getState().reset();
+  useFotosPendientesStore.getState().vaciar(); // fotos de pacientes tomadas y no guardadas
   queryClient.clear();
 }
 

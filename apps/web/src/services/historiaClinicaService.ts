@@ -20,10 +20,11 @@ import type { Cie10Item, MedicamentoItem } from '../api/catalogos';
 import { useDictado, anexarDictado } from '../hooks/useDictado';
 import { useDictadoConsulta } from '../hooks/useDictadoConsulta';
 import { adivinarTipoProcedimiento, type DiagnosticoDictado } from '../utils/dictadoEstructurado';
-import { coordZona, zonaMasCercana } from '../utils/zonasPie';
+import { coordZona, zonaMasCercana, ZONAS_PIE } from '../utils/zonasPie';
 import { eventosPorZona, resumenZonas, claveZona } from '../utils/historialZonas';
 import { indiceTrazoEn } from '../utils/trazos';
 import { useAutotextoStore } from '../stores/autotextoStore';
+import { useFotosPendientesStore, usePendientesDe, useTotalPendientes, type FotoPendiente, type CamposPendiente } from '../stores/fotosPendientesStore';
 
 export type TabHc = 'evolucion' | 'receta' | 'antecedentes' | 'procedimientos' | 'escalas' | 'podograma' | 'fotos' | 'consentimientos';
 const ESTADOS_ATENDIDA = ['llego', 'en_atencion', 'completada'];
@@ -153,8 +154,19 @@ export function useHistoriaClinicaPage() {
     },
   });
 
+  // Fotos tomadas que aún no se guardan: se cuentan en la pestaña Fotos y en el cierre, y se avisa antes
+  // de recargar o cerrar la página (viven en memoria).
+  const fotosSinGuardar = usePendientesDe(atencionSel).length;
+  const totalFotosSinGuardar = useTotalPendientes();
+  useEffect(() => {
+    if (!totalFotosSinGuardar) return;
+    const avisar = (ev: BeforeUnloadEvent) => { ev.preventDefault(); ev.returnValue = ''; };
+    window.addEventListener('beforeunload', avisar);
+    return () => window.removeEventListener('beforeunload', avisar);
+  }, [totalFotosSinGuardar]);
+
   return {
-    pacienteId, paciente, historia, cargando: historiaQ.isLoading, errorCarga: historiaQ.error as Error | null,
+    pacienteId, paciente, historia, cargando: historiaQ.isLoading, errorCarga: historiaQ.error as Error | null, fotosSinGuardar,
     atencion, atencionSel, seleccionarAtencion, cargandoAtencion: atencionQ.isLoading,
     tab, setTab, navigate,
     puedeRegistrar, puedeAnular, puedeVerRecetas, esMedicoPrescriptor, usuario,
@@ -747,6 +759,25 @@ export function usePodograma(atencion: AtencionCompleta | null, puedeRegistrar: 
     onSuccess: () => { inval(); setMarcaEdit(null); toast.success('Marca actualizada'); },
     onError: (e: Error) => toast.error(e.message),
   });
+  // Mover un punto ya puesto (arrastrándolo): se guarda la nueva posición y la zona más cercana. La caché
+  // se actualiza al instante para que el punto no "salte" de vuelta mientras responde el servidor.
+  const moverMarcaMut = useMutation({
+    mutationFn: (m: { id: string; x: number; y: number; zona: string }) => historiaClinicaApi.editarMarca(m.id, { x: m.x, y: m.y, zona: m.zona }),
+    onSuccess: (_r, m) => { inval(); toast.success(`Punto movido · ${m.zona}`); },
+    onError: (e: Error) => { inval(); toast.error(e.message); },
+  });
+  const moverMarca = (id: string, x: number, y: number) => {
+    const m = (atencion?.marcasPodograma ?? []).find((k) => k.id === id);
+    if (!m || !puedeEditar || !atencionId) return;
+    const zona = zonaMasCercana(m.vista ?? 'plantar', m.pie, x, y).etiqueta;
+    qc.setQueryData<AtencionCompleta>(atencionKey(atencionId), (old) => (old ? { ...old, marcasPodograma: old.marcasPodograma.map((k) => (k.id === id ? { ...k, x, y, zona } : k)) } : old));
+    moverMarcaMut.mutate({ id, x, y, zona });
+  };
+  /** Tocar un punto (sin arrastrar) abre su edición: qué es y detalle. */
+  const tocarMarca = (id: string) => {
+    const m = (atencion?.marcasPodograma ?? []).find((k) => k.id === id);
+    if (m) setMarcaEdit({ id, tipo: m.tipoLesion, nota: m.nota ?? '' });
+  };
 
   // ── Imágenes de la Baro: 4 vistas fijas (frontal/posterior × izq/der) + sueltas por compatibilidad ──
   const imagenes = atencion?.imagenesPodograma ?? [];
@@ -856,7 +887,7 @@ export function usePodograma(atencion: AtencionCompleta | null, puedeRegistrar: 
     // modo pintar
     modoSilueta, setModoSilueta: cambiarModoSilueta, herrDibujo, setHerrDibujo, tipoDibujo, setTipoDibujo, grosorDibujo, setGrosorDibujo,
     trazoSel, selTipo, setSelTipo, selNota, setSelNota, seleccionarTrazoSilueta, aplicarEtiquetaTrazo, quitarTrazoSel,
-    marcaEdit, setMarcaEdit, editarMarcaMut,
+    marcaEdit, setMarcaEdit, editarMarcaMut, moverMarca, tocarMarca,
     dibujoDe, agregarTrazoSilueta, borrarTrazoSilueta, deshacerDibujo, limpiarDibujo, descartarDibujo, guardarDibujoMut,
     puedeDeshacerDibujo: pilaDibujoLen > 0, dibujoSucio: clavesDibujoSucias.length > 0,
     hayDibujoEnVista: dibujoDe(vistaSilueta, 'izquierdo').length + dibujoDe(vistaSilueta, 'derecho').length > 0,
@@ -923,23 +954,63 @@ export function useFotosClinicas(atencion: AtencionCompleta | null, puedeRegistr
   const puedeEditar = puedeRegistrar && !cerrada;
   const fotos = atencion?.fotos ?? [];
 
-  // Formulario de subida (un useState por campo). La foto viene de la cámara o de la galería.
-  const [pie, setPie] = useState<Pie | ''>('');
-  const [zona, setZona] = useState('');
-  const [categoria, setCategoria] = useState<FotoClinica['categoria']>('lesion');
-  const [descripcion, setDescripcion] = useState('');
-  useEffect(() => { setPie(''); setZona(''); setCategoria('lesion'); setDescripcion(''); }, [atencionId]);
-
+  // Fotos tomadas o elegidas que aún NO se guardan (store por atención: sobreviven al cambio de pestaña).
+  // Cada una lleva su zona, lado, tipo y descripción; recién con «Guardar» se sube y pasa a la lista.
+  const pendientes = usePendientesDe(atencionId);
+  const agregarPend = useFotosPendientesStore((s) => s.agregar);
+  const actualizarPend = useFotosPendientesStore((s) => s.actualizar);
+  const quitarPend = useFotosPendientesStore((s) => s.quitar);
+  const [guardando, setGuardando] = useState<string[]>([]);
+  const enLoteRef = useRef(false);
+  const agregarArchivos = (lista: FileList | null | undefined) => {
+    if (!lista?.length || !puedeEditar || !atencionId) return;
+    const nuevas: FotoPendiente[] = [];
+    for (const archivo of Array.from(lista)) {
+      if (!/^image\/(png|jpeg|webp)$/.test(archivo.type)) { toast.error(`${archivo.name}: solo se aceptan fotos JPG, PNG o WEBP`); continue; }
+      if (archivo.size > MAX_FOTO_BYTES) { toast.error(`${archivo.name}: la foto supera los 15 MB`); continue; }
+      nuevas.push({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, archivo, url: URL.createObjectURL(archivo),
+        tomadaEn: new Date(archivo.lastModified || Date.now()).toISOString(), zona: '', pie: '', categoria: 'lesion', descripcion: '',
+      });
+    }
+    if (nuevas.length) agregarPend(atencionId, nuevas);
+  };
+  const actualizarPendiente = (id: string, cambios: Partial<CamposPendiente>) => { if (atencionId) actualizarPend(atencionId, id, cambios); };
+  // La atención viaja en las variables: si el doctor cambia de atención mientras sube, la foto no se cruza.
   const subirMut = useMutation({
-    mutationFn: (archivo: File) => historiaClinicaApi.subirFoto(atencionId!, archivo, { pie: pie || null, zona: zona || null, categoria, descripcion: descripcion || null, tomadaEn: new Date(archivo.lastModified || Date.now()).toISOString() }),
-    onSuccess: () => { inval(); setDescripcion(''); toast.success('Foto guardada'); },
+    mutationFn: (v: { p: FotoPendiente; atencionId: string }) => historiaClinicaApi.subirFoto(v.atencionId, v.p.archivo, { pie: v.p.pie || null, zona: v.p.zona || null, categoria: v.p.categoria, descripcion: v.p.descripcion || null, tomadaEn: v.p.tomadaEn }),
+    onMutate: (v) => setGuardando((g) => [...g, v.p.id]),
+    onSettled: (_r, _e, v) => setGuardando((g) => g.filter((x) => x !== v.p.id)),
+    onSuccess: (_r, v) => {
+      quitarPend(v.atencionId, v.p.id);
+      invalidar({ pacienteId, atencionId: v.atencionId });
+      if (!enLoteRef.current) toast.success(`Foto guardada${v.p.zona.trim() ? ` · ${v.p.zona.trim()}` : ''}`);
+    },
     onError: (e: Error) => toast.error(e.message),
   });
-  const subirArchivo = (f: File | null | undefined) => {
-    if (!f || !puedeEditar) return;
-    if (!/^image\/(png|jpeg|webp)$/.test(f.type)) { toast.error('Solo se aceptan fotos JPG, PNG o WEBP'); return; }
-    if (f.size > MAX_FOTO_BYTES) { toast.error('La foto supera los 15 MB'); return; }
-    subirMut.mutate(f);
+  const guardarPendiente = (id: string) => {
+    const p = pendientes.find((x) => x.id === id);
+    if (p && atencionId && !guardando.includes(id)) subirMut.mutate({ p, atencionId });
+  };
+  const guardarTodas = async () => {
+    if (!atencionId) return;
+    enLoteRef.current = true;
+    let ok = 0;
+    for (const p of pendientes.filter((x) => !guardando.includes(x.id))) {
+      try { await subirMut.mutateAsync({ p, atencionId }); ok++; } catch { /* el error ya se avisó */ }
+    }
+    enLoteRef.current = false;
+    if (ok) toast.success(ok === 1 ? 'Foto guardada' : `${ok} fotos guardadas`);
+  };
+  const descartarPendiente = (id: string) => {
+    if (atencionId && confirm('¿Descartar esta foto sin guardarla?')) quitarPend(atencionId, id);
+  };
+  /** Copia zona, lado y tipo de una foto a las demás por guardar (varias fotos de la misma zona). */
+  const aplicarATodas = (id: string) => {
+    const p = pendientes.find((x) => x.id === id);
+    if (!p || !atencionId) return;
+    pendientes.forEach((x) => { if (x.id !== id) actualizarPend(atencionId, x.id, { zona: p.zona, pie: p.pie, categoria: p.categoria }); });
+    toast.success('Zona, lado y tipo copiados a las demás fotos');
   };
   const eliminarMut = useMutation({
     mutationFn: (id: string) => historiaClinicaApi.eliminarFoto(id),
@@ -971,6 +1042,9 @@ export function useFotosClinicas(atencion: AtencionCompleta | null, puedeRegistr
   // Antes / después: todas las fotos del paciente; se elige zona y dos fotos (por defecto primera y última).
   const { data: todas = [] } = useQuery({ queryKey: ['fotos-paciente', pacienteId], queryFn: () => historiaClinicaApi.fotosDePaciente(pacienteId!), enabled: !!pacienteId, staleTime: 60_000 });
   const zonas = [...new Set(todas.map((f) => (f.zona ?? '').trim()).filter(Boolean))];
+  // Sugerencias para la zona: las ya usadas con este paciente y las del podograma (mismos nombres → el
+  // historial por zona y el antes/después las encuentran).
+  const sugerenciasZona = [...new Set([...zonas, ...ZONAS_PIE.map((z) => z.etiqueta)])];
   const [zonaComparar, setZonaComparar] = useState<string>('');
   const enZona: FotoPaciente[] = todas.filter((f) => !zonaComparar || (f.zona ?? '').trim().toLowerCase() === zonaComparar.toLowerCase());
   const [antesId, setAntesId] = useState<string | null>(null);
@@ -982,8 +1056,9 @@ export function useFotosClinicas(atencion: AtencionCompleta | null, puedeRegistr
   return {
     fotos, cerrada, puedeEditar,
     fotoMedir, setFotoMedir, medirMut, pedalActivo, setPedalActivo,
-    pie, setPie, zona, setZona, categoria, setCategoria, descripcion, setDescripcion, subirArchivo, subirMut, eliminarMut, editarMut,
-    todas, zonas, zonaComparar, elegirZona, enZona, antes, despues, setAntesId, setDespuesId,
+    pendientes, agregarArchivos, actualizarPendiente, guardarPendiente, guardarTodas, descartarPendiente, aplicarATodas, guardando,
+    subirMut, eliminarMut, editarMut,
+    todas, zonas, sugerenciasZona, zonaComparar, elegirZona, enZona, antes, despues, setAntesId, setDespuesId,
   };
 }
 

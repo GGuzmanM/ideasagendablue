@@ -2,7 +2,7 @@
 // Izquierda: paciente, alergias, accesos, "Nueva atención" y tabla de atenciones.
 // Derecha: pestañas Evolución · Receta · Antecedentes y alergias (+ próximas: procedimientos, escalas, podograma, consentimientos).
 // Vista PURA: toda la lógica vive en services/historiaClinicaService.ts.
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type PointerEvent as EventoPuntero } from 'react';
 import { Skeleton } from '../components/ui/Skeleton';
 import { PodogramaEditor } from '../components/historiaClinica/PodogramaEditor';
 import { TextareaDictado } from '../components/historiaClinica/BotonDictado';
@@ -24,6 +24,7 @@ import { PlantillasDialog } from '../components/historiaClinica/PlantillasDialog
 import { ZONAS_PIE, coordZona, zonaPorId } from '../utils/zonasPie';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useHistoriaClinicaPage, useAntecedentesAlergias, useRecetasAtencion, useEscalas, usePodograma, useMiniaturaPodograma, useFotosClinicas, useFotoUrl, MF_ETIQUETAS, IWGDF_CONTROL, type TabHc } from '../services/historiaClinicaService';
+import type { FotoPendiente, CamposPendiente } from '../stores/fotosPendientesStore';
 import { VISTA_SILUETA_LABEL, TIPO_ANTECEDENTE_LABEL, TIPO_NOTA_LABEL, TIPO_PROCEDIMIENTO_LABEL, TIPO_ESCALA_LABEL, TIPO_LESION_LABEL, COLOR_LESION, etiquetaLesion, PIE_LABEL, VISTAS_PODOGRAMA, VISTA_PODOGRAMA_LABEL, CATEGORIA_FOTO_LABEL, edadDe, nombreProfesional, type AtencionClinica, type AtencionCompleta, type TipoAntecedente, type TipoNota, type SeveridadAlergia, type TipoProcedimiento, type TipoEscala, type TipoLesion, type MarcaPodograma, type VistaSilueta, type AnotacionPodograma, type ImagenPodograma, type VistaPodograma, type CategoriaFoto, type FotoClinica, type Pie } from '../api/historiaClinica';
 import { TIPO_DOC_LABEL } from '../api/recetas';
 
@@ -164,6 +165,9 @@ export function HistoriaClinicaPage() {
               <button key={t.id} disabled={t.pronto} onClick={() => h.setTab(t.id)} title={t.pronto ? 'Próximamente' : undefined}
                 className={`px-3 lg:px-4 py-3 lg:py-2.5 text-sm font-semibold border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${h.tab === t.id ? 'border-primary text-primary' : 'border-transparent text-on-surface-variant hover:text-on-surface'} ${t.pronto ? 'opacity-40 cursor-not-allowed' : ''}`}>
                 <span className="material-symbols-outlined text-base">{t.icon}</span>{t.label}
+                {t.id === 'fotos' && h.fotosSinGuardar > 0 && (
+                  <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold flex items-center justify-center" title="Fotos sin guardar" data-testid="badge-fotos-sin-guardar">{h.fotosSinGuardar}</span>
+                )}
               </button>
             ))}
           </div>
@@ -214,8 +218,10 @@ function faltantesParaCerrar(a: AtencionCompleta): string[] {
 
 function CabeceraAtencion({ h, a }: { h: H; a: AtencionCompleta }) {
   const [confirmarCierre, setConfirmarCierre] = useState(false);
-  const faltantes = faltantesParaCerrar(a);
-  const cerrar = () => { if (faltantes.length) setConfirmarCierre(true); else h.cerrarMut.mutate(); };
+  // Fotos tomadas sin guardar: al cerrar ya no se pueden subir, así que van primero en la lista.
+  const sinGuardar = h.fotosSinGuardar ? [`${h.fotosSinGuardar} foto${h.fotosSinGuardar === 1 ? '' : 's'} sin guardar (pestaña Fotos): al cerrar ya no se podrán guardar`] : [];
+  const faltantes = [...sinGuardar, ...faltantesParaCerrar(a)];
+  const cerrar =() => { if (faltantes.length) setConfirmarCierre(true); else h.cerrarMut.mutate(); };
   return (
     <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5 mb-5 flex flex-wrap items-start justify-between gap-4">
       <div className="min-w-0">
@@ -778,7 +784,7 @@ function PanelEscalas({ h, a }: { h: H; a: AtencionCompleta }) {
 // Vista PLANTAR (planta del pie) del pie izquierdo: dedo gordo al lado medial (derecha), dedos
 // menores decreciendo hacia el lateral, arco medial y talón redondeado. El derecho es el espejo →
 // mostrados lado a lado, los dedos gordos quedan hacia el centro, como en una impresión de Baro.
-function MapaPie({ pie, vista, marcas, pendiente, onClick, modo = 'punto', dibujo = [], pincel, visible, historial }: {
+function MapaPie({ pie, vista, marcas, pendiente, onClick, modo = 'punto', dibujo = [], pincel, visible, historial, onMoverMarca, onTocarMarca }: {
   pie: 'izquierdo' | 'derecho'; vista: VistaSilueta; marcas: MarcaPodograma[]; pendiente: { pie: string; vista: VistaSilueta; x: number; y: number } | null;
   onClick: (x: number, y: number) => void;
   modo?: ModoSilueta; dibujo?: AnotacionPodograma[];
@@ -787,6 +793,9 @@ function MapaPie({ pie, vista, marcas, pendiente, onClick, modo = 'punto', dibuj
   visible?: (tipo: TipoLesion | null | undefined) => boolean;
   /** Modo Historial: registros de todas las visitas en este pie y la zona elegida. */
   historial?: { eventos: EventoZona[]; atencionActual: string; zonaSel: { x: number; y: number } | null; onElegir: (x: number, y: number) => void };
+  /** Modo Punto (editable): arrastrar un punto ya puesto lo mueve; tocarlo abre su edición. */
+  onMoverMarca?: (id: string, x: number, y: number) => void;
+  onTocarMarca?: (id: string) => void;
 }) {
   const ver = visible ?? (() => true);
   // Solo las marcas de ESTA silueta (planta o dorso) y de las capas visibles; las antiguas sin vista son de la planta.
@@ -794,6 +803,14 @@ function MapaPie({ pie, vista, marcas, pendiente, onClick, modo = 'punto', dibuj
   const pintando = modo === 'pintar' && !!pincel;
   const enHistorial = modo === 'historial' && !!historial;
   const aspecto = proporcionSilueta(vista);
+  const arrastrable = modo === 'punto' && !!onMoverMarca;
+  // Arrastre de un punto ya puesto: posición provisional mientras se mueve (se confirma al soltar).
+  const [arrastre, setArrastre] = useState<{ id: string; x: number; y: number } | null>(null);
+  const inicioRef = useRef<{ id: string; cx: number; cy: number; movido: boolean } | null>(null);
+  const posEnCaja = (ev: EventoPuntero<HTMLElement>): [number, number] => {
+    const caja = ev.currentTarget.parentElement!.getBoundingClientRect();
+    return [Math.min(1, Math.max(0, (ev.clientX - caja.left) / caja.width)), Math.min(1, Math.max(0, (ev.clientY - caja.top) / caja.height))];
+  };
   return (
     <div className="flex-1 min-w-[130px] max-w-[200px]">
       <p className="text-center text-xs font-bold text-on-surface-variant mb-1">{pie === 'izquierdo' ? 'Izquierdo' : 'Derecho'}</p>
@@ -822,11 +839,38 @@ function MapaPie({ pie, vista, marcas, pendiente, onClick, modo = 'punto', dibuj
               onTrazo={(t) => pincel?.onTrazo(t)} onBorrar={(x, y) => pincel?.onBorrar(x, y, aspecto)}
               onSeleccionar={(x, y) => pincel?.onSeleccionar(x, y, aspecto)} seleccionado={pintando ? pincel?.seleccionado ?? null : null}
               oculto={(a) => a.tipo === 'trazo' && !ver(a.tipoLesion)} />
-            {propias.map((m) => (
-              <span key={m.id} title={`${TIPO_LESION_LABEL[m.tipoLesion]}${m.nota ? ` · ${m.nota}` : ''}`}
-                className={`absolute -translate-x-1/2 -translate-y-1/2 w-3 h-3 rounded-full border-2 border-white shadow ${pintando ? 'pointer-events-none' : ''}`}
-                style={{ left: `${m.x * 100}%`, top: `${m.y * 100}%`, background: COLOR_LESION[m.tipoLesion] }} />
-            ))}
+            {propias.map((m) => {
+              const pos = arrastre?.id === m.id ? arrastre : m;
+              return (
+                <span key={m.id} data-marca={m.id} title={`${TIPO_LESION_LABEL[m.tipoLesion]}${m.nota ? ` · ${m.nota}` : ''}${arrastrable ? ' · arrastra para mover, toca para editar' : ''}`}
+                  className={`absolute -translate-x-1/2 -translate-y-1/2 flex items-center justify-center ${arrastrable ? `w-7 h-7 touch-none ${arrastre?.id === m.id ? 'cursor-grabbing z-10' : 'cursor-grab'}` : 'w-3 h-3'} ${pintando ? 'pointer-events-none' : ''}`}
+                  style={{ left: `${pos.x * 100}%`, top: `${pos.y * 100}%` }}
+                  onClick={arrastrable ? (ev) => ev.stopPropagation() : undefined}
+                  onPointerDown={arrastrable ? (ev) => {
+                    ev.stopPropagation(); ev.preventDefault();
+                    try { ev.currentTarget.setPointerCapture(ev.pointerId); } catch { /* sin captura */ }
+                    inicioRef.current = { id: m.id, cx: ev.clientX, cy: ev.clientY, movido: false };
+                  } : undefined}
+                  onPointerMove={arrastrable ? (ev) => {
+                    const ini = inicioRef.current;
+                    if (!ini || ini.id !== m.id) return;
+                    if (!ini.movido && Math.hypot(ev.clientX - ini.cx, ev.clientY - ini.cy) < 5) return; // temblor: todavía es un toque
+                    ini.movido = true;
+                    const [x, y] = posEnCaja(ev);
+                    setArrastre({ id: m.id, x, y });
+                  } : undefined}
+                  onPointerUp={arrastrable ? (ev) => {
+                    const ini = inicioRef.current;
+                    inicioRef.current = null;
+                    if (!ini || ini.id !== m.id) return;
+                    if (ini.movido) { const [x, y] = posEnCaja(ev); onMoverMarca!(m.id, x, y); } else onTocarMarca?.(m.id);
+                    setArrastre(null);
+                  } : undefined}
+                  onPointerCancel={arrastrable ? () => { inicioRef.current = null; setArrastre(null); } : undefined}>
+                  <span className="w-3 h-3 rounded-full border-2 border-white shadow" style={{ background: COLOR_LESION[m.tipoLesion] }} />
+                </span>
+              );
+            })}
             {pendiente && pendiente.pie === pie && pendiente.vista === vista && (
               <span className="absolute -translate-x-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full border-2 border-primary bg-primary/40 animate-pulse"
                 style={{ left: `${pendiente.x * 100}%`, top: `${pendiente.y * 100}%` }} />
@@ -961,7 +1005,7 @@ function PanelPodograma({ h, a }: { h: H; a: AtencionCompleta }) {
         <p className="text-xs text-on-surface-variant mb-4">
           {mostrarImagen
             ? `La Baro entrega 4 imágenes: frontal y posterior de cada pie (${cargadas} de 4 cargadas). Toca una casilla para ${pod.puedeEditar ? 'cargar o anotar' : 'ver'} esa vista.`
-            : (pod.puedeEditar ? 'Con «Punto» ubicas una lesión con un clic; con «Pintar» dibujas a mano sobre el pie. «Dorso» es para las uñas y el empeine.' : 'Mapa de lesiones de la atención.')}
+            : (pod.puedeEditar ? 'Con «Punto» ubicas una lesión con un clic (arrastra un punto para moverlo o tócalo para editarlo); con «Pintar» dibujas a mano sobre el pie. «Dorso» es para las uñas y el empeine.' : 'Mapa de lesiones de la atención.')}
         </p>
 
         {mostrarImagen ? (
@@ -1131,6 +1175,8 @@ function PanelPodograma({ h, a }: { h: H; a: AtencionCompleta }) {
               {(['izquierdo', 'derecho'] as const).map((pie) => (
                 <MapaPie key={pie} pie={pie} vista={pod.vistaSilueta} marcas={pod.marcas} pendiente={pod.pendiente} onClick={(x, y) => pod.marcarPunto(pie, x, y)}
                   modo={pod.modoSilueta} dibujo={pod.dibujoDe(pod.vistaSilueta, pie)} visible={pod.capaVisible}
+                  onMoverMarca={pod.puedeEditar ? pod.moverMarca : undefined}
+                  onTocarMarca={pod.puedeEditar ? (id) => { pod.tocarMarca(id); setTimeout(() => document.getElementById(`marca-${id}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 80); } : undefined}
                   historial={{ eventos: pod.puntosHistorial(pie), atencionActual: a.id, zonaSel: pod.zonaHist && pod.zonaHist.pie === pie && pod.zonaHist.vista === pod.vistaSilueta ? coordZona(pod.zonaHist.zonaId, pie) : null, onElegir: (x, y) => pod.elegirZonaHistorial(pie, x, y) }}
                   pincel={pod.puedeEditar ? { herramienta: pod.herrDibujo, color: COLOR_LESION[pod.tipoDibujo], grosor: pod.grosorDibujo, onTrazo: (t) => pod.agregarTrazoSilueta(pie, t), onBorrar: (x, y, asp) => pod.borrarTrazoSilueta(pie, x, y, asp), onSeleccionar: (x, y, asp) => pod.seleccionarTrazoSilueta(pie, x, y, asp), seleccionado: pod.trazoSel?.pie === pie ? pod.trazoSel.indice : null } : undefined} />
               ))}
@@ -1175,7 +1221,7 @@ function PanelPodograma({ h, a }: { h: H; a: AtencionCompleta }) {
         {pod.marcas.length === 0 && !pod.dibujosGuardados.length && <p className="text-sm text-on-surface-variant">Sin lesiones marcadas.</p>}
         <div className="space-y-1.5">
           {pod.marcas.map((m) => (
-            <div key={m.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-outline-variant/20 px-3 py-2">
+            <div key={m.id} id={`marca-${m.id}`} className={`flex flex-wrap items-center gap-2 rounded-xl border px-3 py-2 ${pod.marcaEdit?.id === m.id ? 'border-primary bg-primary/5' : 'border-outline-variant/20'}`}>
               <span className="w-3 h-3 rounded-full border border-white shadow shrink-0" style={{ background: COLOR_LESION[m.tipoLesion] }} />
               <span className="text-sm font-semibold text-on-surface">{TIPO_LESION_LABEL[m.tipoLesion]}</span>
               <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-primary/10 text-primary">{m.pie === 'izquierdo' ? 'Izq' : 'Der'}</span>
@@ -1237,6 +1283,55 @@ function MiniaturaFoto({ foto, puedeEditar, onEliminar, onMedir }: { foto: FotoC
 const etiquetaFoto = (x: { tomadaEn: string; zona: string | null; categoria: CategoriaFoto; pie: Pie | null }) =>
   `${fmtFecha(x.tomadaEn)} · ${x.zona || CATEGORIA_FOTO_LABEL[x.categoria]}${x.pie ? ` · ${PIE_LABEL[x.pie]}` : ''}`;
 
+type FotosHc = ReturnType<typeof useFotosClinicas>;
+
+/** Foto tomada o elegida que aún no se guarda: vista previa + sus datos; «Guardar» la sube a la atención. */
+function FotoPorGuardar({ p, f }: { p: FotoPendiente; f: FotosHc }) {
+  const guardando = f.guardando.includes(p.id);
+  const set = (c: Partial<CamposPendiente>) => f.actualizarPendiente(p.id, c);
+  return (
+    <div className="rounded-xl border-2 border-dashed border-amber-300 bg-amber-50/40 p-3 flex flex-col md:flex-row gap-3" data-testid="foto-por-guardar">
+      <img src={p.url} alt="Vista previa de la foto" className="w-full md:w-48 aspect-[4/3] object-cover rounded-lg bg-surface-container-low shrink-0" />
+      <div className="flex-1 min-w-0 space-y-2">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+          <div><label className={LBL}>Zona</label>
+            <input value={p.zona} onChange={(e) => set({ zona: e.target.value })} list="zonas-foto" placeholder="Ej. uña 1, talón" className={INPUT} data-campo="zona" />
+          </div>
+          <div><label className={LBL}>Lado</label>
+            <select value={p.pie} onChange={(e) => set({ pie: e.target.value as Pie | '' })} className={INPUT} data-campo="pie">
+              <option value="">—</option><option value="izquierdo">Izquierdo</option><option value="derecho">Derecho</option><option value="ambos">Ambos</option>
+            </select>
+          </div>
+          <div><label className={LBL}>Tipo</label>
+            <select value={p.categoria} onChange={(e) => set({ categoria: e.target.value as CategoriaFoto })} className={INPUT} data-campo="categoria">
+              {(Object.keys(CATEGORIA_FOTO_LABEL) as CategoriaFoto[]).map((c) => <option key={c} value={c}>{CATEGORIA_FOTO_LABEL[c]}</option>)}
+            </select>
+          </div>
+          <div><label className={LBL}>Descripción</label><input value={p.descripcion} onChange={(e) => set({ descripcion: e.target.value })} placeholder="Opcional" className={INPUT} data-campo="descripcion" /></div>
+        </div>
+        {(!p.zona.trim() || !p.pie) && (
+          <p className="text-[11px] text-amber-700 flex items-center gap-1"><span className="material-symbols-outlined text-sm">warning</span>
+            {!p.zona.trim() ? 'Sin zona: el antes/después y el historial por zona no la encontrarán.' : 'Falta el lado.'}
+          </p>
+        )}
+        <div className="flex flex-wrap gap-2">
+          <button onClick={() => f.guardarPendiente(p.id)} disabled={guardando} className="min-h-[44px] lg:min-h-0 px-4 py-2 bg-primary text-on-primary rounded-xl text-sm font-bold flex items-center gap-1.5 disabled:opacity-50">
+            <span className="material-symbols-outlined text-base">save</span>{guardando ? 'Guardando…' : 'Guardar'}
+          </button>
+          {f.pendientes.length > 1 && (
+            <button onClick={() => f.aplicarATodas(p.id)} disabled={guardando} className="min-h-[44px] lg:min-h-0 px-3 py-2 border border-outline-variant rounded-xl text-sm font-semibold text-on-surface hover:bg-surface-container-high flex items-center gap-1.5 disabled:opacity-50">
+              <span className="material-symbols-outlined text-base">content_copy</span>Copiar zona y lado a las demás
+            </button>
+          )}
+          <button onClick={() => f.descartarPendiente(p.id)} disabled={guardando} className="min-h-[44px] lg:min-h-0 px-3 py-2 rounded-xl text-sm font-semibold text-rose-700 hover:bg-rose-50 flex items-center gap-1.5 disabled:opacity-50">
+            <span className="material-symbols-outlined text-base">delete</span>Descartar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PanelFotos({ h, a }: { h: H; a: AtencionCompleta }) {
   const f = useFotosClinicas(a, h.puedeRegistrar);
   const camRef = useRef<HTMLInputElement>(null);
@@ -1255,41 +1350,25 @@ function PanelFotos({ h, a }: { h: H; a: AtencionCompleta }) {
         || (t.tagName === 'INPUT' && !['checkbox', 'radio', 'button', 'submit', 'range', 'file'].includes((t as HTMLInputElement).type)));
       if (escribiendo) return;
       ev.preventDefault();
-      if (!f.subirMut.isPending) camRef.current?.click();
+      camRef.current?.click(); // la foto queda «por guardar»: se puede seguir tomando mientras otra sube
     };
     window.addEventListener('keydown', alPresionar);
     return () => window.removeEventListener('keydown', alPresionar);
-  }, [f.puedeEditar, f.pedalActivo, f.subirMut.isPending]);
+  }, [f.puedeEditar, f.pedalActivo]);
   return (
     <div className="space-y-5">
       {f.puedeEditar && (
         <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5">
           <h3 className="font-headline-sm text-headline-sm font-semibold text-on-surface flex items-center mb-3"><span className="material-symbols-outlined mr-2 text-primary">photo_camera</span>Nueva foto</h3>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-            <div><label className={LBL}>Zona</label>
-              <input value={f.zona} onChange={(e) => f.setZona(e.target.value)} list="zonas-foto" placeholder="Ej. uña 1, talón, planta" className={INPUT} />
-              <datalist id="zonas-foto">{f.zonas.map((z) => <option key={z} value={z} />)}</datalist>
-            </div>
-            <div><label className={LBL}>Lado</label>
-              <select value={f.pie} onChange={(e) => f.setPie(e.target.value as Pie | '')} className={INPUT}>
-                <option value="">—</option><option value="izquierdo">Izquierdo</option><option value="derecho">Derecho</option><option value="ambos">Ambos</option>
-              </select>
-            </div>
-            <div><label className={LBL}>Tipo</label>
-              <select value={f.categoria} onChange={(e) => f.setCategoria(e.target.value as CategoriaFoto)} className={INPUT}>
-                {(Object.keys(CATEGORIA_FOTO_LABEL) as CategoriaFoto[]).map((c) => <option key={c} value={c}>{CATEGORIA_FOTO_LABEL[c]}</option>)}
-              </select>
-            </div>
-            <div><label className={LBL}>Descripción</label><input value={f.descripcion} onChange={(e) => f.setDescripcion(e.target.value)} placeholder="Opcional" className={INPUT} /></div>
-          </div>
-          <div className="flex flex-wrap gap-2 mt-3">
-            {/* capture="environment" abre la cámara trasera en tablet/celular; en PC abre el selector */}
-            <input ref={camRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { f.subirArchivo(e.target.files?.[0]); e.target.value = ''; }} />
-            <input ref={galRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => { f.subirArchivo(e.target.files?.[0]); e.target.value = ''; }} />
-            <button onClick={() => camRef.current?.click()} disabled={f.subirMut.isPending} className="min-h-[44px] lg:min-h-0 px-4 py-2 bg-primary text-on-primary rounded-xl text-sm font-bold flex items-center gap-1.5 disabled:opacity-50">
-              <span className="material-symbols-outlined text-base">photo_camera</span>{f.subirMut.isPending ? 'Subiendo…' : 'Tomar foto'}
+          <div className="flex flex-wrap gap-2">
+            {/* capture="environment" abre la cámara trasera en tablet/celular; en PC abre el selector.
+                La foto NO se sube al instante: queda en «Por guardar» hasta pulsar Guardar. */}
+            <input ref={camRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { f.agregarArchivos(e.target.files); e.target.value = ''; }} />
+            <input ref={galRef} type="file" accept="image/png,image/jpeg,image/webp" multiple className="hidden" onChange={(e) => { f.agregarArchivos(e.target.files); e.target.value = ''; }} />
+            <button onClick={() => camRef.current?.click()} className="min-h-[44px] lg:min-h-0 px-4 py-2 bg-primary text-on-primary rounded-xl text-sm font-bold flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-base">photo_camera</span>Tomar foto
             </button>
-            <button onClick={() => galRef.current?.click()} disabled={f.subirMut.isPending} className="min-h-[44px] lg:min-h-0 px-4 py-2 border border-outline-variant rounded-xl text-sm font-semibold text-on-surface hover:bg-surface-container-high flex items-center gap-1.5 disabled:opacity-50">
+            <button onClick={() => galRef.current?.click()} className="min-h-[44px] lg:min-h-0 px-4 py-2 border border-outline-variant rounded-xl text-sm font-semibold text-on-surface hover:bg-surface-container-high flex items-center gap-1.5">
               <span className="material-symbols-outlined text-base">upload</span>Subir de la galería
             </button>
             <label className="ml-auto flex items-center gap-2 text-xs text-on-surface-variant min-h-[44px] lg:min-h-0" title="Un pedal Bluetooth de pasar páginas envía Av Pág o flechas">
@@ -1297,7 +1376,22 @@ function PanelFotos({ h, a }: { h: H; a: AtencionCompleta }) {
               <span className="material-symbols-outlined text-base">keyboard</span>Pedal o teclado: Av Pág o flechas toman la foto
             </label>
           </div>
-          <p className="text-[11px] text-on-surface-variant mt-2">En la tablet, "Tomar foto" abre la cámara. Pon la zona antes de tomarla: así el antes/después la encuentra en la próxima visita.</p>
+          <p className="text-[11px] text-on-surface-variant mt-2">En la tablet, "Tomar foto" abre la cámara. La foto queda en «Por guardar» con su vista previa: completa zona, lado y tipo, y pulsa «Guardar»; recién ahí pasa a «Fotos de esta atención».</p>
+          <datalist id="zonas-foto">{f.sugerenciasZona.map((z) => <option key={z} value={z} />)}</datalist>
+          {f.pendientes.length > 0 && (
+            <div className="mt-4 space-y-3" data-testid="fotos-por-guardar">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm font-semibold text-amber-800 flex items-center gap-1"><span className="material-symbols-outlined text-base">pending</span>Por guardar ({f.pendientes.length})</span>
+                <span className="flex-1" />
+                {f.pendientes.length > 1 && (
+                  <button onClick={() => void f.guardarTodas()} disabled={f.guardando.length > 0} className="min-h-[44px] lg:min-h-0 px-4 py-2 bg-primary text-on-primary rounded-xl text-sm font-bold flex items-center gap-1.5 disabled:opacity-50">
+                    <span className="material-symbols-outlined text-base">done_all</span>Guardar todas ({f.pendientes.length})
+                  </button>
+                )}
+              </div>
+              {f.pendientes.map((p) => <FotoPorGuardar key={p.id} p={p} f={f} />)}
+            </div>
+          )}
         </section>
       )}
 
