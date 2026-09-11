@@ -62,14 +62,14 @@ export interface AtencionClinica {
 }
 
 export interface AtencionCompleta extends AtencionClinica {
-  procedimientos: Procedimiento[]; escalas: Escala[]; marcasPodograma: MarcaPodograma[]; imagenesPodograma: ImagenPodograma[];
+  procedimientos: Procedimiento[]; escalas: Escala[]; marcasPodograma: MarcaPodograma[]; imagenesPodograma: ImagenPodograma[]; fotos: FotoClinica[];
   historiaClinica: { id: string; numero: number; pacienteId: string; alergias: Alergia[] };
   paciente: PacienteHc;
 }
 
 // ─── Bloque 3 · procedimientos, escalas y podograma ──────────────────────────
 export type TipoProcedimiento = 'matricectomia' | 'laser' | 'curacion' | 'debridacion' | 'onicotomia' | 'quiropodia' | 'infiltracion' | 'otro';
-export type TipoEscala = 'eva' | 'wagner' | 'texas' | 'iwgdf' | 'monofilamento';
+export type TipoEscala = 'eva' | 'wagner' | 'texas' | 'iwgdf' | 'monofilamento' | 'termometria' | 'ulcera';
 export type Pie = 'izquierdo' | 'derecho' | 'ambos';
 export type PiePodograma = 'izquierdo' | 'derecho';
 export type TipoLesion = 'hiperqueratosis' | 'heloma' | 'onicocriptosis' | 'ulcera' | 'fisura' | 'micosis' | 'ampolla' | 'verruga' | 'otro';
@@ -79,7 +79,7 @@ export const TIPO_PROCEDIMIENTO_LABEL: Record<TipoProcedimiento, string> = {
   onicotomia: 'Onicotomía', quiropodia: 'Quiropodia', infiltracion: 'Infiltración', otro: 'Otro',
 };
 export const TIPO_ESCALA_LABEL: Record<TipoEscala, string> = {
-  eva: 'EVA (dolor)', wagner: 'Wagner', texas: 'Texas', iwgdf: 'IWGDF (riesgo)', monofilamento: 'Monofilamento',
+  eva: 'EVA (dolor)', wagner: 'Wagner', texas: 'Texas', iwgdf: 'IWGDF (riesgo)', monofilamento: 'Monofilamento', termometria: 'Termometría plantar', ulcera: 'Úlcera (medidas)',
 };
 export const TIPO_LESION_LABEL: Record<TipoLesion, string> = {
   hiperqueratosis: 'Hiperqueratosis', heloma: 'Heloma', onicocriptosis: 'Onicocriptosis', ulcera: 'Úlcera',
@@ -110,6 +110,44 @@ export interface CamposProcedimiento {
 }
 export interface CamposMarca { pie: PiePodograma; x: number; y: number; zona?: string | null; tipoLesion: TipoLesion; nota?: string | null }
 
+// ─── 2.8 Ficha previa · escalas por paciente · plantillas y autotextos (1.1 / 1.2) ───
+export type NivelBandera = 'alto' | 'medio' | 'info';
+export interface Bandera { clave: string; etiqueta: string; nivel: NivelBandera }
+export interface FichaPrevia {
+  tieneHistoria: boolean; numero: number | null; totalAtenciones: number;
+  alergias: { sustancia: string; reaccion: string | null; severidad: SeveridadAlergia }[];
+  banderas: Bandera[];
+  riesgoIwgdf: { categoria: number; etiqueta: string | null; fecha: string } | null;
+  monofilamentoAlterado: boolean | null;
+  ultimoDx: { codigo: string; descripcion: string; tipo: TipoDiagnostico; fecha: string } | null;
+  ultimoProcedimiento: { tipo: TipoProcedimiento; nombre: string; pie: Pie | null; ubicacion: string | null; fecha: string } | null;
+  ultimaAtencion: { id: string; fecha: string; estado: 'abierta' | 'cerrada'; motivoConsulta: string; profesional: string; sede: string } | null;
+  fotoAnterior: { id: string; zona: string | null; pie: Pie | null; tomadaEn: string } | null;
+  sesionesPendientes: { nombre: string; restantes: number; total: number; vigenciaFin: string | null }[];
+}
+/** Escala con la fecha de su atención (lista por paciente, de la más antigua a la más nueva). */
+export interface EscalaPaciente extends Escala { fecha: string }
+export type TipoPlantilla = 'nota' | 'autotexto';
+export interface PlantillaClinica {
+  id: string; tipo: TipoPlantilla; clave: string | null; nombre: string; contenido: Record<string, string>;
+  activa: boolean; creadoEtiqueta: string | null; creadoEn: string; actualizadoEn: string;
+}
+export interface CamposPlantilla { tipo: TipoPlantilla; clave?: string | null; nombre: string; contenido: Record<string, string>; activa?: boolean }
+
+// Bandeja del día (ronda del médico): atenciones abiertas con lo que les falta + pacientes que no vuelven.
+export interface BandejaAtencion {
+  id: string; fecha: string; citaId: string; horaInicio: string; motivoConsulta: string;
+  paciente: { id: string; nombres: string; apellidoPaterno: string; apellidoMaterno: string; numeroDocumento: string };
+  servicio: { nombre: string; color: string }; sede: { nombre: string }; profesional: { nombres: string; apellidos: string };
+  totales: { notas: number; diagnosticos: number; procedimientos: number; recetas: number };
+  faltantes: string[];
+}
+export interface BandejaSinVolver {
+  paquetePacienteId: string; paquete: string; sesionesRestantes: number; ultimaCita: string; diasSinVenir: number;
+  paciente: { id: string; nombres: string; apellidoPaterno: string; apellidoMaterno: string; telefono: string | null };
+}
+export interface Bandeja { diasSinVolver: number; abiertas: BandejaAtencion[]; sinVolver: BandejaSinVolver[] }
+
 // Imagen del podograma (Baro) + capa de anotaciones vectoriales (coordenadas 0..1 sobre la imagen).
 export type AnotacionPodograma =
   | { tipo: 'trazo'; color: string; grosor: number; puntos: [number, number][] }
@@ -125,6 +163,16 @@ export interface ImagenPodograma {
   id: string; vista: VistaPodograma | null; nombreArchivo: string; mime: string; tamano: number; descripcion: string | null;
   anotaciones: AnotacionPodograma[]; subidoEtiqueta: string | null; creadoEn: string;
 }
+
+// Fotos clínicas (1.8) por atención y zona; el antes/después (1.9) cruza atenciones del paciente.
+export type CategoriaFoto = 'lesion' | 'calzado' | 'otro';
+export const CATEGORIA_FOTO_LABEL: Record<CategoriaFoto, string> = { lesion: 'Lesión', calzado: 'Calzado', otro: 'Otro' };
+export interface FotoClinica {
+  id: string; atencionId: string; pie: Pie | null; zona: string | null; categoria: CategoriaFoto; descripcion: string | null;
+  mime: string; tamano: number; tomadaEn: string; subidoEtiqueta: string | null; creadoEn: string;
+}
+export interface FotoPaciente extends FotoClinica { atencion: { fecha: string; servicio: { nombre: string } } }
+export interface CamposFoto { pie?: Pie | null; zona?: string | null; categoria?: CategoriaFoto; descripcion?: string | null; tomadaEn?: string }
 
 export interface HistoriaCompleta {
   paciente: PacienteHc;
@@ -179,6 +227,14 @@ export const historiaClinicaApi = {
   editarAlergia: (id: string, data: { sustancia?: string; reaccion?: string | null; severidad?: SeveridadAlergia; activa?: boolean }) => api.patch<HistoriaCompleta>(`${B}/alergias/${id}`, data),
   eliminarAlergia: (id: string) => api.delete<HistoriaCompleta>(`${B}/alergias/${id}`),
   // Bloque 3
+  bandeja: (dias = 45) => api.get<Bandeja>(`${B}/bandeja`, { dias: String(dias) }),
+  // 2.8 ficha previa, escalas por paciente y plantillas
+  fichaPrevia: (pacienteId: string) => api.get<FichaPrevia>(`${B}/paciente/${pacienteId}/ficha-previa`),
+  escalasPaciente: (pacienteId: string, tipo?: TipoEscala) => api.get<EscalaPaciente[]>(`${B}/paciente/${pacienteId}/escalas`, tipo ? { tipo } : undefined),
+  plantillas: (tipo?: TipoPlantilla) => api.get<PlantillaClinica[]>(`${B}/plantillas`, tipo ? { tipo } : undefined),
+  crearPlantilla: (data: CamposPlantilla) => api.post<PlantillaClinica>(`${B}/plantillas`, data),
+  editarPlantilla: (id: string, data: Partial<CamposPlantilla>) => api.put<PlantillaClinica>(`${B}/plantillas/${id}`, data),
+  eliminarPlantilla: (id: string) => api.delete<{ ok: boolean }>(`${B}/plantillas/${id}`),
   paquetesLaser: (pacienteId: string) => api.get<PaqueteLaser[]>(`${B}/paciente/${pacienteId}/paquetes-laser`),
   agregarProcedimiento: (atencionId: string, data: CamposProcedimiento) => api.post<AtencionCompleta>(`${B}/atenciones/${atencionId}/procedimientos`, data),
   editarProcedimiento: (id: string, data: Partial<CamposProcedimiento>) => api.patch<AtencionCompleta>(`${B}/procedimientos/${id}`, data),
@@ -209,6 +265,26 @@ export const historiaClinicaApi = {
   },
   guardarAnotacionesPodograma: (id: string, anotaciones: AnotacionPodograma[]) => api.patch<AtencionCompleta>(`${B}/podograma/imagenes/${id}/anotaciones`, { anotaciones }),
   eliminarImagenPodograma: (id: string) => api.delete<AtencionCompleta>(`${B}/podograma/imagenes/${id}`),
+  // Fotos clínicas
+  subirFoto: (atencionId: string, archivo: File, campos: CamposFoto = {}) => {
+    const fd = new FormData();
+    fd.append('foto', archivo);
+    if (campos.pie) fd.append('pie', campos.pie);
+    if (campos.zona?.trim()) fd.append('zona', campos.zona.trim());
+    if (campos.categoria) fd.append('categoria', campos.categoria);
+    if (campos.descripcion?.trim()) fd.append('descripcion', campos.descripcion.trim());
+    if (campos.tomadaEn) fd.append('tomadaEn', campos.tomadaEn);
+    return api.upload<AtencionCompleta>(`${B}/atenciones/${atencionId}/fotos`, fd);
+  },
+  blobFoto: async (id: string): Promise<Blob> => {
+    const token = useAuthStore.getState().token;
+    const res = await fetch(`/api/v1${B}/fotos/${id}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (!res.ok) throw new Error('No se pudo cargar la foto');
+    return res.blob();
+  },
+  editarFoto: (id: string, campos: CamposFoto) => api.patch<AtencionCompleta>(`${B}/fotos/${id}`, campos),
+  eliminarFoto: (id: string) => api.delete<AtencionCompleta>(`${B}/fotos/${id}`),
+  fotosDePaciente: (pacienteId: string, zona?: string | null) => api.get<FotoPaciente[]>(`${B}/paciente/${pacienteId}/fotos`, zona ? { zona } : undefined),
 };
 
 const OPCIONES_HC = { staleTime: 300_000, refetchOnWindowFocus: false } as const;
@@ -265,4 +341,12 @@ export function edadDe(fechaNacimiento: string | null | undefined): string {
   const m = hoy.getUTCMonth() - fn.getUTCMonth();
   if (m < 0 || (m === 0 && hoy.getUTCDate() < fn.getUTCDate())) e--;
   return `${e} años`;
+}
+
+/** Ficha previa "de 10 segundos" del paciente (modal de cita y ficha). Es lectura clínica: el backend la audita. */
+export function useFichaPrevia(pacienteId: string | undefined, enabled = true) {
+  return useQuery({ queryKey: ['ficha-previa', pacienteId], queryFn: () => historiaClinicaApi.fichaPrevia(pacienteId!), enabled: !!pacienteId && enabled, staleTime: 120_000 });
+}
+export function usePlantillas(tipo?: TipoPlantilla) {
+  return useQuery({ queryKey: ['plantillas', tipo ?? 'todas'], queryFn: () => historiaClinicaApi.plantillas(tipo), staleTime: 300_000 });
 }

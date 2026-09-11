@@ -11,7 +11,7 @@ import { usePaquetesPaciente, paquetesElegibles, paquetesOtraSede, paquetesSesio
 import { useAgendaStore } from '../stores/agendaStore';
 import { generarSlotsDelDia, horaInicioValidaParaDuracion, esCitaInactiva } from '@limablue/shared';
 import { useAuthStore } from '../stores/authStore';
-import { useResumenAtencionCita } from '../api/historiaClinica';
+import { useResumenAtencionCita, useFichaPrevia } from '../api/historiaClinica';
 
 const SLOTS = generarSlotsDelDia('08:00', '20:00', 30);
 const ESTADOS_FINALES = ['completada', 'no_show', 'cancelada'];
@@ -392,6 +392,8 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
   const puedeVerHc = tieneHc('hc.ver');
   const puedeRegistrarHc = tieneHc('hc.registrar');
   const { data: resumenAtencion } = useResumenAtencionCita(cita.id, puedeVerHc && ['llego', 'en_atencion', 'completada'].includes(estadoNorm));
+  // Ficha previa "de 10 segundos" (2.8): alergias, banderas de riesgo y lo último del paciente, antes de entrar.
+  const { data: fichaPrevia, isLoading: cargandoFicha } = useFichaPrevia(cita.pacienteId, puedeVerHc);
   const irAHistoriaClinica = () => { onClose(); navigate(`/historia-clinica/${cita.pacienteId}?cita=${cita.id}`); };
 
   return {
@@ -465,6 +467,8 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
     totalConsultorios,
     SLOTS,
     resumenAtencion,
+    fichaPrevia,
+    cargandoFicha,
     puedeVerHc,
     puedeRegistrarHc,
     irAHistoriaClinica,

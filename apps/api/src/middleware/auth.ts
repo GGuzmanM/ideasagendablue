@@ -80,18 +80,6 @@ export function sedeAutorizada(user: AuthPayload, sedeId: string): boolean {
 }
 
 /**
- * Alcance de AGENDA de un médico con login: ve SOLO su propia columna (su ficha de profesional)
- * y sus citas de baropodometría (donde figura como médico solicitado, en la columna de la
- * máquina). Devuelve su profesionalId; null = sin restricción (recepción, coordinadora y admin
- * ven toda la sede). Se aplica en el servidor: columnas (`GET /profesionales`,
- * `/profesionales/seleccionables`) y citas (`GET /citas`).
- */
-export function alcanceAgendaMedico(user: AuthPayload | undefined): string | null {
-  if (!user || user.rol !== 'medico' || !user.profesionalId) return null;
-  return user.profesionalId;
-}
-
-/**
  * Exige que el request pueda operar/leer la sede indicada. Las API keys (integraciones) NO
  * se restringen por sede. Los usuarios: admin/coordinadora → todas; resto → solo sus sedes.
  * `sedeId` vacío/undefined → no aplica (ruta sin sede específica).

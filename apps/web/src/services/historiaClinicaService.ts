@@ -1,7 +1,7 @@
 // Historia clínica — LÓGICA (hooks). Las vistas (.tsx) son puras y consumen estos hooks.
 // Un useState por campo, `puedeGuardar` derivado, useMutation → invalidar + toast (patrón de la casa).
 import { useEffect, useMemo, useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
@@ -13,11 +13,17 @@ import {
   type TipoAntecedente, type SeveridadAlergia, type NotaEvolucion, type DiagnosticoAtencion,
   type TipoProcedimiento, type TipoEscala, type TipoLesion, type Pie, type PiePodograma,
   type VistaPodograma, type ImagenPodograma, VISTAS_PODOGRAMA, VISTA_PODOGRAMA_LABEL,
+  usePlantillas, TIPO_LESION_LABEL, PIE_LABEL, type PlantillaClinica, type TipoPlantilla, type CamposMarca,
 } from '../api/historiaClinica';
 import { recetasApi, verRecetaPdf, imprimirReceta, type ItemEntrada, type TipoDocumentoReceta, type RecetaCompleta, type TipoItemReceta } from '../api/recetas';
 import type { Cie10Item, MedicamentoItem } from '../api/catalogos';
+import { useDictado, anexarDictado } from '../hooks/useDictado';
+import { useDictadoConsulta } from '../hooks/useDictadoConsulta';
+import { adivinarTipoProcedimiento, type DiagnosticoDictado } from '../utils/dictadoEstructurado';
+import { coordZona } from '../utils/zonasPie';
+import { useAutotextoStore } from '../stores/autotextoStore';
 
-export type TabHc = 'evolucion' | 'receta' | 'antecedentes' | 'procedimientos' | 'escalas' | 'podograma' | 'consentimientos';
+export type TabHc = 'evolucion' | 'receta' | 'antecedentes' | 'procedimientos' | 'escalas' | 'podograma' | 'fotos' | 'consentimientos';
 const ESTADOS_ATENDIDA = ['llego', 'en_atencion', 'completada'];
 
 const esEquipoNombre = (p: { nombres: string }) => /^baro\b/i.test(p.nombres.trim());
@@ -102,6 +108,49 @@ export function useHistoriaClinicaPage() {
     setTab('evolucion');
   };
 
+  // Formularios de evolución y procedimientos viven AQUÍ (no en su pestaña) para que un borrador
+  // —escrito o dictado— no se pierda al cambiar de pestaña (p. ej. ir a tomar una foto y volver).
+  const evolucion = useEvolucionForm(atencion, puedeRegistrar);
+  const procedimientos = useProcedimientos(atencion, puedeRegistrar);
+
+  // Dictado por voz: un solo reconocedor para toda la página (mic por campo o "Dictar consulta").
+  const dictado = useDictado();
+  // Diagnóstico dictado ("diagnóstico definitivo onicomicosis") → precarga el buscador CIE-10.
+  const [dxDictado, setDxDictado] = useState<(DiagnosticoDictado & { n: number }) | null>(null);
+  const limpiarDxDictado = () => setDxDictado(null);
+  // Autotextos (1.2): atajos → store global que leen todos los TextareaDictado de la HC.
+  const { data: autotextos } = usePlantillas('autotexto');
+  const setAtajos = useAutotextoStore((s) => s.setAtajos);
+  useEffect(() => { setAtajos(Object.fromEntries((autotextos ?? []).filter((a) => a.clave).map((a) => [a.clave!.toLowerCase(), a.contenido.texto ?? '']))); }, [autotextos, setAtajos]);
+  const gestionaPlantillas = ['admin', 'coordinadora_sedes', 'medico'].includes(usuario?.rol ?? '');
+  // Lesión dictada ("lesión heloma quinto dedo izquierdo") → marca del podograma en la zona dicha.
+  const marcaDictadoMut = useMutation({
+    mutationFn: (d: CamposMarca) => historiaClinicaApi.agregarMarca(atencionSel!, d),
+    onSuccess: (_r, d) => { invalidar({ pacienteId, atencionId: atencionSel! }); toast.success(`Podograma: ${TIPO_LESION_LABEL[d.tipoLesion]} · ${PIE_LABEL[d.pie]}${d.zona ? ` · ${d.zona}` : ''}`); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const consulta = useDictadoConsulta(dictado, {
+    setSubjetivo: evolucion.setSubjetivo, setObjetivo: evolucion.setObjetivo, setApreciacion: evolucion.setApreciacion,
+    setPlan: evolucion.setPlan, setObservacion: evolucion.setTexto,
+    onProcedimiento: (t) => {
+      procedimientos.setDetalle((prev) => anexarDictado(prev, t));
+      if (!procedimientos.tipo) { const tipo = adivinarTipoProcedimiento(t); if (tipo) procedimientos.setTipo(tipo); }
+    },
+    onDiagnostico: (d) => {
+      if (!d.termino) { if (d.tipo) evolucion.setDxTipo(d.tipo); if (d.principal !== undefined) evolucion.setDxPrincipal(d.principal); return; }
+      setDxDictado((prev) => ({ ...d, n: (prev?.n ?? 0) + 1 }));
+    },
+    onLesion: (l) => {
+      if (!l.pie || !l.zona) {
+        evolucion.setObjetivo((prev) => anexarDictado(prev, l.texto));
+        toast(`Lesión sin ${!l.pie ? 'pie' : 'zona'} clara: el texto fue a Objetivo. Di p. ej. «lesión heloma quinto dedo izquierdo».`, { icon: '⚠️', duration: 6000 });
+        return;
+      }
+      const c = coordZona(l.zona.id, l.pie);
+      marcaDictadoMut.mutate({ pie: l.pie, x: c.x, y: c.y, zona: l.zona.etiqueta, tipoLesion: l.tipoLesion ?? 'otro', nota: `${l.texto}${l.grado != null ? ` · grado ${l.grado}` : ''}` });
+    },
+  });
+
   return {
     pacienteId, paciente, historia, cargando: historiaQ.isLoading, errorCarga: historiaQ.error as Error | null,
     atencion, atencionSel, seleccionarAtencion, cargandoAtencion: atencionQ.isLoading,
@@ -112,6 +161,7 @@ export function useHistoriaClinicaPage() {
     recetaModal, setRecetaModal,
     cerrarMut, reabrirMut,
     invalidar,
+    evolucion, procedimientos, dictado, consulta, dxDictado, limpiarDxDictado, gestionaPlantillas,
   };
 }
 
@@ -208,11 +258,32 @@ export function useEvolucionForm(atencion: AtencionCompleta | null, puedeRegistr
     inval(); toast.success(`${nuevos.length} diagnóstico(s) copiado(s)`);
   };
 
+  // Plantillas por diagnóstico (1.1): sugeridas por los CIE-10 de la atención; rellenan SOLO campos vacíos.
+  const { data: plantillas = [] } = usePlantillas('nota');
+  const codigosDx = new Set((atencion?.diagnosticos ?? []).map((d) => d.cie10Codigo));
+  const plantillasSugeridas = plantillas.filter((p) => p.clave && codigosDx.has(p.clave));
+  const aplicarPlantilla = (id: string) => {
+    const p = plantillas.find((x) => x.id === id);
+    if (!p) return;
+    const campos: [string, string, string, (v: string) => void][] = [
+      ['subjetivo', 'Subjetivo', subjetivo, setSubjetivo], ['objetivo', 'Objetivo', objetivo, setObjetivo],
+      ['apreciacion', 'Apreciación', apreciacion, setApreciacion], ['plan', 'Plan', plan, setPlan],
+    ];
+    const puestos: string[] = [], saltados: string[] = [];
+    for (const [clave, label, actual, set] of campos) {
+      const v = p.contenido[clave];
+      if (!v) continue;
+      if (actual.trim()) saltados.push(label); else { set(v); puestos.push(label); }
+    }
+    if (tipo === 'observacion') setTipo('evolucion');
+    toast.success(`Plantilla «${p.nombre}»: ${puestos.length ? puestos.join(', ') : 'nada que rellenar'}${saltados.length ? ` · sin tocar (ya tenían texto): ${saltados.join(', ')}` : ''}`, { duration: 5000 });
+  };
+
   return {
     editando, tipo, setTipo, subjetivo, setSubjetivo, objetivo, setObjetivo, apreciacion, setApreciacion, plan, setPlan, texto, setTexto,
     profesionalId, setProfesionalId, cargarNota, limpiarNota, puedeGuardarNota, guardarNotaMut, eliminarNotaMut, traerUltimaNota, tieneNotaAnterior: !!anteriores?.nota,
     dxSel, setDxSel, dxTipo, setDxTipo, dxPrincipal, setDxPrincipal, dxObs, setDxObs, agregarDxMut, editarDxMut, eliminarDxMut, copiarDxAnteriores, tieneDxAnteriores: !!anteriores?.diagnosticos,
-    cerrada,
+    cerrada, plantillas, plantillasSugeridas, aplicarPlantilla,
   };
 }
 
@@ -395,21 +466,83 @@ export function useProcedimientos(atencion: AtencionCompleta | null, puedeRegist
 const MF_PUNTOS = 6; // sitios plantares por pie (hallux, 1º/3º/5º metatarsiano, mediopié, talón)
 export const MF_ETIQUETAS = ['Hallux', '1er meta', '3er meta', '5º meta', 'Mediopié', 'Talón'];
 
+/** Categoría de riesgo IWGDF 2019 a partir de los factores (misma regla que el backend). */
+export function categoriaIwgdf(f: { psp: boolean; eap: boolean; deformidad: boolean; ulceraPrevia: boolean; amputacion: boolean; erc: boolean }): 0 | 1 | 2 | 3 {
+  const previa = f.ulceraPrevia || f.amputacion || f.erc;
+  if ((f.psp || f.eap) && previa) return 3;
+  if ((f.psp && f.eap) || (f.psp && f.deformidad) || (f.eap && f.deformidad)) return 2;
+  if (f.psp || f.eap) return 1;
+  return 0;
+}
+export const IWGDF_CONTROL = ['control anual', 'control cada 6 a 12 meses', 'control cada 3 a 6 meses', 'control cada 1 a 3 meses'];
+
 export function useEscalas(atencion: AtencionCompleta | null, puedeRegistrar: boolean) {
   const invalidar = useInvalidarHistoriaClinica();
   const atencionId = atencion?.id;
   const inval = () => invalidar({ pacienteId: atencion?.pacienteId, atencionId, citaId: atencion?.citaId });
+  const escalas = atencion?.escalas ?? [];
+  const pacienteId = atencion?.pacienteId;
+  // Historial del paciente: monofilamento de la visita anterior (comparar sitio a sitio) y mediciones de úlceras (curva).
+  const { data: mfHist = [] } = useQuery({ queryKey: ['escalas-paciente', pacienteId, 'monofilamento'], queryFn: () => historiaClinicaApi.escalasPaciente(pacienteId!, 'monofilamento'), enabled: !!pacienteId, staleTime: 60_000 });
+  const { data: ulceraHist = [] } = useQuery({ queryKey: ['escalas-paciente', pacienteId, 'ulcera'], queryFn: () => historiaClinicaApi.escalasPaciente(pacienteId!, 'ulcera'), enabled: !!pacienteId, staleTime: 60_000 });
+  const mfAnteriorRow = [...mfHist].reverse().find((x) => x.atencionId !== atencionId && (!atencion || x.fecha <= atencion.fecha));
+  const mfAnterior = mfAnteriorRow
+    ? { fecha: mfAnteriorRow.fecha, izquierdo: (mfAnteriorRow.datos.izquierdo as boolean[] | undefined) ?? [], derecho: (mfAnteriorRow.datos.derecho as boolean[] | undefined) ?? [] }
+    : null;
+  const seriesUlcera = useMemo(() => {
+    const grupos = new Map<string, { nombre: string; puntos: { fecha: string; area: number; largo: number; ancho: number; atencionId: string }[] }>();
+    for (const u of ulceraHist) {
+      const d = u.datos as Record<string, unknown>;
+      const l = Number(d.largo), a = Number(d.ancho);
+      if (!Number.isFinite(l) || !Number.isFinite(a)) continue;
+      const nombre = [typeof d.pie === 'string' && d.pie ? PIE_LABEL[d.pie as Pie] : null, typeof d.ubicacion === 'string' && d.ubicacion ? d.ubicacion : null].filter(Boolean).join(' · ') || 'Úlcera';
+      if (!grupos.has(nombre)) grupos.set(nombre, { nombre, puntos: [] });
+      grupos.get(nombre)!.puntos.push({ fecha: u.fecha.slice(0, 10), area: Math.round(l * a * 10) / 10, largo: l, ancho: a, atencionId: u.atencionId });
+    }
+    return [...grupos.values()];
+  }, [ulceraHist]);
 
-  const [tipo, setTipo] = useState<TipoEscala | ''>('');
+  const [tipo, setTipoRaw] = useState<TipoEscala | ''>('');
   const [eva, setEva] = useState(5);
   const [wagner, setWagner] = useState(0);
+  // Texas: el ESTADIO se calcula desde los hallazgos (infección / isquemia); el grado es la profundidad.
   const [texasGrado, setTexasGrado] = useState(0);
-  const [texasEstadio, setTexasEstadio] = useState<'A' | 'B' | 'C' | 'D'>('A');
-  const [iwgdf, setIwgdf] = useState(0);
+  const [texasInfeccion, setTexasInfeccion] = useState(false);
+  const [texasIsquemia, setTexasIsquemia] = useState(false);
+  const texasEstadio: 'A' | 'B' | 'C' | 'D' = texasInfeccion && texasIsquemia ? 'D' : texasIsquemia ? 'C' : texasInfeccion ? 'B' : 'A';
+  // IWGDF: la CATEGORÍA se calcula desde los factores; la PSP se sugiere desde el monofilamento de hoy.
+  const [iwgdfF, setIwgdfF] = useState({ psp: false, eap: false, deformidad: false, ulceraPrevia: false, amputacion: false, erc: false });
+  const setFactorIwgdf = (k: keyof typeof iwgdfF, v: boolean) => setIwgdfF((prev) => ({ ...prev, [k]: v }));
+  const iwgdf = categoriaIwgdf(iwgdfF);
+  const mfHoy = escalas.find((x) => x.tipo === 'monofilamento');
+  const pspSugerida = !!mfHoy && [mfHoy.datos.izquierdo, mfHoy.datos.derecho].some((l) => Array.isArray(l) && l.some((v) => v === false));
   const [mfIzq, setMfIzq] = useState<boolean[]>(() => Array(MF_PUNTOS).fill(true));
   const [mfDer, setMfDer] = useState<boolean[]>(() => Array(MF_PUNTOS).fill(true));
+  // Termometría: temperatura por sitio (°C) en ambos pies; se compara sitio a sitio.
+  const [tempIzq, setTempIzq] = useState<string[]>(() => Array(MF_PUNTOS).fill(''));
+  const [tempDer, setTempDer] = useState<string[]>(() => Array(MF_PUNTOS).fill(''));
+  const setTemp = (lado: 'izq' | 'der', i: number, v: string) => (lado === 'izq' ? setTempIzq : setTempDer)((prev) => prev.map((x, idx) => (idx === i ? v : x)));
+  const pares = tempIzq.map((a, i) => [Number(a), Number(tempDer[i])] as const).filter(([a, b], i) => tempIzq[i] !== '' && tempDer[i] !== '' && Number.isFinite(a) && Number.isFinite(b));
+  const termoDeltaMax = pares.length ? Math.max(...pares.map(([a, b]) => Math.abs(a - b))) : null;
+  // Medición de úlceras: largo × ancho (cm) → área; se compara con la medición anterior de la misma ubicación.
+  const [ulLargo, setUlLargo] = useState('');
+  const [ulAncho, setUlAncho] = useState('');
+  const [ulProf, setUlProf] = useState('');
+  const [ulPie, setUlPie] = useState<'izquierdo' | 'derecho' | ''>('');
+  const [ulUbicacion, setUlUbicacion] = useState('');
+  const ulArea = ulLargo !== '' && ulAncho !== '' && Number.isFinite(Number(ulLargo)) && Number.isFinite(Number(ulAncho)) ? Math.round(Number(ulLargo) * Number(ulAncho) * 10) / 10 : null;
+  const ulNombre = [ulPie ? PIE_LABEL[ulPie] : null, ulUbicacion.trim() || null].filter(Boolean).join(' · ') || 'Úlcera';
+  const ulSerie = seriesUlcera.find((x) => x.nombre === ulNombre);
+  const ulAnterior = ulSerie ? [...ulSerie.puntos].reverse().find((x) => x.atencionId !== atencionId) ?? null : null;
+
   useEffect(() => { limpiar(); /* eslint-disable-line react-hooks/exhaustive-deps */ }, [atencionId]);
-  const limpiar = () => { setTipo(''); setEva(5); setWagner(0); setTexasGrado(0); setTexasEstadio('A'); setIwgdf(0); setMfIzq(Array(MF_PUNTOS).fill(true)); setMfDer(Array(MF_PUNTOS).fill(true)); };
+  const limpiar = () => {
+    setTipoRaw(''); setEva(5); setWagner(0); setTexasGrado(0); setTexasInfeccion(false); setTexasIsquemia(false);
+    setIwgdfF({ psp: false, eap: false, deformidad: false, ulceraPrevia: false, amputacion: false, erc: false });
+    setMfIzq(Array(MF_PUNTOS).fill(true)); setMfDer(Array(MF_PUNTOS).fill(true)); setTempIzq(Array(MF_PUNTOS).fill('')); setTempDer(Array(MF_PUNTOS).fill(''));
+    setUlLargo(''); setUlAncho(''); setUlProf(''); setUlPie(''); setUlUbicacion('');
+  };
+  const setTipo = (t: TipoEscala | '') => { setTipoRaw(t); if (t === 'iwgdf') setIwgdfF((prev) => ({ ...prev, psp: pspSugerida })); };
   const toggleMf = (lado: 'izq' | 'der', i: number) => {
     const set = lado === 'izq' ? setMfIzq : setMfDer;
     set((prev) => prev.map((v, idx) => (idx === i ? !v : v)));
@@ -419,15 +552,17 @@ export function useEscalas(atencion: AtencionCompleta | null, puedeRegistrar: bo
     switch (tipo) {
       case 'eva': return { valor: eva };
       case 'wagner': return { grado: wagner };
-      case 'texas': return { grado: texasGrado, estadio: texasEstadio };
-      case 'iwgdf': return { categoria: iwgdf };
+      case 'texas': return { grado: texasGrado, estadio: texasEstadio, infeccion: texasInfeccion, isquemia: texasIsquemia };
+      case 'iwgdf': return { categoria: iwgdf, ...iwgdfF };
       case 'monofilamento': return { izquierdo: mfIzq, derecho: mfDer };
+      case 'termometria': return { izquierdo: tempIzq.map((v) => (v === '' ? null : Number(v))), derecho: tempDer.map((v) => (v === '' ? null : Number(v))) };
+      case 'ulcera': return { largo: Number(ulLargo), ancho: Number(ulAncho), profundidad: ulProf === '' ? null : Number(ulProf), pie: ulPie || null, ubicacion: ulUbicacion.trim() || null };
       default: return {};
     }
   };
-  const puedeGuardar = puedeRegistrar && !!tipo && atencion?.estado !== 'cerrada';
+  const puedeGuardar = puedeRegistrar && !!tipo && atencion?.estado !== 'cerrada' && (tipo !== 'termometria' || pares.length > 0) && (tipo !== 'ulcera' || ulArea != null);
   const guardarMut = useMutation({
-    mutationFn: () => historiaClinicaApi.guardarEscala(atencionId!, { tipo: tipo as TipoEscala, datos: datos() }),
+    mutationFn: () => historiaClinicaApi.guardarEscala(atencionId!, { tipo: tipo as TipoEscala, datos: datos(), pie: tipo === 'ulcera' && ulPie ? ulPie : undefined }),
     onSuccess: () => { inval(); limpiar(); toast.success('Escala registrada'); },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -438,9 +573,14 @@ export function useEscalas(atencion: AtencionCompleta | null, puedeRegistrar: bo
   });
 
   return {
-    escalas: atencion?.escalas ?? [], cerrada: atencion?.estado === 'cerrada',
-    tipo, setTipo, eva, setEva, wagner, setWagner, texasGrado, setTexasGrado, texasEstadio, setTexasEstadio, iwgdf, setIwgdf,
-    mfIzq, mfDer, toggleMf, puedeGuardar, guardarMut, eliminarMut,
+    escalas, cerrada: atencion?.estado === 'cerrada',
+    tipo, setTipo, eva, setEva, wagner, setWagner,
+    texasGrado, setTexasGrado, texasInfeccion, setTexasInfeccion, texasIsquemia, setTexasIsquemia, texasEstadio,
+    iwgdf, iwgdfF, setFactorIwgdf, pspSugerida,
+    mfIzq, mfDer, toggleMf,
+    tempIzq, tempDer, setTemp, termoDeltaMax,
+    mfAnterior, seriesUlcera, ulLargo, setUlLargo, ulAncho, setUlAncho, ulProf, setUlProf, ulPie, setUlPie, ulUbicacion, setUlUbicacion, ulArea, ulAnterior,
+    puedeGuardar, guardarMut, eliminarMut,
   };
 }
 
@@ -575,6 +715,105 @@ export function usePodograma(atencion: AtencionCompleta | null, puedeRegistrar: 
   };
 }
 
+// ─── Bandeja del día (ronda del médico) ──────────────────────────────────────
+export function useBandejaPage() {
+  const navigate = useNavigate();
+  const invalidar = useInvalidarHistoriaClinica();
+  const [dias, setDias] = useState(45);
+  const q = useQuery({ queryKey: ['hc-bandeja', dias], queryFn: () => historiaClinicaApi.bandeja(dias), staleTime: 60_000 });
+  const cerrarMut = useMutation({
+    mutationFn: (id: string) => historiaClinicaApi.cerrarAtencion(id),
+    onSuccess: (a) => { invalidar({ pacienteId: a.pacienteId, atencionId: a.id, citaId: a.citaId }); void q.refetch(); toast.success('Atención cerrada'); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const [cerrandoTodas, setCerrandoTodas] = useState(false);
+  /** Cierre en lote (firma en lote de la ronda): una por una, sin frenar por un error puntual. */
+  const cerrarTodas = async (ids: string[]) => {
+    setCerrandoTodas(true);
+    let ok = 0;
+    for (const id of ids) {
+      try { await historiaClinicaApi.cerrarAtencion(id); ok++; } catch (e) { toast.error((e as Error).message); }
+    }
+    setCerrandoTodas(false);
+    void q.refetch();
+    toast.success(`${ok} atención(es) cerrada(s)`);
+  };
+  const abrir = (a: { paciente: { id: string }; citaId: string }) => navigate(`/historia-clinica/${a.paciente.id}?cita=${a.citaId}`);
+  const abrirPaciente = (pacienteId: string) => navigate(`/historia-clinica/${pacienteId}`);
+  return { dias, setDias, bandeja: q.data, cargando: q.isLoading, error: q.error as Error | null, cerrarMut, cerrarTodas, cerrandoTodas, abrir, abrirPaciente, refrescar: () => void q.refetch() };
+}
+
+// ─── 1.8 · Fotos clínicas por atención + 1.9 antes/después por paciente ──────
+type FotoClinica = AtencionCompleta['fotos'][number];
+type FotoPaciente = Awaited<ReturnType<typeof historiaClinicaApi.fotosDePaciente>>[number];
+const MAX_FOTO_BYTES = 15 * 1024 * 1024;
+
+/** URL (blob autenticado) de una foto clínica, cacheada por id. */
+export function useFotoUrl(fotoId: string | undefined) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['foto-clinica-url', fotoId],
+    queryFn: async () => URL.createObjectURL(await historiaClinicaApi.blobFoto(fotoId!)),
+    enabled: !!fotoId, staleTime: Infinity, gcTime: 10 * 60_000,
+  });
+  return { url: data ?? null, cargando: isLoading };
+}
+
+export function useFotosClinicas(atencion: AtencionCompleta | null, puedeRegistrar: boolean) {
+  const invalidar = useInvalidarHistoriaClinica();
+  const atencionId = atencion?.id;
+  const pacienteId = atencion?.pacienteId;
+  const inval = () => invalidar({ pacienteId, atencionId, citaId: atencion?.citaId });
+  const cerrada = atencion?.estado === 'cerrada';
+  const puedeEditar = puedeRegistrar && !cerrada;
+  const fotos = atencion?.fotos ?? [];
+
+  // Formulario de subida (un useState por campo). La foto viene de la cámara o de la galería.
+  const [pie, setPie] = useState<Pie | ''>('');
+  const [zona, setZona] = useState('');
+  const [categoria, setCategoria] = useState<FotoClinica['categoria']>('lesion');
+  const [descripcion, setDescripcion] = useState('');
+  useEffect(() => { setPie(''); setZona(''); setCategoria('lesion'); setDescripcion(''); }, [atencionId]);
+
+  const subirMut = useMutation({
+    mutationFn: (archivo: File) => historiaClinicaApi.subirFoto(atencionId!, archivo, { pie: pie || null, zona: zona || null, categoria, descripcion: descripcion || null, tomadaEn: new Date(archivo.lastModified || Date.now()).toISOString() }),
+    onSuccess: () => { inval(); setDescripcion(''); toast.success('Foto guardada'); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const subirArchivo = (f: File | null | undefined) => {
+    if (!f || !puedeEditar) return;
+    if (!/^image\/(png|jpeg|webp)$/.test(f.type)) { toast.error('Solo se aceptan fotos JPG, PNG o WEBP'); return; }
+    if (f.size > MAX_FOTO_BYTES) { toast.error('La foto supera los 15 MB'); return; }
+    subirMut.mutate(f);
+  };
+  const eliminarMut = useMutation({
+    mutationFn: (id: string) => historiaClinicaApi.eliminarFoto(id),
+    onSuccess: () => { inval(); toast.success('Foto eliminada'); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const editarMut = useMutation({
+    mutationFn: (p: { id: string; campos: { zona?: string | null; pie?: Pie | null; descripcion?: string | null } }) => historiaClinicaApi.editarFoto(p.id, p.campos),
+    onSuccess: () => inval(),
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // Antes / después: todas las fotos del paciente; se elige zona y dos fotos (por defecto primera y última).
+  const { data: todas = [] } = useQuery({ queryKey: ['fotos-paciente', pacienteId], queryFn: () => historiaClinicaApi.fotosDePaciente(pacienteId!), enabled: !!pacienteId, staleTime: 60_000 });
+  const zonas = [...new Set(todas.map((f) => (f.zona ?? '').trim()).filter(Boolean))];
+  const [zonaComparar, setZonaComparar] = useState<string>('');
+  const enZona: FotoPaciente[] = todas.filter((f) => !zonaComparar || (f.zona ?? '').trim().toLowerCase() === zonaComparar.toLowerCase());
+  const [antesId, setAntesId] = useState<string | null>(null);
+  const [despuesId, setDespuesId] = useState<string | null>(null);
+  const antes = enZona.find((f) => f.id === antesId) ?? enZona[0] ?? null;
+  const despues = enZona.find((f) => f.id === despuesId) ?? (enZona.length > 1 ? enZona[enZona.length - 1] : null);
+  const elegirZona = (z: string) => { setZonaComparar(z); setAntesId(null); setDespuesId(null); };
+
+  return {
+    fotos, cerrada, puedeEditar,
+    pie, setPie, zona, setZona, categoria, setCategoria, descripcion, setDescripcion, subirArchivo, subirMut, eliminarMut, editarMut,
+    todas, zonas, zonaComparar, elegirZona, enZona, antes, despues, setAntesId, setDespuesId,
+  };
+}
+
 /** Miniatura de una imagen del podograma: blob autenticado → object URL (cacheado por id). */
 export function useMiniaturaPodograma(imagenId: string | undefined) {
   const { data, isLoading } = useQuery({
@@ -586,3 +825,46 @@ export function useMiniaturaPodograma(imagenId: string | undefined) {
 }
 
 export type { AtencionClinica };
+
+// ─── Plantillas y autotextos (1.1 / 1.2): gestión ────────────────────────────
+export function usePlantillasAdmin() {
+  const qc = useQueryClient();
+  const { data: plantillas = [], isLoading: cargando } = usePlantillas();
+  const [editando, setEditando] = useState<string | null>(null); // id de la plantilla o 'nueva'
+  const [tipo, setTipo] = useState<TipoPlantilla>('nota');
+  const [clave, setClave] = useState('');
+  const [nombre, setNombre] = useState('');
+  const [subjetivo, setSubjetivo] = useState('');
+  const [objetivo, setObjetivo] = useState('');
+  const [apreciacion, setApreciacion] = useState('');
+  const [plan, setPlan] = useState('');
+  const [texto, setTexto] = useState('');
+  const limpiar = () => { setClave(''); setNombre(''); setSubjetivo(''); setObjetivo(''); setApreciacion(''); setPlan(''); setTexto(''); };
+  const nueva = (t: TipoPlantilla) => { limpiar(); setTipo(t); setEditando('nueva'); };
+  const cargar = (p: PlantillaClinica) => {
+    limpiar(); setTipo(p.tipo); setEditando(p.id); setClave(p.clave ?? ''); setNombre(p.nombre);
+    if (p.tipo === 'nota') { setSubjetivo(p.contenido.subjetivo ?? ''); setObjetivo(p.contenido.objetivo ?? ''); setApreciacion(p.contenido.apreciacion ?? ''); setPlan(p.contenido.plan ?? ''); }
+    else setTexto(p.contenido.texto ?? '');
+  };
+  const cancelar = () => { limpiar(); setEditando(null); };
+  const contenido = (): Record<string, string> => (tipo === 'nota' ? { subjetivo, objetivo, apreciacion, plan } : { texto });
+  const puedeGuardar = nombre.trim().length >= 2 && (tipo === 'nota' ? [subjetivo, objetivo, apreciacion, plan].some((x) => x.trim()) : !!clave.trim() && !!texto.trim());
+  const invalidar = () => qc.invalidateQueries({ queryKey: ['plantillas'] });
+  const guardarMut = useMutation({
+    mutationFn: () => {
+      const data = { tipo, clave: clave.trim() || null, nombre: nombre.trim(), contenido: contenido() };
+      return editando && editando !== 'nueva' ? historiaClinicaApi.editarPlantilla(editando, data) : historiaClinicaApi.crearPlantilla(data);
+    },
+    onSuccess: () => { invalidar(); toast.success(editando === 'nueva' ? 'Plantilla creada' : 'Plantilla actualizada'); cancelar(); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const eliminarMut = useMutation({
+    mutationFn: (id: string) => historiaClinicaApi.eliminarPlantilla(id),
+    onSuccess: (_r, id) => { invalidar(); toast.success('Plantilla eliminada'); if (editando === id) cancelar(); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  return {
+    plantillas, cargando, editando, tipo, clave, setClave, nombre, setNombre, subjetivo, setSubjetivo, objetivo, setObjetivo, apreciacion, setApreciacion, plan, setPlan, texto, setTexto,
+    nueva, cargar, cancelar, puedeGuardar, guardarMut, eliminarMut,
+  };
+}

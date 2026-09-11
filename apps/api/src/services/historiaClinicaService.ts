@@ -201,6 +201,11 @@ export async function getAtencionCompleta(id: string) {
         where: { deletedAt: null }, orderBy: { creadoEn: 'asc' },
         select: { id: true, vista: true, nombreArchivo: true, mime: true, tamano: true, descripcion: true, anotaciones: true, subidoEtiqueta: true, creadoEn: true },
       },
+      // Fotos clínicas (1.8): sin `ruta` (archivo solo por endpoint autenticado).
+      fotos: {
+        where: { deletedAt: null }, orderBy: { tomadaEn: 'asc' },
+        select: { id: true, atencionId: true, pie: true, zona: true, categoria: true, descripcion: true, mime: true, tamano: true, tomadaEn: true, subidoEtiqueta: true, creadoEn: true },
+      },
       historiaClinica: {
         select: {
           id: true, numero: true, pacienteId: true,
@@ -249,7 +254,7 @@ export async function resumenAtencionPorCita(citaId: string) {
 }
 
 /** Auditoría de LECTURA (awaited, nunca lanza): quién abrió qué historia y desde dónde. */
-export async function auditarLecturaHC(p: Ctx & { pacienteId: string; origen: 'ficha' | 'atencion' | 'receta' | 'pdf'; atencionId?: string; recetaId?: string; sedeId?: string }) {
+export async function auditarLecturaHC(p: Ctx & { pacienteId: string; origen: 'ficha' | 'ficha_previa' | 'atencion' | 'receta' | 'pdf'; atencionId?: string; recetaId?: string; sedeId?: string }) {
   await registrarAudit({
     ...ctxAudit(p), accion: p.origen === 'receta' || p.origen === 'pdf' ? 'ver_receta' : 'ver_hc',
     entidad: 'historia_clinica', entidadId: p.pacienteId, sedeId: p.sedeId,

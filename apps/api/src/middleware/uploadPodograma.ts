@@ -102,3 +102,36 @@ export function validarImagenPodogramaReal(req: Request, _res: Response, next: N
 export function rutaRelativaUpload(absPath: string): string {
   return path.relative(UPLOADS_ROOT, absPath).split(path.sep).join('/');
 }
+
+// ─── Fotos clínicas (1.8): mismo mecanismo, otro subdirectorio, campo "foto", 15 MB ──────────
+// (las fotos de celular pesan más que una captura de la Baro). Tampoco las sirve /uploads.
+const storageFotos = multer.diskStorage({
+  destination: (req, _file, cb) => {
+    const atencionId = String(req.params.id ?? '');
+    if (!UUID_RE.test(atencionId)) { cb(new AppError('Atención inválida', 400), ''); return; }
+    const dir = path.join(UPLOADS_ROOT, 'fotos-clinicas', atencionId.toLowerCase());
+    fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (_req, file, cb) => cb(null, `foto_${Date.now()}_${Math.random().toString(36).slice(2)}${EXT_POR_MIME[file.mimetype] ?? '.bin'}`),
+});
+const uploaderFotos = multer({
+  storage: storageFotos,
+  limits: { fileSize: 15 * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    if (EXT_POR_MIME[file.mimetype]) cb(null, true);
+    else cb(new AppError('Solo se permiten fotos JPG, PNG o WEBP', 400, 'ARCHIVO_TIPO_INVALIDO'));
+  },
+});
+export function subirFotoClinica(req: Request, res: Response, next: NextFunction): void {
+  uploaderFotos.single('foto')(req, res, (err: unknown) => {
+    if (!err) { next(); return; }
+    if (err instanceof multer.MulterError) {
+      next(new AppError(err.code === 'LIMIT_FILE_SIZE' ? 'La foto supera los 15 MB' : `No se pudo subir la foto (${err.code})`, 400, 'ARCHIVO_INVALIDO'));
+      return;
+    }
+    next(err);
+  });
+}
+/** Misma validación de contenido real (magic bytes) que el podograma. */
+export const validarFotoClinicaReal = validarImagenPodogramaReal;

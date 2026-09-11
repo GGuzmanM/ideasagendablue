@@ -1,12 +1,14 @@
-import { Router, Request } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db';
-import { requireAuth, requirePermiso, assertSede, AuthPayload } from '../middleware/auth';
+import { requireAuth, requirePermiso, assertSede, puedeTodasLasSedes, AuthPayload } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import * as hc from '../services/historiaClinicaService';
 import * as b3 from '../services/bloque3Service';
+import * as fp from '../services/fichaPreviaService';
+import * as pl from '../services/plantillasService';
 import fs from 'fs';
-import { subirImagenPodograma, validarImagenPodogramaReal } from '../middleware/uploadPodograma';
+import { subirImagenPodograma, validarImagenPodogramaReal, subirFotoClinica, validarFotoClinicaReal } from '../middleware/uploadPodograma';
 
 // ─── Historia clínica (Fase 1) ────────────────────────────────────────────────
 // Todas las rutas exigen usuario + permiso (`requirePermiso`, nunca `requireAcceso`: las API keys
@@ -251,7 +253,7 @@ const procedimientoSchema = z.object({
 });
 const procedimientoEditarSchema = procedimientoSchema.partial();
 const escalaSchema = z.object({
-  tipo: z.enum(['eva', 'wagner', 'texas', 'iwgdf', 'monofilamento']),
+  tipo: z.enum(['eva', 'wagner', 'texas', 'iwgdf', 'monofilamento', 'termometria', 'ulcera']),
   datos: z.record(z.any()),
   pie: pieOpc,
 });
@@ -281,6 +283,65 @@ async function sedeDeMarca(id: string) {
   if (!r) throw new AppError('Marca no encontrada', 404);
   return r.atencion.sedeId;
 }
+
+// Bandeja del día (ronda del médico): atenciones abiertas con lo que les falta, para revisar y
+// cerrar en lote, + pacientes con sesiones pendientes que no vuelven hace N días (abandono).
+// Alcance: las sedes del usuario (todas para admin/coordinadora); un médico ve solo las suyas.
+router.get('/bandeja', ...verHc, async (req, res) => {
+  const u = user(req);
+  const dias = Math.min(365, Math.max(7, Number(req.query.dias) || 45));
+  res.json(await b3.bandejaDelDia({
+    sedeIds: puedeTodasLasSedes(u) ? null : u.sedes,
+    profesionalId: u.rol === 'medico' ? u.profesionalId ?? null : null,
+    diasSinVolver: dias,
+  }));
+});
+
+// Ficha previa "de 10 segundos" (2.8): banderas de riesgo + lo último del paciente, para el modal de
+// la cita y la ficha. Es contenido clínico → se audita como lectura (origen ficha_previa).
+router.get('/paciente/:pacienteId/ficha-previa', ...verHc, async (req, res) => {
+  const { pacienteId } = req.params;
+  await hc.assertAccesoPaciente(user(req), pacienteId);
+  const ficha = await fp.fichaPrevia(pacienteId);
+  if (ficha.tieneHistoria) await hc.auditarLecturaHC({ ...ctx(req), pacienteId, origen: 'ficha_previa' });
+  res.json(ficha);
+});
+
+// Escalas del paciente a lo largo de sus atenciones (comparar visitas, curva de úlceras)
+router.get('/paciente/:pacienteId/escalas', ...verHc, async (req, res) => {
+  await hc.assertAccesoPaciente(user(req), req.params.pacienteId);
+  const tipo = typeof req.query.tipo === 'string' ? req.query.tipo : undefined;
+  res.json(await fp.escalasDePaciente(req.params.pacienteId, tipo));
+});
+
+// Plantillas de nota por diagnóstico (1.1) y autotextos (1.2): las lee cualquiera con hc.ver;
+// las gestionan administración, coordinación y médicos.
+const plantillaSchema = z.object({
+  tipo: z.enum(['nota', 'autotexto']),
+  clave: z.string().trim().max(40).nullable().optional(),
+  nombre: z.string().trim().min(2).max(120),
+  contenido: z.record(z.any()),
+  activa: z.boolean().optional(),
+});
+const ROLES_PLANTILLAS = ['admin', 'coordinadora_sedes', 'medico'];
+const gestionaPlantillas = (req: Request, _res: Response, next: NextFunction) => {
+  if (!ROLES_PLANTILLAS.includes(user(req).rol)) throw new AppError('Solo administración, coordinación o médicos gestionan plantillas', 403, 'SIN_PERMISO');
+  next();
+};
+router.get('/plantillas', ...verHc, async (req, res) => {
+  res.json(await pl.listarPlantillas(typeof req.query.tipo === 'string' ? req.query.tipo : undefined));
+});
+router.post('/plantillas', ...registrar, gestionaPlantillas, async (req, res) => {
+  const data = plantillaSchema.parse(req.body);
+  res.status(201).json(await pl.crearPlantilla({ ...ctx(req), ...data }));
+});
+router.put('/plantillas/:id', ...registrar, gestionaPlantillas, async (req, res) => {
+  const data = plantillaSchema.partial().parse(req.body);
+  res.json(await pl.editarPlantilla({ ...ctx(req), id: req.params.id, ...data }));
+});
+router.delete('/plantillas/:id', ...registrar, gestionaPlantillas, async (req, res) => {
+  res.json(await pl.eliminarPlantilla({ ...ctx(req), id: req.params.id }));
+});
 
 // Membresías/paquetes de láser vivos del paciente (para ligar un procedimiento láser, 1.12)
 router.get('/paciente/:pacienteId/paquetes-laser', ...verHc, async (req, res) => {
@@ -395,6 +456,67 @@ router.patch('/podograma/imagenes/:id/anotaciones', ...registrar, async (req, re
 router.delete('/podograma/imagenes/:id', ...registrar, async (req, res) => {
   assertSede(req, await sedeDeImagenPodograma(req.params.id));
   res.json(await b3.eliminarImagenPodograma({ ...ctx(req), imagenId: req.params.id }));
+});
+
+// ─── Fotos clínicas (1.8) + antes/después por paciente (1.9) ─────────────────
+// Subida multipart (campo "foto"); el archivo se entrega SOLO por GET autenticado con hc.ver + sede.
+const fotoSchema = z.object({
+  pie: pieOpc,
+  zona: texto(120),
+  categoria: z.enum(['lesion', 'calzado', 'otro']).optional(),
+  descripcion: texto(300),
+  tomadaEn: z.string().datetime().optional(),
+});
+async function sedeDeFoto(id: string) {
+  const r = await prisma.fotoClinica.findUnique({ where: { id }, select: { atencion: { select: { sedeId: true } } } });
+  if (!r) throw new AppError('Foto no encontrada', 404);
+  return r.atencion.sedeId;
+}
+
+router.post(
+  '/atenciones/:id/fotos',
+  ...registrar,
+  async (req, _res, next) => {
+    try { const { sedeId } = await sedeDeAtencion(req.params.id); assertSede(req, sedeId); next(); } catch (e) { next(e); }
+  },
+  subirFotoClinica,
+  validarFotoClinicaReal,
+  async (req, res) => {
+    const archivo = req.file;
+    if (!archivo) throw new AppError('Adjunta la foto en el campo "foto"', 400, 'ARCHIVO_REQUERIDO');
+    try {
+      const data = fotoSchema.parse(req.body ?? {});
+      res.status(201).json(await b3.registrarFotoClinica({ ...ctx(req), atencionId: req.params.id, archivo, ...data }));
+    } catch (e) {
+      fs.unlink(archivo.path, () => { /* sin huérfanos si falló el registro en BD */ });
+      throw e;
+    }
+  },
+);
+
+router.get('/fotos/:id', ...verHc, async (req, res) => {
+  const f = await b3.archivoFotoClinica(req.params.id);
+  assertSede(req, f.atencion.sedeId);
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.type(f.mime);
+  res.sendFile(f.rutaAbsoluta);
+});
+
+router.patch('/fotos/:id', ...registrar, async (req, res) => {
+  const data = fotoSchema.partial().parse(req.body);
+  assertSede(req, await sedeDeFoto(req.params.id));
+  res.json(await b3.editarFotoClinica({ ...ctx(req), fotoId: req.params.id, ...data }));
+});
+
+router.delete('/fotos/:id', ...registrar, async (req, res) => {
+  assertSede(req, await sedeDeFoto(req.params.id));
+  res.json(await b3.eliminarFotoClinica({ ...ctx(req), fotoId: req.params.id }));
+});
+
+// Todas las fotos del paciente (para el antes/después), opcionalmente por zona
+router.get('/paciente/:pacienteId/fotos', ...verHc, async (req, res) => {
+  await hc.assertAccesoPaciente(user(req), req.params.pacienteId);
+  res.json(await b3.fotosDePaciente(req.params.pacienteId, (req.query.zona as string | undefined) || null));
 });
 
 export default router;

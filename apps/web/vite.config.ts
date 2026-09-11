@@ -1,9 +1,16 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+import basicSsl from '@vitejs/plugin-basic-ssl';
 import path from 'path';
 
-export default defineConfig({
-  plugins: [react()],
+// HTTPS con certificado autofirmado (VITE_HTTPS=true en apps/web/.env). Necesario para que el
+// navegador habilite el MICRÓFONO (dictado por voz de la historia clínica) cuando se entra por la
+// IP de la red (http://192.168.x.x:5180 no es "contexto seguro"; solo localhost o https lo son).
+// Aplica al dev server y a `vite preview`. Cada dispositivo acepta el certificado una sola vez.
+const httpsHabilitado = (mode: string) => loadEnv(mode, __dirname, '').VITE_HTTPS === 'true';
+
+export default defineConfig(({ mode }) => ({
+  plugins: [react(), ...(httpsHabilitado(mode) ? [basicSsl()] : [])],
   resolve: {
     alias: {
       '@limablue/shared': path.resolve(__dirname, '../../packages/shared/src/index.ts'),
@@ -39,4 +46,4 @@ export default defineConfig({
       '/socket.io': { target: 'http://localhost:3002', ws: true, xfwd: true },
     },
   },
-});
+}));

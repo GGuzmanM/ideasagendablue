@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db';
-import { requireAuth, requirePermiso, alcanceAgendaMedico } from '../middleware/auth';
+import { requireAuth, requirePermiso } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { turnosDelDia } from '../services/disponibilidad';
 import { fechaDb } from '../utils/fechaLima';
@@ -197,21 +197,6 @@ router.get('/', requireAuth, async (req, res) => {
     ordenMap.get(row.id) ?? (row.nombres === 'Adicional' ? 500 : 0);
   lista.sort((a, b) => peso(a) - peso(b));
 
-  // Médico con login: SOLO su columna, más las columnas de máquina (baro) donde ese día tiene
-  // citas como médico solicitado. Nunca ve las columnas de las demás profesionales.
-  const propio = alcanceAgendaMedico(req.user);
-  if (propio) {
-    const permitidas = new Set<string>([propio]);
-    if (sedeId) {
-      const baro = await prisma.cita.findMany({
-        where: { sedeId, deletedAt: null, solicitadoProfesionalId: propio, fecha: new Date((fecha ?? new Date().toISOString().slice(0, 10)) + 'T12:00:00') },
-        select: { profesionalId: true },
-      });
-      for (const c of baro) if (c.profesionalId) permitidas.add(c.profesionalId);
-    }
-    lista = lista.filter((row) => permitidas.has(row.id));
-  }
-
   res.json(lista);
 });
 
@@ -298,10 +283,7 @@ router.get('/seleccionables', requireAuth, async (req, res) => {
     bloqueosPorProf.set(b.profesionalId, arr);
   }
 
-  // Médico con login: solo su propia ficha (los demás profesionales no le aparecen).
-  const propioSel = alcanceAgendaMedico(req.user);
-  const visibles = [...map.values()].filter((p) => !propioSel || p.id === propioSel);
-  res.json(visibles.map((p) => ({ ...p, bloqueos: bloqueosPorProf.get(p.id) ?? [] })));
+  res.json([...map.values()].map((p) => ({ ...p, bloqueos: bloqueosPorProf.get(p.id) ?? [] })));
 });
 
 const profesionalSchema = z.object({

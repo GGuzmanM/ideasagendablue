@@ -5,14 +5,22 @@
 import { useRef, useState } from 'react';
 import { Skeleton } from '../components/ui/Skeleton';
 import { PodogramaEditor } from '../components/historiaClinica/PodogramaEditor';
+import { TextareaDictado } from '../components/historiaClinica/BotonDictado';
+import { BarraDictadoConsulta } from '../components/historiaClinica/DictadoConsulta';
+import type { SeccionDictado } from '../utils/dictadoEstructurado';
 import { AlergiasBanner } from '../components/historiaClinica/AlergiasBanner';
 import { BuscadorCie10 } from '../components/historiaClinica/Buscadores';
 import { RegistrarAtencionModal } from '../components/historiaClinica/RegistrarAtencionModal';
 import { EmitirRecetaModal } from '../components/historiaClinica/EmitirRecetaModal';
 import { DialogoMotivo } from '../components/historiaClinica/DialogoMotivo';
 import { BotonHistorialGenexis } from '../components/pacientes/HistorialGenexis';
-import { useHistoriaClinicaPage, useEvolucionForm, useAntecedentesAlergias, useRecetasAtencion, useProcedimientos, useEscalas, usePodograma, useMiniaturaPodograma, MF_ETIQUETAS, type TabHc } from '../services/historiaClinicaService';
-import { TIPO_ANTECEDENTE_LABEL, TIPO_NOTA_LABEL, TIPO_PROCEDIMIENTO_LABEL, TIPO_ESCALA_LABEL, TIPO_LESION_LABEL, PIE_LABEL, VISTAS_PODOGRAMA, VISTA_PODOGRAMA_LABEL, edadDe, nombreProfesional, type AtencionClinica, type AtencionCompleta, type TipoAntecedente, type TipoNota, type SeveridadAlergia, type TipoProcedimiento, type TipoEscala, type TipoLesion, type MarcaPodograma, type ImagenPodograma, type VistaPodograma } from '../api/historiaClinica';
+import { ComparadorFotos } from '../components/historiaClinica/ComparadorFotos';
+import { SiluetaPie, MonofilamentoPie } from '../components/historiaClinica/SiluetaPie';
+import { PlantillasDialog } from '../components/historiaClinica/PlantillasDialog';
+import { ZONAS_PIE } from '../utils/zonasPie';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { useHistoriaClinicaPage, useAntecedentesAlergias, useRecetasAtencion, useEscalas, usePodograma, useMiniaturaPodograma, useFotosClinicas, useFotoUrl, MF_ETIQUETAS, IWGDF_CONTROL, type TabHc } from '../services/historiaClinicaService';
+import { TIPO_ANTECEDENTE_LABEL, TIPO_NOTA_LABEL, TIPO_PROCEDIMIENTO_LABEL, TIPO_ESCALA_LABEL, TIPO_LESION_LABEL, PIE_LABEL, VISTAS_PODOGRAMA, VISTA_PODOGRAMA_LABEL, CATEGORIA_FOTO_LABEL, edadDe, nombreProfesional, type AtencionClinica, type AtencionCompleta, type TipoAntecedente, type TipoNota, type SeveridadAlergia, type TipoProcedimiento, type TipoEscala, type TipoLesion, type MarcaPodograma, type ImagenPodograma, type VistaPodograma, type CategoriaFoto, type FotoClinica, type Pie } from '../api/historiaClinica';
 import { TIPO_DOC_LABEL } from '../api/recetas';
 
 // text-base en pantallas chicas: con menos de 16px iOS hace zoom al enfocar un campo (molesto en tablet).
@@ -28,6 +36,7 @@ const TABS: { id: TabHc; label: string; icon: string; pronto?: boolean }[] = [
   { id: 'procedimientos', label: 'Procedimientos', icon: 'medical_services' },
   { id: 'escalas', label: 'Escalas', icon: 'monitor_heart' },
   { id: 'podograma', label: 'Podograma', icon: 'footprint' },
+  { id: 'fotos', label: 'Fotos', icon: 'photo_camera' },
   { id: 'consentimientos', label: 'Consentimientos', icon: 'contract', pronto: true },
 ];
 
@@ -156,7 +165,7 @@ export function HistoriaClinicaPage() {
           </div>
           <div className="p-3 sm:p-4 lg:p-6 max-w-[1100px]">
             {h.tab === 'antecedentes' && <PanelAntecedentes h={h} />}
-            {(h.tab === 'evolucion' || h.tab === 'receta' || h.tab === 'procedimientos' || h.tab === 'escalas' || h.tab === 'podograma') && (
+            {(h.tab === 'evolucion' || h.tab === 'receta' || h.tab === 'procedimientos' || h.tab === 'escalas' || h.tab === 'podograma' || h.tab === 'fotos') && (
               !h.atencionSel ? (
                 <div className="text-center py-20 text-on-surface-variant">
                   <span className="material-symbols-outlined text-5xl mb-2">clinical_notes</span>
@@ -170,6 +179,7 @@ export function HistoriaClinicaPage() {
                   {h.tab === 'procedimientos' && <PanelProcedimientos h={h} a={h.atencion} />}
                   {h.tab === 'escalas' && <PanelEscalas h={h} a={h.atencion} />}
                   {h.tab === 'podograma' && <PanelPodograma h={h} a={h.atencion} />}
+                  {h.tab === 'fotos' && <PanelFotos h={h} a={h.atencion} />}
                 </>
               )
             )}
@@ -185,7 +195,22 @@ export function HistoriaClinicaPage() {
 
 type H = ReturnType<typeof useHistoriaClinicaPage>;
 
+/** Cierre inteligente: qué le falta a la atención antes de cerrarla. Avisa, no bloquea. */
+function faltantesParaCerrar(a: AtencionCompleta): string[] {
+  const f: string[] = [];
+  if (!a.diagnosticos.length) f.push('Ningún diagnóstico registrado');
+  else if (!a.diagnosticos.some((d) => d.principal)) f.push('Ningún diagnóstico marcado como principal');
+  if (!a.notas.length) f.push('Sin nota de evolución');
+  if (!a.procedimientos.length) f.push('Sin procedimiento registrado (si hubo tratamiento)');
+  if (!a.marcasPodograma.length && !a.imagenesPodograma.length) f.push('Podograma vacío (sin marcas ni imágenes de la Baro)');
+  if (!a.recetas.length) f.push('Sin receta ni indicaciones para el paciente');
+  return f;
+}
+
 function CabeceraAtencion({ h, a }: { h: H; a: AtencionCompleta }) {
+  const [confirmarCierre, setConfirmarCierre] = useState(false);
+  const faltantes = faltantesParaCerrar(a);
+  const cerrar = () => { if (faltantes.length) setConfirmarCierre(true); else h.cerrarMut.mutate(); };
   return (
     <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5 mb-5 flex flex-wrap items-start justify-between gap-4">
       <div className="min-w-0">
@@ -199,17 +224,48 @@ function CabeceraAtencion({ h, a }: { h: H; a: AtencionCompleta }) {
       </div>
       {h.puedeRegistrar && (
         a.estado === 'abierta'
-          ? <button onClick={() => h.cerrarMut.mutate()} disabled={h.cerrarMut.isPending} className="px-4 py-2 border border-outline-variant rounded-xl text-sm font-semibold text-on-surface hover:bg-surface-container-high flex items-center gap-1.5"><span className="material-symbols-outlined text-base">lock</span>Cerrar atención</button>
+          ? (
+            <div className="flex flex-col items-end gap-1">
+              <button onClick={cerrar} disabled={h.cerrarMut.isPending} className="px-4 py-2 border border-outline-variant rounded-xl text-sm font-semibold text-on-surface hover:bg-surface-container-high flex items-center gap-1.5"><span className="material-symbols-outlined text-base">lock</span>Cerrar atención</button>
+              {faltantes.length > 0
+                ? <span className="text-[11px] text-amber-700 flex items-center gap-1"><span className="material-symbols-outlined text-sm">warning</span>{faltantes.length} pendiente{faltantes.length === 1 ? '' : 's'} antes de cerrar</span>
+                : <span className="text-[11px] text-emerald-700 flex items-center gap-1"><span className="material-symbols-outlined text-sm">task_alt</span>Historia completa</span>}
+            </div>
+          )
           : h.puedeAnular && <button onClick={() => h.reabrirMut.mutate()} disabled={h.reabrirMut.isPending} className="px-4 py-2 border border-outline-variant rounded-xl text-sm font-semibold text-on-surface hover:bg-surface-container-high flex items-center gap-1.5"><span className="material-symbols-outlined text-base">lock_open</span>Reabrir</button>
+      )}
+
+      {/* Dictado de toda la consulta por palabras clave (visible en todas las pestañas) */}
+      {h.puedeRegistrar && a.estado === 'abierta' && <BarraDictadoConsulta consulta={h.consulta} tab={h.tab} irA={h.setTab} />}
+
+      {/* Cierre inteligente: lista lo que falta y deja decidir (aviso, no bloqueo) */}
+      {confirmarCierre && (
+        <div className="fixed inset-0 z-[120] bg-black/40 flex items-center justify-center p-4" onClick={() => setConfirmarCierre(false)}>
+          <div className="bg-surface-container-lowest rounded-2xl shadow-2xl w-full max-w-md p-6" onClick={(ev) => ev.stopPropagation()}>
+            <h3 className="font-headline-sm text-headline-sm font-bold text-on-surface flex items-center gap-2"><span className="material-symbols-outlined text-amber-600">warning</span>Antes de cerrar, falta:</h3>
+            <ul className="mt-3 space-y-1.5">
+              {faltantes.map((f) => <li key={f} className="text-sm text-on-surface flex items-start gap-2"><span className="material-symbols-outlined text-base text-amber-600">radio_button_unchecked</span>{f}</li>)}
+            </ul>
+            <p className="text-xs text-on-surface-variant mt-3">Puedes cerrar igual; queda registrado que la atención se cerró con estos pendientes.</p>
+            <div className="flex justify-end gap-2 mt-5">
+              <button onClick={() => setConfirmarCierre(false)} className="min-h-[44px] lg:min-h-0 px-4 py-2 bg-primary text-on-primary rounded-xl text-sm font-bold">Volver a completar</button>
+              <button onClick={() => { setConfirmarCierre(false); h.cerrarMut.mutate(); }} disabled={h.cerrarMut.isPending} className="min-h-[44px] lg:min-h-0 px-4 py-2 border border-outline-variant rounded-xl text-sm font-semibold text-on-surface hover:bg-surface-container-high">Cerrar de todos modos</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
 }
 
 function PanelEvolucion({ h, a }: { h: H; a: AtencionCompleta }) {
-  const e = useEvolucionForm(a, h.puedeRegistrar);
+  const e = h.evolucion; // vive en la página: el borrador sobrevive al cambio de pestaña
+  const dictado = h.dictado; // dictado por voz en los campos de la nota (1.6)
+  const c = h.consulta; // dictado de toda la consulta: resalta el campo que está recibiendo texto
+  const escribeEn = (s: SeccionDictado | SeccionDictado[]) => c.activo && (Array.isArray(s) ? s.includes(c.seccion) : c.seccion === s);
   const [confirmarDx, setConfirmarDx] = useState<string | null>(null);
   const [confirmarNota, setConfirmarNota] = useState<string | null>(null);
+  const [plantillasAbierto, setPlantillasAbierto] = useState(false);
   return (
     <div className="space-y-6">
       {/* Diagnósticos */}
@@ -240,7 +296,17 @@ function PanelEvolucion({ h, a }: { h: H; a: AtencionCompleta }) {
               <label className={LBL}>Agregar diagnóstico</label>
               {e.dxSel ? (
                 <div className="flex items-center gap-2 rounded-lg bg-primary/5 border border-primary/30 px-3 py-2 text-sm"><b className="text-primary">{e.dxSel.codigo}</b><span className="truncate flex-1">{e.dxSel.descripcion}</span><button onClick={() => e.setDxSel(null)} className="material-symbols-outlined text-base">close</button></div>
-              ) : <BuscadorCie10 onSeleccionar={e.setDxSel} />}
+              ) : (
+                <BuscadorCie10 consulta={h.dxDictado} onSeleccionar={(cie) => {
+                  const d = h.dxDictado;
+                  h.limpiarDxDictado();
+                  // Dictado en curso ("diagnóstico definitivo onicomicosis" → tocar el resultado): un solo toque lo agrega.
+                  if (d && c.activo) { e.agregarDxMut.mutate({ cie10Codigo: cie.codigo, tipo: d.tipo ?? e.dxTipo, principal: d.principal ?? e.dxPrincipal, observacion: null }); return; }
+                  e.setDxSel(cie);
+                  if (d?.tipo) e.setDxTipo(d.tipo);
+                  if (d?.principal !== undefined) e.setDxPrincipal(d.principal);
+                }} />
+              )}
             </div>
             <div><label className={LBL}>Tipo</label><select value={e.dxTipo} onChange={(ev) => e.setDxTipo(ev.target.value as 'presuntivo' | 'definitivo')} className={INPUT}><option value="presuntivo">Presuntivo</option><option value="definitivo">Definitivo</option></select></div>
             <label className="flex items-center gap-2 text-sm pb-2.5"><input type="checkbox" checked={e.dxPrincipal} onChange={(ev) => e.setDxPrincipal(ev.target.checked)} />Principal</label>
@@ -278,6 +344,18 @@ function PanelEvolucion({ h, a }: { h: H; a: AtencionCompleta }) {
         {h.puedeRegistrar && (
           <div className="space-y-3">
             {e.cerrada && !e.editando && <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">Atención cerrada: solo se admiten <b>observaciones</b> tardías.</p>}
+            {(e.plantillas.length > 0 || h.gestionaPlantillas) && (
+              <div className="flex items-end gap-2 flex-wrap">
+                <div className="flex-1 min-w-[220px] max-w-md"><label className={LBL}>Plantilla por diagnóstico</label>
+                  <select value="" onChange={(ev) => { if (ev.target.value) e.aplicarPlantilla(ev.target.value); }} disabled={e.plantillas.length === 0} className={INPUT}>
+                    <option value="">{e.plantillas.length ? 'Aplicar plantilla… (rellena solo los campos vacíos)' : 'Sin plantillas todavía'}</option>
+                    {e.plantillasSugeridas.length > 0 && <optgroup label="Según los diagnósticos de hoy">{e.plantillasSugeridas.map((pl) => <option key={pl.id} value={pl.id}>{pl.clave ? `${pl.clave} · ` : ''}{pl.nombre}</option>)}</optgroup>}
+                    <optgroup label="Todas">{e.plantillas.map((pl) => <option key={pl.id} value={pl.id}>{pl.clave ? `${pl.clave} · ` : ''}{pl.nombre}</option>)}</optgroup>
+                  </select>
+                </div>
+                {h.gestionaPlantillas && <button onClick={() => setPlantillasAbierto(true)} className="min-h-[44px] lg:min-h-0 px-3 py-2 border border-outline-variant rounded-xl text-xs font-semibold text-on-surface hover:bg-surface-container-high flex items-center gap-1"><span className="material-symbols-outlined text-base">library_books</span>Plantillas y autotextos</button>}
+              </div>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div><label className={LBL}>Tipo de nota</label>
                 <select value={e.tipo} onChange={(ev) => e.setTipo(ev.target.value as TipoNota)} className={INPUT}>
@@ -291,14 +369,17 @@ function PanelEvolucion({ h, a }: { h: H; a: AtencionCompleta }) {
               </div>
             </div>
             {e.tipo === 'observacion' ? (
-              <div><label className={LBL}>Observación</label><textarea value={e.texto} onChange={(ev) => e.setTexto(ev.target.value)} rows={3} maxLength={5000} className={INPUT} /></div>
+              <TextareaDictado label="Observación" campo="texto" valor={e.texto} setValor={e.setTexto} dictado={dictado} rows={3} resaltar={escribeEn('observacion')} labelClass={LBL} inputClass={INPUT} />
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div><label className={LBL}>Subjetivo</label><textarea value={e.subjetivo} onChange={(ev) => e.setSubjetivo(ev.target.value)} rows={3} maxLength={5000} placeholder="Lo que refiere el paciente" className={INPUT} /></div>
-                <div><label className={LBL}>Objetivo</label><textarea value={e.objetivo} onChange={(ev) => e.setObjetivo(ev.target.value)} rows={3} maxLength={5000} placeholder="Examen físico, hallazgos" className={INPUT} /></div>
-                <div><label className={LBL}>Apreciación</label><textarea value={e.apreciacion} onChange={(ev) => e.setApreciacion(ev.target.value)} rows={3} maxLength={5000} placeholder="Análisis / impresión clínica" className={INPUT} /></div>
-                <div><label className={LBL}>Plan</label><textarea value={e.plan} onChange={(ev) => e.setPlan(ev.target.value)} rows={3} maxLength={5000} placeholder="Tratamiento, indicaciones, control" className={INPUT} /></div>
-              </div>
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <TextareaDictado label="Subjetivo" campo="subjetivo" valor={e.subjetivo} setValor={e.setSubjetivo} dictado={dictado} placeholder="Lo que refiere el paciente" resaltar={escribeEn('subjetivo')} labelClass={LBL} inputClass={INPUT} />
+                  <TextareaDictado label="Objetivo" campo="objetivo" valor={e.objetivo} setValor={e.setObjetivo} dictado={dictado} placeholder="Examen físico, hallazgos" resaltar={escribeEn('objetivo')} labelClass={LBL} inputClass={INPUT} />
+                  <TextareaDictado label="Apreciación" campo="apreciacion" valor={e.apreciacion} setValor={e.setApreciacion} dictado={dictado} placeholder="Análisis / impresión clínica" resaltar={escribeEn('apreciacion')} labelClass={LBL} inputClass={INPUT} />
+                  <TextareaDictado label="Plan" campo="plan" valor={e.plan} setValor={e.setPlan} dictado={dictado} placeholder="Tratamiento, indicaciones, control" resaltar={escribeEn(['plan', 'indicaciones'])} labelClass={LBL} inputClass={INPUT} />
+                </div>
+                <TextareaDictado label="Observaciones" campo="texto" valor={e.texto} setValor={e.setTexto} dictado={dictado} rows={2} placeholder="Notas adicionales (opcional)" resaltar={escribeEn('observacion')} labelClass={LBL} inputClass={INPUT} />
+              </>
             )}
             <div className="flex gap-2 justify-end">
               {e.editando && <button onClick={e.limpiarNota} className="px-4 py-2 border border-outline-variant rounded-xl text-sm font-semibold hover:bg-surface-container-high">Cancelar edición</button>}
@@ -309,6 +390,7 @@ function PanelEvolucion({ h, a }: { h: H; a: AtencionCompleta }) {
           </div>
         )}
       </section>
+      {plantillasAbierto && <PlantillasDialog onClose={() => setPlantillasAbierto(false)} />}
       {confirmarDx && <DialogoMotivo titulo="Eliminar diagnóstico" descripcion="Se quita de la atención (queda registro interno)." confirmar="Eliminar" pending={e.eliminarDxMut.isPending} onConfirmar={() => { e.eliminarDxMut.mutate(confirmarDx); setConfirmarDx(null); }} onClose={() => setConfirmarDx(null)} />}
       {confirmarNota && <DialogoMotivo titulo="Eliminar nota" descripcion="La nota deja de verse en la historia (queda en el historial interno)." confirmar="Eliminar" pending={e.eliminarNotaMut.isPending} onConfirmar={() => { e.eliminarNotaMut.mutate(confirmarNota); setConfirmarNota(null); }} onClose={() => setConfirmarNota(null)} />}
     </div>
@@ -405,7 +487,8 @@ function PanelAntecedentes({ h }: { h: H }) {
 
 // ─── Bloque 3 · Procedimientos ───────────────────────────────────────────────
 function PanelProcedimientos({ h, a }: { h: H; a: AtencionCompleta }) {
-  const p = useProcedimientos(a, h.puedeRegistrar);
+  const p = h.procedimientos; // vive en la página: el borrador sobrevive al cambio de pestaña
+  const dictadoProc = h.dictado; // dictado por voz en el detalle del procedimiento
   return (
     <div className="space-y-5">
       <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5">
@@ -450,7 +533,7 @@ function PanelProcedimientos({ h, a }: { h: H; a: AtencionCompleta }) {
             </div>
             <div><label className={LBL}>Ubicación</label><input value={p.ubicacion} onChange={(e) => p.setUbicacion(e.target.value)} placeholder="Ej. 1er ortejo, borde lateral" className={INPUT} /></div>
           </div>
-          <div className="mt-3"><label className={LBL}>Detalle</label><textarea value={p.detalle} onChange={(e) => p.setDetalle(e.target.value)} rows={2} placeholder="Descripción del procedimiento" className={INPUT} /></div>
+          <div className="mt-3"><TextareaDictado label="Detalle" campo="detalle-proc" valor={p.detalle} setValor={p.setDetalle} dictado={dictadoProc} rows={2} maxLength={2000} placeholder="Descripción del procedimiento" resaltar={h.consulta.activo && h.consulta.seccion === 'procedimiento'} labelClass={LBL} inputClass={INPUT} /></div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
             <div><label className={LBL}>Anestesia</label><input value={p.anestesia} onChange={(e) => p.setAnestesia(e.target.value)} placeholder="Ej. Lidocaína 2% troncular" className={INPUT} /></div>
           </div>
@@ -498,12 +581,49 @@ function PanelEscalas({ h, a }: { h: H; a: AtencionCompleta }) {
             <div key={x.id} className="flex items-center gap-3 rounded-xl border border-outline-variant/20 px-4 py-2.5">
               <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-primary/10 text-primary shrink-0">{TIPO_ESCALA_LABEL[x.tipo]}</span>
               <span className="text-sm font-semibold text-on-surface flex-1">{x.resultado ?? '—'}</span>
+              {x.tipo === 'monofilamento' && (
+                <span className="flex gap-1 shrink-0" title="Verde = percibe · rojo = no percibe">
+                  <MonofilamentoPie pie="izquierdo" valores={(x.datos.izquierdo as boolean[] | undefined) ?? []} compacto />
+                  <MonofilamentoPie pie="derecho" valores={(x.datos.derecho as boolean[] | undefined) ?? []} compacto />
+                </span>
+              )}
               {x.registradoEtiqueta && <span className="text-[11px] text-on-surface-variant/70 hidden md:block">{x.registradoEtiqueta}</span>}
               {h.puedeRegistrar && <button onClick={() => e.eliminarMut.mutate(x.id)} className="material-symbols-outlined text-on-surface-variant/60 hover:text-rose-600 text-lg">delete</button>}
             </div>
           ))}
         </div>
       </section>
+
+      {e.seriesUlcera.length > 0 && (
+        <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5">
+          <h3 className="font-headline-sm text-headline-sm font-semibold text-on-surface flex items-center mb-1"><span className="material-symbols-outlined mr-2 text-primary">show_chart</span>Evolución de úlceras</h3>
+          <p className="text-xs text-on-surface-variant mb-3">Área (largo × ancho, cm²) por ubicación a lo largo de las visitas del paciente.</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {e.seriesUlcera.map((sr) => {
+              const primero = sr.puntos[0]!, ultimo = sr.puntos[sr.puntos.length - 1]!;
+              const cambio = sr.puntos.length >= 2 && primero.area > 0 ? Math.round(((ultimo.area - primero.area) / primero.area) * 100) : null;
+              return (
+                <div key={sr.nombre} className="rounded-xl border border-outline-variant/20 p-3">
+                  <p className="text-xs font-bold text-on-surface mb-1">{sr.nombre} · {sr.puntos.length} {sr.puntos.length === 1 ? 'medición' : 'mediciones'}
+                    {cambio != null && <span className={`ml-2 font-semibold ${cambio < 0 ? 'text-emerald-700' : cambio > 0 ? 'text-rose-700' : 'text-on-surface-variant'}`}>{cambio > 0 ? '+' : ''}{cambio}% desde la primera</span>}
+                  </p>
+                  <div className="h-40">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={sr.puntos.map((pt) => ({ ...pt, fecha: fmtFecha(pt.fecha) }))} margin={{ top: 8, right: 12, left: -16, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                        <XAxis dataKey="fecha" tick={{ fontSize: 10 }} />
+                        <YAxis tick={{ fontSize: 10 }} />
+                        <Tooltip />
+                        <Line type="monotone" dataKey="area" name="Área (cm²)" stroke="#0044ab" strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {h.puedeRegistrar && !e.cerrada && (
         <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5">
@@ -530,43 +650,111 @@ function PanelEscalas({ h, a }: { h: H; a: AtencionCompleta }) {
             </div>
           )}
           {e.tipo === 'texas' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-              <div><label className={LBL}>Grado</label>
+            <div className="mb-4 space-y-3">
+              <div className="max-w-md"><label className={LBL}>Profundidad de la úlcera (grado)</label>
                 <select value={e.texasGrado} onChange={(ev) => e.setTexasGrado(Number(ev.target.value))} className={INPUT}>
-                  {['Pre/post-ulcerativa', 'Superficial', 'Tendón o cápsula', 'Hueso o articulación'].map((d, i) => <option key={i} value={i}>{i} — {d}</option>)}
+                  {['Pre/post-ulcerativa (piel intacta)', 'Superficial', 'Llega a tendón o cápsula', 'Llega a hueso o articulación'].map((d, i) => <option key={i} value={i}>{i} — {d}</option>)}
                 </select>
               </div>
-              <div><label className={LBL}>Estadio</label>
-                <select value={e.texasEstadio} onChange={(ev) => e.setTexasEstadio(ev.target.value as 'A' | 'B' | 'C' | 'D')} className={INPUT}>
-                  {[['A', 'Sin infección ni isquemia'], ['B', 'Infección'], ['C', 'Isquemia'], ['D', 'Infección + isquemia']].map(([k, d]) => <option key={k} value={k}>{k} — {d}</option>)}
-                </select>
+              <div className="flex flex-wrap gap-3">
+                <label className="flex items-center gap-2 text-sm text-on-surface min-h-[44px] lg:min-h-0 px-3 py-2 rounded-xl border border-outline-variant/40"><input type="checkbox" checked={e.texasInfeccion} onChange={(ev) => e.setTexasInfeccion(ev.target.checked)} className="accent-primary w-4 h-4" />Hay infección</label>
+                <label className="flex items-center gap-2 text-sm text-on-surface min-h-[44px] lg:min-h-0 px-3 py-2 rounded-xl border border-outline-variant/40"><input type="checkbox" checked={e.texasIsquemia} onChange={(ev) => e.setTexasIsquemia(ev.target.checked)} className="accent-primary w-4 h-4" />Hay isquemia</label>
               </div>
+              <p className="text-sm"><span className={LBL}>Clasificación calculada</span><b className="text-primary text-base">Texas {e.texasGrado}-{e.texasEstadio}</b> <span className="text-on-surface-variant">· estadio {e.texasEstadio === 'A' ? 'sin infección ni isquemia' : e.texasEstadio === 'B' ? 'con infección' : e.texasEstadio === 'C' ? 'con isquemia' : 'con infección e isquemia'}</span></p>
             </div>
           )}
           {e.tipo === 'iwgdf' && (
-            <div className="mb-4 max-w-md"><label className={LBL}>Categoría de riesgo (pie diabético)</label>
-              <select value={e.iwgdf} onChange={(ev) => e.setIwgdf(Number(ev.target.value))} className={INPUT}>
-                {[['Muy bajo', 'control anual'], ['Bajo', 'control 6–12 meses'], ['Moderado', 'control 3–6 meses'], ['Alto', 'control 1–3 meses']].map((d, i) => <option key={i} value={i}>Categoría {i} — Riesgo {d[0]} ({d[1]})</option>)}
-              </select>
+            <div className="mb-4 space-y-3">
+              <p className="text-xs text-on-surface-variant">Marca los factores presentes; la categoría y la frecuencia de control se calculan solas (IWGDF 2019).</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {([
+                  ['psp', 'Pérdida de sensibilidad protectora (monofilamento alterado)'],
+                  ['eap', 'Enfermedad arterial periférica (pulsos pedio / tibial ausentes)'],
+                  ['deformidad', 'Deformidad del pie'],
+                  ['ulceraPrevia', 'Úlcera previa'],
+                  ['amputacion', 'Amputación previa'],
+                  ['erc', 'Enfermedad renal terminal (diálisis)'],
+                ] as const).map(([k, l]) => (
+                  <label key={k} className={`flex items-center gap-2 text-sm text-on-surface min-h-[44px] lg:min-h-0 px-3 py-2 rounded-xl border ${e.iwgdfF[k] ? 'border-primary bg-primary/5' : 'border-outline-variant/40'}`}>
+                    <input type="checkbox" checked={e.iwgdfF[k]} onChange={(ev) => e.setFactorIwgdf(k, ev.target.checked)} className="accent-primary w-4 h-4" />{l}
+                    {k === 'psp' && e.pspSugerida && <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 ml-auto">según monofilamento de hoy</span>}
+                  </label>
+                ))}
+              </div>
+              <p className="text-sm"><span className={LBL}>Riesgo calculado</span>
+                <b className={`text-base ${e.iwgdf >= 3 ? 'text-rose-700' : e.iwgdf === 2 ? 'text-amber-700' : e.iwgdf === 1 ? 'text-yellow-700' : 'text-emerald-700'}`}>Categoría {e.iwgdf} · {['Muy bajo', 'Bajo', 'Moderado', 'Alto'][e.iwgdf]}</b>
+                <span className="text-on-surface-variant"> · {IWGDF_CONTROL[e.iwgdf]}</span>
+              </p>
+            </div>
+          )}
+          {e.tipo === 'termometria' && (
+            <div className="mb-4 space-y-3">
+              <p className="text-xs text-on-surface-variant">Temperatura (°C) en cada sitio de ambos pies. Una diferencia de 2 °C o más entre sitios equivalentes es señal temprana de preúlcera.</p>
+              <div className="overflow-x-auto">
+                <table className="text-sm">
+                  <thead><tr><th className="text-left pr-3 text-[10px] font-semibold uppercase text-on-surface-variant">Sitio</th>{MF_ETIQUETAS.map((s) => <th key={s} className="px-1 text-[10px] font-semibold uppercase text-on-surface-variant">{s}</th>)}</tr></thead>
+                  <tbody>
+                    {(['izq', 'der'] as const).map((lado) => (
+                      <tr key={lado}>
+                        <td className="pr-3 font-bold text-on-surface">{lado === 'izq' ? 'Izquierdo' : 'Derecho'}</td>
+                        {(lado === 'izq' ? e.tempIzq : e.tempDer).map((v, i) => (
+                          <td key={i} className="px-1 py-1"><input type="number" step="0.1" min={20} max={45} inputMode="decimal" value={v} onChange={(ev) => e.setTemp(lado, i, ev.target.value)} placeholder="°C" className={`${INPUT} w-20 text-center`} /></td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {e.termoDeltaMax != null && (
+                <p className="text-sm"><span className={LBL}>Diferencia máxima entre pies</span>
+                  <b className={`text-base ${e.termoDeltaMax >= 2 ? 'text-rose-700' : 'text-emerald-700'}`}>{e.termoDeltaMax.toFixed(1)} °C</b>
+                  <span className="text-on-surface-variant">{e.termoDeltaMax >= 2 ? ' · alerta: posible preúlcera, revisar el sitio' : ' · sin diferencia significativa'}</span>
+                </p>
+              )}
             </div>
           )}
           {e.tipo === 'monofilamento' && (
             <div className="mb-4 space-y-3">
-              <p className="text-xs text-on-surface-variant">Marca los puntos donde el paciente <b>SÍ percibe</b> el monofilamento (verde = percibe, rojo = no percibe).</p>
-              {(['izq', 'der'] as const).map((lado) => {
-                const arr = lado === 'izq' ? e.mfIzq : e.mfDer;
-                return (
-                  <div key={lado} className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-bold text-on-surface w-20">{lado === 'izq' ? 'Izquierdo' : 'Derecho'}</span>
-                    {arr.map((v, i) => (
-                      <button key={i} onClick={() => e.toggleMf(lado, i)} title={MF_ETIQUETAS[i]}
-                        className={`px-2 py-1 rounded-lg text-[10px] font-semibold border ${v ? 'bg-emerald-100 text-emerald-700 border-emerald-300' : 'bg-rose-100 text-rose-700 border-rose-300'}`}>
-                        {MF_ETIQUETAS[i]}
-                      </button>
-                    ))}
+              <p className="text-xs text-on-surface-variant">Toca cada punto según lo que responde el paciente: <b className="text-emerald-700">verde = percibe</b>, <b className="text-rose-700">rojo = no percibe</b>. Sitios: {MF_ETIQUETAS.join(', ')}.{e.mfAnterior ? ' Los puntos con anillo ámbar cambiaron respecto de la visita anterior.' : ''}</p>
+              <div className="flex gap-4 justify-center">
+                <MonofilamentoPie pie="izquierdo" valores={e.mfIzq} anterior={e.mfAnterior?.izquierdo} onToggle={(i) => e.toggleMf('izq', i)} />
+                <MonofilamentoPie pie="derecho" valores={e.mfDer} anterior={e.mfAnterior?.derecho} onToggle={(i) => e.toggleMf('der', i)} />
+              </div>
+              {e.mfAnterior && (
+                <div className="rounded-xl border border-outline-variant/30 bg-surface-container-low/40 p-3">
+                  <p className="text-xs font-semibold text-on-surface mb-2">Visita anterior · {fmtFecha(e.mfAnterior.fecha)} · Izq {e.mfAnterior.izquierdo.filter(Boolean).length}/{e.mfAnterior.izquierdo.length} · Der {e.mfAnterior.derecho.filter(Boolean).length}/{e.mfAnterior.derecho.length} percibidos</p>
+                  <div className="flex gap-3 justify-center">
+                    <MonofilamentoPie pie="izquierdo" valores={e.mfAnterior.izquierdo} compacto />
+                    <MonofilamentoPie pie="derecho" valores={e.mfAnterior.derecho} compacto />
                   </div>
-                );
-              })}
+                </div>
+              )}
+            </div>
+          )}
+          {e.tipo === 'ulcera' && (
+            <div className="mb-4 space-y-3">
+              <p className="text-xs text-on-surface-variant">Mide la úlcera en cada visita (cm). El área se calcula como largo × ancho y se grafica por ubicación.</p>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                <div><label className={LBL}>Largo (cm)</label><input type="number" step="0.1" min={0} inputMode="decimal" value={e.ulLargo} onChange={(ev) => e.setUlLargo(ev.target.value)} className={INPUT} /></div>
+                <div><label className={LBL}>Ancho (cm)</label><input type="number" step="0.1" min={0} inputMode="decimal" value={e.ulAncho} onChange={(ev) => e.setUlAncho(ev.target.value)} className={INPUT} /></div>
+                <div><label className={LBL}>Profundidad (cm)</label><input type="number" step="0.1" min={0} inputMode="decimal" value={e.ulProf} onChange={(ev) => e.setUlProf(ev.target.value)} placeholder="Opcional" className={INPUT} /></div>
+                <div><label className={LBL}>Lado</label>
+                  <select value={e.ulPie} onChange={(ev) => e.setUlPie(ev.target.value as 'izquierdo' | 'derecho' | '')} className={INPUT}><option value="">—</option><option value="izquierdo">Izquierdo</option><option value="derecho">Derecho</option></select>
+                </div>
+                <div><label className={LBL}>Ubicación</label>
+                  <input value={e.ulUbicacion} onChange={(ev) => e.setUlUbicacion(ev.target.value)} list="zonas-ulcera" placeholder="Ej. Talón" className={INPUT} />
+                  <datalist id="zonas-ulcera">{ZONAS_PIE.map((z) => <option key={z.id} value={z.etiqueta} />)}</datalist>
+                </div>
+              </div>
+              {e.ulArea != null && (
+                <p className="text-sm"><span className={LBL}>Área calculada</span><b className="text-primary text-base">{e.ulArea} cm²</b>
+                  {e.ulAnterior && (
+                    <span className={`ml-2 ${e.ulArea < e.ulAnterior.area ? 'text-emerald-700' : e.ulArea > e.ulAnterior.area ? 'text-rose-700' : 'text-on-surface-variant'}`}>
+                      · anterior {e.ulAnterior.area} cm² ({fmtFecha(e.ulAnterior.fecha)}){e.ulAnterior.area > 0 ? ` → ${e.ulArea > e.ulAnterior.area ? '+' : ''}${Math.round(((e.ulArea - e.ulAnterior.area) / e.ulAnterior.area) * 100)}%` : ''}
+                    </span>
+                  )}
+                </p>
+              )}
             </div>
           )}
 
@@ -590,35 +778,6 @@ const COLOR_LESION: Record<TipoLesion, string> = {
 // Vista PLANTAR (planta del pie) del pie izquierdo: dedo gordo al lado medial (derecha), dedos
 // menores decreciendo hacia el lateral, arco medial y talón redondeado. El derecho es el espejo →
 // mostrados lado a lado, los dedos gordos quedan hacia el centro, como en una impresión de Baro.
-function SiluetaPie({ espejo }: { espejo?: boolean }) {
-  const gid = espejo ? 'piel-der' : 'piel-izq'; // un gradiente por instancia (ids únicos en el DOM)
-  const piel = `url(#${gid})`;
-  const borde = { stroke: '#c9a58f', strokeWidth: 1.6 };
-  return (
-    <svg viewBox="0 0 100 240" className="w-full h-full" style={espejo ? { transform: 'scaleX(-1)' } : undefined} aria-hidden>
-      <defs>
-        <radialGradient id={gid} cx="50%" cy="45%" r="70%">
-          <stop offset="0%" stopColor="#fbeee4" />
-          <stop offset="100%" stopColor="#f0dac9" />
-        </radialGradient>
-      </defs>
-      {/* Planta: antepié ancho, arco medial cóncavo, talón redondeado */}
-      <path d="M16 62 C20 46 36 38 54 40 C68 41 80 46 86 56 C92 68 90 88 84 106 C76 122 72 142 75 166 C77 192 74 220 58 232 C46 240 30 234 24 220 C16 202 12 172 12 142 C12 112 10 82 16 62 Z"
-        fill={piel} {...borde} strokeWidth="1.8" strokeLinejoin="round" />
-      {/* Zonas de apoyo (antepié y talón), sutiles */}
-      <ellipse cx="54" cy="66" rx="30" ry="14" fill="#e3b39c" opacity="0.28" />
-      <ellipse cx="48" cy="206" rx="18" ry="20" fill="#e3b39c" opacity="0.28" />
-      <path d="M22 96 C30 120 30 150 26 178" fill="none" stroke="#dcb8a3" strokeWidth="1.2" opacity="0.6" />
-      {/* Dedos: gordo (medial, grande) → 5º dedo (lateral, pequeño) */}
-      <ellipse cx="70" cy="26" rx="12" ry="15" fill={piel} {...borde} />
-      <ellipse cx="50" cy="26" rx="6.5" ry="9" fill={piel} {...borde} />
-      <ellipse cx="37" cy="29" rx="6" ry="8" fill={piel} {...borde} />
-      <ellipse cx="26" cy="37" rx="5.5" ry="7" fill={piel} {...borde} />
-      <ellipse cx="17" cy="49" rx="5" ry="6" fill={piel} {...borde} />
-    </svg>
-  );
-}
-
 function MapaPie({ pie, marcas, pendiente, onClick }: { pie: 'izquierdo' | 'derecho'; marcas: MarcaPodograma[]; pendiente: { pie: string; x: number; y: number } | null; onClick: (x: number, y: number) => void }) {
   const propias = marcas.filter((m) => m.pie === pie);
   return (
@@ -818,6 +977,115 @@ function PanelPodograma({ h, a }: { h: H; a: AtencionCompleta }) {
             </div>
           ))}
         </div>
+      </section>
+    </div>
+  );
+}
+
+// ─── 1.8 · Fotos clínicas por atención + 1.9 antes/después ──────────────────
+function MiniaturaFoto({ foto, puedeEditar, onEliminar }: { foto: FotoClinica; puedeEditar: boolean; onEliminar: () => void }) {
+  const { url } = useFotoUrl(foto.id);
+  return (
+    <div className="rounded-xl border border-outline-variant/30 overflow-hidden bg-surface-container-lowest">
+      <div className="aspect-[4/3] bg-surface-container-low flex items-center justify-center overflow-hidden">
+        {url ? <img src={url} alt={foto.zona ?? 'Foto clínica'} className="w-full h-full object-cover" /> : <Skeleton className="w-full h-full" />}
+      </div>
+      <div className="px-2 py-1.5 text-[11px] text-on-surface-variant flex items-center gap-1 flex-wrap">
+        <span className="font-bold text-on-surface">{foto.zona || CATEGORIA_FOTO_LABEL[foto.categoria]}</span>
+        {foto.pie && <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-bold uppercase text-[9px]">{PIE_LABEL[foto.pie]}</span>}
+        <span>· {fmtFecha(foto.tomadaEn)}</span>
+        <span className="flex-1" />
+        {puedeEditar && <button onClick={onEliminar} title="Quitar foto" className="material-symbols-outlined text-on-surface-variant/60 hover:text-rose-600 text-base">delete</button>}
+        {foto.descripcion && <span className="w-full truncate">{foto.descripcion}</span>}
+      </div>
+    </div>
+  );
+}
+
+const etiquetaFoto = (x: { tomadaEn: string; zona: string | null; categoria: CategoriaFoto; pie: Pie | null }) =>
+  `${fmtFecha(x.tomadaEn)} · ${x.zona || CATEGORIA_FOTO_LABEL[x.categoria]}${x.pie ? ` · ${PIE_LABEL[x.pie]}` : ''}`;
+
+function PanelFotos({ h, a }: { h: H; a: AtencionCompleta }) {
+  const f = useFotosClinicas(a, h.puedeRegistrar);
+  const camRef = useRef<HTMLInputElement>(null);
+  const galRef = useRef<HTMLInputElement>(null);
+  const antesUrl = useFotoUrl(f.antes?.id);
+  const despuesUrl = useFotoUrl(f.despues?.id);
+  return (
+    <div className="space-y-5">
+      {f.puedeEditar && (
+        <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5">
+          <h3 className="font-headline-sm text-headline-sm font-semibold text-on-surface flex items-center mb-3"><span className="material-symbols-outlined mr-2 text-primary">photo_camera</span>Nueva foto</h3>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div><label className={LBL}>Zona</label>
+              <input value={f.zona} onChange={(e) => f.setZona(e.target.value)} list="zonas-foto" placeholder="Ej. uña 1, talón, planta" className={INPUT} />
+              <datalist id="zonas-foto">{f.zonas.map((z) => <option key={z} value={z} />)}</datalist>
+            </div>
+            <div><label className={LBL}>Lado</label>
+              <select value={f.pie} onChange={(e) => f.setPie(e.target.value as Pie | '')} className={INPUT}>
+                <option value="">—</option><option value="izquierdo">Izquierdo</option><option value="derecho">Derecho</option><option value="ambos">Ambos</option>
+              </select>
+            </div>
+            <div><label className={LBL}>Tipo</label>
+              <select value={f.categoria} onChange={(e) => f.setCategoria(e.target.value as CategoriaFoto)} className={INPUT}>
+                {(Object.keys(CATEGORIA_FOTO_LABEL) as CategoriaFoto[]).map((c) => <option key={c} value={c}>{CATEGORIA_FOTO_LABEL[c]}</option>)}
+              </select>
+            </div>
+            <div><label className={LBL}>Descripción</label><input value={f.descripcion} onChange={(e) => f.setDescripcion(e.target.value)} placeholder="Opcional" className={INPUT} /></div>
+          </div>
+          <div className="flex flex-wrap gap-2 mt-3">
+            {/* capture="environment" abre la cámara trasera en tablet/celular; en PC abre el selector */}
+            <input ref={camRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { f.subirArchivo(e.target.files?.[0]); e.target.value = ''; }} />
+            <input ref={galRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => { f.subirArchivo(e.target.files?.[0]); e.target.value = ''; }} />
+            <button onClick={() => camRef.current?.click()} disabled={f.subirMut.isPending} className="min-h-[44px] lg:min-h-0 px-4 py-2 bg-primary text-on-primary rounded-xl text-sm font-bold flex items-center gap-1.5 disabled:opacity-50">
+              <span className="material-symbols-outlined text-base">photo_camera</span>{f.subirMut.isPending ? 'Subiendo…' : 'Tomar foto'}
+            </button>
+            <button onClick={() => galRef.current?.click()} disabled={f.subirMut.isPending} className="min-h-[44px] lg:min-h-0 px-4 py-2 border border-outline-variant rounded-xl text-sm font-semibold text-on-surface hover:bg-surface-container-high flex items-center gap-1.5 disabled:opacity-50">
+              <span className="material-symbols-outlined text-base">upload</span>Subir de la galería
+            </button>
+          </div>
+          <p className="text-[11px] text-on-surface-variant mt-2">En la tablet, "Tomar foto" abre la cámara. Pon la zona antes de tomarla: así el antes/después la encuentra en la próxima visita.</p>
+        </section>
+      )}
+
+      <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5">
+        <h3 className="font-headline-sm text-headline-sm font-semibold text-on-surface flex items-center mb-3"><span className="material-symbols-outlined mr-2 text-primary">photo_library</span>Fotos de esta atención ({f.fotos.length})</h3>
+        {f.fotos.length === 0 && <p className="text-sm text-on-surface-variant">Sin fotos en esta atención.</p>}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+          {f.fotos.map((foto) => <MiniaturaFoto key={foto.id} foto={foto} puedeEditar={f.puedeEditar} onEliminar={() => f.eliminarMut.mutate(foto.id)} />)}
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5">
+        <h3 className="font-headline-sm text-headline-sm font-semibold text-on-surface flex items-center mb-1"><span className="material-symbols-outlined mr-2 text-primary">compare</span>Antes / después</h3>
+        <p className="text-xs text-on-surface-variant mb-3">Compara dos fotos de la misma zona, de esta u otras atenciones del paciente. Ideal para mostrarle al paciente cómo va el tratamiento.</p>
+        {f.todas.length < 2 ? (
+          <p className="text-sm text-on-surface-variant">Se necesitan al menos dos fotos del paciente para comparar.</p>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+              <div><label className={LBL}>Zona</label>
+                <select value={f.zonaComparar} onChange={(e) => f.elegirZona(e.target.value)} className={INPUT}>
+                  <option value="">Todas las zonas</option>
+                  {f.zonas.map((z) => <option key={z} value={z}>{z}</option>)}
+                </select>
+              </div>
+              <div><label className={LBL}>Antes</label>
+                <select value={f.antes?.id ?? ''} onChange={(e) => f.setAntesId(e.target.value)} className={INPUT}>
+                  {f.enZona.map((x) => <option key={x.id} value={x.id}>{etiquetaFoto(x)}</option>)}
+                </select>
+              </div>
+              <div><label className={LBL}>Después</label>
+                <select value={f.despues?.id ?? ''} onChange={(e) => f.setDespuesId(e.target.value)} className={INPUT}>
+                  {f.enZona.map((x) => <option key={x.id} value={x.id}>{etiquetaFoto(x)}</option>)}
+                </select>
+              </div>
+            </div>
+            {f.antes && f.despues && f.antes.id !== f.despues.id
+              ? <ComparadorFotos urlAntes={antesUrl.url} urlDespues={despuesUrl.url} etiquetaAntes={`Antes · ${fmtFecha(f.antes.tomadaEn)}`} etiquetaDespues={`Después · ${fmtFecha(f.despues.tomadaEn)}`} />
+              : <p className="text-sm text-on-surface-variant">Elige dos fotos distintas.</p>}
+          </>
+        )}
       </section>
     </div>
   );

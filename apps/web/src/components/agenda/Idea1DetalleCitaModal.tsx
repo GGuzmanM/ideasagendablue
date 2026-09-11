@@ -11,6 +11,7 @@ import { RomboAlerta } from '../pacientes/RomboAlerta';
 import { CuadroFamiliares } from '../pacientes/CuadroFamiliares';
 import { ToggleDatosPaciente } from '../pacientes/ToggleDatosPaciente';
 import { BadgeAsistencia } from '../pacientes/BadgeAsistencia';
+import { FichaPreviaCard } from '../historiaClinica/FichaPrevia';
 import { formatPromoValor } from '../../api/promociones';
 import { horaInicioValidaParaDuracion } from '@limablue/shared';
 import { cn } from '../../utils/cn';
@@ -99,6 +100,8 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
     totalConsultorios,
     SLOTS,
     resumenAtencion,
+    fichaPrevia,
+    cargandoFicha,
     puedeVerHc,
     puedeRegistrarHc,
     irAHistoriaClinica,
@@ -988,6 +991,9 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                 </div>
               )}
             </div>
+
+            {/* Ficha previa de 10 segundos (2.8): lo que hay que saber antes de entrar (solo con hc.ver) */}
+            {puedeVerHc && <FichaPreviaCard ficha={fichaPrevia} cargando={cargandoFicha} />}
 
             {/* HISTORIA CLÍNICA: único toque de la agenda al módulo clínico. Solo visible con hc.ver y
                 cuando el paciente ya fue atendido (llegó / en atención / completada). */}

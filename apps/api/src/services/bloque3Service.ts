@@ -152,7 +152,10 @@ function etiquetaTipoProcedimiento(tipo: string): string {
 // ─────────────────────────────────────────────────────────────────────────────
 // 2.1–2.5 · Escalas clínicas (EVA, Wagner, Texas, IWGDF, monofilamento)
 // ─────────────────────────────────────────────────────────────────────────────
-const TIPOS_ESCALA = ['eva', 'wagner', 'texas', 'iwgdf', 'monofilamento'] as const;
+const TIPOS_ESCALA = ['eva', 'wagner', 'texas', 'iwgdf', 'monofilamento', 'termometria', 'ulcera'] as const;
+// Sitios plantares (mismo orden que el monofilamento y la termometría en el front).
+const SITIOS_PLANTARES = ['hallux', '1er metatarsiano', '3er metatarsiano', '5º metatarsiano', 'mediopié', 'talón'];
+const bool = (v: unknown): boolean => v === true;
 type TipoEscala = (typeof TIPOS_ESCALA)[number];
 
 function assertTipoEscala(tipo: string): TipoEscala {
@@ -179,18 +182,54 @@ export function calcularResultadoEscala(tipo: TipoEscala, datos: Record<string, 
         return g == null ? 'Wagner sin grado' : `Wagner grado ${g} — ${desc[g] ?? '—'}`;
       }
       case 'texas': {
+        // Estadio CALCULADO desde los hallazgos (infección / isquemia) si el front no lo manda.
         const g = num(datos.grado);
-        const est = typeof datos.estadio === 'string' ? datos.estadio.toUpperCase() : null;
+        let est = typeof datos.estadio === 'string' ? datos.estadio.toUpperCase() : null;
+        if (!est && (typeof datos.infeccion === 'boolean' || typeof datos.isquemia === 'boolean')) {
+          const inf = bool(datos.infeccion), isq = bool(datos.isquemia);
+          est = inf && isq ? 'D' : isq ? 'C' : inf ? 'B' : 'A';
+        }
         const dg: Record<number, string> = { 0: 'Pre/post-ulcerativa', 1: 'Superficial', 2: 'Tendón o cápsula', 3: 'Hueso o articulación' };
         const de: Record<string, string> = { A: 'Sin infección ni isquemia', B: 'Infección', C: 'Isquemia', D: 'Infección + isquemia' };
         if (g == null || !est) return 'Texas incompleto';
         return `Texas ${g}-${est} — ${dg[g] ?? '—'} / ${de[est] ?? '—'}`;
       }
       case 'iwgdf': {
-        const c = num(datos.categoria);
+        // Categoría CALCULADA (IWGDF 2019) desde los factores si el front no la manda:
+        //  0 = sin PSP ni EAP · 1 = PSP o EAP · 2 = PSP+EAP, PSP+deformidad o EAP+deformidad ·
+        //  3 = (PSP o EAP) + úlcera previa, amputación o enfermedad renal terminal.
+        let c = num(datos.categoria);
+        const factores: string[] = [];
+        const psp = bool(datos.psp), eap = bool(datos.eap), def = bool(datos.deformidad);
+        const previa = bool(datos.ulceraPrevia) || bool(datos.amputacion) || bool(datos.erc);
+        if (psp) factores.push('pérdida de sensibilidad protectora');
+        if (eap) factores.push('enfermedad arterial periférica');
+        if (def) factores.push('deformidad');
+        if (bool(datos.ulceraPrevia)) factores.push('úlcera previa');
+        if (bool(datos.amputacion)) factores.push('amputación previa');
+        if (bool(datos.erc)) factores.push('enfermedad renal terminal');
+        if (c == null && ['psp', 'eap', 'deformidad', 'ulceraPrevia', 'amputacion', 'erc'].some((k) => typeof datos[k] === 'boolean')) {
+          c = (psp || eap) && previa ? 3 : (psp && eap) || (psp && def) || (eap && def) ? 2 : psp || eap ? 1 : 0;
+        }
         const riesgo: Record<number, string> = { 0: 'Muy bajo', 1: 'Bajo', 2: 'Moderado', 3: 'Alto' };
         const control: Record<number, string> = { 0: 'control anual', 1: 'control 6–12 meses', 2: 'control 3–6 meses', 3: 'control 1–3 meses' };
-        return c == null ? 'IWGDF sin categoría' : `IWGDF categoría ${c} — Riesgo ${riesgo[c] ?? '—'} (${control[c] ?? '—'})`;
+        if (c == null) return 'IWGDF sin categoría';
+        return `IWGDF categoría ${c} — Riesgo ${riesgo[c] ?? '—'} (${control[c] ?? '—'})${factores.length ? ` · ${factores.join(', ')}` : ''}`;
+      }
+      case 'termometria': {
+        // Temperatura por sitio en ambos pies; una diferencia sostenida ≥ 2 °C entre sitios
+        // equivalentes es señal temprana de preúlcera (pie diabético).
+        const izq = Array.isArray(datos.izquierdo) ? datos.izquierdo : [];
+        const der = Array.isArray(datos.derecho) ? datos.derecho : [];
+        let maxDelta = -1, sitio = '';
+        for (let i = 0; i < Math.max(izq.length, der.length); i++) {
+          const a = num(izq[i]), b = num(der[i]);
+          if (a == null || b == null) continue;
+          const d = Math.abs(a - b);
+          if (d > maxDelta) { maxDelta = d; sitio = SITIOS_PLANTARES[i] ?? `sitio ${i + 1}`; }
+        }
+        if (maxDelta < 0) return 'Termometría sin pares de medición';
+        return `Termometría — diferencia máx. ${maxDelta.toFixed(1)} °C (${sitio})${maxDelta >= 2 ? ' · ALERTA: ≥ 2 °C entre pies, posible preúlcera' : ' · sin diferencia significativa'}`;
       }
       case 'monofilamento': {
         const resumen = (lado: unknown): string | null => {
@@ -208,6 +247,14 @@ export function calcularResultadoEscala(tipo: TipoEscala, datos: Record<string, 
         // Pérdida de sensibilidad protectora si algún punto no se percibe.
         const alterado = [datos.izquierdo, datos.derecho].some((l) => Array.isArray(l) && l.some((x) => x === false));
         return `Monofilamento — ${partes.join(', ')} percibidos${alterado ? ' · sensibilidad protectora disminuida' : ''}`;
+      }
+      case 'ulcera': {
+        // Medición de la úlcera por visita: largo × ancho (cm) → área simple (cm²), profundidad opcional.
+        const l = num(datos.largo), a = num(datos.ancho), pr = num(datos.profundidad);
+        if (l == null || a == null) return 'Úlcera sin medidas';
+        const ubic = typeof datos.ubicacion === 'string' && datos.ubicacion.trim() ? ` — ${datos.ubicacion.trim()}` : '';
+        const pie = typeof datos.pie === 'string' && datos.pie ? ` (${datos.pie})` : '';
+        return `Úlcera ${l.toFixed(1)} × ${a.toFixed(1)} cm · área ${(l * a).toFixed(1)} cm²${pr != null ? ` · prof. ${pr.toFixed(1)} cm` : ''}${ubic}${pie}`;
       }
       default:
         return '—';
@@ -448,6 +495,162 @@ export async function guardarAnotacionesPodograma(p: Ctx & { imagenId: string; a
     await auditEnTx(tx, { ...ctxAudit(p), citaId: img.atencion.citaId, accion: 'anotar_podograma', entidad: 'imagen_podograma', entidadId: img.id, sedeId: img.atencion.sedeId, antes: { anotaciones: antes }, despues: { anotaciones: despues } });
   });
   return getAtencionCompleta(img.atencion.id);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Bandeja del día (ronda del médico): atenciones abiertas para cerrar en lote + abandono
+// ─────────────────────────────────────────────────────────────────────────────
+/** Cierre inteligente (misma regla que el front): qué le falta a una atención. Aviso, no bloqueo. */
+export function faltantesDeAtencion(a: {
+  diagnosticos: { principal: boolean }[]; notas: unknown[]; procedimientos: unknown[];
+  marcasPodograma: unknown[]; imagenesPodograma: unknown[]; recetas: unknown[];
+}): string[] {
+  const f: string[] = [];
+  if (!a.diagnosticos.length) f.push('Sin diagnóstico');
+  else if (!a.diagnosticos.some((d) => d.principal)) f.push('Sin diagnóstico principal');
+  if (!a.notas.length) f.push('Sin nota');
+  if (!a.procedimientos.length) f.push('Sin procedimiento');
+  if (!a.marcasPodograma.length && !a.imagenesPodograma.length) f.push('Podograma vacío');
+  if (!a.recetas.length) f.push('Sin receta ni indicaciones');
+  return f;
+}
+
+export async function bandejaDelDia(p: { sedeIds: string[] | null; profesionalId?: string | null; diasSinVolver?: number }) {
+  const porSede = p.sedeIds ? { sedeId: { in: p.sedeIds } } : {};
+  const abiertas = await prisma.atencionClinica.findMany({
+    where: { estado: 'abierta', ...porSede, ...(p.profesionalId ? { profesionalId: p.profesionalId } : {}) },
+    orderBy: [{ fecha: 'desc' }, { creadoEn: 'desc' }],
+    take: 200,
+    include: {
+      paciente: { select: { id: true, nombres: true, apellidoPaterno: true, apellidoMaterno: true, numeroDocumento: true } },
+      cita: { select: { id: true, horaInicio: true, estado: true } },
+      servicio: { select: { nombre: true, color: true } },
+      sede: { select: { nombre: true } },
+      profesional: { select: { nombres: true, apellidos: true } },
+      notas: { where: { deletedAt: null }, select: { id: true } },
+      diagnosticos: { where: { deletedAt: null }, select: { principal: true } },
+      procedimientos: { where: { deletedAt: null }, select: { id: true } },
+      marcasPodograma: { where: { deletedAt: null }, select: { id: true } },
+      imagenesPodograma: { where: { deletedAt: null }, select: { id: true } },
+      recetas: { select: { id: true } },
+    },
+  });
+
+  // Abandono: paquete activo con sesiones pendientes, última cita completada hace > N días y sin cita futura.
+  const dias = p.diasSinVolver ?? 45;
+  const limite = new Date(Date.now() - dias * 86_400_000);
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  const paquetes = await prisma.paquetePaciente.findMany({
+    where: { activo: true, estado: 'ACTIVO', ...porSede },
+    select: {
+      id: true, sesionesTotal: true, sesionesUsadas: true, pacienteId: true, paquete: { select: { nombre: true } },
+      paciente: { select: { id: true, nombres: true, apellidoPaterno: true, apellidoMaterno: true, telefono: true } },
+    },
+  });
+  const conSaldo = paquetes.filter((q) => q.sesionesUsadas < q.sesionesTotal);
+  const ids = [...new Set(conSaldo.map((q) => q.pacienteId))];
+  const [ultimas, futuras] = ids.length
+    ? await Promise.all([
+        prisma.cita.groupBy({ by: ['pacienteId'], where: { pacienteId: { in: ids }, deletedAt: null, estado: 'completada' }, _max: { fecha: true } }),
+        prisma.cita.findMany({ where: { pacienteId: { in: ids }, deletedAt: null, fecha: { gte: hoy }, estado: { in: ['agendada', 'confirmada'] } }, select: { pacienteId: true }, distinct: ['pacienteId'] }),
+      ])
+    : [[], []];
+  const conFutura = new Set(futuras.map((c) => c.pacienteId));
+  const ultimaPor = new Map(ultimas.map((u) => [u.pacienteId, u._max.fecha]));
+  const sinVolver = conSaldo
+    .filter((q) => { const u = ultimaPor.get(q.pacienteId); return !!u && u < limite && !conFutura.has(q.pacienteId); })
+    .map((q) => {
+      const u = ultimaPor.get(q.pacienteId) as Date;
+      return { paquetePacienteId: q.id, paquete: q.paquete?.nombre ?? 'Paquete', paciente: q.paciente, sesionesRestantes: q.sesionesTotal - q.sesionesUsadas, ultimaCita: u, diasSinVenir: Math.floor((Date.now() - u.getTime()) / 86_400_000) };
+    })
+    .sort((a, b) => b.diasSinVenir - a.diasSinVenir)
+    .slice(0, 100);
+
+  return {
+    diasSinVolver: dias,
+    abiertas: abiertas.map((a) => ({
+      id: a.id, fecha: a.fecha, citaId: a.cita.id, horaInicio: a.cita.horaInicio, motivoConsulta: a.motivoConsulta,
+      paciente: a.paciente, servicio: a.servicio, sede: a.sede, profesional: a.profesional,
+      totales: { notas: a.notas.length, diagnosticos: a.diagnosticos.length, procedimientos: a.procedimientos.length, recetas: a.recetas.length },
+      faltantes: faltantesDeAtencion(a),
+    })),
+    sinVolver,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 1.8 · Fotos clínicas por atención y zona + antes/después por paciente (1.9, parte 1)
+// Archivo fuera del alcance público, entrega por endpoint autenticado, borrado suave.
+// ─────────────────────────────────────────────────────────────────────────────
+const CATEGORIAS_FOTO = ['lesion', 'calzado', 'otro'] as const;
+export interface CamposFoto { pie?: string | null; zona?: string | null; categoria?: string | null; descripcion?: string | null; tomadaEn?: string | null }
+function assertCategoriaFoto(c?: string | null): string {
+  const v = limpiar(c)?.toLowerCase() ?? 'lesion';
+  if (!CATEGORIAS_FOTO.includes(v as (typeof CATEGORIAS_FOTO)[number])) throw new AppError(`Categoría de foto no válida: ${c}`, 400, 'FOTO_CATEGORIA_INVALIDA');
+  return v;
+}
+const fotoSelect = { id: true, atencionId: true, pie: true, zona: true, categoria: true, descripcion: true, mime: true, tamano: true, tomadaEn: true, subidoEtiqueta: true, creadoEn: true } as const;
+
+export async function registrarFotoClinica(p: Ctx & CamposFoto & { atencionId: string; archivo: ArchivoSubido }) {
+  const at = await atencionOr404(p.atencionId);
+  const etiqueta = await etiquetaUsuario(prisma, p.usuarioId);
+  const ruta = rutaRelativaUpload(p.archivo.path);
+  const tomada = p.tomadaEn ? new Date(p.tomadaEn) : new Date();
+  await prisma.$transaction(async (tx) => {
+    const row = await tx.fotoClinica.create({
+      data: {
+        atencionId: at.id, pacienteId: at.pacienteId, pie: assertPie(p.pie), zona: limpiar(p.zona), categoria: assertCategoriaFoto(p.categoria),
+        descripcion: limpiar(p.descripcion), ruta, mime: p.archivo.mimetype, tamano: p.archivo.size,
+        tomadaEn: Number.isNaN(tomada.getTime()) ? new Date() : tomada, subidoPorUsuarioId: p.usuarioId ?? null, subidoEtiqueta: etiqueta,
+      },
+    });
+    await auditEnTx(tx, { ...ctxAudit(p), citaId: at.citaId, accion: 'subir_foto_clinica', entidad: 'foto_clinica', entidadId: row.id, sedeId: at.sedeId, despues: { zona: row.zona, pie: row.pie, categoria: row.categoria, tamano: row.tamano } });
+  });
+  return getAtencionCompleta(at.id);
+}
+
+/** Localiza el archivo de una foto (para servirla). Blinda contra path traversal. */
+export async function archivoFotoClinica(fotoId: string) {
+  const f = await prisma.fotoClinica.findFirst({ where: { id: fotoId, deletedAt: null }, select: { id: true, ruta: true, mime: true, atencion: { select: { id: true, sedeId: true, pacienteId: true } } } });
+  if (!f) throw new AppError('Foto no encontrada', 404);
+  const abs = path.resolve(UPLOADS_ROOT, f.ruta);
+  if (!abs.startsWith(UPLOADS_ROOT + path.sep)) throw new AppError('Ruta de archivo inválida', 400);
+  if (!fs.existsSync(abs)) throw new AppError('El archivo de la foto no está disponible', 404, 'ARCHIVO_NO_DISPONIBLE');
+  return { ...f, rutaAbsoluta: abs };
+}
+
+export async function editarFotoClinica(p: Ctx & CamposFoto & { fotoId: string }) {
+  const f = await prisma.fotoClinica.findFirst({ where: { id: p.fotoId, deletedAt: null }, include: { atencion: { select: { id: true, citaId: true, sedeId: true } } } });
+  if (!f) throw new AppError('Foto no encontrada', 404);
+  const data: Prisma.FotoClinicaUpdateInput = {};
+  if (p.pie !== undefined) data.pie = assertPie(p.pie);
+  if (p.zona !== undefined) data.zona = limpiar(p.zona);
+  if (p.categoria !== undefined) data.categoria = assertCategoriaFoto(p.categoria);
+  if (p.descripcion !== undefined) data.descripcion = limpiar(p.descripcion);
+  await prisma.$transaction(async (tx) => {
+    await tx.fotoClinica.update({ where: { id: f.id }, data });
+    await auditEnTx(tx, { ...ctxAudit(p), citaId: f.atencion.citaId, accion: 'editar_foto_clinica', entidad: 'foto_clinica', entidadId: f.id, sedeId: f.atencion.sedeId, despues: { zona: p.zona, pie: p.pie, categoria: p.categoria } });
+  });
+  return getAtencionCompleta(f.atencion.id);
+}
+
+export async function eliminarFotoClinica(p: Ctx & { fotoId: string }) {
+  const f = await prisma.fotoClinica.findFirst({ where: { id: p.fotoId, deletedAt: null }, include: { atencion: { select: { id: true, citaId: true, sedeId: true } } } });
+  if (!f) throw new AppError('Foto no encontrada', 404);
+  await prisma.$transaction(async (tx) => {
+    await tx.fotoClinica.update({ where: { id: f.id }, data: { deletedAt: new Date() } });
+    await auditEnTx(tx, { ...ctxAudit(p), citaId: f.atencion.citaId, accion: 'eliminar_foto_clinica', entidad: 'foto_clinica', entidadId: f.id, sedeId: f.atencion.sedeId, antes: { zona: f.zona, pie: f.pie } });
+  });
+  return getAtencionCompleta(f.atencion.id);
+}
+
+/** Todas las fotos del paciente (cruza atenciones) para el antes/después; filtrable por zona. */
+export async function fotosDePaciente(pacienteId: string, zona?: string | null) {
+  return prisma.fotoClinica.findMany({
+    where: { pacienteId, deletedAt: null, ...(zona ? { zona: { equals: zona, mode: 'insensitive' } } : {}) },
+    orderBy: { tomadaEn: 'asc' },
+    select: { ...fotoSelect, atencion: { select: { fecha: true, servicio: { select: { nombre: true } } } } },
+  });
 }
 
 /** Borrado SUAVE: la fila y el archivo se conservan (retención de HC); deja de listarse. */

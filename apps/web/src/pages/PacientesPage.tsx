@@ -15,6 +15,8 @@ import { BotonHistorialGenexis } from '../components/pacientes/HistorialGenexis'
 import { SaldoPaquetes } from '../components/pacientes/SaldoPaquetes';
 import { Idea1NuevoPacienteModal } from '../components/pacientes/Idea1NuevoPacienteModal';
 import { Skeleton } from '../components/ui/Skeleton';
+import { FichaPreviaCard } from '../components/historiaClinica/FichaPrevia';
+import { useFichaPrevia } from '../api/historiaClinica';
 import { cn } from '../utils/cn';
 import { DistritoAutocomplete, PaisAutocomplete } from '../components/ui/DistritoAutocomplete';
 import { etiquetaDistrito } from '../data/ubigeo';
@@ -167,6 +169,8 @@ export function FichaPacientePage() {
   // Detalle de cita: clic en una cita del historial/próximas → abre el MISMO modal de la
   // agenda (ver, confirmar, reprogramar, etc.) sin tener que buscarla en la agenda.
   const [citaDetalle, setCitaDetalle] = useState<CitaResumen | null>(null);
+  // Ficha previa de 10 segundos (2.8): banderas de riesgo y lo último del paciente (solo con hc.ver).
+  const fichaPreviaQ = useFichaPrevia(id, useAuthStore.getState().tiene('hc.ver'));
 
   const {
     paciente,
@@ -315,6 +319,8 @@ export function FichaPacientePage() {
               </button>
             </div>
           </div>
+
+          {fichaPreviaQ.data && <FichaPreviaCard ficha={fichaPreviaQ.data} />}
 
           {/* Bento Grid: Datos + Notas */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-grid-gutter">

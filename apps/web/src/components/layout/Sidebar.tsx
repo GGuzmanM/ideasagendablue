@@ -6,6 +6,7 @@ import { useAuthStore } from '../../stores/authStore';
 const navItems = [
   { to: '/', label: 'Agenda', icon: '📅', permiso: 'citas.ver' },
   { to: '/pacientes', label: 'Pacientes', icon: '👤', permiso: 'pacientes.ver' },
+  { to: '/historia-clinica/bandeja', label: 'Bandeja clínica', icon: '🩺', permiso: 'hc.ver' },
   { to: '/horarios', label: 'Horarios y Restricciones', icon: '⏰', permiso: 'horarios.ver' },
   { to: '/herramientas', label: 'Herramientas', icon: '🛠️', permiso: ['exportar.usar', 'comunicaciones.gestionar', 'promociones.ver', 'promociones.gestionar', 'canales.gestionar', 'membresias.gestionar', 'config.editar'] },
   { to: '/movimientos', label: 'Movimientos', icon: '⇄', permiso: 'movimientos.ver' },

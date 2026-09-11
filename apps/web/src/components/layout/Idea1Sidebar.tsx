@@ -16,6 +16,7 @@ export const ADMIN_PERMS = ['profesionales.ver', 'servicios.ver', 'competencias.
 export const idea1NavItems: NavItem[] = [
   { to: '/AgendaPrincipal', label: 'Agenda', icon: 'calendar_today', permiso: 'citas.ver' },
   { to: '/pacientes', label: 'Pacientes', icon: 'groups', permiso: 'pacientes.ver' },
+  { to: '/historia-clinica/bandeja', label: 'Bandeja clínica', icon: 'inbox', permiso: 'hc.ver' },
   { to: '/horarios', label: 'Horarios y Restricciones', icon: 'schedule', permiso: 'horarios.ver' },
   { to: '/herramientas', label: 'Herramientas', icon: 'home_repair_service', permiso: HERRAMIENTAS_PERMS },
   { to: '/movimientos', label: 'Movimientos', icon: 'sync_alt', permiso: 'movimientos.ver' },

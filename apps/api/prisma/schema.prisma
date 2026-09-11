@@ -1788,6 +1788,7 @@ model AtencionClinica {
   escalas           EscalaClinica[]
   marcasPodograma   MarcaPodograma[]
   imagenesPodograma ImagenPodograma[]
+  fotos             FotoClinica[]
 
   @@index([historiaClinicaId, fecha])
   @@index([pacienteId])
@@ -2081,4 +2082,53 @@ model ImagenPodograma {
 
   @@index([atencionId])
   @@map("imagenes_podograma")
+}
+
+// Foto clínica de una atención (1.8): tomada desde la tablet/celular o subida. Misma política que
+// las imágenes del podograma: archivo fuera del alcance público (uploads/fotos-clinicas/), entrega
+// solo por endpoint autenticado, borrado suave con retención. `pacienteId` va desnormalizado (sin
+// FK) porque el antes/después cruza atenciones del mismo paciente y se filtra por zona.
+model FotoClinica {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  atencionId         String    @db.Uuid
+  pacienteId         String    @db.Uuid
+  pie                String? // izquierdo | derecho | ambos
+  zona               String? // uña 1, talón, planta, ... (texto libre corto)
+  categoria          String    @default("lesion") // lesion | calzado | otro
+  descripcion        String?
+  ruta               String // relativa a uploads/ (nunca se expone)
+  mime               String
+  tamano             Int
+  tomadaEn           DateTime  @default(now())
+  subidoPorUsuarioId String?   @db.Uuid
+  subidoEtiqueta     String?
+  creadoEn           DateTime  @default(now())
+  actualizadoEn      DateTime  @updatedAt
+  deletedAt          DateTime?
+
+  atencion AtencionClinica @relation(fields: [atencionId], references: [id], onDelete: Restrict)
+
+  @@index([atencionId])
+  @@index([pacienteId, zona])
+  @@map("fotos_clinicas")
+}
+
+// Plantillas de nota por diagnóstico (1.1) y autotextos (1.2) de la historia clínica.
+// tipo = nota      → clave = código CIE-10 sugerido (opcional), contenido = {subjetivo, objetivo, apreciacion, plan}
+// tipo = autotexto → clave = atajo (".oc"), contenido = {texto}
+model PlantillaClinica {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tipo               String // nota | autotexto
+  clave              String? // CIE-10 sugerido o atajo
+  nombre             String
+  contenido          Json
+  activa             Boolean   @default(true)
+  creadoPorUsuarioId String?   @db.Uuid
+  creadoEtiqueta     String?
+  creadoEn           DateTime  @default(now())
+  actualizadoEn      DateTime  @updatedAt
+  deletedAt          DateTime?
+
+  @@index([tipo, clave])
+  @@map("plantillas_clinicas")
 }

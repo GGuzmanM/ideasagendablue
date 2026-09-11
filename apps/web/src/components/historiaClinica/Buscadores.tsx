@@ -1,12 +1,17 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useBuscarCie10, useBuscarMedicamentos, type Cie10Item, type MedicamentoItem } from '../../api/catalogos';
 
 const INPUT = 'w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2 text-sm text-on-surface outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all';
 
 // ─── Buscador CIE-10 (por código o descripción) ──────────────────────────────
-export function BuscadorCie10({ onSeleccionar, placeholder = 'Buscar diagnóstico (código o nombre)…', autoFocus }: { onSeleccionar: (c: Cie10Item) => void; placeholder?: string; autoFocus?: boolean }) {
+export function BuscadorCie10({ onSeleccionar, placeholder = 'Buscar diagnóstico (código o nombre)…', autoFocus, consulta }: {
+  onSeleccionar: (c: Cie10Item) => void; placeholder?: string; autoFocus?: boolean;
+  /** Búsqueda puesta desde fuera (dictado por voz): `n` cambia en cada dictado para poder repetir el mismo término. */
+  consulta?: { termino: string; n: number } | null;
+}) {
   const [q, setQ] = useState('');
   const [abierto, setAbierto] = useState(false);
+  useEffect(() => { if (consulta?.termino) { setQ(consulta.termino); setAbierto(true); } }, [consulta]);
   const { data = [], isFetching } = useBuscarCie10(q, abierto);
   const elegir = (c: Cie10Item) => { onSeleccionar(c); setQ(''); setAbierto(false); };
   return (
