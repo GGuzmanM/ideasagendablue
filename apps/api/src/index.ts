@@ -55,6 +55,7 @@ import resendWebhookRouter from './routes/resendWebhook';
 import { horariosRouter } from './routes/horarios';
 import analyticsRouter, { recalcularAgregadosAuto } from './routes/analytics';
 import { iniciarRenovacionMensual } from './services/renovacionMensual';
+import { iniciarAvisosControles } from './services/avisosControles';
 import analyticsAgentesRouter from './routes/analyticsAgentes';
 import exportarRouter from './routes/exportar';
 import composicionSedeRouter from './routes/composicionSede';
@@ -313,6 +314,10 @@ setInterval(autocompletar, 5 * 60_000).unref();
 // Al cambiar de mes, el personal continúa en su misma sede salvo que lo muevan o den de baja.
 // Corre al arrancar (catch-up) y cada 12 h. Idempotente. Ver services/renovacionMensual.ts.
 setTimeout(() => iniciarRenovacionMensual(), 25_000);
+
+// ─── Avisos de controles de seguimiento (2.9): correo diario a coordinación y al paciente ─────────
+// 07:00 de Lima (catch-up en horario de oficina); idempotente por día / por control. Ver services/avisosControles.ts.
+iniciarAvisosControles();
 
 // ─── Red de seguridad de procesos ─────────────────────────────────────────────
 // Las tareas "fire-and-forget" del POST de citas (correo de reserva, sync Outlook,

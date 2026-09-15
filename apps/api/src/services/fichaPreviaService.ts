@@ -32,7 +32,24 @@ const REGLAS_DX: { re: RegExp; clave: string; etiqueta: string; nivel: NivelBand
   { re: /^(G6[23]|E1[0-4]\.4)/, clave: 'neuropatia', etiqueta: 'Neuropatía', nivel: 'medio' },
 ];
 
+/**
+ * Lo que quedó del sistema anterior (Genexis, archivo congelado): cuántas visitas asistió y la
+ * última. Sirve para que la ficha previa y la HC no digan «sin historia» a un paciente de años.
+ */
+export async function resumenGenexis(pacienteId: string) {
+  const base = { pacienteId, deletedAt: null, llegoPaciente: 'Sí' };
+  const [total, ultima] = await Promise.all([
+    prisma.historialGenexis.count({ where: base }),
+    prisma.historialGenexis.findFirst({
+      where: base, orderBy: [{ fechaCita: 'desc' }, { horaCita: 'desc' }],
+      select: { id: true, fechaCita: true, servicio: true, podologo: true, sede: true },
+    }),
+  ]);
+  return { total, ultima: ultima ? { id: ultima.id, fecha: ultima.fechaCita, servicio: ultima.servicio, podologo: ultima.podologo, sede: ultima.sede } : null };
+}
+
 export async function fichaPrevia(pacienteId: string) {
+  const genexis = await resumenGenexis(pacienteId);
   const hcRow = await prisma.historiaClinica.findUnique({
     where: { pacienteId },
     select: {
@@ -44,7 +61,7 @@ export async function fichaPrevia(pacienteId: string) {
   const paquetes = await paquetesLaserVivos(pacienteId);
   const sesionesPendientes = paquetes.filter((q) => q.sesionesRestantes > 0).map((q) => ({ nombre: q.nombre, restantes: q.sesionesRestantes, total: q.sesionesTotal, vigenciaFin: q.vigenciaFin }));
   if (!hcRow) {
-    return { tieneHistoria: false, numero: null, alergias: [], banderas: [] as Bandera[], riesgoIwgdf: null, ultimoDx: null, ultimoProcedimiento: null, ultimaAtencion: null, fotoAnterior: null, monofilamentoAlterado: null, sesionesPendientes, totalAtenciones: 0 };
+    return { tieneHistoria: false, numero: null, alergias: [], banderas: [] as Bandera[], riesgoIwgdf: null, ultimoDx: null, ultimoProcedimiento: null, ultimaAtencion: null, fotoAnterior: null, monofilamentoAlterado: null, sesionesPendientes, totalAtenciones: 0, genexis };
   }
 
   const [ultima, totalAtenciones, dxTodos, escalas, foto] = await Promise.all([
@@ -121,6 +138,7 @@ export async function fichaPrevia(pacienteId: string) {
     ultimaAtencion: ultima ? { id: ultima.id, fecha: ultima.fecha, estado: ultima.estado, motivoConsulta: ultima.motivoConsulta, profesional: `${ultima.profesional.nombres} ${ultima.profesional.apellidos}`.trim(), sede: ultima.sede.nombre } : null,
     fotoAnterior: foto,
     sesionesPendientes,
+    genexis,
   };
 }
 const orden = (n: NivelBandera) => (n === 'alto' ? 3 : n === 'medio' ? 2 : 1);

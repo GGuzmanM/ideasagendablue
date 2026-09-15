@@ -17,9 +17,11 @@ import { RegistrarAtencionModal } from '../components/historiaClinica/RegistrarA
 import { EmitirRecetaModal } from '../components/historiaClinica/EmitirRecetaModal';
 import { DialogoMotivo } from '../components/historiaClinica/DialogoMotivo';
 import { PanelConsentimientos } from '../components/historiaClinica/PanelConsentimientos';
+import { ConstanciasSection } from '../components/historiaClinica/ConstanciasSection';
 import { DialogoCierreAtencion } from '../components/historiaClinica/DialogoCierreAtencion';
 import { useInvalidarControles } from '../services/controlesService';
 import { BotonHistorialGenexis } from '../components/pacientes/HistorialGenexis';
+import type { HistorialGenexisRegistro } from '../api';
 import { ComparadorFotos } from '../components/historiaClinica/ComparadorFotos';
 import { SiluetaPie, MonofilamentoPie, aspectoSilueta, proporcionSilueta } from '../components/historiaClinica/SiluetaPie';
 import { LienzoSilueta } from '../components/historiaClinica/LienzoSilueta';
@@ -130,7 +132,7 @@ export function HistoriaClinicaPage() {
             {h.historia && (
               <div className={`flex items-center gap-2 flex-wrap rounded-lg px-3 py-2 text-xs ${h.historia.estado === 'pasiva' ? 'bg-amber-50 border border-amber-200' : 'bg-surface-container-low/60'}`} data-testid="estado-hc">
                 <span className={`font-bold uppercase text-[10px] px-1.5 py-0.5 rounded ${h.historia.estado === 'pasiva' ? 'bg-amber-200 text-amber-900' : 'bg-emerald-100 text-emerald-700'}`}>{h.historia.estado === 'pasiva' ? 'Historia en archivo' : 'Historia activa'}</span>
-                <span className="text-on-surface-variant flex-1 min-w-0">{atenciones[0] ? `Última atención: ${fmtFecha(atenciones[0].fecha)}` : 'Sin atenciones'}</span>
+                <span className="text-on-surface-variant flex-1 min-w-0">{atenciones[0] ? `Última atención: ${fmtFecha(atenciones[0].fecha)}` : h.lineaTiempo[0] ? `Última visita (sistema anterior): ${fmtFecha(h.lineaTiempo[0].fecha)}` : 'Sin atenciones'}</span>
                 {h.puedeAnular && (
                   <button onClick={h.alternarEstadoHc} disabled={h.estadoHcMut.isPending} className="min-h-[44px] lg:min-h-0 text-primary font-semibold hover:underline disabled:opacity-50">{h.historia.estado === 'pasiva' ? 'Sacar del archivo' : 'Enviar al archivo'}</button>
                 )}
@@ -151,34 +153,50 @@ export function HistoriaClinicaPage() {
                 </button>
               ))}
             </div>
-            <div className="[&>button]:w-full"><BotonHistorialGenexis pacienteId={p.id} nombrePaciente={nombre} documento={`${p.tipoDocumento} ${p.numeroDocumento}`} /></div>
-
-            {/* Atenciones: lista vertical en escritorio; tira horizontal deslizable en tablet/celular */}
+            {/* Línea de tiempo unificada (4.3): atenciones nuevas y visitas del sistema anterior (Genexis),
+                de la más reciente a la más antigua. Lista vertical en escritorio; tira deslizable en tablet. */}
             <div>
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-[11px] font-semibold uppercase tracking-wide text-on-surface-variant">Atenciones ({atenciones.length})</h3>
+              <div className="flex items-center justify-between mb-2 gap-2">
+                <h3 className="text-[11px] font-semibold uppercase tracking-wide text-on-surface-variant">Atenciones ({atenciones.length}){h.genexisTotal ? <span className="normal-case font-normal tracking-normal"> · {h.genexisTotal} del sistema anterior</span> : null}</h3>
               </div>
-              {atenciones.length === 0 ? (
+              {h.lineaTiempo.length === 0 ? (
                 <div className="text-xs text-on-surface-variant border border-dashed border-outline-variant/40 rounded-xl p-4 text-center">Todavía no hay atenciones.{h.puedeRegistrar ? ' Toca «Nueva atención» arriba y elige la cita de hoy.' : ''}</div>
               ) : (
                 <div className="flex lg:flex-col gap-2 lg:gap-1.5 overflow-x-auto lg:overflow-visible snap-x -mx-4 px-4 pb-1 lg:mx-0 lg:px-0 lg:pb-0">
-                  {atenciones.map((a: AtencionClinica) => (
-                    <button key={a.id} onClick={() => h.seleccionarAtencion(a.id)} className={`shrink-0 w-[270px] lg:w-full snap-start text-left rounded-xl border px-3 py-2 transition-all ${h.atencionSel === a.id ? 'border-primary bg-primary/5' : 'border-outline-variant/20 hover:bg-surface-container-low'}`}>
+                  {h.lineaTiempo.map((it) => it.tipo === 'hc' ? (
+                    <button key={it.id} onClick={() => h.seleccionarAtencion(it.id)} className={`shrink-0 w-[270px] lg:w-full snap-start text-left rounded-xl border px-3 py-2 transition-all ${h.atencionSel === it.id && !h.genexisSel ? 'border-primary bg-primary/5' : 'border-outline-variant/20 hover:bg-surface-container-low'}`}>
                       <div className="flex items-center gap-2">
-                        <span className="w-1 h-8 rounded-full shrink-0" style={{ background: a.servicio.color }} />
+                        <span className="w-1 h-8 rounded-full shrink-0" style={{ background: it.atencion.servicio.color }} />
                         <div className="min-w-0 flex-1">
-                          <div className="text-sm font-semibold text-on-surface truncate">{fmtFecha(a.fecha)} · {a.cita.horaInicio} · {a.servicio.nombre}</div>
-                          <div className="text-[11px] text-on-surface-variant truncate">{nombreProfesional(a.profesional)} · {a.sede.nombre}</div>
+                          <div className="text-sm font-semibold text-on-surface truncate">{fmtFecha(it.atencion.fecha)} · {it.atencion.cita.horaInicio} · {it.atencion.servicio.nombre}</div>
+                          <div className="text-[11px] text-on-surface-variant truncate">{nombreProfesional(it.atencion.profesional)} · {it.atencion.sede.nombre}</div>
                         </div>
                         <div className="flex flex-col items-end gap-0.5 shrink-0">
-                          <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${a.estado === 'cerrada' ? 'bg-surface-container text-on-surface-variant' : 'bg-emerald-100 text-emerald-700'}`}>{a.estado === 'cerrada' ? 'Cerrada' : 'Abierta'}</span>
-                          <span className="text-[10px] text-on-surface-variant">{a.notas.length} nota{a.notas.length === 1 ? '' : 's'} · {a.diagnosticos.length} diagn.{a.recetas.length ? ` · ${a.recetas.length} receta${a.recetas.length === 1 ? '' : 's'}` : ''}</span>
+                          <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${it.atencion.estado === 'cerrada' ? 'bg-surface-container text-on-surface-variant' : 'bg-emerald-100 text-emerald-700'}`}>{it.atencion.estado === 'cerrada' ? 'Cerrada' : 'Abierta'}</span>
+                          <span className="text-[10px] text-on-surface-variant">{it.atencion.notas.length} nota{it.atencion.notas.length === 1 ? '' : 's'} · {it.atencion.diagnosticos.length} diagn.{it.atencion.recetas.length ? ` · ${it.atencion.recetas.length} receta${it.atencion.recetas.length === 1 ? '' : 's'}` : ''}</span>
                         </div>
                       </div>
                     </button>
+                  ) : (
+                    <button key={it.id} onClick={() => h.seleccionarGenexis(it.id)} data-testid="visita-genexis" className={`shrink-0 w-[270px] lg:w-full snap-start text-left rounded-xl border border-dashed px-3 py-2 transition-all ${h.genexisSel === it.id ? 'border-primary bg-primary/5' : 'border-outline-variant/40 bg-surface-container-low/40 hover:bg-surface-container-low'}`}>
+                      <div className="flex items-center gap-2">
+                        <span className="material-symbols-outlined text-on-surface-variant/70 text-lg shrink-0">inventory_2</span>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-semibold text-on-surface truncate">{fmtFecha(it.visita.fechaCita)}{it.visita.horaCita ? ` · ${it.visita.horaCita} h` : ''} · {it.visita.servicio ?? 'Visita'}</div>
+                          <div className="text-[11px] text-on-surface-variant truncate">{it.visita.podologo ?? '—'}{it.visita.sede ? ` · ${it.visita.sede}` : ''}</div>
+                        </div>
+                        <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-surface-container text-on-surface-variant shrink-0">Sistema anterior</span>
+                      </div>
+                    </button>
                   ))}
+                  {h.hayMasGenexis && (
+                    <button onClick={h.cargarMasGenexis} disabled={h.cargandoGenexis} className="shrink-0 w-[270px] lg:w-full min-h-[44px] rounded-xl border border-outline-variant/40 text-xs font-semibold text-primary hover:bg-surface-container-low disabled:opacity-50">
+                      {h.cargandoGenexis ? 'Cargando…' : 'Ver visitas más antiguas'}
+                    </button>
+                  )}
                 </div>
               )}
+              {h.genexisTotal > 0 && <div className="mt-2 [&>button]:w-full [&>button]:justify-center"><BotonHistorialGenexis pacienteId={p.id} nombrePaciente={nombre} documento={`${p.tipoDocumento} ${p.numeroDocumento}`} /></div>}
             </div>
           </div>
         </aside>
@@ -200,7 +218,8 @@ export function HistoriaClinicaPage() {
           </div>
           <div className="p-3 sm:p-4 lg:p-6 max-w-[1100px]">
             {h.tab === 'antecedentes' && <PanelAntecedentes h={h} />}
-            {(h.tab === 'evolucion' || h.tab === 'receta' || h.tab === 'procedimientos' || h.tab === 'escalas' || h.tab === 'podograma' || h.tab === 'fotos' || h.tab === 'consentimientos') && (
+            {h.tab !== 'antecedentes' && h.genexisSel && <VisitaGenexisCard visita={h.visitaGenexis} />}
+            {(h.tab === 'evolucion' || h.tab === 'receta' || h.tab === 'procedimientos' || h.tab === 'escalas' || h.tab === 'podograma' || h.tab === 'fotos' || h.tab === 'consentimientos') && !h.genexisSel && (
               !h.atencionSel ? (
                 <div className="text-center py-20 text-on-surface-variant">
                   <span className="material-symbols-outlined text-5xl mb-2">clinical_notes</span>
@@ -234,6 +253,32 @@ export function HistoriaClinicaPage() {
 }
 
 type H = ReturnType<typeof useHistoriaClinicaPage>;
+
+/** Visita del sistema anterior (Genexis): archivo congelado, se muestra tal cual quedó, sin editar. */
+function VisitaGenexisCard({ visita }: { visita: HistorialGenexisRegistro | null }) {
+  if (!visita) return <Skeleton className="h-40 w-full" />;
+  return (
+    <div className="rounded-2xl border border-dashed border-outline-variant/50 bg-surface-container-low/40 p-5 space-y-3" data-testid="visita-genexis-detalle">
+      <div className="flex items-start gap-3 flex-wrap">
+        <span className="material-symbols-outlined text-on-surface-variant text-2xl">inventory_2</span>
+        <div className="min-w-0 flex-1">
+          <h3 className="font-headline-sm text-headline-sm font-bold text-on-surface">{fmtFecha(visita.fechaCita)}{visita.horaCita ? ` · ${visita.horaCita} h` : ''}</h3>
+          <p className="text-sm text-on-surface">{visita.servicio ?? 'Visita'}</p>
+          <p className="text-xs text-on-surface-variant">{visita.podologo ?? 'Profesional no registrado'}{visita.sede ? ` · ${visita.sede}` : ''}{visita.consultorio ? ` · ${visita.consultorio}` : ''}</p>
+        </div>
+        <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-surface-container text-on-surface-variant">Sistema anterior</span>
+      </div>
+      <p className="text-xs text-on-surface-variant bg-surface-container-low rounded-lg px-3 py-2 flex items-start gap-2">
+        <span className="material-symbols-outlined text-base">lock</span>
+        <span>Visita registrada en Genexis, el sistema anterior de la clínica. Es un archivo: se lee tal cual quedó y no se puede editar ni completar. Lo nuevo se registra en una atención de esta historia.</span>
+      </p>
+      {visita.obsPodologo && <div><p className={LBL}>Observaciones del profesional</p><p className="text-sm text-on-surface whitespace-pre-wrap break-words">{visita.obsPodologo}</p></div>}
+      {visita.obsPaciente && <div><p className={LBL}>Observaciones de recepción</p><p className="text-sm text-on-surface whitespace-pre-wrap break-words">{visita.obsPaciente}</p></div>}
+      {!visita.obsPodologo && !visita.obsPaciente && <p className="text-sm text-on-surface-variant">Esta visita no tiene observaciones registradas.</p>}
+      {(visita.fechaCreacionGx || visita.usuarioCreacionGx) && <p className="text-[11px] text-on-surface-variant/70">Registrado{visita.fechaCreacionGx ? ` el ${visita.fechaCreacionGx}` : ''}{visita.usuarioCreacionGx ? ` por ${visita.usuarioCreacionGx}` : ''}</p>}
+    </div>
+  );
+}
 
 function CabeceraAtencion({ h, a }: { h: H; a: AtencionCompleta }) {
   const [confirmarCierre, setConfirmarCierre] = useState(false);
@@ -514,6 +559,8 @@ function PanelReceta({ h, a }: { h: H; a: AtencionCompleta }) {
         </div>
       )}
       {r.anulando && <DialogoMotivo titulo="Anular documento" descripcion="El documento queda anulado (no se borra) y su PDF sale con marca de agua." confirmar="Anular" pending={r.anularMut.isPending} onConfirmar={(m) => r.anularMut.mutate({ id: r.anulando!, motivo: m })} onClose={() => r.setAnulando(null)} />}
+      {/* Constancias y descansos médicos (5.4): se emiten aunque la atención esté cerrada (son papeles para el paciente) */}
+      <ConstanciasSection a={a} puedeRegistrar={h.puedeRegistrar} esMedicoPrescriptor={h.esMedicoPrescriptor} />
     </div>
   );
 }

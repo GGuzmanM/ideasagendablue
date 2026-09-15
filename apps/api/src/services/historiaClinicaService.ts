@@ -230,6 +230,11 @@ export async function getAtencionCompleta(id: string) {
       },
       // Controles sugeridos al cerrar (4.1).
       controles: { orderBy: { fechaSugerida: 'asc' }, select: { id: true, fechaSugerida: true, motivo: true, origen: true, estado: true } },
+      // Constancias y descansos médicos (5.4): resumen (el texto va en su PDF).
+      constancias: {
+        orderBy: { fechaEmision: 'asc' },
+        select: { id: true, numero: true, tipo: true, estado: true, fechaEmision: true, desde: true, hasta: true, dias: true, diagnosticoCie10Codigo: true, emisorNombre: true, emisorUsuarioId: true, codigoVerificacion: true, anuladaEn: true, motivoAnulacion: true },
+      },
       historiaClinica: {
         select: {
           id: true, numero: true, pacienteId: true,
@@ -294,6 +299,7 @@ export async function historiaParaPdf(pacienteId: string) {
             },
           },
           consentimientos: { orderBy: { firmadoEn: 'asc' }, select: { numero: true, procedimiento: true, firmanteNombre: true, firmanteRelacion: true, estado: true, firmadoEn: true } },
+          constancias: { orderBy: { fechaEmision: 'asc' }, select: { numero: true, tipo: true, estado: true, fechaEmision: true, desde: true, hasta: true, dias: true, emisorNombre: true, diagnosticoCie10Codigo: true } },
           fotos: { where: { deletedAt: null }, orderBy: { tomadaEn: 'asc' }, select: { id: true, ruta: true, mime: true, tamano: true, zona: true, pie: true, categoria: true, tomadaEn: true } },
         },
       },
@@ -322,7 +328,7 @@ export async function resumenAtencionPorCita(citaId: string) {
 }
 
 /** Auditoría de LECTURA (awaited, nunca lanza): quién abrió qué historia y desde dónde. */
-export async function auditarLecturaHC(p: Ctx & { pacienteId: string; origen: 'ficha' | 'ficha_previa' | 'historial_podograma' | 'atencion' | 'receta' | 'pdf' | 'hc_pdf' | 'consentimiento' | 'anteriores' | 'versiones' | 'escalas' | 'fotos'; atencionId?: string; recetaId?: string; sedeId?: string }) {
+export async function auditarLecturaHC(p: Ctx & { pacienteId: string; origen: 'ficha' | 'ficha_previa' | 'historial_podograma' | 'atencion' | 'receta' | 'pdf' | 'hc_pdf' | 'consentimiento' | 'constancia' | 'anteriores' | 'versiones' | 'escalas' | 'fotos'; atencionId?: string; recetaId?: string; sedeId?: string }) {
   // 'pdf' = PDF de una receta; 'hc_pdf' = copia completa de la historia (se audita aparte: sale entera).
   await registrarAudit({
     ...ctxAudit(p), accion: p.origen === 'hc_pdf' ? 'exportar_hc' : p.origen === 'receta' || p.origen === 'pdf' ? 'ver_receta' : 'ver_hc',
@@ -661,6 +667,11 @@ export async function registrarAlergia(p: Ctx & { pacienteId: string; sustancia:
   const sust = p.sustancia.trim();
   if (!sust) throw new AppError('La sustancia es obligatoria', 400, 'SUSTANCIA_REQUERIDA');
   const hc = await asegurarHistoria(p.pacienteId, { sedeId: p.sedeId, usuarioId: p.usuarioId });
+  // La misma sustancia dos veces (con distinta mayúscula o tilde) confunde la franja roja y el chequeo: se avisa.
+  const normalizar = (t: string) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+  const vivas = await prisma.alergiaPaciente.findMany({ where: { historiaClinicaId: hc.id, deletedAt: null }, select: { sustancia: true, activa: true } });
+  const repetida = vivas.find((a) => normalizar(a.sustancia) === normalizar(sust));
+  if (repetida) throw new AppError(repetida.activa ? `La alergia a «${sust}» ya está registrada` : `La alergia a «${sust}» ya existe (inactiva): actívala en vez de repetirla`, 409, 'ALERGIA_DUPLICADA');
   const etiqueta = await etiquetaUsuario(prisma, p.usuarioId);
   await prisma.$transaction(async (tx) => {
     const a = await tx.alergiaPaciente.create({ data: { historiaClinicaId: hc.id, sustancia: sust, reaccion: limpiar(p.reaccion), severidad: p.severidad ?? 'moderada', registradoPorUsuarioId: p.usuarioId ?? null, registradoEtiqueta: etiqueta } });

@@ -92,6 +92,49 @@ export const VADEMECUM: FilaMed[] = [
   { dci: 'Ácido salicílico + ácido láctico', concentracion: '16.7 %', formaFarmaceutica: 'solución', viaAdministracion: 'tópica', nombresComerciales: 'Duofilm, Verrutol', grupo: 'Queratolítico / hidratante' },
 ];
 
+// Posología SUGERIDA por presentación (3.4): se precarga en la receta al elegir el fármaco y el
+// profesional la ajusta. Redactada para el paciente (sin abreviaturas). Provisional hasta que el
+// doctor devuelva el Word «Contenido clínico para completar»; la clave es el slug de `slugMed`.
+export const POSOLOGIA: Record<string, string> = {
+  'terbinafina-250-mg-tableta': '1 tableta al día con las comidas, por 12 semanas (uñas de los pies)',
+  'itraconazol-100-mg-capsula': '2 cápsulas cada 12 horas con las comidas, 1 semana al mes, por 3 meses (pulsos)',
+  'fluconazol-150-mg-capsula': '1 cápsula una vez por semana, por 6 a 12 meses (uñas de los pies)',
+  'griseofulvina-500-mg-tableta': '1 tableta al día con comida grasa, por 4 a 6 meses',
+  'ciclopirox-8-laca-ungueal': 'Aplicar sobre la uña limpia 1 vez al día; retirar con alcohol 1 vez por semana',
+  'amorolfina-5-laca-ungueal': 'Aplicar sobre la uña limada 1 a 2 veces por semana, hasta que crezca sana',
+  'clotrimazol-1-crema': 'Aplicar una capa fina 2 veces al día por 2 a 4 semanas',
+  'ketoconazol-2-crema': 'Aplicar una capa fina 1 vez al día por 2 a 4 semanas',
+  'terbinafina-1-crema': 'Aplicar una capa fina 1 vez al día por 1 a 2 semanas',
+  'miconazol-2-crema': 'Aplicar una capa fina 2 veces al día por 2 a 4 semanas',
+  'tolnaftato-1-crema': 'Aplicar una capa fina 2 veces al día por 2 a 4 semanas',
+  'cefalexina-500-mg-capsula': '1 cápsula cada 6 horas por 7 días',
+  'amoxicilina-acido-clavulanico-500-125-mg-tableta': '1 tableta cada 8 horas con alimentos por 7 días',
+  'clindamicina-300-mg-capsula': '1 cápsula cada 8 horas con un vaso de agua por 7 días',
+  'ciprofloxacino-500-mg-tableta': '1 tableta cada 12 horas por 7 días; no tomar con leche ni antiácidos',
+  'dicloxacilina-500-mg-capsula': '1 cápsula cada 6 horas, 1 hora antes de las comidas, por 7 días',
+  'mupirocina-2-unguento': 'Aplicar sobre la lesión limpia 3 veces al día por 7 días',
+  'acido-fusidico-2-crema': 'Aplicar sobre la lesión limpia 3 veces al día por 7 días',
+  'ibuprofeno-400-mg-tableta': '1 tableta cada 8 horas después de las comidas, solo si hay dolor, máximo 5 días',
+  'naproxeno-550-mg-tableta': '1 tableta cada 12 horas después de las comidas, solo si hay dolor, máximo 5 días',
+  'diclofenaco-50-mg-tableta': '1 tableta cada 8 horas después de las comidas, solo si hay dolor, máximo 5 días',
+  'diclofenaco-1-gel': 'Aplicar y masajear sobre la zona 3 veces al día',
+  'etoricoxib-90-mg-tableta': '1 tableta al día, solo si hay dolor, máximo 5 días',
+  'paracetamol-500-mg-tableta': '1 a 2 tabletas cada 8 horas si hay dolor; no pasar de 6 tabletas (3 g) al día',
+  'lidocaina-2-solucion-inyectable': 'Uso en consultorio: bloqueo digital, 2 a 4 mL según el procedimiento',
+  'lidocaina-10-spray': 'Uso en consultorio: 1 a 3 aplicaciones sobre la zona antes del procedimiento',
+  'clorhexidina-2-solucion': 'Lavar la zona 1 a 2 veces al día y secar bien',
+  'povidona-yodada-10-solucion': 'Aplicar sobre la herida limpia 1 a 2 veces al día',
+  'peroxido-de-hidrogeno-3-solucion': 'Limpiar la herida 1 vez al día y enjuagar con suero o agua hervida fría',
+  'nitrato-de-plata-40-aplicador': 'Uso en consultorio: tocar solo el tejido sobrante, 1 vez por sesión',
+  'fenol-88-solucion': 'Uso en consultorio: matricectomía química, 3 aplicaciones de 1 minuto',
+  'betametasona-0-05-crema': 'Aplicar una capa fina 1 a 2 veces al día por máximo 2 semanas',
+  'clobetasol-0-05-crema': 'Aplicar una capa fina 1 vez al día por máximo 2 semanas; no en heridas abiertas',
+  'hidrocortisona-1-crema': 'Aplicar una capa fina 2 veces al día por máximo 1 semana',
+  'urea-10-crema': 'Aplicar en los pies 2 veces al día, después del baño y antes de dormir',
+  'urea-40-unguento': 'Aplicar solo sobre la callosidad o la uña 1 vez al día por la noche, cubrir',
+  'acido-salicilico-acido-lactico-16-7-solucion': 'Aplicar 1 gota sobre la verruga 1 vez al día, proteger la piel sana; limar antes',
+};
+
 // Venta BAJO RECETA (solo puede ir en una Receta Médica firmada por médico): sistémicos orales,
 // antibióticos, anestésicos inyectables y corticoides potentes. El resto es de venta libre (OTC)
 // y puede ir en las Indicaciones podológicas. Regla por grupo + excepciones por DCI.
@@ -119,6 +162,7 @@ export async function sembrarMedicamentos(db: PrismaClient): Promise<{ total: nu
           nombresComerciales: f.nombresComerciales ?? null,
           grupo: f.grupo,
           requiereReceta: requiereReceta(f),
+          posologiaSugerida: POSOLOGIA[id] ?? null,
           activo: true,
         };
         return db.medicamento.upsert({ where: { id }, update: data, create: { id, ...data } });

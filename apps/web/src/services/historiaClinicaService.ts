@@ -1,11 +1,11 @@
 // Historia clínica — LÓGICA (hooks). Las vistas (.tsx) son puras y consumen estos hooks.
 // Un useState por campo, `puedeGuardar` derivado, useMutation → invalidar + toast (patrón de la casa).
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
-import { pacientesApi, profesionalesApi, serviciosApi, type Profesional } from '../api';
+import { pacientesApi, profesionalesApi, serviciosApi, historialGenexisApi, type Profesional, type HistorialGenexisRegistro } from '../api';
 import { citasApi, type CitaResumen } from '../api/citas';
 import {
   historiaClinicaApi, useHistoriaClinica, useAtencionClinica, useInvalidarHistoriaClinica,
@@ -34,6 +34,10 @@ import { useBorradoresStore, useMarcarBorrador, hayBorradores } from '../stores/
 
 export type TabHc = 'evolucion' | 'receta' | 'antecedentes' | 'procedimientos' | 'escalas' | 'podograma' | 'fotos' | 'consentimientos';
 const ESTADOS_ATENDIDA = ['llego', 'en_atencion', 'completada'];
+/** Un renglón de la línea de tiempo: atención nueva o visita del sistema anterior (Genexis). */
+export type LineaTiempoItem =
+  | { tipo: 'hc'; id: string; fecha: string; atencion: AtencionClinica }
+  | { tipo: 'genexis'; id: string; fecha: string; visita: HistorialGenexisRegistro };
 
 // Equipo (Baro): por el flag del servidor cuando viene; si no, por el nombre.
 const esEquipoNombre = (p: { nombres: string; esEquipo?: boolean }) => p.esEquipo ?? /^baro\b/i.test(p.nombres.trim());
@@ -97,10 +101,33 @@ export function useHistoriaClinicaPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [citaParam]);
 
-  // Sin selección: la atención más reciente.
+  // Visitas del sistema anterior (Genexis, archivo de solo lectura): las que el paciente asistió, de a
+  // 20, para la línea de tiempo unificada (4.3). Se mezclan con las atenciones nuevas por fecha.
+  const [genexisSel, setGenexisSel] = useState<string | null>(null);
+  const genexisQ = useInfiniteQuery({
+    queryKey: ['historial-genexis-hc', pacienteId],
+    queryFn: ({ pageParam }) => historialGenexisApi.listar(pacienteId!, { llego: 'si', page: pageParam, limit: 20 }),
+    initialPageParam: 1,
+    getNextPageParam: (ultima) => (ultima.page * ultima.limit < ultima.total ? ultima.page + 1 : undefined),
+    enabled: !!pacienteId,
+    staleTime: 5 * 60_000, // el archivo no cambia
+  });
+  const genexisVisitas = useMemo(() => genexisQ.data?.pages.flatMap((p) => p.data) ?? [], [genexisQ.data]);
+  const genexisTotal = genexisQ.data?.pages[0]?.total ?? 0;
+  const visitaGenexis = genexisSel ? genexisVisitas.find((v) => v.id === genexisSel) ?? null : null;
+  /** Atenciones nuevas y visitas del sistema anterior en una sola lista, de la más reciente a la más antigua. */
+  const lineaTiempo = useMemo(() => {
+    const items: LineaTiempoItem[] = [
+      ...(historia?.atenciones ?? []).map((a) => ({ tipo: 'hc' as const, id: a.id, fecha: a.fecha.slice(0, 10), atencion: a })),
+      ...genexisVisitas.map((v) => ({ tipo: 'genexis' as const, id: v.id, fecha: v.fechaCita, visita: v })),
+    ];
+    return items.sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : 0));
+  }, [historia?.atenciones, genexisVisitas]);
+
+  // Sin selección: la atención más reciente (si se está mirando una visita del sistema anterior, no).
   useEffect(() => {
-    if (!atencionSel && historia?.atenciones?.length) setAtencionSel(historia.atenciones[0]!.id);
-  }, [historia?.atenciones, atencionSel]);
+    if (!atencionSel && !genexisSel && historia?.atenciones?.length) setAtencionSel(historia.atenciones[0]!.id);
+  }, [historia?.atenciones, atencionSel, genexisSel]);
 
   // Cambiar de atención con un borrador sin guardar (nota dictada, escala a medias, dibujo…) lo perdería:
   // se pregunta antes. Las fotos «por guardar» se conservan (viven por atención), no cuentan aquí.
@@ -111,7 +138,9 @@ export function useHistoriaClinicaPage() {
     limpiarBorradores();
     return true;
   };
-  const seleccionarAtencion = (id: string) => { if (id === atencionSel || !confirmarCambio()) return; setAtencionSel(id); setTab('evolucion'); };
+  const seleccionarAtencion = (id: string) => { if ((id === atencionSel && !genexisSel) || !confirmarCambio()) return; setGenexisSel(null); setAtencionSel(id); setTab('evolucion'); };
+  // Una visita del sistema anterior se mira en el panel derecho como tarjeta de solo lectura.
+  const seleccionarGenexis = (id: string) => { if (id === genexisSel || !confirmarCambio()) return; setGenexisSel(id); setAtencionSel(null); setTab('evolucion'); };
 
   const cerrarMut = useMutation({
     mutationFn: (controles: ControlEntrada[]) => historiaClinicaApi.cerrarAtencion(atencionSel!, controles),
@@ -211,6 +240,8 @@ export function useHistoriaClinicaPage() {
     estadoHcMut, alternarEstadoHc, sugerirPasiva,
     atencion, atencionSel, seleccionarAtencion, cargandoAtencion: atencionQ.isLoading, errorAtencion: atencionQ.error as Error | null,
     puedeReabrir, horasReabrir: HORAS_REABRIR,
+    lineaTiempo, genexisTotal, genexisSel, visitaGenexis, seleccionarGenexis,
+    hayMasGenexis: !!genexisQ.hasNextPage, cargarMasGenexis: () => void genexisQ.fetchNextPage(), cargandoGenexis: genexisQ.isFetchingNextPage,
     tab, setTab, navigate,
     puedeRegistrar, puedeAnular, puedeVerRecetas, esMedicoPrescriptor, usuario,
     citasCandidatas, mostrarCandidatas, setMostrarCandidatas,
@@ -523,11 +554,13 @@ export function useEmitirRecetaForm(atencion: AtencionCompleta, tipoDocumento: T
     if (!puedeGuardar || emitirMut.isPending || chequeando) return;
     setChequeando(true);
     try {
-      const { advertencias } = await recetasApi.advertencias(atencion.id, items.map((i) => ({ nombre: i.nombre ?? '', marcaImpresa: i.marcaImpresa ?? null })));
-      if (advertencias.length) {
-        const lista = advertencias.map((a) => `• ${a.item} — el paciente tiene registrada alergia a ${a.sustancia}${a.severidad === 'severa' ? ' (SEVERA)' : ''}`).join('\n');
-        if (!window.confirm(`ATENCIÓN, posible alergia:\n${lista}\n\n¿Emitir de todos modos?`)) return;
-      }
+      // Alergias (3.1) + contraindicaciones por la condición del paciente (3.3) + interacciones entre ítems (3.2).
+      const av = await recetasApi.advertencias(atencion.id, items.map((i) => ({ nombre: i.nombre ?? '', marcaImpresa: i.marcaImpresa ?? null, medicamentoId: i.medicamentoId ?? null, via: i.via ?? null, formaFarmaceutica: i.formaFarmaceutica ?? null })));
+      const bloques: string[] = [];
+      if (av.advertencias.length) bloques.push('POSIBLE ALERGIA:\n' + av.advertencias.map((a) => `• ${a.item} — alergia registrada a ${a.sustancia}${a.severidad === 'severa' ? ' (SEVERA)' : ''}${a.nota ? ` · ${a.nota}` : ''}`).join('\n'));
+      if (av.contraindicaciones.length) bloques.push('POR LA CONDICIÓN DEL PACIENTE:\n' + av.contraindicaciones.map((c) => `• ${c.item} · ${c.condicion}${c.nivel === 'alto' ? ' (IMPORTANTE)' : ''}: ${c.texto}`).join('\n'));
+      if (av.interacciones.length) bloques.push('INTERACCIÓN ENTRE LO RECETADO:\n' + av.interacciones.map((x) => `• ${x.itemA} + ${x.itemB}${x.nivel === 'alto' ? ' (IMPORTANTE)' : ''}: ${x.texto}`).join('\n'));
+      if (bloques.length && !window.confirm(`Antes de emitir, revisa:\n\n${bloques.join('\n\n')}\n\n¿Emitir de todos modos?`)) return;
     } catch { /* si el chequeo falla se emite igual: el servidor vuelve a avisar tras emitir */ }
     finally { setChequeando(false); }
     emitirMut.mutate();

@@ -438,6 +438,9 @@ router.get('/:id/historial-genexis/existe', requireAuth, requireAcceso('patients
 const historialGenexisQuery = z.object({
   sede: z.string().trim().min(1).optional(),
   anio: z.string().regex(/^\d{4}$/).optional(),
+  // `llego=si`: solo las visitas a las que el paciente asistió (la línea de tiempo de la HC no
+  // muestra las citas a las que no vino).
+  llego: z.enum(['si', 'no']).optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
@@ -455,6 +458,7 @@ router.get('/:id/historial-genexis', requireAuth, requireAcceso('patients:read',
     ...base,
     ...(q.sede ? { sede: q.sede } : {}),
     ...(q.anio ? { fechaCita: { startsWith: `${q.anio}-` } } : {}),
+    ...(q.llego ? { llegoPaciente: q.llego === 'si' ? 'Sí' : 'No' } : {}),
   };
 
   const [registros, total, agregados, asistencia, porSede, aniosRaw] = await Promise.all([

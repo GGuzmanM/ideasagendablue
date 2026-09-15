@@ -67,6 +67,17 @@ export interface Consentimiento {
   id: string; numero: number; procedimiento: string; firmanteNombre: string; firmanteDocumento: string | null; firmanteRelacion: RelacionFirmante;
   estado: 'firmado' | 'revocado'; firmadoEn: string; revocadoEn: string | null; motivoRevocacion: string | null; registradoEtiqueta: string | null;
 }
+// ─── Constancias y descansos médicos (5.4) ───────────────────────────────────
+export type TipoConstancia = 'constancia_atencion' | 'descanso_medico';
+export const TIPO_CONSTANCIA_LABEL: Record<TipoConstancia, string> = { constancia_atencion: 'Constancia de atención', descanso_medico: 'Descanso médico' };
+export interface Constancia {
+  id: string; numero: number; tipo: TipoConstancia; estado: 'emitida' | 'anulada'; fechaEmision: string;
+  desde: string | null; hasta: string | null; dias: number | null; diagnosticoCie10Codigo: string | null;
+  emisorNombre: string; emisorUsuarioId: string | null; codigoVerificacion: string; anuladaEn: string | null; motivoAnulacion: string | null;
+}
+export interface CamposConstancia { tipo: TipoConstancia; desde?: string | null; dias?: number | null; diagnosticoCie10Codigo?: string | null; observacion?: string | null }
+export const MAX_DIAS_DESCANSO = 30;
+
 /** Trazo de la firma: puntos normalizados 0..1 sobre el lienzo (ancho × alto). */
 export interface TrazoFirma { puntos: [number, number][]; grosor?: number }
 export interface CamposConsentimiento {
@@ -100,6 +111,7 @@ export interface AtencionCompleta extends AtencionClinica {
   procedimientos: Procedimiento[]; escalas: Escala[]; marcasPodograma: MarcaPodograma[]; imagenesPodograma: ImagenPodograma[]; fotos: FotoClinica[]; dibujosSilueta?: DibujoSilueta[];
   consentimientos?: Consentimiento[];
   controles?: ControlAtencion[];
+  constancias?: Constancia[];
   historiaClinica: { id: string; numero: number; pacienteId: string; alergias: Alergia[] };
   paciente: PacienteHc;
 }
@@ -183,6 +195,8 @@ export interface FichaPrevia {
   ultimaAtencion: { id: string; fecha: string; estado: 'abierta' | 'cerrada'; motivoConsulta: string; profesional: string; sede: string } | null;
   fotoAnterior: { id: string; zona: string | null; pie: Pie | null; tomadaEn: string } | null;
   sesionesPendientes: { nombre: string; restantes: number; total: number; vigenciaFin: string | null }[];
+  /** Visitas asistidas en el sistema anterior (Genexis, archivo de solo lectura) y la última. */
+  genexis: { total: number; ultima: { id: string; fecha: string; servicio: string | null; podologo: string | null; sede: string | null } | null };
 }
 /** Escala con la fecha de su atención (lista por paciente, de la más antigua a la más nueva). */
 export interface EscalaPaciente extends Escala { fecha: string }
@@ -380,6 +394,18 @@ export const historiaClinicaApi = {
   blobConsentimientoPdf: async (id: string): Promise<Blob> => {
     const token = useAuthStore.getState().token;
     const res = await fetch(`/api/v1${B}/consentimientos/${id}/pdf`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: 'No se pudo generar el PDF' }));
+      throw new Error((err as { message?: string }).message ?? 'No se pudo generar el PDF');
+    }
+    return res.blob();
+  },
+  // Constancias y descansos médicos (5.4)
+  emitirConstancia: (atencionId: string, data: CamposConstancia) => api.post<{ id: string; numero: number; tipo: TipoConstancia; codigoVerificacion: string }>(`${B}/atenciones/${atencionId}/constancias`, data),
+  anularConstancia: (id: string, motivo: string) => api.patch<{ ok: boolean }>(`${B}/constancias/${id}/anular`, { motivo }),
+  blobConstanciaPdf: async (id: string): Promise<Blob> => {
+    const token = useAuthStore.getState().token;
+    const res = await fetch(`/api/v1${B}/constancias/${id}/pdf`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ message: 'No se pudo generar el PDF' }));
       throw new Error((err as { message?: string }).message ?? 'No se pudo generar el PDF');

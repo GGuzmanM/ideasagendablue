@@ -1912,6 +1912,7 @@ model AtencionClinica {
   fotos             FotoClinica[]
   dibujosSilueta    DibujoSilueta[]
   consentimientos   ConsentimientoInformado[]
+  constancias     ConstanciaClinica[]
   controles         ControlSugerido[]
 
   @@index([historiaClinicaId, fecha])
@@ -2150,6 +2151,43 @@ model ConsentimientoInformado {
 // CONTROL SUGERIDO al cerrar la atención (4.1): próximo control con fecha y servicio. Recepción lo
 // agenda tras confirmarlo con el paciente (queda ligado a la cita) o lo descarta con motivo. Un
 // control pendiente cuya fecha ya pasó es la alerta de «no volvió» (4.2).
+// ─── Constancias y certificados (5.4) ────────────────────────────────────────
+// Constancia de atención (cualquier profesional de la atención) y descanso médico (solo médico con
+// CMP, con diagnóstico y días). Documentos INMUTABLES: se anulan con motivo y se emite otro. Llevan
+// código de verificación (mismo QR/página pública que la receta). Se pueden emitir aunque la atención
+// ya esté cerrada: son papeles para el paciente, no cambian el registro clínico.
+model ConstanciaClinica {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  numero                 Int       @unique @default(autoincrement())
+  tipo                   String // constancia_atencion | descanso_medico
+  atencionId             String    @db.Uuid
+  pacienteId             String    @db.Uuid
+  sedeId                 String    @db.Uuid // copiado de la atención; sin relación
+  emisorProfesionalId    String    @db.Uuid
+  emisorUsuarioId        String?   @db.Uuid
+  emisorNombre           String // snapshot
+  emisorRegistro         String? // snapshot: CMP (obligatorio en descanso_medico) o registro de la podóloga
+  diagnosticoCie10Codigo String?
+  diagnosticoTexto       String?
+  desde                  DateTime? @db.Date // descanso: primer día
+  hasta                  DateTime? @db.Date // descanso: último día (inclusive)
+  dias                   Int?
+  texto                  String // cuerpo del documento tal como se imprimió (snapshot)
+  fechaEmision           DateTime  @default(now())
+  estado                 String    @default("emitida") // emitida | anulada
+  codigoVerificacion     String    @unique
+  anuladaEn              DateTime?
+  anuladaPorUsuarioId    String?   @db.Uuid
+  motivoAnulacion        String?
+  creadoEn               DateTime  @default(now())
+
+  atencion AtencionClinica @relation(fields: [atencionId], references: [id], onDelete: Restrict)
+
+  @@index([atencionId])
+  @@index([pacienteId, fechaEmision])
+  @@map("constancias_clinicas")
+}
+
 model ControlSugerido {
   id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   atencionId             String    @db.Uuid

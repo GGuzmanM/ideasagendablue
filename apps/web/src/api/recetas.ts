@@ -45,7 +45,11 @@ export interface RecetaCompleta {
   advertencias?: Advertencia[];
 }
 
-export interface Advertencia { item: string; sustancia: string; severidad: string }
+export interface Advertencia { item: string; sustancia: string; severidad: string; nota?: string }
+export interface AvisoInteraccion { itemA: string; itemB: string; nivel: 'alto' | 'medio'; texto: string }
+export interface AvisoContraindicacion { item: string; condicion: string; nivel: 'alto' | 'medio'; texto: string }
+/** Chequeo antes de emitir: alergias (3.1), interacciones entre ítems (3.2) y contraindicaciones por condición (3.3). */
+export interface AvisosReceta { advertencias: Advertencia[]; interacciones: AvisoInteraccion[]; contraindicaciones: AvisoContraindicacion[]; condiciones: string[] }
 
 export interface RecetaListado {
   id: string; numero: number; tipoDocumento: TipoDocumentoReceta; estado: 'emitida' | 'anulada'; fechaEmision: string; emisorNombre: string;
@@ -65,8 +69,8 @@ export const favoritasKey = (tipo: TipoDocumentoReceta) => ['recetas-favoritas',
 export const recetasApi = {
   emitir: (data: { atencionId: string; tipoDocumento: TipoDocumentoReceta; emisorProfesionalId?: string | null; indicacionesGenerales?: string | null; vigenciaDias?: number | null; items: ItemEntrada[] }) =>
     api.post<RecetaCompleta>('/recetas', data),
-  advertencias: (atencionId: string, items: { nombre: string; marcaImpresa?: string | null }[]) =>
-    api.post<{ advertencias: Advertencia[] }>('/recetas/advertencias', { atencionId, items }),
+  advertencias: (atencionId: string, items: { nombre: string; marcaImpresa?: string | null; medicamentoId?: string | null; via?: string | null; formaFarmaceutica?: string | null }[]) =>
+    api.post<AvisosReceta>('/recetas/advertencias', { atencionId, items }),
   obtener: (id: string) => api.get<RecetaCompleta>(`/recetas/${id}`),
   dePaciente: (pacienteId: string) => api.get<RecetaListado[]>(`/recetas/paciente/${pacienteId}`),
   anular: (id: string, motivo: string) => api.patch<RecetaCompleta>(`/recetas/${id}/anular`, { motivo }),
@@ -142,6 +146,23 @@ export interface VerificacionReceta {
   estado: 'emitida' | 'anulada'; anuladaEn: string | null; vigente: boolean;
   emisor: { nombre: string; registro: string | null }; sede: string; paciente: string;
   items: { tipo: TipoItemReceta; nombre: string; marca: string | null; cantidad: string | null }[];
+}
+
+export interface VerificacionConstancia {
+  tipoDocumento: 'constancia_atencion' | 'descanso_medico'; numero: number; fechaEmision: string; estado: 'emitida' | 'anulada'; anuladaEn: string | null; vigente: boolean;
+  desde: string | null; hasta: string | null; dias: number | null;
+  emisor: { nombre: string; registro: string | null }; sede: string; paciente: string;
+}
+/** El mismo código puede ser de una receta o de una constancia: se prueba primero la receta. */
+export async function verificarDocumento(codigo: string): Promise<{ receta: VerificacionReceta } | { constancia: VerificacionConstancia }> {
+  try { return { receta: await verificarReceta(codigo) }; }
+  catch (e) {
+    if ((e as { statusCode?: number }).statusCode !== 404) throw e;
+    const res = await fetch(`/api/v1/verificar/constancia/${encodeURIComponent(codigo)}`);
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error((json as { message?: string }).message || 'No se pudo verificar'), { statusCode: res.status });
+    return { constancia: json as VerificacionConstancia };
+  }
 }
 
 /** Sin sesión (la abre una farmacia desde el QR): fetch directo, sin el cliente autenticado. */

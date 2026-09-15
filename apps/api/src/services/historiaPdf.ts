@@ -180,6 +180,14 @@ export function escribirHistoriaPdf(doc: Doc, h: HistoriaParaPdf, opts: { fotos?
         }
       }
     }
+    if (a.constancias.length) {
+      subtitulo('Constancias y descansos médicos');
+      for (const c of a.constancias) {
+        const tipo = c.tipo === 'descanso_medico' ? 'Descanso médico' : 'Constancia de atención';
+        const rango = c.tipo === 'descanso_medico' && c.desde && c.hasta ? ` · ${c.dias} día(s), del ${soloFecha(c.desde)} al ${soloFecha(c.hasta)}` : '';
+        parrafo(`${tipo} N° ${String(c.numero).padStart(5, '0')} · ${soloFecha(c.fechaEmision)} · ${c.emisorNombre}${c.diagnosticoCie10Codigo ? ` · ${c.diagnosticoCie10Codigo}` : ''}${rango}${c.estado === 'anulada' ? ' · ANULADA' : ''}`, undefined, { tam: 9 });
+      }
+    }
     if (a.consentimientos.length) {
       subtitulo('Consentimientos informados');
       for (const c of a.consentimientos) {

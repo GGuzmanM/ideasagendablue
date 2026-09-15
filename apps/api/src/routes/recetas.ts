@@ -70,15 +70,22 @@ router.post('/', requireAuth, async (req, res) => {
 });
 
 // POST /recetas/advertencias — cruce alergias vs ítems ANTES de emitir (3.1); basta hc.registrar
+// También interacciones entre los ítems (3.2) y contraindicaciones por condición del paciente (3.3).
 router.post('/advertencias', requireAuth, requirePermiso('hc.registrar'), async (req, res) => {
-  const data = z.object({ atencionId: uuid, items: z.array(z.object({ nombre: z.string().trim().min(1), marcaImpresa: z.string().nullable().optional() })).max(30) }).parse(req.body);
+  const data = z.object({
+    atencionId: uuid,
+    items: z.array(z.object({
+      nombre: z.string().trim().min(1), marcaImpresa: z.string().nullable().optional(), medicamentoId: z.string().trim().max(120).nullable().optional(),
+      via: z.string().nullable().optional(), formaFarmaceutica: z.string().nullable().optional(),
+    })).max(30),
+  }).parse(req.body);
   const at = await prisma.atencionClinica.findUnique({
     where: { id: data.atencionId },
-    select: { sedeId: true, historiaClinica: { select: { alergias: { where: { deletedAt: null, activa: true }, select: { sustancia: true, severidad: true } } } } },
+    select: { sedeId: true, pacienteId: true, historiaClinica: { select: { alergias: { where: { deletedAt: null, activa: true }, select: { sustancia: true, severidad: true } } } } },
   });
   if (!at) throw new AppError('Atención no encontrada', 404);
   assertSede(req, at.sedeId);
-  res.json({ advertencias: rx.advertenciasAlergia(at.historiaClinica.alergias, data.items) });
+  res.json(await rx.avisosReceta({ pacienteId: at.pacienteId, alergias: at.historiaClinica.alergias, items: data.items }));
 });
 
 // ─── Favoritas (3.5) — ANTES de /:id para que «favoritas» no se tome como un id ───

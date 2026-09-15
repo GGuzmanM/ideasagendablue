@@ -390,10 +390,11 @@ export interface HistorialGenexisPagina {
 export const historialGenexisApi = {
   existe: (pacienteId: string) =>
     api.get<{ existe: boolean; total: number }>(`/pacientes/${pacienteId}/historial-genexis/existe`),
-  listar: (pacienteId: string, params: { sede?: string; anio?: string; page?: number; limit?: number }) =>
+  listar: (pacienteId: string, params: { sede?: string; anio?: string; llego?: 'si' | 'no'; page?: number; limit?: number }) =>
     api.get<HistorialGenexisPagina>(`/pacientes/${pacienteId}/historial-genexis`, {
       ...(params.sede ? { sede: params.sede } : {}),
       ...(params.anio ? { anio: params.anio } : {}),
+      ...(params.llego ? { llego: params.llego } : {}),
       page: String(params.page ?? 1),
       limit: String(params.limit ?? 50),
     }),

@@ -13,7 +13,12 @@ import { nuevoPdf } from '../services/pdfComun';
 import { escribirHistoriaPdf } from '../services/historiaPdf';
 import * as cs from '../services/consentimientoService';
 import * as ctl from '../services/controlService';
+import { enviarAvisoCoordinacion, enviarRecordatoriosPacientes } from '../services/avisosControles';
+import { registrarAudit } from '../services/audit';
 import { escribirConsentimientoPdf } from '../services/consentimientoPdf';
+import * as cons from '../services/constanciaService';
+import { escribirConstanciaPdf } from '../services/constanciaPdf';
+import { qrPng, urlVerificacionReceta } from '../services/pdfComun';
 
 // ─── Historia clínica (Fase 1) ────────────────────────────────────────────────
 // Todas las rutas exigen usuario + permiso (`requirePermiso`, nunca `requireAcceso`: las API keys
@@ -212,6 +217,14 @@ router.get('/controles', ...verHc, async (req, res) => {
 router.get('/controles/contador', ...verHc, async (req, res) => {
   res.json(await ctl.contarControles(alcanceControles(req)));
 });
+// Disparo manual de los avisos del día (2.9): coordinación y pacientes. Con `forzar` repite el de
+// coordinación aunque ya haya salido hoy; el del paciente nunca se repite por control.
+router.post('/controles/avisos', ...anular, async (req, res) => {
+  const { forzar } = z.object({ forzar: z.boolean().optional() }).parse(req.body ?? {});
+  const [coordinacion, pacientes] = [await enviarAvisoCoordinacion({ forzar }), await enviarRecordatoriosPacientes()];
+  await registrarAudit({ ...ctx(req), accion: 'disparar_avisos_controles', entidad: 'control_sugerido', entidadId: '00000000-0000-0000-0000-000000000000', despues: { coordinacion, pacientes } });
+  res.json({ coordinacion, pacientes });
+});
 router.patch('/controles/:id', ...registrar, async (req, res) => {
   const data = z.object({
     accion: z.enum(['agendar', 'descartar']),
@@ -260,6 +273,46 @@ router.get('/consentimientos/:id/pdf', ...verHc, async (req, res) => {
   doc.pipe(res);
   escribirConsentimientoPdf(doc, c);
   doc.end();
+});
+
+// ─── Constancias y descansos médicos (5.4) ───────────────────────────────────
+// Constancia de atención: hc.registrar (la firma quien atendió). Descanso médico: además receta.emitir
+// y ficha de médico con CMP (lo valida el servicio). Se emiten aunque la atención esté cerrada.
+const constanciaSchema = z.object({
+  tipo: z.enum(['constancia_atencion', 'descanso_medico']),
+  desde: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  dias: z.number().int().min(1).max(cons.MAX_DIAS_DESCANSO).nullable().optional(),
+  diagnosticoCie10Codigo: z.string().trim().max(10).nullable().optional(),
+  observacion: texto(1000),
+});
+router.post('/atenciones/:id/constancias', ...registrar, async (req, res) => {
+  const data = constanciaSchema.parse(req.body);
+  const { sedeId } = await sedeDeAtencion(req.params.id);
+  assertSede(req, sedeId);
+  if (data.tipo === 'descanso_medico' && !user(req).permisos.includes('receta.emitir')) throw new AppError('El descanso médico lo emite un médico colegiado', 403, 'SOLO_MEDICO');
+  res.status(201).json(await cons.emitirConstancia({ ...ctx(req), user: user(req), atencionId: req.params.id, ...data }));
+});
+router.get('/constancias/:id/pdf', ...verHc, async (req, res) => {
+  const meta = await cons.metaConstancia(req.params.id);
+  assertSede(req, meta.sedeId);
+  await hc.auditarLecturaHC({ ...ctx(req), pacienteId: meta.pacienteId, origen: 'constancia', atencionId: meta.atencionId, sedeId: meta.sedeId });
+  const c = await cons.constanciaParaPdf(req.params.id);
+  const qr = await qrPng(urlVerificacionReceta(c.codigoVerificacion)).catch(() => null);
+  const prefijo = c.tipo === 'descanso_medico' ? 'descanso-medico' : 'constancia';
+  const doc = nuevoPdf(`${prefijo} ${String(c.numero).padStart(5, '0')}`);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="${prefijo}-${String(c.numero).padStart(5, '0')}.pdf"`);
+  res.setHeader('Cache-Control', 'private, no-store');
+  doc.pipe(res);
+  escribirConstanciaPdf(doc, c, qr);
+  doc.end();
+});
+router.patch('/constancias/:id/anular', ...registrar, async (req, res) => {
+  const { motivo } = z.object({ motivo: z.string().trim().min(5).max(500) }).parse(req.body);
+  const meta = await cons.metaConstancia(req.params.id);
+  assertSede(req, meta.sedeId);
+  await cons.anularConstancia({ ...ctx(req), user: user(req), id: req.params.id, motivo });
+  res.json({ ok: true });
 });
 
 router.patch('/consentimientos/:id/revocar', ...registrar, async (req, res) => {

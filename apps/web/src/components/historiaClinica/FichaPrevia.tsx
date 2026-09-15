@@ -27,11 +27,22 @@ export function FichaPreviaCard({ ficha, cargando }: { ficha: FichaPrevia | unde
   if (cargando && !ficha) return <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-3 text-xs text-on-surface-variant">Cargando ficha previa…</div>;
   if (!ficha) return null;
   const sesiones = ficha.sesionesPendientes.reduce((n, q) => n + q.restantes, 0);
+  // Paciente de años en la clínica: lo que quedó del sistema anterior (Genexis) también cuenta.
+  const gx = ficha.genexis;
+  const lineaGenexis = gx.total > 0 && (
+    <p className="text-xs text-on-surface" data-testid="ficha-genexis">
+      <span className="text-on-surface-variant">Sistema anterior:</span> {gx.total} {gx.total === 1 ? 'visita' : 'visitas'}
+      {gx.ultima && <> · última {fmt(gx.ultima.fecha)}{gx.ultima.servicio ? ` · ${gx.ultima.servicio}` : ''}{gx.ultima.podologo ? ` · ${gx.ultima.podologo}` : ''}</>}
+    </p>
+  );
   if (!ficha.tieneHistoria) {
     return (
-      <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-3 text-xs text-on-surface-variant flex items-center gap-2">
-        <span className="material-symbols-outlined text-base">clinical_notes</span>
-        Sin historia clínica todavía{sesiones ? ` · ${sesiones} sesión(es) por usar` : ''}
+      <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-3 text-xs text-on-surface-variant space-y-1">
+        <p className="flex items-center gap-2">
+          <span className="material-symbols-outlined text-base">clinical_notes</span>
+          {gx.total > 0 ? 'Sin historia clínica nueva todavía' : 'Sin historia clínica todavía'}{sesiones ? ` · ${sesiones} sesión(es) por usar` : ''}
+        </p>
+        {lineaGenexis}
       </div>
     );
   }
@@ -62,6 +73,7 @@ export function FichaPreviaCard({ ficha, cargando }: { ficha: FichaPrevia | unde
         {ficha.riesgoIwgdf && <p><span className="text-on-surface-variant">Riesgo del pie evaluado el</span> {fmt(ficha.riesgoIwgdf.fecha)}</p>}
         {ficha.ultimaAtencion && <p><span className="text-on-surface-variant">Última atención:</span> {fmt(ficha.ultimaAtencion.fecha)} · {ficha.ultimaAtencion.profesional} · {ficha.ultimaAtencion.sede}{ficha.ultimaAtencion.estado === 'abierta' ? <> <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">abierta</span></> : null}</p>}
         {ficha.sesionesPendientes.map((q) => <p key={q.nombre}><span className="text-on-surface-variant">Sesiones:</span> {q.nombre} · <b>{q.restantes}</b> de {q.total} por usar</p>)}
+        {lineaGenexis}
       </div>
       {ficha.fotoAnterior && <FotoMini id={ficha.fotoAnterior.id} zona={ficha.fotoAnterior.zona} fecha={ficha.fotoAnterior.tomadaEn} />}
     </div>

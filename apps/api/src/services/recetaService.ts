@@ -17,11 +17,13 @@ import { AppError } from '../middleware/errorHandler';
 import { AuthPayload } from '../middleware/auth';
 import { auditEnTx } from './audit';
 import { Ctx, etiquetaUsuario, exigirAbierta } from './historiaClinicaService';
+import { fichaPrevia } from './fichaPreviaService';
+import { ALERGIA_FAMILIAS, familiasDe, interaccionesEntre, contraindicacionesPara, condicionesDeAntecedentes, type ItemReceta, type AvisoInteraccion, type AvisoContraindicacion } from '../data/interaccionesMedicamentos';
 
 const ctxAudit = (c: Ctx) => ({ usuarioId: c.usuarioId, ip: c.ip, userAgent: c.userAgent });
 
 // Código corto legible (sin 0/O/1/I) para el QR / verificación en farmacia.
-function codigoVerificacion(): string {
+export function codigoVerificacion(): string {
   const alf = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   const b = randomBytes(10);
   return Array.from(b, (x) => alf[x % alf.length]).join('');
@@ -266,18 +268,57 @@ export async function anularReceta(p: Ctx & { user: AuthPayload; recetaId: strin
 export function advertenciasAlergia(
   alergias: { sustancia: string; severidad: string }[],
   items: { nombre: string; marcaImpresa?: string | null }[],
-): { item: string; sustancia: string; severidad: string }[] {
+): { item: string; sustancia: string; severidad: string; nota?: string }[] {
   const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-  const out: { item: string; sustancia: string; severidad: string }[] = [];
+  const out: { item: string; sustancia: string; severidad: string; nota?: string }[] = [];
   for (const a of alergias) {
     const sust = norm(a.sustancia);
     if (sust.length < 3) continue;
+    // Alergia a una FAMILIA («penicilina», «AINE», «yodo»): avisa con cada fármaco de esa familia.
+    const familiasAlergia = ALERGIA_FAMILIAS.filter((r) => r.re.test(sust));
     for (const it of items) {
       const nombre = norm(it.nombre ?? '');
       if (nombre.length < 3) continue; // un nombre vacío o de 2 letras "estaría contenido" en cualquier alergia
       const txt = norm(`${it.nombre} ${it.marcaImpresa ?? ''}`);
-      if (txt.includes(sust) || sust.includes(nombre)) out.push({ item: it.nombre, sustancia: a.sustancia, severidad: a.severidad });
+      if (txt.includes(sust) || sust.includes(nombre)) { out.push({ item: it.nombre, sustancia: a.sustancia, severidad: a.severidad }); continue; }
+      const fams = familiasDe(it.nombre);
+      const cruce = familiasAlergia.find((r) => fams.includes(r.familia));
+      if (cruce) out.push({ item: it.nombre, sustancia: a.sustancia, severidad: a.severidad, nota: cruce.nota ?? 'misma familia' });
     }
   }
   return out;
+}
+
+// ─── Chequeo completo antes de emitir (3.1 + 3.2 + 3.3) ──────────────────────
+export interface AvisosReceta {
+  advertencias: ReturnType<typeof advertenciasAlergia>;
+  interacciones: AvisoInteraccion[];
+  contraindicaciones: AvisoContraindicacion[];
+  condiciones: string[]; // claves detectadas en el paciente (para explicar de dónde sale el aviso)
+}
+/**
+ * Alergias (con familias), interacciones entre los ítems y contraindicaciones por las condiciones del
+ * paciente (banderas de la ficha previa + antecedentes como embarazo, hígado, gastritis…). Avisa, no
+ * bloquea. Los ítems que vienen del vademécum completan vía y forma para saber si son tópicos.
+ */
+export async function avisosReceta(p: { pacienteId: string; alergias: { sustancia: string; severidad: string }[]; items: (ItemReceta & { medicamentoId?: string | null })[] }): Promise<AvisosReceta> {
+  const ids = [...new Set(p.items.map((i) => i.medicamentoId).filter((x): x is string => !!x))];
+  const meds = ids.length ? await prisma.medicamento.findMany({ where: { id: { in: ids } }, select: { id: true, viaAdministracion: true, formaFarmaceutica: true } }) : [];
+  const medPor = new Map(meds.map((m) => [m.id, m]));
+  const items: ItemReceta[] = p.items.map((i) => {
+    const m = i.medicamentoId ? medPor.get(i.medicamentoId) : undefined;
+    return { nombre: i.nombre, marcaImpresa: i.marcaImpresa ?? null, via: i.via ?? m?.viaAdministracion ?? null, formaFarmaceutica: i.formaFarmaceutica ?? m?.formaFarmaceutica ?? null };
+  });
+  const [ficha, hc] = await Promise.all([
+    fichaPrevia(p.pacienteId),
+    prisma.historiaClinica.findUnique({ where: { pacienteId: p.pacienteId }, select: { antecedentes: { where: { deletedAt: null, activo: true }, select: { tipo: true, descripcion: true } } } }),
+  ]);
+  const condiciones = condicionesDeAntecedentes(hc?.antecedentes ?? []);
+  for (const b of ficha.banderas) condiciones.add(b.clave);
+  return {
+    advertencias: advertenciasAlergia(p.alergias, items),
+    interacciones: interaccionesEntre(items),
+    contraindicaciones: contraindicacionesPara(items, condiciones),
+    condiciones: [...condiciones],
+  };
 }

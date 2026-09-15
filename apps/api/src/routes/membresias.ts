@@ -14,7 +14,7 @@ import { prisma } from '../db';
 import { requireAuth, requirePermiso } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { auditEnTx, registrarAudit } from '../services/audit';
-import { uploadContrato } from '../middleware/uploadContrato';
+import { uploadContrato, validarContratoReal } from '../middleware/uploadContrato';
 import { generarContratoPdf, guardarContratoGenerado, rutaLocalContrato, type PosicionCampo } from '../services/contratoMembresiaService';
 import fs, { existsSync as fsExiste } from 'fs';
 import { PDFDocument } from 'pdf-lib';
@@ -113,7 +113,7 @@ router.get('/:id/contrato-config', requireAuth, requireGestor, async (req, res) 
 });
 
 // POST /membresias/:id/contrato-plantilla — subir el PDF del contrato (admin/coordinadora).
-router.post('/:id/contrato-plantilla', requireAuth, requireGestor, uploadContrato.single('contrato'), async (req, res) => {
+router.post('/:id/contrato-plantilla', requireAuth, requireGestor, uploadContrato.single('contrato'), validarContratoReal, async (req, res) => {
   if (!req.file) throw new AppError('No se recibió el archivo PDF', 400, 'SIN_ARCHIVO');
   const plantilla = await plantillaDe(req.params.id);
   const url = `${baseUrlDe(req)}/uploads/contratos/${req.file.filename}`;

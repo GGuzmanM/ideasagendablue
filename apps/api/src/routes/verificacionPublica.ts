@@ -61,4 +61,28 @@ router.get('/receta/:codigo', async (req, res) => {
   });
 });
 
+// Constancias y descansos médicos (5.4): mismo código y misma página; del paciente solo iniciales.
+router.get('/constancia/:codigo', async (req, res) => {
+  const codigo = String(req.params.codigo ?? '').trim().toUpperCase();
+  if (!CODIGO.test(codigo)) throw new AppError('El código de verificación no es válido', 400, 'CODIGO_INVALIDO');
+  const c = await prisma.constanciaClinica.findUnique({
+    where: { codigoVerificacion: codigo },
+    select: {
+      id: true, numero: true, tipo: true, fechaEmision: true, estado: true, anuladaEn: true, desde: true, hasta: true, dias: true,
+      emisorNombre: true, emisorRegistro: true, sedeId: true,
+      atencion: { select: { sede: { select: { nombre: true } }, paciente: { select: { nombres: true, apellidoPaterno: true, apellidoMaterno: true } } } },
+    },
+  });
+  if (!c) throw new AppError('No existe un documento con ese código', 404, 'NO_ENCONTRADO');
+  void registrarAudit({ accion: 'verificar_constancia', entidad: 'constancia', entidadId: c.id, sedeId: c.sedeId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined });
+  res.setHeader('Cache-Control', 'no-store');
+  const p = c.atencion.paciente;
+  res.json({
+    tipoDocumento: c.tipo, numero: c.numero, fechaEmision: c.fechaEmision, estado: c.estado, anuladaEn: c.anuladaEn, vigente: c.estado === 'emitida',
+    desde: c.desde, hasta: c.hasta, dias: c.dias,
+    emisor: { nombre: c.emisorNombre, registro: c.emisorRegistro }, sede: c.atencion.sede.nombre,
+    paciente: [inicial(p.nombres), inicial(p.apellidoPaterno), inicial(p.apellidoMaterno)].filter(Boolean).map((x) => `${x}.`).join(' '),
+  });
+});
+
 export default router;
