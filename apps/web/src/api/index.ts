@@ -40,6 +40,8 @@ export interface Sede {
   activa: boolean;
   horario: HorarioSede;
   unidadesNegocio: UnidadNegocio[];
+  /** Nº de consultorios físicos (0 = la sede no numera consultorios). */
+  consultorios?: number;
 }
 
 export interface UnidadNegocio {

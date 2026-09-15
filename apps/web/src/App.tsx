@@ -19,6 +19,7 @@ import { PaquetesPage } from './pages/admin/PaquetesPage';
 import { PodologasPage } from './pages/admin/PodologasPage';
 import { ServiciosPage } from './pages/admin/ServiciosPage';
 import { AuditoriaPage } from './pages/admin/AuditoriaPage';
+import { DispositivosPage } from './pages/admin/DispositivosPage';
 import { NotificacionesAdminPage } from './pages/NotificacionesAdminPage';
 import { AlmuerzosPage } from './pages/herramientas/AlmuerzosPage';
 import { ConfirmacionMailPage } from './pages/herramientas/ConfirmacionMailPage';
@@ -39,6 +40,7 @@ import { ComposicionImprimirPage } from './pages/herramientas/ComposicionImprimi
 import { ComprobantesImprimirPage } from './pages/herramientas/ComprobantesImprimirPage';
 import { MovimientosImprimirPage } from './pages/herramientas/MovimientosImprimirPage';
 import { VideosServicioPage } from './pages/herramientas/VideosServicioPage';
+import { TiemposTratamientoPage } from './pages/herramientas/TiemposTratamientoPage';
 import { Idea1AgendaPage } from './pages/Idea1AgendaPage';
 import { HorariosRestriccionesPage } from './pages/HorariosRestriccionesPage';
 import { HistoriaClinicaPage } from './pages/HistoriaClinicaPage';
@@ -118,10 +120,12 @@ export default function App() {
         <Route path="/herramientas/combinaciones" element={<RequirePermiso permiso="config.editar"><CombinacionesPage /></RequirePermiso>} />
         <Route path="/herramientas/videos-servicio" element={<RequirePermiso permiso="comunicaciones.gestionar"><VideosServicioPage /></RequirePermiso>} />
         <Route path="/herramientas/reportes-rrhh" element={<RequirePermiso permiso="analytics.ver"><ReportesRrhhPage /></RequirePermiso>} />
+        <Route path="/herramientas/tiempos-tratamiento" element={<RequirePermiso permiso="analytics.ver"><TiemposTratamientoPage /></RequirePermiso>} />
         <Route path="/herramientas/composicion-sede" element={<RequirePermiso permiso="movimientos.editar"><ComposicionSedePage /></RequirePermiso>} />
         <Route path="/herramientas/horarios-personal" element={<Navigate to="/herramientas/horarios?tab=semana" replace />} />
         <Route path="/movimientos" element={<RequirePermiso permiso="movimientos.ver"><MovimientosPage /></RequirePermiso>} />
-        <Route path="/admin" element={<RequirePermiso permiso={['profesionales.ver', 'servicios.ver', 'competencias.editar', 'auditoria.ver', 'membresias.gestionar', 'usuarios.ver', 'roles.editar', 'notificaciones.ver']}><AdminPage /></RequirePermiso>} />
+        <Route path="/admin" element={<RequirePermiso permiso={['profesionales.ver', 'servicios.ver', 'competencias.editar', 'auditoria.ver', 'membresias.gestionar', 'usuarios.ver', 'roles.editar', 'notificaciones.ver', 'dispositivos.gestionar']}><AdminPage /></RequirePermiso>} />
+        <Route path="/admin/dispositivos" element={<RequirePermiso permiso="dispositivos.gestionar"><DispositivosPage /></RequirePermiso>} />
         <Route path="/admin/competencias" element={<RequirePermiso permiso="competencias.editar"><CompetenciasPage /></RequirePermiso>} />
         <Route path="/admin/paquetes" element={<RequirePermiso permiso="membresias.gestionar"><PaquetesPage /></RequirePermiso>} />
         <Route path="/admin/podologas" element={<RequirePermiso permiso="profesionales.ver"><PodologasPage /></RequirePermiso>} />

@@ -10,7 +10,9 @@
  * solo confía en el proxy local. El estado del límite es EN MEMORIA: se reinicia al reiniciar
  * el proceso (aceptable para una sola instancia; multi-instancia usaría un store Redis).
  */
+import { Request } from 'express';
 import rateLimit from 'express-rate-limit';
+import { leerTokenDispositivo } from './authDispositivo';
 
 interface LimiterCfg {
   limit: number;
@@ -19,6 +21,8 @@ interface LimiterCfg {
   message: string;
   /** Si true, los requests EXITOSOS (2xx/3xx) no cuentan → solo penaliza los fallidos. */
   skipSuccessful?: boolean;
+  /** Clave del conteo (default: la IP). */
+  clave?: (req: Request) => string;
 }
 
 function crearLimiter(cfg: LimiterCfg) {
@@ -28,6 +32,7 @@ function crearLimiter(cfg: LimiterCfg) {
     standardHeaders: 'draft-7', // expone RateLimit-* (cuántos quedan / cuándo se resetea)
     legacyHeaders: false,
     skipSuccessfulRequests: cfg.skipSuccessful ?? false,
+    ...(cfg.clave ? { keyGenerator: cfg.clave } : {}),
     handler: (_req, res) => {
       res.status(429).json({ error: cfg.code, message: cfg.message, statusCode: 429 });
     },
@@ -91,4 +96,17 @@ export const analyticsLimiter = crearLimiter({
   windowMs: 60 * 1000,
   code: 'DEMASIADAS_CONSULTAS_ANALYTICS',
   message: 'Demasiadas consultas de analítica desde esta IP. Espera un momento e intenta de nuevo.',
+});
+
+/**
+ * Aparato del consultorio (`/dispositivo/*`): 60/min POR APARATO (prefijo de su clave), no por IP:
+ * varios aparatos de una sede salen por la misma IP pública, y en producción el API ve a todos como
+ * 127.0.0.1 (el proxy aún no reenvía la IP real). Uso normal: 1 latido/min + botones.
+ */
+export const dispositivoLimiter = crearLimiter({
+  limit: 60,
+  windowMs: 60 * 1000,
+  code: 'DEMASIADAS_PETICIONES_APARATO',
+  message: 'El aparato hizo demasiadas peticiones. Espera un momento.',
+  clave: (req) => `aparato:${leerTokenDispositivo(req.headers.authorization)?.prefijo ?? `ip:${req.ip}`}`,
 });

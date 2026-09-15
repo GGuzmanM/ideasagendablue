@@ -65,6 +65,13 @@ export function emitirEventoCita(event: WSEvent): void {
   io.to(`sede:${event.sedeId}`).emit('agenda:actualizada', event);
 }
 
+// Aparato del consultorio: cambió un tiempo de tratamiento (INICIO, FIN, enlace, cierre sin FIN).
+// La agenda refresca su aviso «tiempos sin cita» y el chip del tratamiento en el detalle de la cita.
+export function emitirTiemposActualizados(event: { sedeId: string; fecha: string; tiempoId: string | null; citaId: string | null; resultado: string }): void {
+  if (!io) return;
+  io.to(`sede:${event.sedeId}`).emit('tiempos:actualizados', event);
+}
+
 // Cambio de horario del personal (base semanal u override por fecha). Broadcast GLOBAL:
 // afecta columnas de agenda y disponibilidad, y el emisor no siempre conoce la sede.
 // Es una acción administrativa poco frecuente; el costo del broadcast es despreciable.

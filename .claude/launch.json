@@ -7,6 +7,14 @@
       "runtimeArgs": ["run", "dev", "--workspace=apps/web"],
       "port": 5180,
       "autoPort": true
+    },
+    {
+      "name": "Limablue Web · pruebas (API aislada 3004)",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--workspace=apps/web"],
+      "env": { "PORT": "5182", "VITE_PROXY_TARGET": "http://localhost:3004" },
+      "port": 5182,
+      "url": "https://localhost:5182"
     }
   ]
 }

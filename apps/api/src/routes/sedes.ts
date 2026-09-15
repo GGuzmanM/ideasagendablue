@@ -23,6 +23,7 @@ router.get('/', requireAuth, async (_req, res) => {
     direccion: s.direccion,
     color: s.color,
     activa: s.activa,
+    consultorios: s.consultorios, // nº de consultorios (selector de la cita y registro de aparatos)
     horario: s.horario,
     unidadesNegocio: s.unidadesNegocio.map((u: { unidadNegocio: unknown }) => u.unidadNegocio),
   })));

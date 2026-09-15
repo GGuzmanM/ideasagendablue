@@ -33,13 +33,6 @@ interface PopoverCitaProps {
 
 const ESTADOS_FINALES = ['completada', 'no_show', 'cancelada'];
 
-const CONSULTORIOS_POR_SEDE: Record<string, number> = {
-  'Los Olivos': 6,
-  'San Miguel': 4,
-  'Lince': 9,
-  'Paz Soldán': 11,
-  'One': 5,
-};
 
 function formatFechaCorta(d: Date) {
   return format(d, 'yyyy-MM-dd');
@@ -595,7 +588,7 @@ export function PopoverCita({ cita, onClose, onReprogramar }: PopoverCitaProps) 
 
           {/* ── Selector de consultorio (todas las citas) ── */}
           {(() => {
-            const totalConsultorios = CONSULTORIOS_POR_SEDE[cita.sede.nombre] ?? 0;
+            const totalConsultorios = cita.sede.consultorios ?? 0; // de la BD (Sede.consultorios)
             if (totalConsultorios === 0) return null;
             return (
               <div className="px-5 py-3 border-b border-slate-100">

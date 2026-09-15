@@ -283,6 +283,14 @@ export function HerramientasPage() {
             >
               <span>📊</span> Reportes RRHH (Horas Extra & Rotación) →
             </button>
+            {tiene('analytics.ver') && (
+              <button
+                onClick={() => navigate('/herramientas/tiempos-tratamiento')}
+                className="px-4 py-2 text-xs font-bold rounded-xl bg-teal-50 text-teal-700 border border-teal-200 hover:bg-teal-100 transition-all flex items-center gap-2"
+              >
+                <span>⏱️</span> Tiempos de tratamiento →
+              </button>
+            )}
           </div>
 
           <div className="max-w-2xl">

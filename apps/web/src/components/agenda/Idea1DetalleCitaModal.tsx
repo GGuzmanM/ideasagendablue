@@ -13,6 +13,7 @@ import { ToggleDatosPaciente } from '../pacientes/ToggleDatosPaciente';
 import { BadgeAsistencia } from '../pacientes/BadgeAsistencia';
 import { FichaPreviaCard } from '../historiaClinica/FichaPrevia';
 import { formatPromoValor } from '../../api/promociones';
+import { horaLima, fmtMinutos } from '../../api/tiemposTratamiento';
 import { horaInicioValidaParaDuracion } from '@limablue/shared';
 import { cn } from '../../utils/cn';
 import { useAuthStore } from '../../stores/authStore';
@@ -429,7 +430,13 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                 const espera = dur(cita.llegoEn, cita.enAtencionEn);
                 const atencion = dur(cita.enAtencionEn, cita.completadaEn);
                 const total = dur(cita.llegoEn, cita.completadaEn);
-                if (!espera && !atencion && !total) return null;
+                // Tiempo REAL medido con el aparato del consultorio (botones INICIO / FIN).
+                const tt = cita.tiemposTratamiento?.[0];
+                const tratamiento = !tt ? null
+                  : tt.estado === 'en_curso' ? `en curso desde ${horaLima(tt.inicioEn)} · C${tt.consultorioNumero}`
+                  : tt.estado === 'sin_fin' ? `sin FIN (desde ${horaLima(tt.inicioEn)}) · C${tt.consultorioNumero}`
+                  : `${fmtMinutos(tt.duracionSegundos)} · C${tt.consultorioNumero}`;
+                if (!espera && !atencion && !total && !tratamiento) return null;
                 const Chip = ({ icon, label, value }: { icon: string; label: string; value: string }) => (
                   <span className="inline-flex items-center gap-1 text-xs font-bold text-on-surface-variant bg-surface-container border border-outline-variant/30 rounded-lg px-2 py-1">
                     <span className="material-symbols-outlined text-sm text-primary">{icon}</span>
@@ -440,6 +447,7 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                   <>
                     <div className="font-label-caps text-label-caps text-on-surface-variant/70 uppercase tracking-wider">Tiempos</div>
                     <div className="flex flex-wrap gap-1.5">
+                      {tratamiento && <Chip icon="timer" label="Tratamiento" value={tratamiento} />}
                       {espera && <Chip icon="hourglass_empty" label="Espera" value={espera} />}
                       {atencion && <Chip icon="medical_services" label="Atención" value={atencion} />}
                       {total && <Chip icon="schedule" label="Total" value={total} />}

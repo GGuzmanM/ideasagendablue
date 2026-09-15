@@ -175,6 +175,9 @@ model Sede {
   activa    Boolean   @default(true)
   // Orden manual de las pestañas de sede en la agenda (0 = sin orden → alfabético).
   orden     Int       @default(0)
+  // Nº de consultorios físicos (el selector del detalle de la cita ofrece 1..N y el aparato del
+  // consultorio se registra con uno de esos números). 0 = la sede no usa consultorios numerados.
+  consultorios Int    @default(0)
   deletedAt DateTime?
 
   // Horario por día de semana (JSON: {lunes: {apertura: "08:00", cierre: "20:00"}, ...})
@@ -195,6 +198,8 @@ model Sede {
   paquetesPaciente   PaquetePaciente[]
   baroMedicos        BaroMedicoSede[]
   atencionesClinicas AtencionClinica[]
+  dispositivos       DispositivoConsultorio[]
+  tiemposTratamiento TiempoTratamiento[]
 
   creadoPor     String?  @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
@@ -236,6 +241,8 @@ model UnidadNegocio {
   servicios     Servicio[]
   citas         Cita[]
   agregados     AgregadoDiario[]
+  dispositivos  DispositivoConsultorio[]
+  tiemposTratamiento TiempoTratamiento[]
 
   creadoPor     String?  @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
@@ -843,6 +850,7 @@ model Cita {
   consumosSesion        ConsumoSesion[]
   videoEnvios           VideoEnvioLog[]
   atencionClinica       AtencionClinica? // Historia clínica: 1 atención por cita (PRINCIPAL del bloque)
+  tiemposTratamiento    TiempoTratamiento[] // aparato del consultorio: máx 1 vigente (índice parcial)
 
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
@@ -868,6 +876,118 @@ model Cita {
   // Desempeño de Agentes: consultas por autor de la reserva en un rango de fechas.
   @@index([creadoPorUsuarioId, fecha])
   @@map("citas")
+}
+
+// ─── Aparato del consultorio (ESP32 con botones INICIO / FIN) ─────────────────
+// Cada consultorio tiene un aparato con WiFi, pantalla 16x2 y dos botones. La podóloga presiona
+// INICIO al empezar el tratamiento y FIN al terminar: la cita del consultorio pasa a «En atención»
+// y a «Completada» con la hora exacta del botón, y el tiempo real queda en `TiempoTratamiento`.
+// Sin cita que corresponda (recepción no marcó «Llegó» ni el consultorio) el botón NO inicia nada:
+// todo tiempo nace con su cita (citaId obligatorio).
+// Índices únicos PARCIALES (SQL crudo en `20260914120000_tiempos_tratamiento`, no están aquí):
+//  • `dispositivos_consultorio_unico`     : 1 aparato activo por sede + unidad + consultorio.
+//  • `tiempos_en_curso_consultorio_unico` : 1 tiempo `en_curso` por sede + unidad + consultorio.
+//  • `tiempos_cita_vigente_unico`         : 1 tiempo vigente (no descartado) por cita.
+
+enum EstadoTiempoTratamiento {
+  en_curso   // INICIO presionado, falta FIN
+  finalizado // INICIO + FIN
+  sin_fin    // nadie presionó FIN: se cerró solo a las 3 h (o al día siguiente)
+  descartado // FIN antes de 1 minuto, o recepción lo descartó
+}
+
+enum OrigenTiempoTratamiento {
+  dispositivo
+  manual
+}
+
+model DispositivoConsultorio {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nombre            String // p. ej. "Lince C3"
+  sedeId            String    @db.Uuid
+  unidadNegocioId   String    @db.Uuid
+  consultorioNumero Int
+  // Token del aparato: `lbd_<prefijo>.<secreto>`. Se busca por prefijo y se compara el sha256
+  // del token completo en tiempo constante. El token en claro se muestra UNA sola vez.
+  tokenPrefijo      String    @unique
+  tokenHash         String
+  activo            Boolean   @default(true)
+  // Estado «en línea» (lo actualiza el latido de cada minuto y cada botón).
+  ultimoContacto    DateTime?
+  ultimaIp          String?
+  firmware          String?
+  rssi              Int? // intensidad WiFi (dBm)
+  deletedAt         DateTime?
+
+  sede          Sede                @relation(fields: [sedeId], references: [id])
+  unidadNegocio UnidadNegocio       @relation(fields: [unidadNegocioId], references: [id])
+  tiempos       TiempoTratamiento[]
+  eventos       EventoDispositivo[]
+
+  creadoPor     String?  @db.Uuid // Usuario que creó el registro (auditoría)
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  @@index([sedeId])
+  @@map("dispositivos_consultorio")
+}
+
+// Tiempo REAL de un tratamiento. Fuente de verdad de la duración (la cita solo guarda las horas
+// de «En atención» / «Completada», que se escriben con la hora del botón).
+model TiempoTratamiento {
+  id                String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  dispositivoId     String?                 @db.Uuid // null = registrado a mano
+  sedeId            String                  @db.Uuid
+  unidadNegocioId   String                  @db.Uuid
+  consultorioNumero Int
+  fecha             DateTime                @db.Date // día (Lima) del INICIO
+  citaId            String                  @db.Uuid // siempre con cita: un INICIO sin cita no crea tiempo
+  inicioEn          DateTime
+  finEn             DateTime?
+  duracionSegundos  Int?
+  estado            EstadoTiempoTratamiento @default(en_curso)
+  origen            OrigenTiempoTratamiento @default(dispositivo)
+  // true si la hora del botón no se pudo precisar (aparato sin reloj y sin edad del evento) y se
+  // usó la del servidor al recibirlo.
+  horaAproximada    Boolean                 @default(false)
+  motivoDescarte    String?
+  deletedAt         DateTime?
+
+  dispositivo   DispositivoConsultorio? @relation(fields: [dispositivoId], references: [id])
+  sede          Sede                    @relation(fields: [sedeId], references: [id])
+  unidadNegocio UnidadNegocio           @relation(fields: [unidadNegocioId], references: [id])
+  cita          Cita                    @relation(fields: [citaId], references: [id])
+
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  @@index([sedeId, fecha])
+  @@index([citaId])
+  @@index([dispositivoId, estado])
+  @@map("tiempos_tratamiento")
+}
+
+// Bitácora de cada botón recibido. `idEvento` lo genera el aparato (arranque + secuencia): si
+// reenvía el mismo evento (sin red, reintento), se devuelve la respuesta guardada sin repetir nada.
+model EventoDispositivo {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  dispositivoId  String   @db.Uuid
+  idEvento       String
+  accion         String // 'inicio' | 'fin'
+  presionadoEn   DateTime // hora resuelta del botón
+  recibidoEn     DateTime @default(now())
+  edadMs         Int? // ms entre el botón y el envío (cola sin red)
+  horaAproximada Boolean  @default(false)
+  resultado      String // iniciado | sin_cita | sin_llegada | ya_en_curso | finalizado | anulado | sin_inicio
+  tiempoId       String?  @db.Uuid
+  citaId         String?  @db.Uuid
+  respuesta      Json? // lo que se le devolvió al aparato (para reintentos idénticos)
+
+  dispositivo DispositivoConsultorio @relation(fields: [dispositivoId], references: [id])
+
+  @@unique([dispositivoId, idEvento])
+  @@index([dispositivoId, recibidoEn])
+  @@map("eventos_dispositivo")
 }
 
 // ─── ComentarioCita (hilo APPEND-ONLY) ───────────────────────────────────────

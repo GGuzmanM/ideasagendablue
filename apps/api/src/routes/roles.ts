@@ -34,6 +34,8 @@ const PERMISOS_VALIDOS = [
   'comunicaciones.gestionar', 'canales.gestionar',
   // Sistema
   'usuarios.ver', 'usuarios.editar', 'roles.editar', 'auditoria.ver', 'notificaciones.ver', 'config.editar',
+  // Aparatos de consultorio (otorgado a admin/coordinadora por 20260914120100_consultorios_permiso_dispositivos)
+  'dispositivos.gestionar',
 ];
 
 const rolSchema = z.object({
@@ -139,6 +141,7 @@ router.get('/permisos', requireAuth, async (_req, res) => {
       { id: 'auditoria.ver', label: 'Ver la auditoría del sistema' },
       { id: 'notificaciones.ver', label: 'Ver / gestionar notificaciones' },
       { id: 'config.editar', label: 'Configuración del sistema (bloques combinados, conciliación, correo)' },
+      { id: 'dispositivos.gestionar', label: 'Aparatos de consultorio (botones INICIO/FIN): registrar, ver su clave, regenerarla o revocarla' },
     ],
   };
   res.json(grupos);

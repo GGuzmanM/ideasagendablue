@@ -34,6 +34,9 @@ import { enviarCorreoReserva } from '../services/emailService';
 import { verificarTokenConfirmacion } from '../utils/confirmToken';
 import { fechaDb, esFechaPasadaLima, diasEnPasadoLima } from '../utils/fechaLima';
 import { horaInicioValidaParaDuracion, timeToMinutes, minutesToTime } from '@limablue/shared';
+import { getCitaCompleta, promoCitaSelect, comentariosInclude, crearComentarioEnTx } from '../services/citaCompleta';
+import { cambiarEstadoCita, ESTADOS_FINALES } from '../services/estadoCitaService';
+import { MAX_ABIERTO_MIN } from '../services/tiempoReglas';
 
 const router = Router();
 
@@ -133,19 +136,7 @@ const estadoSchema = z.object({
   soloEsta: z.boolean().optional(),
 });
 
-const ESTADOS_FINALES = ['completada', 'no_show', 'cancelada'];
-
-// Transiciones válidas: qué estados puede alcanzar cada estado actual
-const TRANSICIONES_VALIDAS: Record<string, string[]> = {
-  agendada:    ['confirmada', 'llego', 'no_show', 'cancelada'],
-  confirmada:  ['llego', 'no_show', 'cancelada'],
-  llego:       ['en_atencion', 'cancelada'],
-  en_atencion: ['completada', 'no_show'],
-  completada:  ['en_atencion'], // reversa de ATENDIDA (solo admin/coordinadora; reembolsa la sesión)
-  no_show:     [],
-  cancelada:   [],
-  reprogramada: [],
-};
+// La máquina de estados (TRANSICIONES_VALIDAS / ESTADOS_FINALES) vive en services/estadoCitaService.ts.
 
 // ─── Helper: validar que el slot no choca con un bloqueo del profesional ──────
 // Cubre permisos/ausencias (no recurrentes) y almuerzos (recurrentes). Lanza
@@ -196,14 +187,6 @@ async function validarSinBloqueo(profesionalId: string, fecha: string, horaInici
     }
   }
 }
-
-// Include reutilizable del hilo de comentarios (append-only, orden cronológico).
-// `autor` (vivo) para el nombre actual; `autorEtiqueta` (snapshot) como respaldo/legacy.
-const comentariosInclude = {
-  where: { deletedAt: null },
-  orderBy: { creadoEn: 'asc' },
-  select: { id: true, texto: true, creadoEn: true, autorEtiqueta: true, autor: { select: { id: true, nombre: true } } },
-} as const;
 
 // ─── Helper: médico "solo por solicitud" de baro EN UNA SEDE ──────────────────
 // En baropodometría la cita ocupa una máquina (Baro 1/2) y el médico que la atiende se
@@ -301,8 +284,8 @@ async function validarProfesionalLibre(
 }
 
 // ─── Helper: serializar cita para respuestas ──────────────────────────────────
-// Campos de la promoción que se exponen en la cita.
-const promoCitaSelect = { id: true, nombre: true, tipo: true, valor: true } as const;
+// getCitaCompleta, promoCitaSelect, comentariosInclude y crearComentarioEnTx viven en
+// services/citaCompleta.ts (los usan también el cambio de estado y el aparato del consultorio).
 
 // FUENTE ÚNICA de la promo en un bloque combinado: la cita PORTADORA = la PRINCIPAL
 // (profilaxis). Para una cita individual, la portadora es ella misma. Fallback (grupo sin
@@ -319,107 +302,6 @@ async function resolverCitaPortadora(cita: { id: string; slotGrupoId: string | n
     orderBy: { id: 'asc' }, select: { id: true },
   });
   return menor?.id ?? cita.id;
-}
-
-// Promo HEREDADA de una cita SECUNDARIO de un bloque: la de su portadora (PRINCIPAL).
-// null si la cita no es la secundaria de un combinado. Su propio `promocion` es null.
-async function promoHeredadaDe(cita: { slotGrupoId: string | null; slotRol: 'PRINCIPAL' | 'SECUNDARIO' | null }) {
-  if (!cita.slotGrupoId || cita.slotRol !== 'SECUNDARIO') return null;
-  const portadora = await prisma.cita.findFirst({
-    where: { slotGrupoId: cita.slotGrupoId, slotRol: 'PRINCIPAL', deletedAt: null },
-    select: { promocion: { select: promoCitaSelect } },
-  });
-  return portadora?.promocion ?? null;
-}
-
-async function getCitaCompleta(id: string) {
-  const cita = await prisma.cita.findUnique({
-    where: { id },
-    include: {
-      paciente: true,
-      profesional: true,
-      solicitadoProfesional: { select: { id: true, nombres: true, apellidos: true, tipo: true } },
-      sede: true,
-      unidadNegocio: true,
-      servicio: true,
-      subcategoria: { select: { id: true, nombre: true } },
-      paquetePaciente: { include: { paquete: true } },
-      promocion: { select: promoCitaSelect },
-      creadoPorUsuario: { select: { id: true, nombre: true } },
-      comentarios: comentariosInclude,
-    },
-  });
-  if (!cita) return cita;
-  return { ...cita, promocionHeredada: await promoHeredadaDe(cita), reprogramacion: await reprogramacionDeCita(cita.id) };
-}
-
-// ─── Reprogramación (para el banner del modal) ────────────────────────────────
-// La última vez que ESTA cita se movió a otro día U otra hora, derivada del audit del
-// `mover` (que se escribe DENTRO de la transacción → garantizado, no best-effort). Devuelve
-// de qué día/hora a qué día/hora y quién lo hizo, para mostrar "Reprogramada del … al …".
-async function reprogramacionDeCita(citaId: string): Promise<
-  { deFecha: string; deHora: string | null; aFecha: string; aHora: string | null; por: string; en: Date } | null
-> {
-  const logs = await prisma.auditLog.findMany({
-    where: { citaId, accion: 'mover', entidad: 'cita' },
-    orderBy: { creadoEn: 'desc' },
-    take: 10,
-    select: { antes: true, despues: true, usuarioId: true, creadoEn: true },
-  });
-  for (const log of logs) {
-    const antes = log.antes as { fecha?: string; horaInicio?: string } | null;
-    const despues = log.despues as { fecha?: string; horaInicio?: string } | null;
-    const deFecha = typeof antes?.fecha === 'string' ? antes.fecha.slice(0, 10) : null;
-    const aFecha = typeof despues?.fecha === 'string' ? despues.fecha.slice(0, 10) : null;
-    // Cuenta como reprogramación si cambió el DÍA o la HORA (mover a otra hora el mismo día
-    // también es reprogramar). Un "mover" sin cambios reales queda excluido.
-    const cambioHora = !!(antes?.horaInicio && despues?.horaInicio && antes.horaInicio !== despues.horaInicio);
-    if (deFecha && aFecha && (deFecha !== aFecha || cambioHora)) {
-      const u = log.usuarioId
-        ? await prisma.usuario.findUnique({ where: { id: log.usuarioId }, select: { nombre: true } })
-        : null;
-      return {
-        deFecha,
-        deHora: antes?.horaInicio ?? null,
-        aFecha,
-        aHora: despues?.horaInicio ?? null,
-        por: u?.nombre ?? 'Sistema',
-        en: log.creadoEn,
-      };
-    }
-  }
-  return null;
-}
-
-// Crea una ENTRADA del hilo append-only + su audit, DENTRO de una transacción.
-// `autorId` null = legacy/sistema. `autorEtiqueta` se captura al escribir (snapshot
-// del nombre) para que el hilo sea legible aunque el usuario se borre luego.
-async function crearComentarioEnTx(
-  tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0],
-  args: { citaId: string; sedeId: string; autorId?: string | null; texto: string; ip?: string; userAgent?: string },
-) {
-  const texto = args.texto.trim();
-  if (!texto) return;
-  let autorEtiqueta: string | null = null;
-  if (args.autorId) {
-    const u = await tx.usuario.findUnique({ where: { id: args.autorId }, select: { nombre: true } });
-    autorEtiqueta = u?.nombre ?? null;
-  }
-  const entrada = await tx.comentarioCita.create({
-    data: { citaId: args.citaId, autorId: args.autorId ?? null, autorEtiqueta, texto },
-  });
-  await auditEnTx(tx, {
-    citaId: args.citaId,
-    usuarioId: args.autorId ?? undefined,
-    accion: 'agregar_comentario',
-    entidad: 'cita',
-    entidadId: args.citaId,
-    despues: { comentarioId: entrada.id, texto },
-    sedeId: args.sedeId,
-    ip: args.ip,
-    userAgent: args.userAgent,
-  });
-  return entrada;
 }
 
 // ─── POST /citas/upload-comprobante ──────────────────────────────────────────
@@ -472,7 +354,7 @@ router.get('/', requireAuth, async (req, res) => {
       paciente: { select: { id: true, nombres: true, apellidoPaterno: true, apellidoMaterno: true, tipoDocumento: true, numeroDocumento: true, telefono: true, email: true, fechaNacimiento: true, requiereActualizacionDatos: true } },
       profesional: { select: { id: true, nombres: true, apellidos: true, colorAvatar: true } },
       solicitadoProfesional: { select: { id: true, nombres: true, apellidos: true, tipo: true } },
-      sede: { select: { id: true, nombre: true, color: true } },
+      sede: { select: { id: true, nombre: true, color: true, consultorios: true } },
       unidadNegocio: { select: { id: true, nombre: true, color: true } },
       servicio: { select: { id: true, nombre: true, duracionMinutos: true, color: true } },
       subcategoria: { select: { id: true, nombre: true } },
@@ -1681,182 +1563,18 @@ router.post('/combinada', requireAuth, requireAcceso('appointments:write', 'cita
 // ─── PATCH /citas/:id/estado ──────────────────────────────────────────────────
 router.patch('/:id/estado', requireAuth, requireAcceso('appointments:write', 'citas.estado'), guardSedeCita, async (req, res) => {
   const { estado, comentario, motivoCancelacion, soloEsta } = estadoSchema.parse(req.body);
-  const usuarioId = req.user?.userId;
-
-  const cita = await prisma.cita.findUnique({ where: { id: req.params.id, deletedAt: null } });
-  if (!cita) throw new AppError('Cita no encontrada', 404);
-
-  // Permitir mismo estado solo para actualizar comentario (sin cambio de estado real)
-  if (estado !== cita.estado) {
-    const transicionesPermitidas = TRANSICIONES_VALIDAS[cita.estado] ?? [];
-    if (!transicionesPermitidas.includes(estado)) {
-      throw new AppError(
-        `Transición inválida: ${cita.estado} → ${estado}`,
-        400,
-        'TRANSICION_INVALIDA',
-      );
-    }
-    // Revertir una cita ATENDIDA (completada → en_atencion) es una acción sensible:
-    // solo admin / coordinadora. El reembolso de la sesión lo hace el service único.
-    if (cita.estado === 'completada' && estado === 'en_atencion') {
-      if (!req.user?.permisos?.includes('citas.revertir')) {
-        throw new AppError('No tienes permiso para revertir una cita ya atendida', 403, 'REVERSA_NO_PERMITIDA');
-      }
-    }
-  }
-
-  // Bloque combinado: un cambio de estado se PROPAGA a las citas hermanas del grupo (mismo
-  // slotGrupoId) — son UNA sola visita física de 1 h (profilaxis + extra). Reglas:
-  //  - Solo cascadea un CAMBIO REAL de estado (re-enviar el mismo estado para agregar un
-  //    comentario NO debe mover a las hermanas ni re-consumir sesiones).
-  //  - Nunca se resucita una hermana ya 'cancelada'.
-  //  - Al CANCELAR, no se tocan hermanas ya finalizadas (completada/no_show) — se respeta lo hecho.
-  //  - Para otros estados, la hermana solo se sincroniza si SU transición es válida en la
-  //    máquina de estados (una hermana en no_show NO se resucita a completada; una desfasada
-  //    no salta pasos — se queda como está en vez de forzarla).
-  const esCancelacion = estado === 'cancelada';
-  const cambioReal = estado !== cita.estado;
-  // Historia clínica: una cita con atención registrada fue atendida de verdad → no se cancela ni se
-  // marca "no vino" (409 CITA_CON_ATENCION_CLINICA). Único punto donde la agenda consulta a la HC.
-  if (cambioReal && (esCancelacion || estado === 'no_show')) await assertSinAtencionClinica(cita.id);
-  // `soloEsta` (flujo secuencial de bloque combinado) desactiva la cascada: avanza solo esta cita.
-  const hermanas = (cita.slotGrupoId && cambioReal && !soloEsta)
-    ? (await prisma.cita.findMany({
-        where: { slotGrupoId: cita.slotGrupoId, id: { not: cita.id }, deletedAt: null },
-      })).filter((c) =>
-        c.estado !== estado &&
-        c.estado !== 'cancelada' &&
-        (esCancelacion
-          ? !ESTADOS_FINALES.includes(c.estado)
-          : (TRANSICIONES_VALIDAS[c.estado] ?? []).includes(estado))
-      )
-    : [];
-
-  const antes = { estado: cita.estado };
-  // Anclas del auto-completado por tiempo (solo en cambios REALES; comentar sin cambiar no reinicia):
-  //  • `llegoEn`      → red de seguridad de 90 min para citas que se quedan en 'llego'.
-  //  • `enAtencionEn` → ancla PRINCIPAL: al entrar (o re-entrar) a 'en_atencion' arranca el reloj
-  //     de "duración + 15 min" tras el cual la cita pasa sola a 'completada'.
-  const reiniciaLlegoEn = cambioReal && (estado === 'llego' || (cita.estado === 'completada' && estado === 'en_atencion'));
-  const reiniciaEnAtencion = cambioReal && estado === 'en_atencion';
-  // `completadaEn` (para medir tiempos): se sella al entrar a 'completada'; se limpia si se revierte.
-  const marcaCompletada = cambioReal && estado === 'completada';
-  const revierteCompletada = cambioReal && cita.estado === 'completada' && estado !== 'completada';
-  const llegoEnData = {
-    ...(reiniciaLlegoEn ? { llegoEn: new Date() } : {}),
-    ...(reiniciaEnAtencion ? { enAtencionEn: new Date() } : {}),
-    ...(marcaCompletada ? { completadaEn: new Date() } : {}),
-    ...(revierteCompletada ? { completadaEn: null } : {}),
-  };
-  const updatedCita = await prisma.$transaction(async (tx) => {
-    const u = await tx.cita.update({
-      where: { id: req.params.id },
-      data: {
-        estado,
-        motivoCancelacion: motivoCancelacion ?? cita.motivoCancelacion,
-        ...llegoEnData,
-      },
-    });
-    await auditEnTx(tx, {
-      citaId: cita.id,
-      usuarioId,
-      accion: 'cambiar_estado',
-      entidad: 'cita',
-      entidadId: cita.id,
-      antes,
-      despues: { estado },
-      sedeId: cita.sedeId,
-      ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
-    });
-    // Comentario opcional del cambio de estado → entrada del hilo append-only.
-    if (comentario?.trim()) {
-      await crearComentarioEnTx(tx, { citaId: cita.id, sedeId: cita.sedeId, autorId: usuarioId ?? null, texto: comentario, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined });
-    }
-    // Cascada del bloque combinado: aplicar EL MISMO estado a las hermanas del grupo.
-    for (const h of hermanas) {
-      await tx.cita.update({
-        where: { id: h.id },
-        data: { estado, ...llegoEnData, ...(esCancelacion ? { motivoCancelacion: motivoCancelacion ?? h.motivoCancelacion } : {}) },
-      });
-      await auditEnTx(tx, {
-        citaId: h.id, usuarioId, accion: 'cambiar_estado', entidad: 'cita', entidadId: h.id,
-        antes: { estado: h.estado }, despues: { estado, slotGrupoId: cita.slotGrupoId, cascada: true },
-        sedeId: h.sedeId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
-      });
-    }
-    return u;
-  });
-
-  // Conteo de sesiones: punto ÚNICO e idempotente. Consume 1 sesión solo si quedó
-  // en 'completada' (y aún no consumió); reembolsa si se revirtió. no_show/cancelada → 0.
-  await sincronizarSesionPaquete(cita.id);
-
-  // Side-effects de las hermanas sincronizadas en cascada. El conteo de sesiones se
-  // recalcula SIEMPRE (consume al completar el extra, reembolsa si se revierte). Los
-  // webhooks/Outlook siguen las MISMAS reglas que la cita principal — las integraciones
-  // externas también deben enterarse del servicio extra del bloque.
-  for (const h of hermanas) {
-    await sincronizarSesionPaquete(h.id);
-    if (esCancelacion) {
-      void sincronizarCitaOutlook('cancelar', h.id);
-      void cancelarRecordatoriosDeCita(h.id);
-      void cancelarVideosDeCita(h.id);
-      await dispararWebhooks('appointment.cancelled', h.sedeId, await getCitaCompleta(h.id));
-      emitirEventoCita({
-        tipo: 'cita:cancelada', sedeId: h.sedeId, fecha: h.fecha.toISOString().split('T')[0]!,
-        cita: { id: h.id, estado: 'cancelada' } as never, cambiadoPor: usuarioId ?? 'sistema',
-      });
-    } else {
-      if (['no_show', 'reprogramada'].includes(estado)) { void cancelarRecordatoriosDeCita(h.id); void cancelarVideosDeCita(h.id); }
-      if (estado === 'confirmada') void sincronizarCitaOutlook('crear', h.id);
-      const hCompleta = await getCitaCompleta(h.id);
-      if (estado === 'completada') await dispararWebhooks('appointment.completed', h.sedeId, hCompleta);
-      emitirEventoCita({
-        tipo: 'cita:estadoCambiado', sedeId: h.sedeId, fecha: h.fecha.toISOString().split('T')[0]!,
-        cita: hCompleta as never, cambiadoPor: usuarioId ?? 'sistema',
-      });
-    }
-  }
-
-  const citaCompleta = await getCitaCompleta(updatedCita.id);
-  const fecha = cita.fecha.toISOString().split('T')[0]!;
-
-  emitirEventoCita({
-    tipo: 'cita:estadoCambiado',
-    sedeId: cita.sedeId,
-    fecha,
-    cita: citaCompleta as never,
-    cambiadoPor: usuarioId ?? 'sistema',
-  });
-
-  if (estado === 'completada') {
-    await dispararWebhooks('appointment.completed', cita.sedeId, citaCompleta);
-  }
-  if (estado === 'cancelada') {
-    await dispararWebhooks('appointment.cancelled', cita.sedeId, citaCompleta);
-  }
-
-  // Outlook (no bloqueante): cancelada → eliminar evento; confirmada → asegurar/crear evento.
-  if (estado === 'cancelada') void sincronizarCitaOutlook('cancelar', cita.id);
-  else if (estado === 'confirmada') void sincronizarCitaOutlook('crear', cita.id);
-
-  // Recordatorio: si la cita pasa a un estado inactivo, cancelar el envío programado.
-  if (['cancelada', 'no_show', 'reprogramada'].includes(estado)) { void cancelarRecordatoriosDeCita(cita.id); void cancelarVideosDeCita(cita.id); }
-
-  // Un slot LIBERADO (cancelación) debe volver a ofrecerse de inmediato: sin esto, la
-  // caché de disponibilidad seguía mostrando la hora como ocupada hasta expirar.
-  if (esCancelacion && cambioReal) {
-    await invalidateDisponibilidadCache(cita.sedeId, fecha);
-  }
-
-  // Reagregar en background sin bloquear la respuesta
-  const fechaCita = cita.fecha;
-  setImmediate(() => {
-    const d = new Date(fechaCita); d.setHours(0, 0, 0, 0);
-    const h = new Date(fechaCita); h.setHours(23, 59, 59, 999);
-    agregarRango(d, h).catch(() => {/* silencioso */});
-  });
-
+  // Toda la lógica (máquina de estados, cascada del bloque, anclas de tiempo, escritura con guarda
+  // y efectos) vive en services/estadoCitaService.ts: la comparte con el aparato del consultorio.
+  const citaCompleta = await cambiarEstadoCita(
+    { citaId: req.params.id, estado, comentario, motivoCancelacion, soloEsta },
+    {
+      usuarioId: req.user?.userId,
+      permisos: req.user?.permisos,
+      cambiadoPor: req.user?.userId ?? 'sistema',
+      ip: req.ip,
+      userAgent: req.headers['user-agent'] as string | undefined,
+    },
+  );
   res.json(citaCompleta);
 });
 
@@ -2463,9 +2181,18 @@ const ESTADOS_OCUPAN_CONSULTORIO: Prisma.EnumEstadoCitaFilter = {
 };
 
 router.patch('/:id/consultorio', requireAuth, requireAcceso('appointments:write', 'citas.estado'), guardSedeCita, async (req, res) => {
-  const { consultorioNumero } = req.body as { consultorioNumero: number | null };
-  const cita = await prisma.cita.findUnique({ where: { id: req.params.id, deletedAt: null } });
+  const { consultorioNumero } = z.object({ consultorioNumero: z.number().int().min(1).max(99).nullable() }).parse(req.body);
+  const cita = await prisma.cita.findUnique({ where: { id: req.params.id, deletedAt: null }, include: { sede: { select: { consultorios: true } } } });
   if (!cita) throw new AppError('Cita no encontrada', 404);
+  // El número debe existir en la sede (Sede.consultorios; 0 = la sede no numera consultorios).
+  if (consultorioNumero != null && cita.sede.consultorios > 0 && consultorioNumero > cita.sede.consultorios) {
+    throw new AppError(`Esta sede tiene consultorios del 1 al ${cita.sede.consultorios}`, 400, 'CONSULTORIO_INVALIDO');
+  }
+  // Bloque combinado: es UNA visita física → las dos citas van al mismo consultorio (el aparato del
+  // consultorio encuentra así el 1º y el 2º tratamiento).
+  const hermanas = cita.slotGrupoId
+    ? await prisma.cita.findMany({ where: { slotGrupoId: cita.slotGrupoId, id: { not: cita.id }, deletedAt: null }, select: { id: true, sedeId: true, consultorioNumero: true } })
+    : [];
 
   // Un consultorio físico solo puede tener 1 cita a la vez. Se considera "ocupado" en
   // sede + unidad de negocio + fecha + número; el conflicto es solapamiento horario.
@@ -2517,7 +2244,21 @@ router.patch('/:id/consultorio', requireAuth, requireAcceso('appointments:write'
       sedeId: cita.sedeId,
       ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
     });
+    for (const h of hermanas.filter((x) => x.consultorioNumero !== (consultorioNumero ?? null))) {
+      await tx.cita.update({ where: { id: h.id }, data: { consultorioNumero: consultorioNumero ?? null } });
+      await auditEnTx(tx, {
+        citaId: h.id, usuarioId: req.user?.userId, accion: 'cambiar_consultorio', entidad: 'cita', entidadId: h.id,
+        antes: { consultorioNumero: h.consultorioNumero }, despues: { consultorioNumero: consultorioNumero ?? null, slotGrupoId: cita.slotGrupoId, cascada: true },
+        sedeId: h.sedeId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
+      });
+    }
   });
+  for (const h of hermanas) {
+    emitirEventoCita({
+      tipo: 'cita:actualizada', sedeId: h.sedeId, fecha: cita.fecha.toISOString().split('T')[0]!,
+      cita: await getCitaCompleta(h.id) as never, cambiadoPor: req.user?.userId ?? 'sistema',
+    });
+  }
 
   const citaCompleta = await getCitaCompleta(req.params.id);
   emitirEventoCita({
@@ -2712,10 +2453,22 @@ export async function autocompletarCitasPorTiempo(): Promise<number> {
     }
     return !!c.llegoEn && ahora - c.llegoEn.getTime() >= AUTOCOMPLETAR_MIN * 60_000;
   });
+  // Aparato del consultorio: una cita con su tratamiento EN CURSO (INICIO sin FIN, de menos de 3 h)
+  // no se autocompleta — la cierra el FIN del aparato. Pasadas las 3 h, `cerrarTiemposAbandonados`
+  // marca ese tiempo «sin fin» y en la siguiente vuelta la cita se completa por tiempo.
+  const conTiempoAbierto = new Set(candidatas.length
+    ? (await prisma.tiempoTratamiento.findMany({
+        where: {
+          citaId: { in: candidatas.map((c) => c.id) }, estado: 'en_curso', deletedAt: null,
+          inicioEn: { gt: new Date(ahora - MAX_ABIERTO_MIN * 60_000) },
+        },
+        select: { citaId: true },
+      })).map((t) => t.citaId)
+    : []);
   const diasAfectados = new Set<string>();
   let completadas = 0;
 
-  for (const c of candidatas) {
+  for (const c of candidatas.filter((x) => !conTiempoAbierto.has(x.id))) {
     try {
       const cambiada = await prisma.$transaction(async (tx) => {
         // Re-leer DENTRO de la tx y RE-VERIFICAR el umbral contra el estado/ancla ACTUALES.
@@ -2733,7 +2486,9 @@ export async function autocompletarCitasPorTiempo(): Promise<number> {
         const motivoAuto = actual.estado === 'en_atencion'
           ? `auto por tiempo (${actual.duracionMinutos} + 15 min desde "En atención")`
           : `auto por tiempo (${AUTOCOMPLETAR_MIN} min desde "Llegó")`;
-        await tx.cita.update({ where: { id: c.id }, data: { estado: 'completada', completadaEn: new Date() } });
+        // Escritura con guarda: si recepción o el aparato la cambiaron entre la lectura y ahora, no se toca.
+        const r = await tx.cita.updateMany({ where: { id: c.id, estado: actual.estado, deletedAt: null }, data: { estado: 'completada', completadaEn: new Date() } });
+        if (r.count === 0) return false;
         await auditEnTx(tx, {
           citaId: c.id, usuarioId: undefined, accion: 'auto_completar', entidad: 'cita', entidadId: c.id,
           antes: { estado: actual.estado },

@@ -11,6 +11,17 @@ export interface ComentarioCita {
   autor: { id: string; nombre: string } | null;
 }
 
+export interface TiempoTratamientoCita {
+  id: string;
+  estado: 'en_curso' | 'finalizado' | 'sin_fin';
+  inicioEn: string;
+  finEn: string | null;
+  duracionSegundos: number | null;
+  consultorioNumero: number;
+  horaAproximada: boolean;
+  origen: 'dispositivo' | 'manual';
+}
+
 export interface CitaResumen {
   id: string;
   pacienteId: string;
@@ -26,7 +37,8 @@ export interface CitaResumen {
   profesional: { id: string; nombres: string; apellidos: string; colorAvatar: string } | null;
   solicitadoProfesional?: { id: string; nombres: string; apellidos: string; tipo: string } | null;
   sedeId: string;
-  sede: { id: string; nombre: string; color: string };
+  // `consultorios`: nº de consultorios de la sede (selector C1..CN; 0 = no numera consultorios).
+  sede: { id: string; nombre: string; color: string; consultorios?: number };
   unidadNegocioId: string;
   unidadNegocio: { id: string; nombre: string; color: string };
   servicioId: string;
@@ -42,6 +54,8 @@ export interface CitaResumen {
   llegoEn?: string | null;
   enAtencionEn?: string | null;
   completadaEn?: string | null;
+  // Aparato del consultorio: el tiempo REAL vigente del tratamiento (máx 1; botones INICIO/FIN).
+  tiemposTratamiento?: TiempoTratamientoCita[];
   canal: string;
   origenAsignacion: string | null;
   // Bloque combinado: null = cita individual; si != null pertenece a un bloque de 2

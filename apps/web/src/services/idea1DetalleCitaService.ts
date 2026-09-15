@@ -16,14 +16,6 @@ import { useResumenAtencionCita, useFichaPrevia } from '../api/historiaClinica';
 const SLOTS = generarSlotsDelDia('08:00', '20:00', 30);
 const ESTADOS_FINALES = ['completada', 'no_show', 'cancelada'];
 
-export const CONSULTORIOS_POR_SEDE: Record<string, number> = {
-  'Los Olivos': 6,
-  'San Miguel': 4,
-  'Lince': 9,
-  'Paz Soldán': 11,
-  'One': 5,
-};
-
 function formatFechaCorta(d: Date) {
   return format(d, 'yyyy-MM-dd');
 }
@@ -374,7 +366,8 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
     ? `${cita.profesional.nombres} ${cita.profesional.apellidos}`.trim()
     : null;
 
-  const totalConsultorios = CONSULTORIOS_POR_SEDE[cita.sede?.nombre || ''] ?? 6;
+  // Nº de consultorios de la sede: viene de la BD (Sede.consultorios), ya no de un mapa en el front.
+  const totalConsultorios = cita.sede?.consultorios ?? 0;
 
   const seleccionarCitaPorId = async (historialCitaId: string) => {
     try {

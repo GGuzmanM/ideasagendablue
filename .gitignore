@@ -37,3 +37,6 @@ apps/api/uploads/
 .agents/
 skills-lock.json
 sync-nightly.log
+
+# Aparato del consultorio: configuración local con la clave del aparato (no va a git)
+hardware/esp32-consultorio/config.h

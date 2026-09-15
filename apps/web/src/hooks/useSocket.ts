@@ -93,13 +93,23 @@ export function useSocket(sedeId: string | null) {
       });
     };
 
+    // Aparato del consultorio: INICIO / FIN o cierre de un tiempo. Refresca el detalle de la cita
+    // tocada (chip «Tratamiento») y el tratamiento en curso de Administración › Aparatos.
+    const tiemposHandler = (event: { sedeId: string; fecha: string; citaId: string | null }) => {
+      if (event.sedeId !== sedeId) return;
+      if (event.citaId) qc.invalidateQueries({ queryKey: ['cita-detalle', event.citaId] });
+      qc.invalidateQueries({ queryKey: ['dispositivos'] });
+    };
+
     socket.on('agenda:actualizada', citaHandler);
     socket.on('movimiento:guardado', movimientoHandler);
     socket.on('horario:actualizado', horarioHandler);
+    socket.on('tiempos:actualizados', tiemposHandler);
     return () => {
       socket?.off('agenda:actualizada', citaHandler);
       socket?.off('movimiento:guardado', movimientoHandler);
       socket?.off('horario:actualizado', horarioHandler);
+      socket?.off('tiempos:actualizados', tiemposHandler);
     };
   }, [sedeId, qc]);
 }

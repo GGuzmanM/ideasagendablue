@@ -18,6 +18,7 @@ export const ADMIN_TABS: AdminTabItem[] = [
   { to: '/admin/usuarios', label: 'Usuarios', icon: 'group', permiso: 'usuarios.ver' },
   { to: '/admin/roles', label: 'Roles', icon: 'key', permiso: 'roles.editar' },
   { to: '/admin/notificaciones', label: 'Notificaciones', icon: 'notifications_active', permiso: 'notificaciones.ver' },
+  { to: '/admin/dispositivos', label: 'Aparatos', icon: 'timer', permiso: 'dispositivos.gestionar' },
 ];
 
 export function AdminHeaderNav() {

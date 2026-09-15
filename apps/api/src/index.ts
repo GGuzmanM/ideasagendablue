@@ -1,8 +1,9 @@
+import './cargarEnv'; // PRIMERO: entorno (.env o ENV_FILE) antes de que otro módulo lea process.env
 import 'express-async-errors';
-import dotenv from 'dotenv';
-// Por defecto carga `.env` (producción). Con ENV_FILE=<archivo> carga ese archivo en su lugar
-// (útil para instancias aisladas). Prod-neutral: sin ENV_FILE, comportamiento idéntico.
-dotenv.config(process.env.ENV_FILE ? { path: process.env.ENV_FILE } : undefined);
+import dispositivosRouter from './routes/dispositivos';
+import dispositivoApiRouter from './routes/dispositivoApi';
+import tiemposTratamientoRouter from './routes/tiemposTratamiento';
+import { cerrarTiemposAbandonados } from './services/tiempoTratamientoService';
 
 // Zona horaria del PROCESO fija a UTC: toda fecha @db.Date se ancla a UTC (mediodía
 // para días, ver utils/fechaLima). Así el sistema se comporta IGUAL en cualquier host
@@ -227,6 +228,9 @@ app.use(`${v1}/videos`, videosPublicoRouter); // PÚBLICO (sin login): baja/reac
 app.use(`${v1}/catalogos`, catalogosRouter); // CIE-10 + medicamentos (base de la receta)
 app.use(`${v1}/historia-clinica`, historiaClinicaRouter); // Historia clínica (solo usuarios con hc.*)
 app.use(`${v1}/recetas`, recetasRouter); // Recetas médicas e indicaciones (receta.*)
+app.use(`${v1}/dispositivos`, dispositivosRouter); // Administración de aparatos de consultorio (dispositivos.gestionar)
+app.use(`${v1}/dispositivo`, dispositivoApiRouter); // API del aparato (botones INICIO/FIN), clave propia
+app.use(`${v1}/tiempos-tratamiento`, tiemposTratamientoRouter); // Tiempos sin cita, enlazar, reporte
 
 // ─── Error handler ────────────────────────────────────────────────────────────
 app.use(errorHandler);
@@ -294,7 +298,12 @@ setInterval(recalcAgregados, 6 * 60 * 60_000).unref();
 // ─── Auto-completado de citas por tiempo ──────────────────────────────────────
 // Una cita marcada "Llegó" pasa sola a "Completada" tras AUTOCOMPLETAR_MIN (default 90) min.
 // Barrido cada 5 min + una corrida al arrancar (para citas ya vencidas). No bloqueante.
-const autocompletar = () => void autocompletarCitasPorTiempo().catch((e) => console.error('[autocompletar] error:', e));
+// Antes, cierra como «sin fin» los tratamientos del aparato abiertos hace más de 3 h: así la cita
+// vuelve a quedar a cargo del autocompletado en esta misma vuelta.
+const autocompletar = () => void cerrarTiemposAbandonados()
+  .catch((e) => console.error('[tiempos] error al cerrar tratamientos sin FIN:', e))
+  .then(() => autocompletarCitasPorTiempo())
+  .catch((e) => console.error('[autocompletar] error:', e));
 setTimeout(autocompletar, 15_000); // al arrancar (deja que la BD/redis estén listos)
 setInterval(autocompletar, 5 * 60_000).unref();
 

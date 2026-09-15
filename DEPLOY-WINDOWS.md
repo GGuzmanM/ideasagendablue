@@ -156,6 +156,34 @@ Register-ScheduledTask -TaskName 'LimablueBackupDB' -Action $acc -Trigger $trg -
 Genera 7 diarios + 4 semanales + 3 mensuales verificados en `apps/api/backups/postgres/`.
 **Pendiente (recomendado):** copia off-site (nube/disco externo), cifrada con `age`/`gpg`.
 
+## 10. Aparatos de consultorio (botones INICIO / FIN)
+
+Cada consultorio puede tener un aparato ESP32 que mide el tiempo real del tratamiento (programa y
+cableado en `hardware/esp32-consultorio/README.md`). Para instalarlos:
+
+1. **Cómo llega cada sede al servidor.** El aparato llama a `POST /api/v1/dispositivo/*` desde la
+   WiFi de la sede. Elige por sede:
+   - red privada o VPN hasta el servidor → `API_BASE = http://<ip-del-servidor>:3002/api/v1`
+     (abre el puerto 3002 del firewall de Windows solo para esa red);
+   - dominio con HTTPS → `API_BASE = https://<dominio>/api/v1` y el certificado raíz en `CERT_RAIZ`.
+2. **IP real detrás del proxy.** Agrega `xfwd: true` al proxy de `serve-prod.cjs`, para que el API vea
+   la IP de cada aparato (sin eso ve a todos como 127.0.0.1; afecta la IP que muestra
+   Administración › Aparatos y el límite por IP del login). El límite de los aparatos va por aparato,
+   no por IP.
+3. **Consultorios por sede.** `Sede.consultorios` ya viene cargado (Los Olivos 6, San Miguel 4,
+   Lince 9, Paz Soldán 11, One 5). Si una sede cambia, actualízalo en la BD: el selector del detalle
+   de la cita y el registro de aparatos usan ese número.
+4. **Registrar cada aparato.** Administración › **Aparatos** › «Registrar aparato» (sede, unidad y
+   consultorio). La clave se muestra **una sola vez** junto con el bloque para `config.h`. Permiso
+   `dispositivos.gestionar` (admin y coordinación).
+5. **Cargar el programa** con su `config.h` (red WiFi, `API_BASE`, clave y número de consultorio) y
+   comprobar que en Administración › Aparatos aparece **En línea** en menos de un minuto.
+6. **Prueba en el consultorio:** una cita de hoy con ese consultorio y en «Llegó» → INICIO → la cita
+   pasa a «En atención» → FIN → «Completada» y el chip «Tratamiento» en el detalle de la cita.
+
+Si un aparato se pierde o se cambia: «Revocar» (su clave deja de servir al instante) y registrar el
+nuevo, o «Clave nueva» para el mismo aparato.
+
 ---
 
 ## Checklist final
@@ -167,3 +195,5 @@ Genera 7 diarios + 4 semanales + 3 mensuales verificados en `apps/api/backups/po
 - [ ] Login 200 · web 200 · `/socket.io` responde
 - [ ] Tarea `LimablueBackupDB` creada y probada (corre el .ps1 a mano una vez)
 - [ ] Prueba de RESTORE en una BD desechable (que el dump de verdad restaura)
+- [ ] Aparatos de consultorio: `xfwd: true` en `serve-prod.cjs`, cada aparato **En línea** en
+      Administración › Aparatos y una prueba INICIO / FIN por sede

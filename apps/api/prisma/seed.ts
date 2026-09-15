@@ -216,11 +216,11 @@ async function main() {
 
   // `orden`: secuencia de las pestañas de sede en la agenda (Los Olivos, One, San Miguel, Lince, Paz Soldán).
   const sedesData = [
-    { nombre: 'Los Olivos',  direccion: 'Av. Antúnez de Mayolo 567, Los Olivos, Lima',    color: '#10B981', horario: horarioSMOlivos, orden: 1 },
-    { nombre: 'San Miguel',  direccion: 'Av. La Marina 2000, San Miguel, Lima',             color: '#3B82F6', horario: horarioSMOlivos, orden: 3 },
-    { nombre: 'Paz Soldán',  direccion: 'Calle Paz Soldán 890, San Isidro, Lima',           color: '#8B5CF6', horario: horarioStd, orden: 5 },
-    { nombre: 'Lince',       direccion: 'Av. Arequipa 2340, Lince, Lima',                   color: '#F59E0B', horario: horarioStd, orden: 4 },
-    { nombre: 'One',         direccion: 'Av. Javier Prado Este 4200, Santiago de Surco',   color: '#EF4444', horario: horarioStd, orden: 2 },
+    { nombre: 'Los Olivos',  direccion: 'Av. Antúnez de Mayolo 567, Los Olivos, Lima',    color: '#10B981', horario: horarioSMOlivos, orden: 1, consultorios: 6 },
+    { nombre: 'San Miguel',  direccion: 'Av. La Marina 2000, San Miguel, Lima',             color: '#3B82F6', horario: horarioSMOlivos, orden: 3, consultorios: 4 },
+    { nombre: 'Paz Soldán',  direccion: 'Calle Paz Soldán 890, San Isidro, Lima',           color: '#8B5CF6', horario: horarioStd, orden: 5, consultorios: 11 },
+    { nombre: 'Lince',       direccion: 'Av. Arequipa 2340, Lince, Lima',                   color: '#F59E0B', horario: horarioStd, orden: 4, consultorios: 9 },
+    { nombre: 'One',         direccion: 'Av. Javier Prado Este 4200, Santiago de Surco',   color: '#EF4444', horario: horarioStd, orden: 2, consultorios: 5 },
   ];
 
   const sedesCreadas: Record<string, { id: string; nombre: string }> = {};
@@ -637,11 +637,12 @@ async function main() {
     'notificaciones.ver',
     'usuarios.ver', 'usuarios.editar',
     'roles.editar',
+    'dispositivos.gestionar',
   ];
   await prisma.rol.createMany({
     data: [
       { nombre: 'admin', label: 'Administrador', descripcion: 'Acceso total al sistema', permisos: TODOS_PERMISOS, esSistema: true },
-      { nombre: 'coordinadora_sedes', label: 'Coordinadora de Sedes', descripcion: 'Gestión de agenda, pacientes y reportes', permisos: ['agenda.ver','agenda.editar','pacientes.ver','pacientes.editar','membresias.vender','horarios.ver','horarios.editar','herramientas.operativas','herramientas.estrategicas','movimientos.ver','movimientos.editar','admin.ver','analytics.ver','analytics.agentes','notificaciones.ver','hc.ver','hc.registrar','hc.anular','receta.ver'], esSistema: true },
+      { nombre: 'coordinadora_sedes', label: 'Coordinadora de Sedes', descripcion: 'Gestión de agenda, pacientes y reportes', permisos: ['agenda.ver','agenda.editar','pacientes.ver','pacientes.editar','membresias.vender','horarios.ver','horarios.editar','herramientas.operativas','herramientas.estrategicas','movimientos.ver','movimientos.editar','admin.ver','analytics.ver','analytics.agentes','notificaciones.ver','hc.ver','hc.registrar','hc.anular','receta.ver','dispositivos.gestionar'], esSistema: true },
       // Recepción y contact center venden membresías; contact center ve TODAS las sedes (ROLES_TODAS_SEDES).
       // Recepción registra HC a nombre de la podóloga; contact center NO tiene acceso clínico.
       { nombre: 'recepcionista', label: 'Recepcionista', descripcion: 'Agenda, pacientes y venta de membresías (su sede)', permisos: ['agenda.ver','agenda.editar','pacientes.ver','pacientes.editar','membresias.vender','herramientas.operativas','hc.ver','hc.registrar','receta.ver'], esSistema: true },

@@ -36,6 +36,17 @@ export function conflictoUnicidad(target: string): { error: string; message: str
   if (target.includes('asignaciones_sede_una_abierta') || target.includes('profesionalId')) {
     return { error: 'CONFLICTO_ASIGNACION', message: 'El profesional ya tiene una asignación abierta. Ciérrala antes de crear otra.' };
   }
+  // Aparato del consultorio (índices parciales crudos → se reconocen por NOMBRE; sus columnas
+  // se repiten entre tablas, así que no se infieren por columnas).
+  if (target.includes('dispositivos_consultorio_unico')) {
+    return { error: 'CONSULTORIO_CON_APARATO', message: 'Ese consultorio ya tiene un aparato activo. Revócalo antes de registrar otro.' };
+  }
+  if (target.includes('tiempos_en_curso_consultorio_unico')) {
+    return { error: 'TIEMPO_YA_EN_CURSO', message: 'Ese consultorio ya tiene un tratamiento en curso.' };
+  }
+  if (target.includes('tiempos_cita_vigente_unico')) {
+    return { error: 'CITA_YA_TIENE_TIEMPO', message: 'Esa cita ya tiene un tiempo de tratamiento registrado.' };
+  }
   if (target.includes('imagenes_podograma_vista_unica')) {
     return { error: 'IMAGEN_VISTA_DUPLICADA', message: 'Esa vista del podograma ya tiene una imagen; vuelve a intentar (se reemplaza la anterior).' };
   }
