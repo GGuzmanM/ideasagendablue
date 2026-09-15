@@ -58,6 +58,7 @@ export function useConsentimientos(a: AtencionCompleta, puedeRegistrar: boolean)
   if (procedimiento.trim().length < 3) faltantes.push('el procedimiento');
   if (firmanteNombre.trim().length < 3) faltantes.push('el nombre de quien firma');
   if (relacion === 'apoderado' && !firmanteDocumento.trim()) faltantes.push('el documento del apoderado');
+  if (texto.trim().length < 40) faltantes.push('el texto (quedó muy corto)');
   if (puntosFirma < MIN_PUNTOS_FIRMA) faltantes.push('la firma');
 
   const cambiarRelacion = (r: RelacionFirmante) => {

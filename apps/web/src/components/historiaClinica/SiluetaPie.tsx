@@ -1,7 +1,10 @@
-// Silueta del pie (vista pura) + monofilamento dibujado sobre ella. Son FOTOS reales de ambos pies:
-//  · plantar (public/Silueta.jpg): las plantas, dedos arriba; cada pie en una caja de 744×1843.
-//  · dorsal  (public/Silueta-dorsal.jpg): el dorso visto desde arriba, dedos abajo y uñas visibles;
-//    cada pie en una caja de 874×1960. Sirve para marcar uñas (onicocriptosis, onicomicosis…) y empeine.
+// Silueta del pie (vista pura) + monofilamento dibujado sobre ella. Son FOTOS reales de ambos pies,
+// giradas 180° respecto del original para que izquierdo y derecho sean los del PACIENTE:
+//  · plantar (public/Silueta.jpg): las plantas vistas desde atrás del paciente, dedos abajo y talón
+//    arriba; cada pie en una caja de 744×1843.
+//  · dorsal  (public/Silueta-dorsal.jpg): el dorso como lo ve el propio paciente (dedos arriba, uñas
+//    visibles); cada pie en una caja de 874×1960. Sirve para marcar uñas (onicocriptosis, onicomicosis…)
+//    y empeine.
 // En ambas el pie izquierdo va a la izquierda y el derecho a la derecha, con los dedos gordos hacia el
 // centro. Un solo archivo por vista sirve para los dos pies recortando con background-size/position.
 // Las zonas de cada vista (y su calibración) viven en utils/zonasPie.ts.

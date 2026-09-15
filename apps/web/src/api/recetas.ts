@@ -97,16 +97,32 @@ export function useRecetasPaciente(pacienteId: string | undefined, enabled = tru
   });
 }
 
-/** Abre el PDF en una pestaña nueva. */
-export async function verRecetaPdf(id: string, copias?: 1 | 2): Promise<void> {
-  const blob = await recetasApi.descargarPdfBlob(id, copias);
-  const url = URL.createObjectURL(blob);
-  window.open(url, '_blank');
-  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+const esIos = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+/**
+ * Abre un PDF (blob autenticado) en una pestaña nueva. La pestaña se abre EN EL MISMO TOQUE (antes de
+ * esperar la descarga): Safari en iPad bloquea un `window.open` que llega después de un `await`.
+ */
+export async function abrirPdfEnPestana(cargar: () => Promise<Blob>): Promise<void> {
+  const ventana = window.open('', '_blank');
+  try {
+    const url = URL.createObjectURL(await cargar());
+    if (ventana) ventana.location.href = url; else window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  } catch (e) {
+    ventana?.close();
+    throw e;
+  }
 }
 
-/** Genera el PDF y abre la ventana de IMPRESIÓN (iframe oculto → print; respaldo: pestaña). */
+/** Abre el PDF en una pestaña nueva. */
+export function verRecetaPdf(id: string, copias?: 1 | 2): Promise<void> {
+  return abrirPdfEnPestana(() => recetasApi.descargarPdfBlob(id, copias));
+}
+
+/** Genera el PDF y abre la ventana de IMPRESIÓN (iframe oculto → print; en iPad, pestaña con el PDF). */
 export async function imprimirReceta(id: string, copias?: 1 | 2): Promise<void> {
+  if (esIos()) return verRecetaPdf(id, copias); // el iframe oculto no imprime en Safari móvil: se abre y se imprime desde ahí
   const blob = await recetasApi.descargarPdfBlob(id, copias);
   const url = URL.createObjectURL(blob);
   const iframe = document.createElement('iframe');

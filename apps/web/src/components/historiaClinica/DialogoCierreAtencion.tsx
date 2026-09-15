@@ -12,8 +12,9 @@ export function DialogoCierreAtencion({ a, faltantes, pending, onCerrar, onClose
   const c = useCierreConControles(a);
   const n = c.controles.length;
   return (
-    <div className="fixed inset-0 z-[120] bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-surface-container-lowest rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto p-6 space-y-4" onClick={(ev) => ev.stopPropagation()} data-testid="dialogo-cierre">
+    // El fondo no cierra: en la tablet se toca sin querer y se perderían los controles editados.
+    <div className="fixed inset-0 z-[120] bg-black/40 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+      <div className="bg-surface-container-lowest rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto p-6 space-y-4" data-testid="dialogo-cierre">
         <h3 className="font-headline-sm text-headline-sm font-bold text-on-surface flex items-center gap-2"><span className="material-symbols-outlined text-primary">lock</span>Cerrar atención</h3>
 
         {faltantes.length > 0 && (
@@ -51,7 +52,9 @@ export function DialogoCierreAtencion({ a, faltantes, pending, onCerrar, onClose
                     className="w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-1.5 text-sm text-on-surface outline-none focus:border-primary" data-testid="motivo-control" />
                 </div>
               ))}
-              <button type="button" onClick={c.agregarManual} className="text-xs text-primary font-semibold hover:underline flex items-center gap-1" data-testid="agregar-control"><span className="material-symbols-outlined text-base">add</span>Agregar control</button>
+              {c.puedeAgregar
+                ? <button type="button" onClick={c.agregarManual} className="min-h-[44px] lg:min-h-0 text-sm lg:text-xs text-primary font-semibold hover:underline flex items-center gap-1" data-testid="agregar-control"><span className="material-symbols-outlined text-base">add</span>Agregar otro control</button>
+                : <p className="text-xs text-on-surface-variant">Máximo 6 controles por cierre.</p>}
               {c.invalidas > 0 && <p className="text-xs text-amber-700">Completa el motivo (mín. 3 letras) y una fecha desde hoy en los controles marcados, o desmárcalos.</p>}
             </div>
           )}

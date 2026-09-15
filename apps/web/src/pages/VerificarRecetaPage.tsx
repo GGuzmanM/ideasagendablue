@@ -33,13 +33,20 @@ export function VerificarRecetaPage() {
 
         {isLoading && <p className="p-8 text-center text-slate-500">Verificando…</p>}
 
-        {error && (
+        {error && ((error as { statusCode?: number }).statusCode === 404 || (error as { statusCode?: number }).statusCode === 400 ? (
           <div className="p-8 text-center space-y-2">
             <span className="material-symbols-outlined text-5xl text-rose-600">gpp_bad</span>
             <p className="font-bold text-slate-800">No encontramos un documento con ese código</p>
             <p className="text-sm text-slate-500">Revise que el código esté bien escrito. Si lo escaneó del QR y no aparece, el documento no fue emitido por esta clínica.</p>
           </div>
-        )}
+        ) : (
+          // Sin conexión o falla del servidor: NO significa que la receta sea falsa.
+          <div className="p-8 text-center space-y-2">
+            <span className="material-symbols-outlined text-5xl text-amber-600">wifi_off</span>
+            <p className="font-bold text-slate-800">No pudimos conectar con la clínica</p>
+            <p className="text-sm text-slate-500">Revise la conexión a internet e inténtelo de nuevo en un momento.</p>
+          </div>
+        ))}
 
         {v && estado && (
           <>

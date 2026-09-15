@@ -54,9 +54,9 @@ export function BandejaClinicaPage() {
                     {a.faltantes.length === 0
                       ? <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-emerald-100 text-emerald-700">Completa</span>
                       : <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-amber-100 text-amber-800">{a.faltantes.length} pendiente{a.faltantes.length === 1 ? '' : 's'}</span>}
-                    {puedeRegistrar && <button onClick={() => b.cerrarMut.mutate(a.id)} disabled={b.cerrarMut.isPending || b.cerrandoTodas} className={BTN_SEC} title="Cerrar esta atención"><span className="material-symbols-outlined text-base">lock</span>Cerrar</button>}
+                    {puedeRegistrar && <button onClick={() => b.cerrarUna(a.id)} disabled={b.cerrarMut.isPending || b.cerrandoTodas} className={BTN_SEC} title="Cerrar esta atención"><span className="material-symbols-outlined text-base">lock</span>Cerrar</button>}
                   </div>
-                  <p className="text-xs text-on-surface-variant mt-1">Motivo: {a.motivoConsulta} · {a.totales.notas} nota(s) · {a.totales.diagnosticos} dx · {a.totales.procedimientos} proc. · {a.totales.recetas} receta(s)</p>
+                  <p className="text-xs text-on-surface-variant mt-1">Motivo: {a.motivoConsulta} · {a.totales.notas} nota(s) · {a.totales.diagnosticos} diagnóstico(s) · {a.totales.procedimientos} procedimiento(s) · {a.totales.recetas} receta(s)</p>
                   {a.faltantes.length > 0 && <p className="text-xs text-amber-700 mt-1 flex items-center gap-1"><span className="material-symbols-outlined text-sm">warning</span>Falta: {a.faltantes.join(' · ')}</p>}
                 </div>
               ))}

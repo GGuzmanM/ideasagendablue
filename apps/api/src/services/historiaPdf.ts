@@ -29,6 +29,9 @@ const NOTA: Record<string, string> = { evolucion: 'Nota de evolución', procedim
 const PROFESION: Record<string, string> = { podologa: 'Podóloga', medico: 'Médico', fisioterapeuta: 'Fisioterapeuta' };
 const PIE_LABEL: Record<string, string> = { izquierdo: 'pie izquierdo', derecho: 'pie derecho', ambos: 'ambos pies' };
 const DOC_RECETA: Record<string, string> = { RECETA_MEDICA: 'Receta médica', INDICACIONES_PODOLOGICAS: 'Indicaciones podológicas' };
+// pdfkit incrusta el archivo ENTERO (no lo achica): las fotos de más de MAX_FOTO_PDF quedan como
+// recuadro con aviso para que el PDF no pese decenas de MB ni bloquee el servidor; tope por atención.
+const MAX_FOTO_PDF = 4 * 1024 * 1024, MAX_FOTOS_ATENCION = 24;
 
 export function escribirHistoriaPdf(doc: Doc, h: HistoriaParaPdf, opts: { fotos?: boolean } = {}): void {
   const { paciente: pac, historia } = h;
@@ -196,23 +199,25 @@ export function escribirHistoriaPdf(doc: Doc, h: HistoriaParaPdf, opts: { fotos?
     const COL = 4, GAP = 8;
     const cw = (ANCHO - GAP * (COL - 1)) / COL, ch = cw * 0.75;
     let col = 0;
-    for (const f of a.fotos) {
+    for (const f of a.fotos.slice(0, MAX_FOTOS_ATENCION)) {
       const abs = path.resolve(UPLOADS_ROOT, f.ruta);
       const valida = abs.startsWith(UPLOADS_ROOT + path.sep) && fs.existsSync(abs) && /image\/(jpe?g|png)/.test(f.mime);
+      const pesada = valida && f.tamano > MAX_FOTO_PDF;
       if (col === 0) asegurar(ch + 22);
       const x = X + col * (cw + GAP);
       doc.rect(x, y, cw, ch).fillAndStroke('#F4F6FA', LINEA);
-      if (valida) {
+      if (valida && !pesada) {
         try { doc.image(abs, x + 2, y + 2, { fit: [cw - 4, ch - 4], align: 'center', valign: 'center' }); } catch { /* imagen dañada: queda el recuadro */ }
       } else {
-        doc.font('Helvetica').fontSize(7).fillColor(GRIS).text('Formato no imprimible', x, y + ch / 2 - 4, { width: cw, align: 'center' });
+        doc.font('Helvetica').fontSize(7).fillColor(GRIS).text(pesada ? 'Foto muy pesada: verla en el sistema' : 'Formato no imprimible', x + 2, y + ch / 2 - 4, { width: cw - 4, align: 'center' });
       }
-      const leyenda = [f.zona, f.pie ? PIE_LABEL[f.pie] ?? f.pie : null, soloFecha(f.tomadaEn)].filter(Boolean).join(' · ');
+      const leyenda = [f.zona, f.pie ? PIE_LABEL[f.pie] ?? f.pie : null, fechaLima(f.tomadaEn).split(' ·')[0]].filter(Boolean).join(' · ');
       doc.font('Helvetica').fontSize(7).fillColor(GRIS).text(leyenda, x, y + ch + 2, { width: cw, lineBreak: false, ellipsis: true });
       col++;
       if (col === COL) { col = 0; y += ch + 14; }
     }
     if (col) y += ch + 14;
+    if (a.fotos.length > MAX_FOTOS_ATENCION) parrafo(`… y ${a.fotos.length - MAX_FOTOS_ATENCION} foto(s) más en el sistema.`, undefined, { tam: 8, color: GRIS });
   }
 
   // ── Cierre y pie de cada hoja («página N de M») ──
@@ -228,3 +233,4 @@ export function escribirHistoriaPdf(doc: Doc, h: HistoriaParaPdf, opts: { fotos?
       .text(`Página ${i - rango.start + 1} de ${rango.count}`, W - M - 80, H - PIE + 10, { width: 80, align: 'right', lineBreak: false });
   }
 }
+

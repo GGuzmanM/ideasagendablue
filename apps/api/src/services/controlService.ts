@@ -17,6 +17,7 @@ import { AppError } from '../middleware/errorHandler';
 import { auditEnTx } from './audit';
 import { fechaAStr, fechaDb, hoyLimaStr } from '../utils/fechaLima';
 import type { Ctx } from './historiaClinicaService';
+import { categoriaIwgdfDe } from './bloque3Service';
 
 type Tx = Prisma.TransactionClient;
 const ctxAudit = (c: Ctx) => ({ usuarioId: c.usuarioId, ip: c.ip, userAgent: c.userAgent });
@@ -74,9 +75,8 @@ export async function categoriaIwgdf(pacienteIds: string[]): Promise<Map<string,
   for (const e of escalas) {
     const pid = e.atencion.pacienteId;
     if (res.has(pid)) continue;
-    const m = e.resultado?.match(/categor[ií]a\s+(\d)/i);
-    const c = m ? Number(m[1]) : Number((e.datos as Record<string, unknown> | null)?.categoria);
-    if (Number.isInteger(c) && c >= 0 && c <= 3) res.set(pid, c);
+    const c = categoriaIwgdfDe(e);
+    if (c != null) res.set(pid, c);
   }
   return res;
 }
@@ -130,7 +130,10 @@ export async function validarControles(controles: ControlEntrada[]): Promise<Con
   const hoy = hoyLimaStr();
   const tope = sumarMeses(hoy, 36);
   for (const c of controles) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(c.fechaSugerida) || Number.isNaN(Date.parse(c.fechaSugerida))) throw new AppError('Fecha de control no válida', 400, 'FECHA_CONTROL_INVALIDA');
+    // Fecha real del calendario («2026-02-30» no vale aunque Date.parse la acepte).
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(c.fechaSugerida);
+    const real = m && new Date(Date.UTC(+m[1]!, +m[2]! - 1, +m[3]!)).toISOString().slice(0, 10) === c.fechaSugerida;
+    if (!real) throw new AppError('Fecha de control no válida', 400, 'FECHA_CONTROL_INVALIDA');
     if (c.fechaSugerida < hoy) throw new AppError('El control no puede quedar en una fecha pasada', 400, 'FECHA_CONTROL_PASADA');
     if (c.fechaSugerida > tope) throw new AppError('El control no puede quedar a más de 3 años', 400, 'FECHA_CONTROL_LEJANA');
   }
@@ -145,6 +148,12 @@ export async function crearControlesEnTx(tx: Tx, p: {
   ctx: Ctx; atencion: { id: string; pacienteId: string; sedeId: string; citaId: string }; controles: ControlEntrada[]; etiqueta: string | null;
 }) {
   for (const c of p.controles) {
+    // Reabrir y volver a cerrar propone los mismos controles: no se duplica uno pendiente idéntico.
+    const repetido = await tx.controlSugerido.findFirst({
+      where: { pacienteId: p.atencion.pacienteId, estado: 'pendiente', fechaSugerida: fechaDb(c.fechaSugerida), motivo: c.motivo },
+      select: { id: true },
+    });
+    if (repetido) continue;
     const creado = await tx.controlSugerido.create({
       data: {
         atencionId: p.atencion.id, pacienteId: p.atencion.pacienteId, sedeId: p.atencion.sedeId, servicioId: c.servicioId ?? null,

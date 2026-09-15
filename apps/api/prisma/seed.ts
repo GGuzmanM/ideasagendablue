@@ -10,6 +10,7 @@ import { sembrarPromociones } from '../scripts/seed-promociones';
 import { sembrarUbigeo } from '../scripts/seed-ubigeo';
 import { sembrarCie10 } from '../scripts/seed-cie10';
 import { sembrarMedicamentos } from '../scripts/seed-medicamentos';
+import { ROLES_SISTEMA } from '../src/permisos';
 
 const prisma = new PrismaClient();
 
@@ -623,35 +624,10 @@ async function main() {
 
   // ── Roles ─────────────────────────────────────────────────────────────────
   console.log('  → Roles del sistema...');
-  // Lista MAESTRA completa (espeja PERMISOS_VALIDOS en routes/roles.ts). El admin lleva TODOS.
-  const TODOS_PERMISOS = [
-    // Historia clínica y receta (el admin NO emite recetas: eso es solo del rol médico)
-    'hc.ver', 'hc.registrar', 'hc.anular', 'receta.ver',
-    'agenda.ver', 'agenda.editar',
-    'pacientes.ver', 'pacientes.editar',
-    'membresias.vender',
-    'horarios.ver', 'horarios.editar',
-    'herramientas.operativas', 'herramientas.estrategicas',
-    'movimientos.ver', 'movimientos.editar',
-    'admin.ver', 'analytics.ver', 'analytics.agentes',
-    'notificaciones.ver',
-    'usuarios.ver', 'usuarios.editar',
-    'roles.editar',
-    'dispositivos.gestionar',
-  ];
+  // Catálogo y matriz de roles: src/permisos.ts (la misma lista que valida routes/roles.ts). Antes el
+  // seed usaba nombres viejos (agenda.*, herramientas.*, admin.ver) que ningún candado reconoce.
   await prisma.rol.createMany({
-    data: [
-      { nombre: 'admin', label: 'Administrador', descripcion: 'Acceso total al sistema', permisos: TODOS_PERMISOS, esSistema: true },
-      { nombre: 'coordinadora_sedes', label: 'Coordinadora de Sedes', descripcion: 'Gestión de agenda, pacientes y reportes', permisos: ['agenda.ver','agenda.editar','pacientes.ver','pacientes.editar','membresias.vender','horarios.ver','horarios.editar','herramientas.operativas','herramientas.estrategicas','movimientos.ver','movimientos.editar','admin.ver','analytics.ver','analytics.agentes','notificaciones.ver','hc.ver','hc.registrar','hc.anular','receta.ver','dispositivos.gestionar'], esSistema: true },
-      // Recepción y contact center venden membresías; contact center ve TODAS las sedes (ROLES_TODAS_SEDES).
-      // Recepción registra HC a nombre de la podóloga; contact center NO tiene acceso clínico.
-      { nombre: 'recepcionista', label: 'Recepcionista', descripcion: 'Agenda, pacientes y venta de membresías (su sede)', permisos: ['agenda.ver','agenda.editar','pacientes.ver','pacientes.editar','membresias.vender','herramientas.operativas','hc.ver','hc.registrar','receta.ver'], esSistema: true },
-      { nombre: 'contact_center', label: 'Contact Center', descripcion: 'Agenda, pacientes y venta de membresías (todas las sedes)', permisos: ['agenda.ver','agenda.editar','pacientes.ver','pacientes.editar','membresias.vender'], esSistema: false },
-      // Médico colegiado: el ÚNICO rol con receta.emitir (además exige Usuario.profesionalId + colegiatura).
-      // Médico: agenda y pacientes SOLO lectura (ve quién llegó, abre la ficha), membresías en lectura
-      // (sesiones de láser), historia clínica completa y el ÚNICO rol que emite recetas.
-      { nombre: 'medico', label: 'Médico', descripcion: 'Médico colegiado: registra historia clínica y emite recetas', permisos: ['citas.ver','pacientes.ver','membresias.ver','hc.ver','hc.registrar','receta.ver','receta.emitir'], esSistema: false },
-    ],
+    data: ROLES_SISTEMA.map((r) => ({ nombre: r.nombre, label: r.label, descripcion: r.descripcion, permisos: [...r.permisos], esSistema: r.esSistema })),
     skipDuplicates: true,
   });
 

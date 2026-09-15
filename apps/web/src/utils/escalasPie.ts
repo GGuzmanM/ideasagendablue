@@ -27,14 +27,14 @@ export function itbPie(pedia: number | null, tibial: number | null, braqIzq: num
 }
 
 export type NivelItb = 'normal' | 'limite' | 'leve' | 'moderada' | 'grave' | 'no_compresible';
-/** Lectura del ITB (AHA/ACC 2016). */
+/** Lectura del ITB (AHA/ACC 2016). Mismos textos que el servidor (bloque3Service.textoItb). */
 export function interpretarItb(v: number): { nivel: NivelItb; texto: string } {
-  if (v > 1.4) return { nivel: 'no_compresible', texto: 'No compresible (arterias rígidas): no descarta EAP' };
-  if (v >= 1) return { nivel: 'normal', texto: 'Normal' };
-  if (v >= 0.91) return { nivel: 'limite', texto: 'Limítrofe' };
-  if (v >= 0.7) return { nivel: 'leve', texto: 'EAP leve' };
-  if (v >= 0.4) return { nivel: 'moderada', texto: 'EAP moderada' };
-  return { nivel: 'grave', texto: 'EAP grave (isquemia crítica probable)' };
+  if (v > 1.4) return { nivel: 'no_compresible', texto: 'no compresible (arterias rígidas): no descarta mala circulación' };
+  if (v >= 1) return { nivel: 'normal', texto: 'normal' };
+  if (v >= 0.91) return { nivel: 'limite', texto: 'limítrofe' };
+  if (v >= 0.7) return { nivel: 'leve', texto: 'mala circulación leve (EAP)' };
+  if (v >= 0.4) return { nivel: 'moderada', texto: 'mala circulación moderada (EAP)' };
+  return { nivel: 'grave', texto: 'mala circulación grave (EAP), posible isquemia crítica' };
 }
 
 /** EAP sugerida por una medición guardada: ITB ≤ 0,90 en algún pie o algún pulso ausente. */

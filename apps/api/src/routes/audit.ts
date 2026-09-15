@@ -5,6 +5,12 @@ import { requireAuth, requirePermiso } from '../middleware/auth';
 
 const router = Router();
 
+// Entidades cuyo antes/despues es contenido clínico (Ley 29733): reservado a quien tiene hc.ver.
+const ENTIDADES_CLINICAS = new Set([
+  'historia_clinica', 'atencion_clinica', 'nota_evolucion', 'diagnostico_atencion', 'procedimiento_atencion', 'escala_clinica',
+  'marca_podograma', 'imagen_podograma', 'dibujo_silueta', 'foto_clinica', 'receta', 'receta_favorita', 'consentimiento', 'control_sugerido',
+]);
+
 // ─── GET /audit ───────────────────────────────────────────────────────────────
 // Lista paginada de audit_logs con filtros. Incluye usuario, sede (con color)
 // y — si la entidad es una cita — el nombre del paciente para el resumen.
@@ -66,8 +72,13 @@ router.get('/', requireAuth, requirePermiso('auditoria.ver'), async (req, res) =
     : [];
   const sedeMap = new Map(sedes.map(s => [s.id, s]));
 
+  // Contenido clínico: los logs de la historia clínica llevan en antes/despues el texto de notas,
+  // diagnósticos, ítems de receta… Solo lo ve quien puede ver la historia (hc.ver); el resto ve el
+  // rastro (quién, cuándo, qué acción) sin el contenido.
+  const veContenidoClinico = (req.user?.permisos ?? []).includes('hc.ver');
   const dataEnriquecida = logs.map(l => ({
     ...l,
+    ...(ENTIDADES_CLINICAS.has(l.entidad) && !veContenidoClinico ? { antes: null, despues: null, contenidoReservado: true } : {}),
     sede: l.sedeId ? sedeMap.get(l.sedeId) ?? null : null,
   }));
 

@@ -30,11 +30,14 @@ import { eventosPorZona, resumenZonas, claveZona } from '../utils/historialZonas
 import { indiceTrazoEn } from '../utils/trazos';
 import { useAutotextoStore } from '../stores/autotextoStore';
 import { useFotosPendientesStore, usePendientesDe, useTotalPendientes, type FotoPendiente, type CamposPendiente } from '../stores/fotosPendientesStore';
+import { useBorradoresStore, useMarcarBorrador, hayBorradores } from '../stores/borradoresStore';
 
 export type TabHc = 'evolucion' | 'receta' | 'antecedentes' | 'procedimientos' | 'escalas' | 'podograma' | 'fotos' | 'consentimientos';
 const ESTADOS_ATENDIDA = ['llego', 'en_atencion', 'completada'];
 
-const esEquipoNombre = (p: { nombres: string }) => /^baro\b/i.test(p.nombres.trim());
+// Equipo (Baro): por el flag del servidor cuando viene; si no, por el nombre.
+const esEquipoNombre = (p: { nombres: string; esEquipo?: boolean }) => p.esEquipo ?? /^baro\b/i.test(p.nombres.trim());
+const ERROR_TIENE_409 = (e: unknown) => (e as { statusCode?: number })?.statusCode === 409;
 
 // ─── Página de dos paneles ────────────────────────────────────────────────────
 export function useHistoriaClinicaPage() {
@@ -59,6 +62,9 @@ export function useHistoriaClinicaPage() {
   const [atencionSel, setAtencionSel] = useState<string | null>(params.get('atencion'));
   const atencionQ = useAtencionClinica(atencionSel ?? undefined);
   const atencion = atencionQ.data ?? null;
+  const qc = useQueryClient();
+  // Si la atención cambió en otra tablet (p. ej. la cerraron), el servidor responde 409: se recarga sola.
+  const refrescarSi409 = (e: Error) => { if (ERROR_TIENE_409(e) && atencionSel) void qc.invalidateQueries({ queryKey: atencionKey(atencionSel) }); toast.error(e.message); };
 
   const [tab, setTab] = useState<TabHc>('evolucion');
   const [citaARegistrar, setCitaARegistrar] = useState<CitaResumen | null>(null);
@@ -96,22 +102,36 @@ export function useHistoriaClinicaPage() {
     if (!atencionSel && historia?.atenciones?.length) setAtencionSel(historia.atenciones[0]!.id);
   }, [historia?.atenciones, atencionSel]);
 
-  const seleccionarAtencion = (id: string) => { setAtencionSel(id); setTab('evolucion'); };
+  // Cambiar de atención con un borrador sin guardar (nota dictada, escala a medias, dibujo…) lo perdería:
+  // se pregunta antes. Las fotos «por guardar» se conservan (viven por atención), no cuentan aquí.
+  const limpiarBorradores = useBorradoresStore((s) => s.limpiar);
+  const confirmarCambio = () => {
+    if (!hayBorradores()) return true;
+    if (!window.confirm('Tienes cambios sin guardar en esta atención (nota, procedimiento, escala o dibujo). ¿Cambiar de atención igual? Se perderán.')) return false;
+    limpiarBorradores();
+    return true;
+  };
+  const seleccionarAtencion = (id: string) => { if (id === atencionSel || !confirmarCambio()) return; setAtencionSel(id); setTab('evolucion'); };
 
   const cerrarMut = useMutation({
     mutationFn: (controles: ControlEntrada[]) => historiaClinicaApi.cerrarAtencion(atencionSel!, controles),
     onSuccess: () => { invalidar({ pacienteId, atencionId: atencionSel! }); toast.success('Atención cerrada'); },
-    onError: (e: Error) => toast.error(e.message),
+    onError: refrescarSi409,
   });
   const reabrirMut = useMutation({
     mutationFn: () => historiaClinicaApi.reabrirAtencion(atencionSel!),
-    onSuccess: () => { invalidar({ pacienteId, atencionId: atencionSel! }); toast.success('Atención reabierta'); },
-    onError: (e: Error) => toast.error(e.message),
+    onSuccess: () => { invalidar({ pacienteId, atencionId: atencionSel! }); toast.success('Atención reabierta: ya puedes corregirla'); },
+    onError: refrescarSi409,
   });
+  // Reabrir: coordinación/administración siempre; el resto solo dentro de las 24 h del cierre (misma regla que el servidor).
+  const HORAS_REABRIR = 24;
+  const horasDesdeCierre = atencion?.cerradaEn ? (Date.now() - new Date(atencion.cerradaEn).getTime()) / 3_600_000 : null;
+  const puedeReabrir = !!atencion && atencion.estado === 'cerrada' && (puedeAnular || (puedeRegistrar && horasDesdeCierre != null && horasDesdeCierre <= HORAS_REABRIR));
 
   const onAtencionCreada = (a: AtencionCompleta) => {
     invalidar({ pacienteId, citaId: a.citaId });
     setCitaARegistrar(null);
+    limpiarBorradores();
     setAtencionSel(a.id);
     setTab('evolucion');
   };
@@ -178,17 +198,19 @@ export function useHistoriaClinicaPage() {
   // de recargar o cerrar la página (viven en memoria).
   const fotosSinGuardar = usePendientesDe(atencionSel).length;
   const totalFotosSinGuardar = useTotalPendientes();
+  const hayBorrador = useBorradoresStore((s) => Object.values(s.activos).some(Boolean));
   useEffect(() => {
-    if (!totalFotosSinGuardar) return;
+    if (!totalFotosSinGuardar && !hayBorrador) return;
     const avisar = (ev: BeforeUnloadEvent) => { ev.preventDefault(); ev.returnValue = ''; };
     window.addEventListener('beforeunload', avisar);
     return () => window.removeEventListener('beforeunload', avisar);
-  }, [totalFotosSinGuardar]);
+  }, [totalFotosSinGuardar, hayBorrador]);
 
   return {
     pacienteId, paciente, historia, cargando: historiaQ.isLoading, errorCarga: historiaQ.error as Error | null, fotosSinGuardar,
     estadoHcMut, alternarEstadoHc, sugerirPasiva,
-    atencion, atencionSel, seleccionarAtencion, cargandoAtencion: atencionQ.isLoading,
+    atencion, atencionSel, seleccionarAtencion, cargandoAtencion: atencionQ.isLoading, errorAtencion: atencionQ.error as Error | null,
+    puedeReabrir, horasReabrir: HORAS_REABRIR,
     tab, setTab, navigate,
     puedeRegistrar, puedeAnular, puedeVerRecetas, esMedicoPrescriptor, usuario,
     citasCandidatas, mostrarCandidatas, setMostrarCandidatas,
@@ -202,12 +224,14 @@ export function useHistoriaClinicaPage() {
 
 // ─── Registrar atención (desde una cita atendida) ────────────────────────────
 export function useRegistrarAtencionForm(cita: CitaResumen, onCreada: (a: AtencionCompleta) => void) {
-  const preselecto = cita.solicitadoProfesional?.id ?? cita.profesionalId ?? '';
+  // Personas (nunca equipos Baro). Si la columna de la cita es un equipo, el backend exige médico.
+  const columnaEsEquipo = !!cita.profesional && esEquipoNombre(cita.profesional);
+  // En una cita de la Baro el profesional de la columna es el EQUIPO: nunca se preselecciona (el servidor
+  // lo rechazaría); solo el médico «por solicitud», si lo hay. Si no, se exige elegirlo.
+  const preselecto = columnaEsEquipo ? (cita.solicitadoProfesional?.id ?? '') : (cita.solicitadoProfesional?.id ?? cita.profesionalId ?? '');
   const [motivoConsulta, setMotivoConsulta] = useState('');
   const [profesionalId, setProfesionalId] = useState<string>(preselecto);
   const { data: profesionales = [] } = useQuery({ queryKey: ['profesionales-activos'], queryFn: () => profesionalesApi.listar({ activo: true }), staleTime: 300_000 });
-  // Personas (nunca equipos Baro). Si la columna de la cita es un equipo, el backend exige médico.
-  const columnaEsEquipo = !!cita.profesional && esEquipoNombre(cita.profesional);
   const opciones = useMemo(() => (profesionales as Profesional[]).filter((p) => !esEquipoNombre(p) && (!columnaEsEquipo || p.tipo === 'medico')), [profesionales, columnaEsEquipo]);
   const puedeGuardar = motivoConsulta.trim().length >= 2 && (!columnaEsEquipo || !!profesionalId);
   const abrirMut = useMutation({
@@ -233,17 +257,20 @@ export function useEvolucionForm(atencion: AtencionCompleta | null, puedeRegistr
   const [plan, setPlan] = useState('');
   const [texto, setTexto] = useState('');
   const [profesionalId, setProfesionalId] = useState<string>('');
-  useEffect(() => { setProfesionalId(atencion?.profesionalId ?? ''); limpiarNota(); /* eslint-disable-line react-hooks/exhaustive-deps */ }, [atencionId]);
+  const cerrada = atencion?.estado === 'cerrada';
+  // Con la atención cerrada solo cabe una observación tardía: el tipo se pone solo.
+  useEffect(() => { setProfesionalId(atencion?.profesionalId ?? ''); limpiarNota(); /* eslint-disable-line react-hooks/exhaustive-deps */ }, [atencionId, cerrada]);
 
   const cargarNota = (n: NotaEvolucion) => {
     setEditando(n.id); setTipo(n.tipo); setSubjetivo(n.subjetivo ?? ''); setObjetivo(n.objetivo ?? '');
     setApreciacion(n.apreciacion ?? ''); setPlan(n.plan ?? ''); setTexto(n.texto ?? ''); setProfesionalId(n.profesionalId ?? atencion?.profesionalId ?? '');
   };
-  const limpiarNota = () => { setEditando(null); setTipo('evolucion'); setSubjetivo(''); setObjetivo(''); setApreciacion(''); setPlan(''); setTexto(''); };
+  const limpiarNota = () => { setEditando(null); setTipo(cerrada ? 'observacion' : 'evolucion'); setSubjetivo(''); setObjetivo(''); setApreciacion(''); setPlan(''); setTexto(''); };
   const campos = (): CamposNota => ({ tipo, subjetivo, objetivo, apreciacion, plan, texto, profesionalId: profesionalId || null });
   const hayContenido = [subjetivo, objetivo, apreciacion, plan, texto].some((s) => s.trim());
-  const cerrada = atencion?.estado === 'cerrada';
-  const puedeGuardarNota = puedeRegistrar && hayContenido && (!cerrada || tipo === 'observacion' || !!editando);
+  // Cerrada = solo lectura: solo se agrega una observación; las notas existentes ya no se editan (hay que reabrir).
+  const puedeGuardarNota = puedeRegistrar && hayContenido && (!cerrada || (tipo === 'observacion' && !editando));
+  useMarcarBorrador('nota', hayContenido);
 
   const guardarNotaMut = useMutation({
     mutationFn: () => (editando ? historiaClinicaApi.editarNota(editando, campos()) : historiaClinicaApi.agregarNota(atencionId!, campos())),
@@ -251,7 +278,7 @@ export function useEvolucionForm(atencion: AtencionCompleta | null, puedeRegistr
     onError: (e: Error) => toast.error(e.message),
   });
   const eliminarNotaMut = useMutation({
-    mutationFn: (notaId: string) => historiaClinicaApi.eliminarNota(notaId),
+    mutationFn: (p: { notaId: string; motivo?: string }) => historiaClinicaApi.eliminarNota(p.notaId, p.motivo),
     onSuccess: () => { inval(); toast.success('Nota eliminada'); if (editando) limpiarNota(); },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -280,18 +307,32 @@ export function useEvolucionForm(atencion: AtencionCompleta | null, puedeRegistr
     onError: (e: Error) => toast.error(e.message),
   });
   const eliminarDxMut = useMutation({
-    mutationFn: (id: string) => historiaClinicaApi.eliminarDiagnostico(id),
+    mutationFn: (p: { id: string; motivo?: string }) => historiaClinicaApi.eliminarDiagnostico(p.id, p.motivo),
     onSuccess: () => { inval(); toast.success('Diagnóstico eliminado'); },
     onError: (e: Error) => toast.error(e.message),
   });
-  const copiarDxAnteriores = async () => {
-    const prev = anteriores?.diagnosticos?.diagnosticos ?? [];
-    const actuales = new Set((atencion?.diagnosticos ?? []).map((d) => d.cie10Codigo));
-    const nuevos = prev.filter((d: DiagnosticoAtencion) => !actuales.has(d.cie10Codigo));
-    if (!nuevos.length) { toast('No hay diagnósticos anteriores que copiar', { icon: 'ℹ️' }); return; }
-    for (const d of nuevos) await historiaClinicaApi.agregarDiagnostico(atencionId!, { cie10Codigo: d.cie10Codigo, tipo: d.tipo, principal: false, observacion: d.observacion });
-    inval(); toast.success(`${nuevos.length} diagnóstico(s) copiado(s)`);
-  };
+  // Copia uno por uno; si un código falla (p. ej. ya no está en el catálogo), avisa y sigue con el resto.
+  const copiarDxMut = useMutation({
+    mutationFn: async () => {
+      const prev = anteriores?.diagnosticos?.diagnosticos ?? [];
+      const actuales = new Set((atencion?.diagnosticos ?? []).map((d) => d.cie10Codigo));
+      const nuevos = prev.filter((d: DiagnosticoAtencion) => !actuales.has(d.cie10Codigo));
+      let ok = 0; const fallidos: string[] = [];
+      for (const d of nuevos) {
+        try { await historiaClinicaApi.agregarDiagnostico(atencionId!, { cie10Codigo: d.cie10Codigo, tipo: d.tipo, principal: false, observacion: d.observacion }); ok++; }
+        catch { fallidos.push(d.cie10Codigo); }
+      }
+      return { total: nuevos.length, ok, fallidos };
+    },
+    onSuccess: (r) => {
+      inval();
+      if (!r.total) toast('No hay diagnósticos anteriores que copiar', { icon: 'ℹ️' });
+      else if (r.fallidos.length) toast.error(`${r.ok} copiado(s); no se pudo copiar: ${r.fallidos.join(', ')}`);
+      else toast.success(`${r.ok} diagnóstico(s) copiado(s)`);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const copiarDxAnteriores = () => { if (!copiarDxMut.isPending) copiarDxMut.mutate(); };
 
   // Plantillas por diagnóstico (1.1): sugeridas por los CIE-10 de la atención; rellenan SOLO campos vacíos.
   const { data: plantillas = [] } = usePlantillas('nota');
@@ -317,7 +358,7 @@ export function useEvolucionForm(atencion: AtencionCompleta | null, puedeRegistr
   return {
     editando, tipo, setTipo, subjetivo, setSubjetivo, objetivo, setObjetivo, apreciacion, setApreciacion, plan, setPlan, texto, setTexto,
     profesionalId, setProfesionalId, cargarNota, limpiarNota, puedeGuardarNota, guardarNotaMut, eliminarNotaMut, traerUltimaNota, tieneNotaAnterior: !!anteriores?.nota,
-    dxSel, setDxSel, dxTipo, setDxTipo, dxPrincipal, setDxPrincipal, dxObs, setDxObs, agregarDxMut, editarDxMut, eliminarDxMut, copiarDxAnteriores, tieneDxAnteriores: !!anteriores?.diagnosticos,
+    dxSel, setDxSel, dxTipo, setDxTipo, dxPrincipal, setDxPrincipal, dxObs, setDxObs, agregarDxMut, editarDxMut, eliminarDxMut, copiarDxAnteriores, copiandoDx: copiarDxMut.isPending, tieneDxAnteriores: !!anteriores?.diagnosticos,
     cerrada, plantillas, plantillasSugeridas, aplicarPlantilla,
   };
 }
@@ -363,7 +404,12 @@ export function useEmitirRecetaForm(atencion: AtencionCompleta, tipoDocumento: T
   const [items, setItems] = useState<ItemBorrador[]>([]);
   const [indicacionesGenerales, setIndicacionesGenerales] = useState('');
   const [vigenciaDias, setVigenciaDias] = useState<number>(30);
+  // El campo se edita como texto (se puede borrar y volver a escribir); al salir se acota a 1–365.
+  const [vigenciaTexto, setVigenciaTexto] = useState('30');
+  const confirmarVigencia = () => { const n = Math.min(365, Math.max(1, Number(vigenciaTexto) || 30)); setVigenciaDias(n); setVigenciaTexto(String(n)); };
   const [emisorProfesionalId, setEmisorProfesionalId] = useState<string>(atencion.profesionalId);
+  const usuario = useAuthStore((s) => s.usuario);
+  const puedeAnularHc = useAuthStore((s) => s.tiene('hc.anular'));
   const [emitida, setEmitida] = useState<RecetaCompleta | null>(null);
   const { data: servicios = [] } = useQuery({ queryKey: ['servicios-todos'], queryFn: () => serviciosApi.listar({ activo: true }), staleTime: 300_000 });
 
@@ -395,8 +441,8 @@ export function useEmitirRecetaForm(atencion: AtencionCompleta, tipoDocumento: T
     [anterioresTodas, tipoDocumento],
   );
   const { data: favoritas = [] } = useQuery({ queryKey: favoritasKey(tipoDocumento), queryFn: () => recetasApi.favoritas(tipoDocumento), staleTime: 60_000 });
-  const cargarItems = (entrada: ItemEntrada[], extra: { indicacionesGenerales?: string | null; vigenciaDias?: number | null }, origen: string) => {
-    if (items.length && !window.confirm(`Esto reemplaza los ${items.length} ítem(s) que ya agregaste. ¿Continuar?`)) return;
+  const cargarItems = (entrada: ItemEntrada[], extra: { indicacionesGenerales?: string | null; vigenciaDias?: number | null }, origen: string): boolean => {
+    if (items.length && !window.confirm(`Esto reemplaza los ${items.length} ítem(s) que ya agregaste. ¿Continuar?`)) return false;
     const codigos = new Set(diagnosticos.map((d) => d.cie10Codigo));
     // Una receta anterior puede traer fármacos bajo receta: en indicaciones no van.
     const permitidos = esReceta ? entrada : entrada.filter((it) => it.tipo !== 'MEDICAMENTO_RX');
@@ -410,8 +456,9 @@ export function useEmitirRecetaForm(atencion: AtencionCompleta, tipoDocumento: T
       diagnosticoCie10Codigo: it.diagnosticoCie10Codigo && codigos.has(it.diagnosticoCie10Codigo) ? it.diagnosticoCie10Codigo : dxActivo,
     })));
     if (extra.indicacionesGenerales) setIndicacionesGenerales(extra.indicacionesGenerales);
-    if (esReceta && extra.vigenciaDias) setVigenciaDias(extra.vigenciaDias);
+    if (esReceta && extra.vigenciaDias) { setVigenciaDias(extra.vigenciaDias); setVigenciaTexto(String(extra.vigenciaDias)); }
     toast.success(`${permitidos.length} ítem(s) cargados de ${origen}: revísalos y emite`);
+    return true;
   };
   const repetirMut = useMutation({
     mutationFn: (id: string) => recetasApi.obtener(id),
@@ -426,10 +473,12 @@ export function useEmitirRecetaForm(atencion: AtencionCompleta, tipoDocumento: T
     ),
     onError: (e: Error) => toast.error(e.message),
   });
-  const usarFavorita = (id: string) => {
+  const usarFavorita = (id: string): boolean => {
     const fav = favoritas.find((x) => x.id === id);
-    if (fav) cargarItems(fav.items, { indicacionesGenerales: fav.indicacionesGenerales, vigenciaDias: fav.vigenciaDias }, `«${fav.nombre}»`);
+    return !!fav && cargarItems(fav.items, { indicacionesGenerales: fav.indicacionesGenerales, vigenciaDias: fav.vigenciaDias }, `«${fav.nombre}»`);
   };
+  // Una favorita la quita quien la creó o quien puede anular (misma regla que el servidor).
+  const puedeQuitarFavorita = (id: string) => { const fav = favoritas.find((x) => x.id === id); return !!fav && (puedeAnularHc || (!!usuario && fav.creadoPorUsuarioId === usuario.id)); };
   const guardarFavoritaMut = useMutation({
     mutationFn: (nombre: string) => recetasApi.crearFavorita({
       nombre, tipoDocumento, indicacionesGenerales: indicacionesGenerales.trim() || null, vigenciaDias: esReceta ? vigenciaDias : null,
@@ -468,15 +517,30 @@ export function useEmitirRecetaForm(atencion: AtencionCompleta, tipoDocumento: T
     },
     onError: (e: Error) => toast.error(e.message),
   });
+  // Chequeo de alergias ANTES de emitir (3.1): el documento es inmutable, así que se pregunta antes, no después.
+  const [chequeando, setChequeando] = useState(false);
+  const emitir = async () => {
+    if (!puedeGuardar || emitirMut.isPending || chequeando) return;
+    setChequeando(true);
+    try {
+      const { advertencias } = await recetasApi.advertencias(atencion.id, items.map((i) => ({ nombre: i.nombre ?? '', marcaImpresa: i.marcaImpresa ?? null })));
+      if (advertencias.length) {
+        const lista = advertencias.map((a) => `• ${a.item} — el paciente tiene registrada alergia a ${a.sustancia}${a.severidad === 'severa' ? ' (SEVERA)' : ''}`).join('\n');
+        if (!window.confirm(`ATENCIÓN, posible alergia:\n${lista}\n\n¿Emitir de todos modos?`)) return;
+      }
+    } catch { /* si el chequeo falla se emite igual: el servidor vuelve a avisar tras emitir */ }
+    finally { setChequeando(false); }
+    emitirMut.mutate();
+  };
   const abrirPdf = async () => { if (!emitida) return; try { await verRecetaPdf(emitida.id); } catch (e) { toast.error((e as Error).message); } };
   const imprimir = async () => { if (!emitida) return; try { await imprimirReceta(emitida.id); } catch (e) { toast.error((e as Error).message); } };
   const opcionesEmisor = useMemo(() => [atencion.profesional], [atencion.profesional]);
 
   return {
     esReceta, dxPrincipal, diagnosticos, dxActivo, setDxActivo, grupos, items, agregarMedicamento, agregarManual, agregarServicio, actualizarItem, quitarItem, servicios,
-    indicacionesGenerales, setIndicacionesGenerales, vigenciaDias, setVigenciaDias, emisorProfesionalId, setEmisorProfesionalId, opcionesEmisor,
-    puedeGuardar, emitirMut, emitida, abrirPdf, imprimir, alergias: atencion.historiaClinica.alergias,
-    anteriores, repetirMut, favoritas, usarFavorita, guardarFavoritaMut, eliminarFavoritaMut,
+    indicacionesGenerales, setIndicacionesGenerales, vigenciaDias, setVigenciaDias, vigenciaTexto, setVigenciaTexto, confirmarVigencia, emisorProfesionalId, setEmisorProfesionalId, opcionesEmisor,
+    puedeGuardar, emitirMut, emitir, chequeando, emitida, abrirPdf, imprimir, alergias: atencion.historiaClinica.alergias,
+    anteriores, repetirMut, favoritas, usarFavorita, puedeQuitarFavorita, guardarFavoritaMut, eliminarFavoritaMut,
   };
 }
 
@@ -491,7 +555,12 @@ export function useRecetasAtencion(atencion: AtencionCompleta | null) {
   });
   const ver = async (id: string) => { try { await verRecetaPdf(id); } catch (e) { toast.error((e as Error).message); } };
   const imprimir = async (id: string) => { try { await imprimirReceta(id); } catch (e) { toast.error((e as Error).message); } };
-  return { recetas: atencion?.recetas ?? [], anulando, setAnulando, anularMut, ver, imprimir };
+  // «Anular» solo se muestra a quien el servidor le va a permitir: hc.anular, o quien la emitió con el permiso del tipo.
+  const usuario = useAuthStore((s) => s.usuario);
+  const tiene = useAuthStore((s) => s.tiene);
+  const puedeAnular = (r: { estado: string; emisorUsuarioId: string | null; tipoDocumento: string }) =>
+    r.estado === 'emitida' && (tiene('hc.anular') || (!!usuario && r.emisorUsuarioId === usuario.id && (r.tipoDocumento === 'RECETA_MEDICA' ? !!usuario.esMedicoPrescriptor : tiene('hc.registrar'))));
+  return { recetas: atencion?.recetas ?? [], anulando, setAnulando, anularMut, ver, imprimir, puedeAnular };
 }
 
 // ─── Bloque 3 · Procedimientos (1.11 / 1.12) ─────────────────────────────────
@@ -526,6 +595,7 @@ export function useProcedimientos(atencion: AtencionCompleta | null, puedeRegist
 
   const esLaser = tipo === 'laser';
   const puedeGuardar = puedeRegistrar && !!tipo && atencion?.estado !== 'cerrada';
+  useMarcarBorrador('procedimiento', !!tipo || !!detalle.trim());
   const agregarMut = useMutation({
     mutationFn: () => {
       const parametros = esLaser && (laserLongitud || laserEnergia || laserDisparos)
@@ -567,7 +637,8 @@ export function categoriaIwgdf(f: { psp: boolean; eap: boolean; deformidad: bool
   if (f.psp || f.eap) return 1;
   return 0;
 }
-export const IWGDF_CONTROL = ['control anual', 'control cada 6 a 12 meses', 'control cada 3 a 6 meses', 'control cada 1 a 3 meses'];
+// Mismos textos que el servidor guarda en `resultado` (bloque3Service → iwgdf).
+export const IWGDF_CONTROL = ['control anual', 'control 6–12 meses', 'control 3–6 meses', 'control 1–3 meses'];
 
 export function useEscalas(atencion: AtencionCompleta | null, puedeRegistrar: boolean) {
   const invalidar = useInvalidarHistoriaClinica();
@@ -716,6 +787,7 @@ export function useEscalas(atencion: AtencionCompleta | null, puedeRegistrar: bo
   };
   const examenConDatos = hallazgosMarcados > 0 || calzado.adecuado != null || calzado.plantillas != null || !!calzado.tipo || calzado.problemas.length > 0
     || calzado.desgasteIzq.length + calzado.desgasteDer.length > 0 || !!obsExamen.trim();
+  useMarcarBorrador('escala', !!tipo);
   const puedeGuardar = puedeRegistrar && !!tipo && atencion?.estado !== 'cerrada' && (tipo !== 'termometria' || pares.length > 0) && (tipo !== 'ulcera' || ulArea != null)
     && (tipo !== 'itb' || itbIzq != null || itbDer != null || Object.values(pulsos).some(Boolean))
     && (tipo !== 'osi' || !!osiPie) && (tipo !== 'manchester' || manIzq != null || manDer != null) && (tipo !== 'examen' || examenConDatos);
@@ -933,11 +1005,13 @@ export function usePodograma(atencion: AtencionCompleta | null, puedeRegistrar: 
   const porVista = Object.fromEntries(VISTAS_PODOGRAMA.map((v) => [v, imagenes.find((i) => i.vista === v)])) as Record<VistaPodograma, ImagenPodograma | undefined>;
   const otras = imagenes.filter((i) => !i.vista);
   const [imagenSelId, setImagenSelId] = useState<string | null>(null);
-  const [verSilueta, setVerSilueta] = useState(false);
+  // Sin imágenes de la Baro se arranca en la SILUETA (lo que se usa para marcar); con imágenes, en ellas.
+  const [verSiluetaRaw, setVerSilueta] = useState<boolean | null>(null);
+  const verSilueta = verSiluetaRaw ?? imagenes.length === 0;
   const primera = VISTAS_PODOGRAMA.map((v) => porVista[v]).find(Boolean) ?? otras[0] ?? null;
   const imagenSel = imagenes.find((i) => i.id === imagenSelId) ?? primera;
   const imagenSelIdReal = imagenSel?.id ?? null;
-  useEffect(() => { setImagenSelId(null); setVerSilueta(false); setPendiente(null); setNota(''); setVistaSiluetaRaw('plantar'); setModoSiluetaRaw('punto'); setZonaHist(null); descartarDibujo(); /* eslint-disable-line react-hooks/exhaustive-deps */ }, [atencionId]);
+  useEffect(() => { setImagenSelId(null); setVerSilueta(null); setPendiente(null); setNota(''); setVistaSiluetaRaw('plantar'); setModoSiluetaRaw('punto'); setZonaHist(null); descartarDibujo(); /* eslint-disable-line react-hooks/exhaustive-deps */ }, [atencionId]);
 
   // Blob autenticado → object URL (se revoca al cambiar de imagen o desmontar).
   const [urlImagen, setUrlImagen] = useState<string | null>(null);
@@ -968,6 +1042,7 @@ export function usePodograma(atencion: AtencionCompleta | null, puedeRegistrar: 
   const [guardadas, setGuardadas] = useState<AnotacionPodograma[]>([]);
   useEffect(() => { const a = imagenSel?.anotaciones ?? []; setAnotaciones(a); setGuardadas(a); setAnotSel(null); /* eslint-disable-line react-hooks/exhaustive-deps */ }, [imagenSelIdReal]);
   const sucio = anotaciones !== guardadas;
+  useMarcarBorrador('podograma', sucio || clavesDibujoSucias.length > 0 || !!pendiente);
   const agregarAnotacion = (a: AnotacionPodograma) => {
     if (!puedeEditar) return;
     // Los trazos del lápiz llevan lo que significan (y el color de ese tipo); los textos, su color libre.
@@ -1057,14 +1132,19 @@ export function useBandejaPage() {
   const invalidar = useInvalidarHistoriaClinica();
   const [dias, setDias] = useState(45);
   const q = useQuery({ queryKey: ['hc-bandeja', dias], queryFn: () => historiaClinicaApi.bandeja(dias), staleTime: 60_000 });
+  // Desde la bandeja se cierra SIN el diálogo de la HC (no se proponen controles): se avisa y se confirma.
   const cerrarMut = useMutation({
     mutationFn: (id: string) => historiaClinicaApi.cerrarAtencion(id),
     onSuccess: (a) => { invalidar({ pacienteId: a.pacienteId, atencionId: a.id, citaId: a.citaId }); void q.refetch(); toast.success('Atención cerrada'); },
     onError: (e: Error) => toast.error(e.message),
   });
+  const cerrarUna = (id: string) => {
+    if (window.confirm('¿Cerrar esta atención? Desde aquí no se proponen controles de seguimiento (para eso ciérrala desde la historia).')) cerrarMut.mutate(id);
+  };
   const [cerrandoTodas, setCerrandoTodas] = useState(false);
   /** Cierre en lote (firma en lote de la ronda): una por una, sin frenar por un error puntual. */
   const cerrarTodas = async (ids: string[]) => {
+    if (!window.confirm(`¿Cerrar ${ids.length} atenciones completas? Desde aquí no se proponen controles de seguimiento.`)) return;
     setCerrandoTodas(true);
     let ok = 0;
     for (const id of ids) {
@@ -1076,7 +1156,7 @@ export function useBandejaPage() {
   };
   const abrir = (a: { paciente: { id: string }; citaId: string }) => navigate(`/historia-clinica/${a.paciente.id}?cita=${a.citaId}`);
   const abrirPaciente = (pacienteId: string) => navigate(`/historia-clinica/${pacienteId}`);
-  return { dias, setDias, bandeja: q.data, cargando: q.isLoading, error: q.error as Error | null, cerrarMut, cerrarTodas, cerrandoTodas, abrir, abrirPaciente, refrescar: () => void q.refetch() };
+  return { dias, setDias, bandeja: q.data, cargando: q.isLoading, error: q.error as Error | null, cerrarMut, cerrarUna, cerrarTodas, cerrandoTodas, abrir, abrirPaciente, refrescar: () => void q.refetch() };
 }
 
 // ─── 1.8 · Fotos clínicas por atención + 1.9 antes/después por paciente ──────

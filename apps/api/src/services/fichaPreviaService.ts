@@ -3,7 +3,7 @@
 // calculadas con reglas explícitas (sin IA) sobre antecedentes, alergias, diagnósticos y escalas.
 // También expone las escalas del paciente a lo largo de sus atenciones (comparar visitas, curvas).
 import { prisma } from '../db';
-import { paquetesLaserVivos } from './bloque3Service';
+import { paquetesLaserVivos, categoriaIwgdfDe } from './bloque3Service';
 
 export type NivelBandera = 'alto' | 'medio' | 'info';
 export interface Bandera { clave: string; etiqueta: string; nivel: NivelBandera }
@@ -25,7 +25,9 @@ const REGLAS_ANTECEDENTE: { re: RegExp; clave: string; etiqueta: string; nivel: 
 // Reglas por código CIE-10 vigente en cualquier atención.
 const REGLAS_DX: { re: RegExp; clave: string; etiqueta: string; nivel: NivelBandera }[] = [
   { re: /^E1[0-4]/, clave: 'diabetes', etiqueta: 'Diabetes', nivel: 'alto' },
-  { re: /^(L97|L89|E1[0-4]\.[45])/, clave: 'ulcera', etiqueta: 'Úlcera registrada', nivel: 'alto' },
+  // E1x.4 es neuropatía (regla de abajo) y E1x.5 complicaciones circulatorias: no son úlcera.
+  { re: /^(L97|L89)/, clave: 'ulcera', etiqueta: 'Úlcera registrada', nivel: 'alto' },
+  { re: /^E1[0-4]\.5/, clave: 'eap', etiqueta: 'Diabetes con complicación circulatoria', nivel: 'medio' },
   { re: /^I7[03]/, clave: 'eap', etiqueta: 'Enfermedad arterial periférica', nivel: 'medio' },
   { re: /^(G6[23]|E1[0-4]\.4)/, clave: 'neuropatia', etiqueta: 'Neuropatía', nivel: 'medio' },
 ];
@@ -70,8 +72,7 @@ export async function fichaPrevia(pacienteId: string) {
   const ultimaPorTipo = new Map<string, (typeof escalas)[number]>();
   for (const e of escalas) if (!ultimaPorTipo.has(e.tipo)) ultimaPorTipo.set(e.tipo, e);
   const iwgdf = ultimaPorTipo.get('iwgdf');
-  const iwgdfDatos = (iwgdf?.datos ?? {}) as Record<string, unknown>;
-  const categoria = typeof iwgdfDatos.categoria === 'number' ? iwgdfDatos.categoria : null;
+  const categoria = iwgdf ? categoriaIwgdfDe(iwgdf) : null;
   const mf = ultimaPorTipo.get('monofilamento');
   const mfDatos = (mf?.datos ?? {}) as Record<string, unknown>;
   const mfAlterado = mf ? [mfDatos.izquierdo, mfDatos.derecho].some((l) => Array.isArray(l) && l.some((v) => v === false)) : null;
@@ -87,7 +88,11 @@ export async function fichaPrevia(pacienteId: string) {
   const banderas = new Map<string, Bandera>();
   const poner = (b: Bandera) => { const prev = banderas.get(b.clave); if (!prev || orden(b.nivel) > orden(prev.nivel)) banderas.set(b.clave, b); };
   for (const a of hcRow.antecedentes) {
-    const t = sinAcentos(`${a.tipo} ${a.descripcion}`);
+    // Un antecedente FAMILIAR («madre con diabetes») no es del paciente; una negación («no fuma», «niega
+    // diabetes») tampoco levanta bandera.
+    if (a.tipo === 'familiar') continue;
+    const t = sinAcentos(a.descripcion);
+    if (/^(no |niega|sin |nunca )/.test(t.trim())) continue;
     for (const r of REGLAS_ANTECEDENTE) if (r.re.test(t)) poner({ clave: r.clave, etiqueta: r.etiqueta, nivel: r.nivel });
   }
   for (const d of dxTodos) for (const r of REGLAS_DX) if (r.re.test(d.cie10Codigo)) poner({ clave: r.clave, etiqueta: r.etiqueta, nivel: r.nivel });

@@ -46,13 +46,27 @@ export async function etiquetaUsuario(tx: Tx, usuarioId?: string | null): Promis
 export async function assertAccesoPaciente(user: AuthPayload, pacienteId: string): Promise<void> {
   if (puedeTodasLasSedes(user)) return;
   if (user.sedes.length > 0) {
+    // Una cita cancelada, reprogramada o "no vino" no convierte al paciente en paciente de la sede.
     const ok = await prisma.cita.findFirst({
-      where: { pacienteId, deletedAt: null, sedeId: { in: user.sedes } },
+      where: { pacienteId, deletedAt: null, sedeId: { in: user.sedes }, estado: { notIn: ['cancelada', 'reprogramada', 'no_show'] } },
       select: { id: true },
     });
     if (ok) return;
   }
   throw new AppError('No tienes acceso a la historia clínica de este paciente', 403, 'SEDE_NO_AUTORIZADA');
+}
+
+// ─── Atención cerrada = solo lectura ──────────────────────────────────────────
+// Una atención CERRADA no cambia: no se agregan ni editan diagnósticos, notas, procedimientos, escalas,
+// podograma, fotos, recetas ni consentimientos. Excepciones (por su naturaleza): una nota de tipo
+// «observación» tardía, anular una receta y revocar un consentimiento. Para corregir algo, se REABRE:
+// quien la cerró (o cualquiera con hc.registrar) dentro de las 24 h siguientes; después, solo
+// administración o coordinación (hc.anular). Misma regla en la pantalla (`puedeEditar`).
+export const HORAS_REABRIR_SIN_ANULAR = 24;
+export function exigirAbierta(at: { estado: string }): void {
+  if (at.estado === 'cerrada') {
+    throw new AppError('La atención está cerrada (solo lectura). Reábrela para corregirla.', 409, 'ATENCION_CERRADA');
+  }
 }
 
 // ─── HC perezosa ──────────────────────────────────────────────────────────────
@@ -170,7 +184,7 @@ const recetasResumenInclude = {
   where: {},
   orderBy: { fechaEmision: 'desc' },
   select: {
-    id: true, numero: true, tipoDocumento: true, estado: true, fechaEmision: true, emisorNombre: true,
+    id: true, numero: true, tipoDocumento: true, estado: true, fechaEmision: true, emisorNombre: true, emisorUsuarioId: true,
     codigoVerificacion: true, _count: { select: { items: true } },
   },
 } as const;
@@ -280,7 +294,7 @@ export async function historiaParaPdf(pacienteId: string) {
             },
           },
           consentimientos: { orderBy: { firmadoEn: 'asc' }, select: { numero: true, procedimiento: true, firmanteNombre: true, firmanteRelacion: true, estado: true, firmadoEn: true } },
-          fotos: { where: { deletedAt: null }, orderBy: { tomadaEn: 'asc' }, select: { id: true, ruta: true, mime: true, zona: true, pie: true, categoria: true, tomadaEn: true } },
+          fotos: { where: { deletedAt: null }, orderBy: { tomadaEn: 'asc' }, select: { id: true, ruta: true, mime: true, tamano: true, zona: true, pie: true, categoria: true, tomadaEn: true } },
         },
       },
     },
@@ -308,7 +322,7 @@ export async function resumenAtencionPorCita(citaId: string) {
 }
 
 /** Auditoría de LECTURA (awaited, nunca lanza): quién abrió qué historia y desde dónde. */
-export async function auditarLecturaHC(p: Ctx & { pacienteId: string; origen: 'ficha' | 'ficha_previa' | 'historial_podograma' | 'atencion' | 'receta' | 'pdf' | 'hc_pdf' | 'consentimiento'; atencionId?: string; recetaId?: string; sedeId?: string }) {
+export async function auditarLecturaHC(p: Ctx & { pacienteId: string; origen: 'ficha' | 'ficha_previa' | 'historial_podograma' | 'atencion' | 'receta' | 'pdf' | 'hc_pdf' | 'consentimiento' | 'anteriores' | 'versiones' | 'escalas' | 'fotos'; atencionId?: string; recetaId?: string; sedeId?: string }) {
   // 'pdf' = PDF de una receta; 'hc_pdf' = copia completa de la historia (se audita aparte: sale entera).
   await registrarAudit({
     ...ctxAudit(p), accion: p.origen === 'hc_pdf' ? 'exportar_hc' : p.origen === 'receta' || p.origen === 'pdf' ? 'ver_receta' : 'ver_hc',
@@ -318,7 +332,7 @@ export async function auditarLecturaHC(p: Ctx & { pacienteId: string; origen: 'f
 }
 
 export async function atencionOr404(id: string) {
-  const at = await prisma.atencionClinica.findUnique({ where: { id }, select: { id: true, citaId: true, sedeId: true, estado: true, pacienteId: true, historiaClinicaId: true } });
+  const at = await prisma.atencionClinica.findUnique({ where: { id }, select: { id: true, citaId: true, sedeId: true, estado: true, cerradaEn: true, pacienteId: true, historiaClinicaId: true } });
   if (!at) throw new AppError('Atención no encontrada', 404);
   return at;
 }
@@ -379,13 +393,18 @@ export async function cambiarEstadoHistoria(p: Ctx & { pacienteId: string; estad
 
 export async function editarAtencion(p: Ctx & { atencionId: string; motivoConsulta?: string; profesionalId?: string | null }) {
   const at = await atencionOr404(p.atencionId);
+  exigirAbierta(at);
   const data: Prisma.AtencionClinicaUpdateInput = {};
   if (p.motivoConsulta !== undefined) {
     const m = p.motivoConsulta.trim();
     if (!m) throw new AppError('El motivo de consulta es obligatorio', 400, 'MOTIVO_REQUERIDO');
     data.motivoConsulta = m;
   }
-  if (p.profesionalId) { await validarProfesionalPersona(p.profesionalId); data.profesional = { connect: { id: p.profesionalId } }; }
+  if (p.profesionalId) {
+    // Misma regla que al abrir (en la Baro debe ser un médico): se valida contra la cita de la atención.
+    const cita = await prisma.cita.findUniqueOrThrow({ where: { id: at.citaId }, select: citaBaseSelect });
+    data.profesional = { connect: { id: await resolverProfesionalAtencion(cita, p.profesionalId) } };
+  }
   await prisma.$transaction(async (tx) => {
     const antes = await tx.atencionClinica.findUnique({ where: { id: at.id }, select: { motivoConsulta: true, profesionalId: true } });
     await tx.atencionClinica.update({ where: { id: at.id }, data });
@@ -401,19 +420,32 @@ export async function cerrarAtencion(p: Ctx & { atencionId: string; controles?: 
   const controles = p.controles?.length ? await validarControles(p.controles) : [];
   const etiqueta = controles.length ? await etiquetaUsuario(prisma, p.usuarioId) : null;
   await prisma.$transaction(async (tx) => {
-    await tx.atencionClinica.update({ where: { id: at.id }, data: { estado: 'cerrada', cerradaEn: new Date(), cerradaPorUsuarioId: p.usuarioId ?? null } });
+    // Escritura con guarda: si dos personas cierran a la vez, la segunda recibe 409 y no duplica controles.
+    const r = await tx.atencionClinica.updateMany({ where: { id: at.id, estado: 'abierta' }, data: { estado: 'cerrada', cerradaEn: new Date(), cerradaPorUsuarioId: p.usuarioId ?? null } });
+    if (r.count === 0) throw new AppError('La atención ya está cerrada', 409, 'ATENCION_CERRADA');
     await auditEnTx(tx, { ...ctxAudit(p), citaId: at.citaId, accion: 'cerrar_atencion', entidad: 'atencion_clinica', entidadId: at.id, sedeId: at.sedeId, ...(controles.length ? { despues: { controles: controles.length } } : {}) });
     if (controles.length) await crearControlesEnTx(tx, { ctx: p, atencion: at, controles, etiqueta });
   });
   return getAtencionCompleta(at.id);
 }
 
-export async function reabrirAtencion(p: Ctx & { atencionId: string }) {
+/**
+ * Reabrir: con hc.anular siempre; con solo hc.registrar, únicamente dentro de las 24 h siguientes al
+ * cierre (para corregir lo de hoy sin pasar por coordinación). Queda auditado quién reabrió.
+ */
+export async function reabrirAtencion(p: Ctx & { atencionId: string; user: AuthPayload }) {
   const at = await atencionOr404(p.atencionId);
   if (at.estado !== 'cerrada') throw new AppError('La atención no está cerrada', 409, 'ATENCION_ABIERTA');
+  if (!p.user.permisos.includes('hc.anular')) {
+    const cerradaEn = at.cerradaEn?.getTime() ?? 0;
+    if (Date.now() - cerradaEn > HORAS_REABRIR_SIN_ANULAR * 3_600_000) {
+      throw new AppError(`Pasaron más de ${HORAS_REABRIR_SIN_ANULAR} horas desde el cierre: solo administración o coordinación pueden reabrirla`, 403, 'REABRIR_REQUIERE_ANULAR');
+    }
+  }
   await prisma.$transaction(async (tx) => {
-    await tx.atencionClinica.update({ where: { id: at.id }, data: { estado: 'abierta', cerradaEn: null, cerradaPorUsuarioId: null } });
-    await auditEnTx(tx, { ...ctxAudit(p), citaId: at.citaId, accion: 'reabrir_atencion', entidad: 'atencion_clinica', entidadId: at.id, sedeId: at.sedeId });
+    const r = await tx.atencionClinica.updateMany({ where: { id: at.id, estado: 'cerrada' }, data: { estado: 'abierta', cerradaEn: null, cerradaPorUsuarioId: null } });
+    if (r.count === 0) throw new AppError('La atención no está cerrada', 409, 'ATENCION_ABIERTA');
+    await auditEnTx(tx, { ...ctxAudit(p), citaId: at.citaId, accion: 'reabrir_atencion', entidad: 'atencion_clinica', entidadId: at.id, sedeId: at.sedeId, antes: { cerradaEn: at.cerradaEn } });
   });
   return getAtencionCompleta(at.id);
 }
@@ -458,9 +490,10 @@ export async function agregarNota(p: Ctx & CamposNota & { atencionId: string }) 
 export async function editarNota(p: Ctx & CamposNota & { notaId: string }) {
   const nota = await prisma.notaEvolucion.findFirst({
     where: { id: p.notaId, deletedAt: null },
-    include: { atencion: { select: { id: true, citaId: true, sedeId: true } } },
+    include: { atencion: { select: { id: true, citaId: true, sedeId: true, estado: true } } },
   });
   if (!nota) throw new AppError('Nota no encontrada', 404);
+  exigirAbierta(nota.atencion);
   const nuevo = {
     tipo: p.tipo ?? nota.tipo,
     subjetivo: p.subjetivo !== undefined ? limpiar(p.subjetivo) : nota.subjetivo,
@@ -471,6 +504,8 @@ export async function editarNota(p: Ctx & CamposNota & { notaId: string }) {
     profesionalId: p.profesionalId !== undefined ? p.profesionalId : nota.profesionalId,
   };
   if (!hayContenido(nuevo)) throw new AppError('La nota quedaría vacía', 400, 'NOTA_VACIA');
+  // Sin cambios reales → no se crea una versión idéntica.
+  if (JSON.stringify(snapshotNota({ ...nota, ...nuevo })) === JSON.stringify(snapshotNota(nota))) return getAtencionCompleta(nota.atencion.id);
   if (nuevo.profesionalId) await validarProfesionalPersona(nuevo.profesionalId);
   const etiqueta = await etiquetaUsuario(prisma, p.usuarioId);
   await prisma.$transaction(async (tx) => {
@@ -487,16 +522,17 @@ export async function editarNota(p: Ctx & CamposNota & { notaId: string }) {
   return getAtencionCompleta(nota.atencion.id);
 }
 
-export async function eliminarNota(p: Ctx & { notaId: string }) {
-  const nota = await prisma.notaEvolucion.findFirst({ where: { id: p.notaId, deletedAt: null }, include: { atencion: { select: { id: true, citaId: true, sedeId: true } } } });
+export async function eliminarNota(p: Ctx & { notaId: string; motivo?: string | null }) {
+  const nota = await prisma.notaEvolucion.findFirst({ where: { id: p.notaId, deletedAt: null }, include: { atencion: { select: { id: true, citaId: true, sedeId: true, estado: true } } } });
   if (!nota) throw new AppError('Nota no encontrada', 404);
+  exigirAbierta(nota.atencion);
   const etiqueta = await etiquetaUsuario(prisma, p.usuarioId);
   await prisma.$transaction(async (tx) => {
     await tx.notaEvolucionVersion.create({
       data: { notaId: nota.id, version: nota.version, contenido: snapshotNota(nota) as Prisma.InputJsonValue, guardadoPorUsuarioId: p.usuarioId ?? null, guardadoEtiqueta: etiqueta },
     });
     await tx.notaEvolucion.update({ where: { id: nota.id }, data: { deletedAt: new Date(), deletedPorUsuarioId: p.usuarioId ?? null } });
-    await auditEnTx(tx, { ...ctxAudit(p), citaId: nota.atencion.citaId, accion: 'eliminar_nota', entidad: 'nota_evolucion', entidadId: nota.id, sedeId: nota.atencion.sedeId, antes: snapshotNota(nota) });
+    await auditEnTx(tx, { ...ctxAudit(p), citaId: nota.atencion.citaId, accion: 'eliminar_nota', entidad: 'nota_evolucion', entidadId: nota.id, sedeId: nota.atencion.sedeId, antes: snapshotNota(nota), despues: { motivo: limpiar(p.motivo) } });
   });
   return getAtencionCompleta(nota.atencion.id);
 }
@@ -520,6 +556,7 @@ async function cie10Or400(codigo: string) {
 
 export async function agregarDiagnostico(p: Ctx & CamposDx & { atencionId: string; cie10Codigo: string }) {
   const at = await atencionOr404(p.atencionId);
+  exigirAbierta(at);
   await cie10Or400(p.cie10Codigo);
   const etiqueta = await etiquetaUsuario(prisma, p.usuarioId);
   await prisma.$transaction(async (tx) => {
@@ -534,8 +571,9 @@ export async function agregarDiagnostico(p: Ctx & CamposDx & { atencionId: strin
 }
 
 export async function editarDiagnostico(p: Ctx & CamposDx & { diagnosticoId: string }) {
-  const dx = await prisma.diagnosticoAtencion.findFirst({ where: { id: p.diagnosticoId, deletedAt: null }, include: { atencion: { select: { id: true, citaId: true, sedeId: true } } } });
+  const dx = await prisma.diagnosticoAtencion.findFirst({ where: { id: p.diagnosticoId, deletedAt: null }, include: { atencion: { select: { id: true, citaId: true, sedeId: true, estado: true } } } });
   if (!dx) throw new AppError('Diagnóstico no encontrado', 404);
+  exigirAbierta(dx.atencion);
   if (p.cie10Codigo) await cie10Or400(p.cie10Codigo);
   await prisma.$transaction(async (tx) => {
     if (p.principal === true) await tx.diagnosticoAtencion.updateMany({ where: { atencionId: dx.atencionId, principal: true, deletedAt: null, id: { not: dx.id } }, data: { principal: false } });
@@ -553,12 +591,13 @@ export async function editarDiagnostico(p: Ctx & CamposDx & { diagnosticoId: str
   return getAtencionCompleta(dx.atencion.id);
 }
 
-export async function eliminarDiagnostico(p: Ctx & { diagnosticoId: string }) {
-  const dx = await prisma.diagnosticoAtencion.findFirst({ where: { id: p.diagnosticoId, deletedAt: null }, include: { atencion: { select: { id: true, citaId: true, sedeId: true } } } });
+export async function eliminarDiagnostico(p: Ctx & { diagnosticoId: string; motivo?: string | null }) {
+  const dx = await prisma.diagnosticoAtencion.findFirst({ where: { id: p.diagnosticoId, deletedAt: null }, include: { atencion: { select: { id: true, citaId: true, sedeId: true, estado: true } } } });
   if (!dx) throw new AppError('Diagnóstico no encontrado', 404);
+  exigirAbierta(dx.atencion);
   await prisma.$transaction(async (tx) => {
     await tx.diagnosticoAtencion.update({ where: { id: dx.id }, data: { deletedAt: new Date(), principal: false } });
-    await auditEnTx(tx, { ...ctxAudit(p), citaId: dx.atencion.citaId, accion: 'eliminar_diagnostico', entidad: 'diagnostico_atencion', entidadId: dx.id, sedeId: dx.atencion.sedeId, antes: { cie10Codigo: dx.cie10Codigo, tipo: dx.tipo, principal: dx.principal } });
+    await auditEnTx(tx, { ...ctxAudit(p), citaId: dx.atencion.citaId, accion: 'eliminar_diagnostico', entidad: 'diagnostico_atencion', entidadId: dx.id, sedeId: dx.atencion.sedeId, antes: { cie10Codigo: dx.cie10Codigo, tipo: dx.tipo, principal: dx.principal }, despues: { motivo: limpiar(p.motivo) } });
   });
   return getAtencionCompleta(dx.atencion.id);
 }

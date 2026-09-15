@@ -103,7 +103,7 @@ export function useDictado() {
           'Alternativa inmediata: dicta con el sistema (Windows: tecla Win + H con el cursor en el campo; iPad: micrófono del teclado).',
           { duration: 12000 },
         );
-      } else toast.error(`Dictado interrumpido (${e.error}).`);
+      } else toast.error('El dictado se cortó. Toca el micrófono para seguir.');
       detener();
     };
     rec.onend = () => {

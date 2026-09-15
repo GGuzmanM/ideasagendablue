@@ -2,8 +2,9 @@
 // leer antes de entrar al consultorio. Vista pura; los datos vienen de useFichaPrevia (api).
 import { TIPO_PROCEDIMIENTO_LABEL, PIE_LABEL, type FichaPrevia, type NivelBandera } from '../../api/historiaClinica';
 import { useFotoUrl } from '../../services/historiaClinicaService';
+import { fmtFechaDia, fmtFechaLima } from '../../utils/fechas';
 
-const fmt = (iso: string) => iso.slice(0, 10).split('-').reverse().join('/');
+const fmt = fmtFechaDia;
 const CHIP: Record<NivelBandera, string> = {
   alto: 'bg-rose-100 text-rose-800 border-rose-200',
   medio: 'bg-amber-100 text-amber-800 border-amber-200',
@@ -17,7 +18,7 @@ function FotoMini({ id, zona, fecha }: { id: string; zona: string | null; fecha:
       <div className="w-16 h-12 rounded-lg overflow-hidden bg-surface-container-low shrink-0 border border-outline-variant/30">
         {url && <img src={url} alt={zona ?? 'Foto anterior'} className="w-full h-full object-cover" />}
       </div>
-      <span className="text-[11px] text-on-surface-variant">Foto anterior{zona ? `: ${zona}` : ''} · {fmt(fecha)}</span>
+      <span className="text-[11px] text-on-surface-variant">Foto anterior{zona ? `: ${zona}` : ''} · {fmtFechaLima(fecha)}</span>
     </div>
   );
 }
@@ -45,8 +46,8 @@ export function FichaPreviaCard({ ficha, cargando }: { ficha: FichaPrevia | unde
       </div>
       {(ficha.alergias.length > 0 || banderas.length > 0) && (
         <div className="flex flex-wrap gap-1.5">
-          {ficha.alergias.map((a) => (
-            <span key={a.sustancia} className="px-2 py-0.5 rounded-md text-[11px] font-bold border bg-rose-600 text-white border-rose-700 flex items-center gap-1">
+          {ficha.alergias.map((a, i) => (
+            <span key={`${a.sustancia}-${i}`} className="px-2 py-0.5 rounded-md text-[11px] font-bold border bg-rose-600 text-white border-rose-700 flex items-center gap-1">
               <span className="material-symbols-outlined text-sm">warning</span>Alergia: {a.sustancia}{a.severidad === 'severa' ? ' (severa)' : ''}
             </span>
           ))}
@@ -55,9 +56,10 @@ export function FichaPreviaCard({ ficha, cargando }: { ficha: FichaPrevia | unde
       )}
       {ficha.alergias.length === 0 && banderas.length === 0 && <p className="text-[11px] text-emerald-700 flex items-center gap-1"><span className="material-symbols-outlined text-sm">check_circle</span>Sin alergias ni banderas de riesgo registradas</p>}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-xs text-on-surface">
-        {ficha.ultimoDx && <p><span className="text-on-surface-variant">Último dx:</span> <b className="text-primary font-mono-label">{ficha.ultimoDx.codigo}</b> {ficha.ultimoDx.descripcion} <span className="text-on-surface-variant">· {fmt(ficha.ultimoDx.fecha)}</span></p>}
+        {ficha.ultimoDx && <p><span className="text-on-surface-variant">Último diagnóstico:</span> <b className="text-primary font-mono-label">{ficha.ultimoDx.codigo}</b> {ficha.ultimoDx.descripcion} <span className="text-on-surface-variant">· {fmt(ficha.ultimoDx.fecha)}</span></p>}
         {ficha.ultimoProcedimiento && <p><span className="text-on-surface-variant">Último procedimiento:</span> {TIPO_PROCEDIMIENTO_LABEL[ficha.ultimoProcedimiento.tipo] ?? ficha.ultimoProcedimiento.nombre}{ficha.ultimoProcedimiento.pie ? ` · ${PIE_LABEL[ficha.ultimoProcedimiento.pie]}` : ''}{ficha.ultimoProcedimiento.ubicacion ? ` · ${ficha.ultimoProcedimiento.ubicacion}` : ''} <span className="text-on-surface-variant">· {fmt(ficha.ultimoProcedimiento.fecha)}</span></p>}
-        {ficha.riesgoIwgdf && <p><span className="text-on-surface-variant">Riesgo IWGDF:</span> <b>categoría {ficha.riesgoIwgdf.categoria}</b> <span className="text-on-surface-variant">· {fmt(ficha.riesgoIwgdf.fecha)}</span></p>}
+        {/* El riesgo IWGDF ya sale como bandera (arriba); aquí solo la fecha de esa evaluación */}
+        {ficha.riesgoIwgdf && <p><span className="text-on-surface-variant">Riesgo del pie evaluado el</span> {fmt(ficha.riesgoIwgdf.fecha)}</p>}
         {ficha.ultimaAtencion && <p><span className="text-on-surface-variant">Última atención:</span> {fmt(ficha.ultimaAtencion.fecha)} · {ficha.ultimaAtencion.profesional} · {ficha.ultimaAtencion.sede}{ficha.ultimaAtencion.estado === 'abierta' ? <> <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">abierta</span></> : null}</p>}
         {ficha.sesionesPendientes.map((q) => <p key={q.nombre}><span className="text-on-surface-variant">Sesiones:</span> {q.nombre} · <b>{q.restantes}</b> de {q.total} por usar</p>)}
       </div>

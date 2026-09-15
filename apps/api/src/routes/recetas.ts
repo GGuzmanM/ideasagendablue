@@ -23,7 +23,8 @@ const user = (req: Request) => req.user as AuthPayload;
 const permisoParaTipo = (tipo: string) => (tipo === 'RECETA_MEDICA' ? 'receta.emitir' : 'hc.registrar');
 function exigirPermiso(req: Request, permiso: string): void {
   if (!user(req).permisos?.includes(permiso)) {
-    throw new AppError(`Necesitas el permiso "${permiso}" para esta acción`, 403, 'SIN_PERMISO');
+    const que = permiso === 'receta.emitir' ? 'Solo un médico colegiado puede hacer esto con una receta médica' : 'No tienes permiso para esta acción';
+    throw new AppError(que, 403, 'SIN_PERMISO');
   }
 }
 const texto = (max: number) => z.string().trim().max(max).nullable().optional();
@@ -70,7 +71,7 @@ router.post('/', requireAuth, async (req, res) => {
 
 // POST /recetas/advertencias — cruce alergias vs ítems ANTES de emitir (3.1); basta hc.registrar
 router.post('/advertencias', requireAuth, requirePermiso('hc.registrar'), async (req, res) => {
-  const data = z.object({ atencionId: uuid, items: z.array(z.object({ nombre: z.string(), marcaImpresa: z.string().nullable().optional() })) }).parse(req.body);
+  const data = z.object({ atencionId: uuid, items: z.array(z.object({ nombre: z.string().trim().min(1), marcaImpresa: z.string().nullable().optional() })).max(30) }).parse(req.body);
   const at = await prisma.atencionClinica.findUnique({
     where: { id: data.atencionId },
     select: { sedeId: true, historiaClinica: { select: { alergias: { where: { deletedAt: null, activa: true }, select: { sustancia: true, severidad: true } } } } },
@@ -138,6 +139,7 @@ router.get('/:id/pdf', ...ver, async (req, res) => {
   const prefijo = receta.tipoDocumento === 'RECETA_MEDICA' ? 'receta' : 'indicaciones';
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `inline; filename="${prefijo}-${String(receta.numero).padStart(6, '0')}.pdf"`);
+  res.setHeader('Cache-Control', 'private, no-store');
   doc.pipe(res);
   escribirRecetaPdf(doc, receta, { qr, copias: conCopia ? ['original', 'farmacia'] : [null] });
   doc.end();

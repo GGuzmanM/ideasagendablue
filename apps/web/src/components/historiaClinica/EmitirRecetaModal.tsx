@@ -32,14 +32,15 @@ export function EmitirRecetaModal({ atencion, tipoDocumento, onClose }: { atenci
   );
 
   return (
-    <div className="fixed inset-0 bg-inverse-surface/40 backdrop-blur-[2px] z-[120] flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={onClose}>
-      <div className="bg-surface-container-lowest w-full max-w-[900px] max-h-[92vh] rounded-2xl flex flex-col overflow-hidden custom-shadow animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
+    // El fondo no cierra: un roce en la tablet borraría los ítems ya agregados. Se sale con «Cancelar» o la X.
+    <div className="fixed inset-0 bg-inverse-surface/40 backdrop-blur-[2px] z-[120] flex items-center justify-center p-4 animate-in fade-in duration-200" role="dialog" aria-modal="true">
+      <div className="bg-surface-container-lowest w-full max-w-[900px] max-h-[92vh] rounded-2xl flex flex-col overflow-hidden custom-shadow animate-in zoom-in-95 duration-200">
         <div className="bg-[#0044ab] text-white px-6 py-5 flex justify-between items-start shrink-0 shadow-md">
           <div>
             <h3 className="font-headline-md text-headline-md font-bold flex items-center gap-2"><span className="material-symbols-outlined">{f.esReceta ? 'prescriptions' : 'clinical_notes'}</span>{TIPO_DOC_LABEL[tipoDocumento]}</h3>
             <p className="text-sm text-white/80 mt-1">{atencion.paciente.apellidoPaterno} {atencion.paciente.apellidoMaterno}, {atencion.paciente.nombres} · {atencion.servicio.nombre} · {atencion.sede.nombre}</p>
           </div>
-          <button onClick={onClose} className="material-symbols-outlined text-white/80 hover:text-white text-xl">close</button>
+          <button onClick={() => { if (f.emitida || !f.items.length || window.confirm('¿Salir sin emitir? Se perderán los ítems agregados.')) onClose(); }} aria-label="Cerrar" className="material-symbols-outlined text-white/80 hover:text-white text-2xl min-w-[44px] min-h-[44px] flex items-center justify-center">close</button>
         </div>
 
         {f.emitida ? (
@@ -87,12 +88,12 @@ export function EmitirRecetaModal({ atencion, tipoDocumento, onClose }: { atenci
                   <div>
                     <label className={LBL}>Usar una favorita</label>
                     <div className="flex gap-2">
-                      <select value={favSel} disabled={f.favoritas.length === 0} onChange={(e) => { setFavSel(e.target.value); if (e.target.value) f.usarFavorita(e.target.value); }} className={INPUT} data-testid="usar-favorita">
+                      <select value={favSel} disabled={f.favoritas.length === 0} onChange={(e) => { if (e.target.value && f.usarFavorita(e.target.value)) setFavSel(e.target.value); }} className={INPUT} data-testid="usar-favorita">
                         <option value="">{f.favoritas.length ? '— Elegir favorita —' : 'Aún no hay favoritas'}</option>
                         {f.favoritas.map((x) => <option key={x.id} value={x.id}>{x.nombre} ({x.items.length})</option>)}
                       </select>
-                      {favSel && (
-                        <button type="button" title="Quitar esta favorita de la lista" className="material-symbols-outlined text-on-surface-variant/60 hover:text-rose-600 text-xl"
+                      {favSel && f.puedeQuitarFavorita(favSel) && (
+                        <button type="button" title="Quitar esta favorita de la lista" aria-label="Quitar favorita" className="material-symbols-outlined text-on-surface-variant/60 hover:text-rose-600 text-xl min-w-[44px]"
                           onClick={() => { if (window.confirm('¿Quitar esta favorita de la lista? Las recetas ya emitidas no cambian.')) { f.eliminarFavoritaMut.mutate(favSel); setFavSel(''); } }}>delete</button>
                       )}
                     </div>
@@ -151,7 +152,8 @@ export function EmitirRecetaModal({ atencion, tipoDocumento, onClose }: { atenci
                   ) : (
                     <div>
                       <label className={LBL}>Vigencia (días)</label>
-                      <input type="number" min={1} max={365} value={f.vigenciaDias} onChange={(e) => f.setVigenciaDias(Number(e.target.value) || 30)} className={INPUT} />
+                      {/* Texto libre mientras se escribe (se puede borrar y volver a teclear); se acota a 1–365 al salir del campo. */}
+                      <input type="text" inputMode="numeric" value={f.vigenciaTexto} onChange={(e) => f.setVigenciaTexto(e.target.value.replace(/\D/g, '').slice(0, 3))} onBlur={f.confirmarVigencia} className={INPUT} />
                     </div>
                   )}
                   {!f.esReceta && (
@@ -231,9 +233,9 @@ export function EmitirRecetaModal({ atencion, tipoDocumento, onClose }: { atenci
             </div>
             <div className="p-5 border-t border-outline-variant/30 flex gap-3 bg-surface-container-low/40 shrink-0">
               <button type="button" onClick={onClose} className="flex-1 px-5 py-2.5 border border-outline-variant rounded-xl font-bold text-sm text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer">Cancelar</button>
-              <button type="button" onClick={() => f.emitirMut.mutate()} disabled={!f.puedeGuardar || f.emitirMut.isPending}
+              <button type="button" onClick={() => void f.emitir()} disabled={!f.puedeGuardar || f.emitirMut.isPending || f.chequeando}
                 className="flex-1 px-5 py-2.5 bg-primary text-on-primary rounded-xl font-bold text-sm shadow-md shadow-primary/20 hover:opacity-90 active:scale-[0.98] transition-all disabled:opacity-50 disabled:pointer-events-none cursor-pointer">
-                {f.emitirMut.isPending ? 'Emitiendo…' : f.esReceta ? 'Emitir receta médica' : 'Emitir indicaciones'}
+                {f.chequeando ? 'Revisando alergias…' : f.emitirMut.isPending ? 'Emitiendo…' : f.esReceta ? 'Emitir receta médica' : 'Emitir indicaciones'}
               </button>
             </div>
           </>

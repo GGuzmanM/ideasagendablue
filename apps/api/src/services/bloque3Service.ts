@@ -19,9 +19,12 @@ import { prisma } from '../db';
 import { AppError } from '../middleware/errorHandler';
 import { UPLOADS_ROOT, rutaRelativaUpload } from '../middleware/uploadPodograma';
 import { auditEnTx } from './audit';
-import { Ctx, ctxAudit, etiquetaUsuario, atencionOr404, getAtencionCompleta } from './historiaClinicaService';
+import { Ctx, ctxAudit, etiquetaUsuario, atencionOr404, getAtencionCompleta, exigirAbierta } from './historiaClinicaService';
+import { fechaDb, hoyLimaStr } from '../utils/fechaLima';
 
 const limpiar = (s?: string | null) => { const t = (s ?? '').trim(); return t ? t : null; };
+/** Atención de la fila (con su estado): 404 si no existe y 409 si está cerrada (solo lectura). */
+const atencionSelect = { select: { id: true, citaId: true, sedeId: true, pacienteId: true, estado: true } } as const;
 
 /** "Apellidos, Nombres" de un profesional (snapshot para mostrar quién realizó). */
 async function etiquetaProfesional(profesionalId?: string | null): Promise<string | null> {
@@ -74,6 +77,7 @@ async function resolverPaqueteLaser(paquetePacienteId: string, pacienteId: strin
 
 export async function agregarProcedimiento(p: Ctx & CamposProcedimiento & { atencionId: string }) {
   const at = await atencionOr404(p.atencionId);
+  exigirAbierta(at);
   const tipo = assertTipoProcedimiento(p.tipo ?? '');
   const nombre = limpiar(p.nombre) ?? etiquetaTipoProcedimiento(tipo);
   const pie = assertPie(p.pie);
@@ -108,8 +112,9 @@ export async function agregarProcedimiento(p: Ctx & CamposProcedimiento & { aten
 }
 
 export async function editarProcedimiento(p: Ctx & CamposProcedimiento & { procedimientoId: string }) {
-  const row = await prisma.procedimientoAtencion.findFirst({ where: { id: p.procedimientoId, deletedAt: null }, include: { atencion: { select: { id: true, citaId: true, sedeId: true, pacienteId: true } } } });
+  const row = await prisma.procedimientoAtencion.findFirst({ where: { id: p.procedimientoId, deletedAt: null }, include: { atencion: atencionSelect } });
   if (!row) throw new AppError('Procedimiento no encontrado', 404);
+  exigirAbierta(row.atencion);
   const data: Prisma.ProcedimientoAtencionUpdateInput = {};
   if (p.tipo !== undefined) data.tipo = assertTipoProcedimiento(p.tipo);
   if (p.nombre !== undefined) { const n = limpiar(p.nombre); if (!n) throw new AppError('El nombre no puede quedar vacío', 400); data.nombre = n; }
@@ -124,16 +129,21 @@ export async function editarProcedimiento(p: Ctx & CamposProcedimiento & { proce
     if (p.paquetePacienteId) { const info = await resolverPaqueteLaser(p.paquetePacienteId, row.atencion.pacienteId); data.paquetePaciente = { connect: { id: p.paquetePacienteId } }; data.sesionesTotales = info.sesionesTotales; }
     else { data.paquetePaciente = { disconnect: true }; data.sesionesTotales = null; }
   }
+  const antes = { tipo: row.tipo, nombre: row.nombre, pie: row.pie, ubicacion: row.ubicacion, detalle: row.detalle, anestesia: row.anestesia, sesionNumero: row.sesionNumero, paquetePacienteId: row.paquetePacienteId, profesionalId: row.profesionalId };
   await prisma.$transaction(async (tx) => {
-    await tx.procedimientoAtencion.update({ where: { id: row.id }, data });
-    await auditEnTx(tx, { ...ctxAudit(p), citaId: row.atencion.citaId, accion: 'editar_procedimiento', entidad: 'procedimiento_atencion', entidadId: row.id, sedeId: row.atencion.sedeId, despues: { tipo: p.tipo, nombre: p.nombre } });
+    const n = await tx.procedimientoAtencion.update({ where: { id: row.id }, data });
+    await auditEnTx(tx, {
+      ...ctxAudit(p), citaId: row.atencion.citaId, accion: 'editar_procedimiento', entidad: 'procedimiento_atencion', entidadId: row.id, sedeId: row.atencion.sedeId,
+      antes, despues: { tipo: n.tipo, nombre: n.nombre, pie: n.pie, ubicacion: n.ubicacion, detalle: n.detalle, anestesia: n.anestesia, sesionNumero: n.sesionNumero, paquetePacienteId: n.paquetePacienteId, profesionalId: n.profesionalId },
+    });
   });
   return getAtencionCompleta(row.atencion.id);
 }
 
 export async function eliminarProcedimiento(p: Ctx & { procedimientoId: string }) {
-  const row = await prisma.procedimientoAtencion.findFirst({ where: { id: p.procedimientoId, deletedAt: null }, include: { atencion: { select: { id: true, citaId: true, sedeId: true } } } });
+  const row = await prisma.procedimientoAtencion.findFirst({ where: { id: p.procedimientoId, deletedAt: null }, include: { atencion: atencionSelect } });
   if (!row) throw new AppError('Procedimiento no encontrado', 404);
+  exigirAbierta(row.atencion);
   await prisma.$transaction(async (tx) => {
     await tx.procedimientoAtencion.update({ where: { id: row.id }, data: { deletedAt: new Date() } });
     await auditEnTx(tx, { ...ctxAudit(p), citaId: row.atencion.citaId, accion: 'eliminar_procedimiento', entidad: 'procedimiento_atencion', entidadId: row.id, sedeId: row.atencion.sedeId, antes: { tipo: row.tipo, nombre: row.nombre } });
@@ -175,13 +185,14 @@ function itbDe(pedia: unknown, tibial: unknown, braqIzq: unknown, braqDer: unkno
   const brazo = Math.max(pos(braqIzq) ?? 0, pos(braqDer) ?? 0);
   return tobillo && brazo ? Math.round((tobillo / brazo) * 100) / 100 : null;
 }
+// Mismos textos que la vista previa del front (utils/escalasPie.ts → interpretarItb).
 function textoItb(v: number): string {
-  if (v > 1.4) return 'no compresible';
+  if (v > 1.4) return 'no compresible (arterias rígidas): no descarta mala circulación';
   if (v >= 1) return 'normal';
   if (v >= 0.91) return 'limítrofe';
-  if (v >= 0.7) return 'EAP leve';
-  if (v >= 0.4) return 'EAP moderada';
-  return 'EAP grave';
+  if (v >= 0.7) return 'mala circulación leve (EAP)';
+  if (v >= 0.4) return 'mala circulación moderada (EAP)';
+  return 'mala circulación grave (EAP), posible isquemia crítica';
 }
 const PULSO_SITIO: Record<string, string> = { pedioIzq: 'pedio izq', tibialIzq: 'tibial posterior izq', pedioDer: 'pedio der', tibialDer: 'tibial posterior der' };
 const OSI_UNA: Record<string, string> = { hallux: 'hallux', '2': '2º dedo', '3': '3er dedo', '4': '4º dedo', '5': '5º dedo' };
@@ -274,11 +285,13 @@ export function calcularResultadoEscala(tipo: TipoEscala, datos: Record<string, 
         return `Termometría — diferencia máx. ${maxDelta.toFixed(1)} °C (${sitio})${maxDelta >= 2 ? ' · ALERTA: ≥ 2 °C entre pies, posible preúlcera' : ' · sin diferencia significativa'}`;
       }
       case 'monofilamento': {
+        // Solo cuentan los sitios evaluados (true/false); un sitio sin evaluar (null) no entra al total.
         const resumen = (lado: unknown): string | null => {
           if (!Array.isArray(lado)) return null;
-          const total = lado.length;
-          const percibidos = lado.filter((x) => x === true).length;
-          return `${percibidos}/${total}`;
+          const evaluados = lado.filter((x) => typeof x === 'boolean');
+          if (!evaluados.length) return null;
+          const percibidos = evaluados.filter((x) => x === true).length;
+          return `${percibidos}/${evaluados.length}`;
         };
         const izq = resumen(datos.izquierdo);
         const der = resumen(datos.derecho);
@@ -315,7 +328,7 @@ export function calcularResultadoEscala(tipo: TipoEscala, datos: Record<string, 
         if (disminuidos.length) partes.push(`pulso disminuido: ${disminuidos.join(', ')}`);
         if (!partes.length) return 'ITB sin mediciones';
         const eap = [iz, de].some((v) => v != null && v <= 0.9) || ausentes.length > 0;
-        return `ITB y pulsos — ${partes.join(' · ')}${eap ? ' · sugiere enfermedad arterial periférica' : ''}`;
+        return `ITB y pulsos — ${partes.join(' · ')}${eap ? ' · sugiere mala circulación (enfermedad arterial periférica)' : ''}`;
       }
       case 'osi': {
         // Onychomycosis Severity Index (Carney 2011): área × proximidad a la matriz, +10 si hay
@@ -350,6 +363,7 @@ export function calcularResultadoEscala(tipo: TipoEscala, datos: Record<string, 
           partes.push(`${cab}${problemas.length ? `: ${problemas.join(', ')}` : ''}`);
         }
         if (cz.plantillas === true) partes.push('usa plantillas');
+        else if (cz.plantillas === false) partes.push('no usa plantillas');
         const desgaste = objeto(cz.desgaste);
         for (const [lado, corto] of [['izquierdo', 'izq'], ['derecho', 'der']] as const) {
           const zonas = cadenas(desgaste[lado]).filter((z) => DESGASTE_ZONA[z]);
@@ -368,18 +382,95 @@ export function calcularResultadoEscala(tipo: TipoEscala, datos: Record<string, 
   }
 }
 
+/** Categoría IWGDF de una escala guardada (la que quedó en `datos.categoria` al guardar; en filas viejas, la del texto). */
+export function categoriaIwgdfDe(e: { datos: unknown; resultado: string | null }): number | null {
+  const d = objeto(e.datos);
+  const c = num(d.categoria);
+  if (c != null && Number.isInteger(c) && c >= 0 && c <= 3) return c;
+  const m = e.resultado?.match(/categor[ií]a\s+(\d)/i);
+  const t = m ? Number(m[1]) : NaN;
+  return Number.isInteger(t) && t >= 0 && t <= 3 ? t : null;
+}
+
+const entero = (v: unknown, min: number, max: number, campo: string): number | null => {
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  if (!Number.isInteger(n) || n < min || n > max) throw new AppError(`${campo}: debe ser un número entero entre ${min} y ${max}`, 400, 'ESCALA_DATOS_INVALIDOS');
+  return n;
+};
+const decimal = (v: unknown, min: number, max: number, campo: string): number | null => {
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < min || n > max) throw new AppError(`${campo}: debe ser un número entre ${min} y ${max}`, 400, 'ESCALA_DATOS_INVALIDOS');
+  return n;
+};
+
+/**
+ * Valida los datos de una escala por tipo (rangos clínicos) y deja en `datos` lo CALCULADO por el
+ * servidor como única fuente: la categoría IWGDF y el estadio Texas salen de los factores cuando
+ * vienen, y el ITB de cada pie sale de las presiones. La ficha previa, los controles y el front leen
+ * esos campos sin volver a calcular.
+ */
+export function normalizarDatosEscala(tipo: TipoEscala, raw: Record<string, unknown>): Record<string, unknown> {
+  const d: Record<string, unknown> = { ...raw };
+  switch (tipo) {
+    case 'eva': d.valor = entero(d.valor, 0, 10, 'EVA'); break;
+    case 'wagner': d.grado = entero(d.grado, 0, 5, 'Grado Wagner'); break;
+    case 'texas': {
+      d.grado = entero(d.grado, 0, 3, 'Grado Texas');
+      if (typeof d.infeccion === 'boolean' || typeof d.isquemia === 'boolean') {
+        const inf = bool(d.infeccion), isq = bool(d.isquemia);
+        d.estadio = inf && isq ? 'D' : isq ? 'C' : inf ? 'B' : 'A';
+      } else if (typeof d.estadio === 'string') {
+        const e = d.estadio.toUpperCase();
+        if (!['A', 'B', 'C', 'D'].includes(e)) throw new AppError('Estadio Texas: debe ser A, B, C o D', 400, 'ESCALA_DATOS_INVALIDOS');
+        d.estadio = e;
+      }
+      break;
+    }
+    case 'iwgdf': {
+      const hayFactores = ['psp', 'eap', 'deformidad', 'ulceraPrevia', 'amputacion', 'erc'].some((k) => typeof d[k] === 'boolean');
+      if (hayFactores) {
+        const psp = bool(d.psp), eap = bool(d.eap), def = bool(d.deformidad);
+        const previa = bool(d.ulceraPrevia) || bool(d.amputacion) || bool(d.erc);
+        d.categoria = (psp || eap) && previa ? 3 : (psp && eap) || (psp && def) || (eap && def) ? 2 : psp || eap ? 1 : 0;
+      } else d.categoria = entero(d.categoria, 0, 3, 'Categoría IWGDF');
+      break;
+    }
+    case 'manchester': d.izquierdo = entero(d.izquierdo, 1, 4, 'Manchester izquierdo'); d.derecho = entero(d.derecho, 1, 4, 'Manchester derecho'); break;
+    case 'osi': d.area = entero(d.area, 0, 5, 'OSI área'); d.proximidad = entero(d.proximidad, 1, 5, 'OSI proximidad'); break;
+    case 'ulcera':
+      d.largo = decimal(d.largo, 0, 100, 'Largo'); d.ancho = decimal(d.ancho, 0, 100, 'Ancho'); d.profundidad = decimal(d.profundidad, 0, 20, 'Profundidad');
+      d.area = decimal(d.area, 0, 10000, 'Área');
+      break;
+    case 'itb': {
+      for (const k of ['braqIzq', 'braqDer', 'pediaIzq', 'tibialIzq', 'pediaDer', 'tibialDer']) d[k] = decimal(d[k], 0, 400, `Presión ${k}`);
+      d.itbIzq = itbDe(d.pediaIzq, d.tibialIzq, d.braqIzq, d.braqDer) ?? decimal(d.itbIzq, 0, 5, 'ITB izquierdo');
+      d.itbDer = itbDe(d.pediaDer, d.tibialDer, d.braqIzq, d.braqDer) ?? decimal(d.itbDer, 0, 5, 'ITB derecho');
+      break;
+    }
+    case 'termometria':
+      for (const lado of ['izquierdo', 'derecho']) if (Array.isArray(d[lado])) d[lado] = (d[lado] as unknown[]).map((v) => decimal(v, 15, 45, 'Temperatura'));
+      break;
+    default: break;
+  }
+  return d;
+}
+
 export async function guardarEscala(p: Ctx & { atencionId: string; tipo: string; datos: Record<string, unknown>; pie?: string | null }) {
   const at = await atencionOr404(p.atencionId);
+  exigirAbierta(at);
   const tipo = assertTipoEscala(p.tipo);
   if (!p.datos || typeof p.datos !== 'object') throw new AppError('Faltan los datos de la escala', 400, 'ESCALA_DATOS_REQUERIDOS');
   const pie = assertPie(p.pie);
-  const resultado = calcularResultadoEscala(tipo, p.datos);
+  const datos = normalizarDatosEscala(tipo, p.datos);
+  const resultado = calcularResultadoEscala(tipo, datos);
   const etiqueta = await etiquetaUsuario(prisma, p.usuarioId);
   const creado = await prisma.$transaction(async (tx) => {
     const row = await tx.escalaClinica.create({
-      data: { atencionId: at.id, tipo, datos: p.datos as Prisma.InputJsonValue, resultado, pie, registradoPorUsuarioId: p.usuarioId ?? null, registradoEtiqueta: etiqueta },
+      data: { atencionId: at.id, tipo, datos: datos as Prisma.InputJsonValue, resultado, pie, registradoPorUsuarioId: p.usuarioId ?? null, registradoEtiqueta: etiqueta },
     });
-    await auditEnTx(tx, { ...ctxAudit(p), citaId: at.citaId, accion: 'guardar_escala', entidad: 'escala_clinica', entidadId: row.id, sedeId: at.sedeId, despues: { tipo, resultado } });
+    await auditEnTx(tx, { ...ctxAudit(p), citaId: at.citaId, accion: 'guardar_escala', entidad: 'escala_clinica', entidadId: row.id, sedeId: at.sedeId, despues: { tipo, resultado, datos } });
     return row;
   });
   void creado;
@@ -387,25 +478,31 @@ export async function guardarEscala(p: Ctx & { atencionId: string; tipo: string;
 }
 
 export async function editarEscala(p: Ctx & { escalaId: string; datos?: Record<string, unknown>; pie?: string | null }) {
-  const row = await prisma.escalaClinica.findFirst({ where: { id: p.escalaId, deletedAt: null }, include: { atencion: { select: { id: true, citaId: true, sedeId: true } } } });
+  const row = await prisma.escalaClinica.findFirst({ where: { id: p.escalaId, deletedAt: null }, include: { atencion: atencionSelect } });
   if (!row) throw new AppError('Escala no encontrada', 404);
+  exigirAbierta(row.atencion);
   const data: Prisma.EscalaClinicaUpdateInput = {};
   if (p.datos !== undefined) {
     if (!p.datos || typeof p.datos !== 'object') throw new AppError('Faltan los datos de la escala', 400, 'ESCALA_DATOS_REQUERIDOS');
-    data.datos = p.datos as Prisma.InputJsonValue;
-    data.resultado = calcularResultadoEscala(row.tipo as TipoEscala, p.datos);
+    const datos = normalizarDatosEscala(row.tipo as TipoEscala, p.datos);
+    data.datos = datos as Prisma.InputJsonValue;
+    data.resultado = calcularResultadoEscala(row.tipo as TipoEscala, datos);
   }
   if (p.pie !== undefined) data.pie = assertPie(p.pie);
   await prisma.$transaction(async (tx) => {
-    await tx.escalaClinica.update({ where: { id: row.id }, data });
-    await auditEnTx(tx, { ...ctxAudit(p), citaId: row.atencion.citaId, accion: 'editar_escala', entidad: 'escala_clinica', entidadId: row.id, sedeId: row.atencion.sedeId, despues: { tipo: row.tipo } });
+    const n = await tx.escalaClinica.update({ where: { id: row.id }, data });
+    await auditEnTx(tx, {
+      ...ctxAudit(p), citaId: row.atencion.citaId, accion: 'editar_escala', entidad: 'escala_clinica', entidadId: row.id, sedeId: row.atencion.sedeId,
+      antes: { tipo: row.tipo, pie: row.pie, resultado: row.resultado, datos: row.datos }, despues: { tipo: n.tipo, pie: n.pie, resultado: n.resultado, datos: n.datos },
+    });
   });
   return getAtencionCompleta(row.atencion.id);
 }
 
 export async function eliminarEscala(p: Ctx & { escalaId: string }) {
-  const row = await prisma.escalaClinica.findFirst({ where: { id: p.escalaId, deletedAt: null }, include: { atencion: { select: { id: true, citaId: true, sedeId: true } } } });
+  const row = await prisma.escalaClinica.findFirst({ where: { id: p.escalaId, deletedAt: null }, include: { atencion: atencionSelect } });
   if (!row) throw new AppError('Escala no encontrada', 404);
+  exigirAbierta(row.atencion);
   await prisma.$transaction(async (tx) => {
     await tx.escalaClinica.update({ where: { id: row.id }, data: { deletedAt: new Date() } });
     await auditEnTx(tx, { ...ctxAudit(p), citaId: row.atencion.citaId, accion: 'eliminar_escala', entidad: 'escala_clinica', entidadId: row.id, sedeId: row.atencion.sedeId, antes: { tipo: row.tipo, resultado: row.resultado } });
@@ -444,6 +541,7 @@ function assertCoord(v: unknown, eje: string): number {
 
 export async function agregarMarca(p: Ctx & { atencionId: string; pie: string; vista?: string | null; x: number; y: number; zona?: string | null; tipoLesion: string; nota?: string | null }) {
   const at = await atencionOr404(p.atencionId);
+  exigirAbierta(at);
   const pie = assertPiePodograma(p.pie);
   const vista = assertVistaSilueta(p.vista);
   const tipoLesion = assertTipoLesion(p.tipoLesion);
@@ -462,8 +560,9 @@ export async function agregarMarca(p: Ctx & { atencionId: string; pie: string; v
 }
 
 export async function editarMarca(p: Ctx & { marcaId: string; pie?: string; vista?: string | null; x?: number; y?: number; zona?: string | null; tipoLesion?: string; nota?: string | null }) {
-  const row = await prisma.marcaPodograma.findFirst({ where: { id: p.marcaId, deletedAt: null }, include: { atencion: { select: { id: true, citaId: true, sedeId: true } } } });
+  const row = await prisma.marcaPodograma.findFirst({ where: { id: p.marcaId, deletedAt: null }, include: { atencion: atencionSelect } });
   if (!row) throw new AppError('Marca no encontrada', 404);
+  exigirAbierta(row.atencion);
   const data: Prisma.MarcaPodogramaUpdateInput = {};
   if (p.pie !== undefined) data.pie = assertPiePodograma(p.pie);
   if (p.vista !== undefined) data.vista = assertVistaSilueta(p.vista);
@@ -473,15 +572,20 @@ export async function editarMarca(p: Ctx & { marcaId: string; pie?: string; vist
   if (p.zona !== undefined) data.zona = limpiar(p.zona);
   if (p.nota !== undefined) data.nota = limpiar(p.nota);
   await prisma.$transaction(async (tx) => {
-    await tx.marcaPodograma.update({ where: { id: row.id }, data });
-    await auditEnTx(tx, { ...ctxAudit(p), citaId: row.atencion.citaId, accion: 'editar_marca_podograma', entidad: 'marca_podograma', entidadId: row.id, sedeId: row.atencion.sedeId });
+    const n = await tx.marcaPodograma.update({ where: { id: row.id }, data });
+    await auditEnTx(tx, {
+      ...ctxAudit(p), citaId: row.atencion.citaId, accion: 'editar_marca_podograma', entidad: 'marca_podograma', entidadId: row.id, sedeId: row.atencion.sedeId,
+      antes: { pie: row.pie, vista: row.vista, tipoLesion: row.tipoLesion, x: row.x, y: row.y, zona: row.zona, nota: row.nota },
+      despues: { pie: n.pie, vista: n.vista, tipoLesion: n.tipoLesion, x: n.x, y: n.y, zona: n.zona, nota: n.nota },
+    });
   });
   return getAtencionCompleta(row.atencion.id);
 }
 
 export async function eliminarMarca(p: Ctx & { marcaId: string }) {
-  const row = await prisma.marcaPodograma.findFirst({ where: { id: p.marcaId, deletedAt: null }, include: { atencion: { select: { id: true, citaId: true, sedeId: true } } } });
+  const row = await prisma.marcaPodograma.findFirst({ where: { id: p.marcaId, deletedAt: null }, include: { atencion: atencionSelect } });
   if (!row) throw new AppError('Marca no encontrada', 404);
+  exigirAbierta(row.atencion);
   await prisma.$transaction(async (tx) => {
     await tx.marcaPodograma.update({ where: { id: row.id }, data: { deletedAt: new Date() } });
     await auditEnTx(tx, { ...ctxAudit(p), citaId: row.atencion.citaId, accion: 'eliminar_marca_podograma', entidad: 'marca_podograma', entidadId: row.id, sedeId: row.atencion.sedeId, antes: { pie: row.pie, tipoLesion: row.tipoLesion } });
@@ -526,6 +630,7 @@ function assertVista(v?: string | null): VistaPodograma | null {
 
 export async function registrarImagenPodograma(p: Ctx & { atencionId: string; archivo: ArchivoSubido; descripcion?: string | null; vista?: string | null }) {
   const at = await atencionOr404(p.atencionId);
+  exigirAbierta(at);
   const vista = assertVista(p.vista);
   const etiqueta = await etiquetaUsuario(prisma, p.usuarioId);
   const ruta = rutaRelativaUpload(p.archivo.path);
@@ -602,8 +707,9 @@ export function validarAnotaciones(raw: unknown): Prisma.InputJsonValue {
 }
 
 export async function guardarAnotacionesPodograma(p: Ctx & { imagenId: string; anotaciones: unknown }) {
-  const img = await prisma.imagenPodograma.findFirst({ where: { id: p.imagenId, deletedAt: null }, include: { atencion: { select: { id: true, citaId: true, sedeId: true } } } });
+  const img = await prisma.imagenPodograma.findFirst({ where: { id: p.imagenId, deletedAt: null }, include: { atencion: atencionSelect } });
   if (!img) throw new AppError('Imagen no encontrada', 404);
+  exigirAbierta(img.atencion);
   const anotaciones = validarAnotaciones(p.anotaciones);
   const antes = Array.isArray(img.anotaciones) ? img.anotaciones.length : 0;
   const despues = (anotaciones as unknown[]).length;
@@ -621,6 +727,7 @@ export async function guardarAnotacionesPodograma(p: Ctx & { imagenId: string; a
  */
 export async function guardarDibujoSilueta(p: Ctx & { atencionId: string; vista: string; pie: string; anotaciones: unknown }) {
   const at = await atencionOr404(p.atencionId);
+  exigirAbierta(at);
   const vista = assertVistaSilueta(p.vista);
   const pie = assertPiePodograma(p.pie);
   const anotaciones = validarAnotaciones(p.anotaciones);
@@ -644,19 +751,21 @@ export async function guardarDibujoSilueta(p: Ctx & { atencionId: string; vista:
 // Bandeja del día (ronda del médico): atenciones abiertas para cerrar en lote + abandono
 // ─────────────────────────────────────────────────────────────────────────────
 /** Cierre inteligente (misma regla que el front): qué le falta a una atención. Aviso, no bloqueo. */
+// Mismos textos que la pantalla (apps/web/src/utils/faltantesAtencion.ts): si se cambia uno, cambiar el otro.
 export function faltantesDeAtencion(a: {
   diagnosticos: { principal: boolean }[]; notas: unknown[]; procedimientos: unknown[];
-  marcasPodograma: unknown[]; imagenesPodograma: unknown[]; recetas: unknown[];
-  dibujosSilueta?: { anotaciones: unknown }[];
+  marcasPodograma: unknown[]; imagenesPodograma: unknown[]; recetas: { estado?: string }[];
+  dibujosSilueta?: { anotaciones: unknown }[]; dibujado?: boolean;
 }): string[] {
   const f: string[] = [];
   if (!a.diagnosticos.length) f.push('Sin diagnóstico');
   else if (!a.diagnosticos.some((d) => d.principal)) f.push('Sin diagnóstico principal');
-  if (!a.notas.length) f.push('Sin nota');
-  if (!a.procedimientos.length) f.push('Sin procedimiento');
-  const dibujado = (a.dibujosSilueta ?? []).some((d) => Array.isArray(d.anotaciones) && d.anotaciones.length > 0);
+  if (!a.notas.length) f.push('Sin nota de evolución');
+  if (!a.procedimientos.length) f.push('Sin procedimiento (si hubo tratamiento)');
+  const dibujado = a.dibujado ?? (a.dibujosSilueta ?? []).some((d) => Array.isArray(d.anotaciones) && d.anotaciones.length > 0);
   if (!a.marcasPodograma.length && !a.imagenesPodograma.length && !dibujado) f.push('Podograma vacío');
-  if (!a.recetas.length) f.push('Sin receta ni indicaciones');
+  // Una receta anulada no cuenta como receta.
+  if (!a.recetas.some((r) => r.estado === undefined || r.estado === 'emitida')) f.push('Sin receta ni indicaciones');
   return f;
 }
 
@@ -676,25 +785,36 @@ export async function bandejaDelDia(p: { sedeIds: string[] | null; profesionalId
       diagnosticos: { where: { deletedAt: null }, select: { principal: true } },
       procedimientos: { where: { deletedAt: null }, select: { id: true } },
       marcasPodograma: { where: { deletedAt: null }, select: { id: true } },
-      dibujosSilueta: { where: { deletedAt: null }, select: { anotaciones: true } },
       imagenesPodograma: { where: { deletedAt: null }, select: { id: true } },
-      recetas: { select: { id: true } },
+      recetas: { select: { id: true, estado: true } },
     },
   });
+  // Dibujos NO vacíos de esas atenciones: solo los ids (sin traer los trazos, que pesan).
+  const idsAbiertas = abiertas.map((a) => a.id);
+  const conDibujo = new Set(
+    idsAbiertas.length
+      ? (await prisma.$queryRaw<{ atencionId: string }[]>`
+          SELECT DISTINCT "atencionId" FROM dibujos_silueta
+          WHERE "atencionId" = ANY(${idsAbiertas}::uuid[]) AND "deletedAt" IS NULL AND jsonb_array_length(anotaciones) > 0`
+        ).map((r) => r.atencionId)
+      : [],
+  );
 
   // Abandono: paquete activo con sesiones pendientes, última cita completada hace > N días y sin cita futura.
+  // «Hoy» y el límite se cuentan en fechas de Lima (las citas guardan la fecha de calendario).
   const dias = p.diasSinVolver ?? 45;
-  const limite = new Date(Date.now() - dias * 86_400_000);
-  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  const hoyStr = hoyLimaStr();
+  const hoy = fechaDb(hoyStr);
+  const limite = new Date(hoy.getTime() - dias * 86_400_000);
   const paquetes = await prisma.paquetePaciente.findMany({
-    where: { activo: true, estado: 'ACTIVO', ...porSede },
+    where: { activo: true, estado: 'ACTIVO', ...porSede, sesionesUsadas: { lt: prisma.paquetePaciente.fields.sesionesTotal } },
     select: {
       id: true, sesionesTotal: true, sesionesUsadas: true, pacienteId: true, paquete: { select: { nombre: true } },
       paciente: { select: { id: true, nombres: true, apellidoPaterno: true, apellidoMaterno: true, telefono: true } },
     },
+    take: 2000,
   });
-  const conSaldo = paquetes.filter((q) => q.sesionesUsadas < q.sesionesTotal);
-  const ids = [...new Set(conSaldo.map((q) => q.pacienteId))];
+  const ids = [...new Set(paquetes.map((q) => q.pacienteId))];
   const [ultimas, futuras] = ids.length
     ? await Promise.all([
         prisma.cita.groupBy({ by: ['pacienteId'], where: { pacienteId: { in: ids }, deletedAt: null, estado: 'completada' }, _max: { fecha: true } }),
@@ -703,11 +823,11 @@ export async function bandejaDelDia(p: { sedeIds: string[] | null; profesionalId
     : [[], []];
   const conFutura = new Set(futuras.map((c) => c.pacienteId));
   const ultimaPor = new Map(ultimas.map((u) => [u.pacienteId, u._max.fecha]));
-  const sinVolver = conSaldo
+  const sinVolver = paquetes
     .filter((q) => { const u = ultimaPor.get(q.pacienteId); return !!u && u < limite && !conFutura.has(q.pacienteId); })
     .map((q) => {
       const u = ultimaPor.get(q.pacienteId) as Date;
-      return { paquetePacienteId: q.id, paquete: q.paquete?.nombre ?? 'Paquete', paciente: q.paciente, sesionesRestantes: q.sesionesTotal - q.sesionesUsadas, ultimaCita: u, diasSinVenir: Math.floor((Date.now() - u.getTime()) / 86_400_000) };
+      return { paquetePacienteId: q.id, paquete: q.paquete?.nombre ?? 'Paquete', paciente: q.paciente, sesionesRestantes: q.sesionesTotal - q.sesionesUsadas, ultimaCita: u, diasSinVenir: Math.round((hoy.getTime() - u.getTime()) / 86_400_000) };
     })
     .sort((a, b) => b.diasSinVenir - a.diasSinVenir)
     .slice(0, 100);
@@ -717,8 +837,8 @@ export async function bandejaDelDia(p: { sedeIds: string[] | null; profesionalId
     abiertas: abiertas.map((a) => ({
       id: a.id, fecha: a.fecha, citaId: a.cita.id, horaInicio: a.cita.horaInicio, motivoConsulta: a.motivoConsulta,
       paciente: a.paciente, servicio: a.servicio, sede: a.sede, profesional: a.profesional,
-      totales: { notas: a.notas.length, diagnosticos: a.diagnosticos.length, procedimientos: a.procedimientos.length, recetas: a.recetas.length },
-      faltantes: faltantesDeAtencion(a),
+      totales: { notas: a.notas.length, diagnosticos: a.diagnosticos.length, procedimientos: a.procedimientos.length, recetas: a.recetas.filter((r) => r.estado === 'emitida').length },
+      faltantes: faltantesDeAtencion({ ...a, dibujado: conDibujo.has(a.id) }),
     })),
     sinVolver,
   };
@@ -739,6 +859,7 @@ const fotoSelect = { id: true, atencionId: true, pie: true, zona: true, categori
 
 export async function registrarFotoClinica(p: Ctx & CamposFoto & { atencionId: string; archivo: ArchivoSubido }) {
   const at = await atencionOr404(p.atencionId);
+  exigirAbierta(at);
   const etiqueta = await etiquetaUsuario(prisma, p.usuarioId);
   const ruta = rutaRelativaUpload(p.archivo.path);
   const tomada = p.tomadaEn ? new Date(p.tomadaEn) : new Date();
@@ -766,23 +887,28 @@ export async function archivoFotoClinica(fotoId: string) {
 }
 
 export async function editarFotoClinica(p: Ctx & CamposFoto & { fotoId: string }) {
-  const f = await prisma.fotoClinica.findFirst({ where: { id: p.fotoId, deletedAt: null }, include: { atencion: { select: { id: true, citaId: true, sedeId: true } } } });
+  const f = await prisma.fotoClinica.findFirst({ where: { id: p.fotoId, deletedAt: null }, include: { atencion: atencionSelect } });
   if (!f) throw new AppError('Foto no encontrada', 404);
+  exigirAbierta(f.atencion);
   const data: Prisma.FotoClinicaUpdateInput = {};
   if (p.pie !== undefined) data.pie = assertPie(p.pie);
   if (p.zona !== undefined) data.zona = limpiar(p.zona);
   if (p.categoria !== undefined) data.categoria = assertCategoriaFoto(p.categoria);
   if (p.descripcion !== undefined) data.descripcion = limpiar(p.descripcion);
   await prisma.$transaction(async (tx) => {
-    await tx.fotoClinica.update({ where: { id: f.id }, data });
-    await auditEnTx(tx, { ...ctxAudit(p), citaId: f.atencion.citaId, accion: 'editar_foto_clinica', entidad: 'foto_clinica', entidadId: f.id, sedeId: f.atencion.sedeId, despues: { zona: p.zona, pie: p.pie, categoria: p.categoria } });
+    const n = await tx.fotoClinica.update({ where: { id: f.id }, data });
+    await auditEnTx(tx, {
+      ...ctxAudit(p), citaId: f.atencion.citaId, accion: 'editar_foto_clinica', entidad: 'foto_clinica', entidadId: f.id, sedeId: f.atencion.sedeId,
+      antes: { zona: f.zona, pie: f.pie, categoria: f.categoria, descripcion: f.descripcion }, despues: { zona: n.zona, pie: n.pie, categoria: n.categoria, descripcion: n.descripcion },
+    });
   });
   return getAtencionCompleta(f.atencion.id);
 }
 
 export async function eliminarFotoClinica(p: Ctx & { fotoId: string }) {
-  const f = await prisma.fotoClinica.findFirst({ where: { id: p.fotoId, deletedAt: null }, include: { atencion: { select: { id: true, citaId: true, sedeId: true } } } });
+  const f = await prisma.fotoClinica.findFirst({ where: { id: p.fotoId, deletedAt: null }, include: { atencion: atencionSelect } });
   if (!f) throw new AppError('Foto no encontrada', 404);
+  exigirAbierta(f.atencion);
   await prisma.$transaction(async (tx) => {
     await tx.fotoClinica.update({ where: { id: f.id }, data: { deletedAt: new Date() } });
     await auditEnTx(tx, { ...ctxAudit(p), citaId: f.atencion.citaId, accion: 'eliminar_foto_clinica', entidad: 'foto_clinica', entidadId: f.id, sedeId: f.atencion.sedeId, antes: { zona: f.zona, pie: f.pie } });
@@ -801,8 +927,9 @@ export async function fotosDePaciente(pacienteId: string, zona?: string | null) 
 
 /** Borrado SUAVE: la fila y el archivo se conservan (retención de HC); deja de listarse. */
 export async function eliminarImagenPodograma(p: Ctx & { imagenId: string }) {
-  const img = await prisma.imagenPodograma.findFirst({ where: { id: p.imagenId, deletedAt: null }, include: { atencion: { select: { id: true, citaId: true, sedeId: true } } } });
+  const img = await prisma.imagenPodograma.findFirst({ where: { id: p.imagenId, deletedAt: null }, include: { atencion: atencionSelect } });
   if (!img) throw new AppError('Imagen no encontrada', 404);
+  exigirAbierta(img.atencion);
   await prisma.$transaction(async (tx) => {
     await tx.imagenPodograma.update({ where: { id: img.id }, data: { deletedAt: new Date() } });
     await auditEnTx(tx, { ...ctxAudit(p), citaId: img.atencion.citaId, accion: 'eliminar_imagen_podograma', entidad: 'imagen_podograma', entidadId: img.id, sedeId: img.atencion.sedeId, antes: { nombreArchivo: img.nombreArchivo } });

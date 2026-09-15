@@ -107,7 +107,8 @@ export function MedidorUlcera({ fotoId, titulo, guardando, onClose, onGuardar }:
   return (
     // Anclado ARRIBA (no centrado): si la columna lateral cambia de alto, un modal centrado se recentra y la
     // foto se desplaza entre un toque y el siguiente.
-    <div className="fixed inset-0 z-[130] bg-black/60 flex items-start justify-center p-3 pt-[3vh]" onClick={onClose}>
+    // El fondo no cierra: un roce en la tablet borraría los puntos ya marcados. Se sale con la X.
+    <div className="fixed inset-0 z-[130] bg-black/60 flex items-start justify-center p-3 pt-[3vh]" role="dialog" aria-modal="true">
       <div className="bg-surface-container-lowest rounded-2xl shadow-2xl w-full max-w-5xl max-h-[95vh] overflow-y-auto p-4 md:p-5" onClick={(e) => e.stopPropagation()} data-testid="medidor-ulcera">
         <div className="flex items-start justify-between gap-3 mb-3">
           <div>

@@ -127,10 +127,12 @@ router.get('/paciente/:pacienteId', ...verHc, async (req, res) => {
   res.json(data);
 });
 
-// GET /historia-clinica/atenciones/:id — una atención completa (audita ver_hc)
+// GET /historia-clinica/atenciones/:id — una atención completa (audita ver_hc).
+// LECTURA: la historia es una sola por paciente; quien puede abrirla (paciente de sus sedes) lee todas
+// sus atenciones, también las de otra sede. ESCRITURA: solo sobre atenciones de la propia sede (assertSede).
 router.get('/atenciones/:id', ...verHc, async (req, res) => {
   const at = await hc.getAtencionCompleta(req.params.id);
-  assertSede(req, at.sedeId);
+  await hc.assertAccesoPaciente(user(req), at.pacienteId);
   await hc.auditarLecturaHC({ ...ctx(req), pacienteId: at.pacienteId, origen: 'atencion', atencionId: at.id, sedeId: at.sedeId });
   res.json(at);
 });
@@ -145,15 +147,19 @@ router.get('/atencion/por-cita/:citaId/resumen', ...verHc, async (req, res) => {
 
 // GET /historia-clinica/atenciones/:id/anteriores — dx y nota previos ("copiar anterior" / "traer última nota")
 router.get('/atenciones/:id/anteriores', ...verHc, async (req, res) => {
-  const { sedeId } = await sedeDeAtencion(req.params.id);
+  const { sedeId, pacienteId } = await sedeDeAtencion(req.params.id);
   assertSede(req, sedeId);
   const [diagnosticos, nota] = await Promise.all([hc.diagnosticosAnteriores(req.params.id), hc.notaAnterior(req.params.id)]);
+  if (nota) await hc.auditarLecturaHC({ ...ctx(req), pacienteId, origen: 'anteriores', atencionId: req.params.id, sedeId });
   res.json({ diagnosticos, nota });
 });
 
 // GET /historia-clinica/notas/:id/versiones — historial interno (solo hc.anular)
 router.get('/notas/:id/versiones', ...anular, async (req, res) => {
-  assertSede(req, await sedeDeNota(req.params.id));
+  const n = await prisma.notaEvolucion.findUnique({ where: { id: req.params.id }, select: { atencion: { select: { id: true, sedeId: true, pacienteId: true } } } });
+  if (!n) throw new AppError('Nota no encontrada', 404);
+  assertSede(req, n.atencion.sedeId);
+  await hc.auditarLecturaHC({ ...ctx(req), pacienteId: n.atencion.pacienteId, origen: 'versiones', atencionId: n.atencion.id, sedeId: n.atencion.sedeId });
   res.json(await hc.versionesDeNota(req.params.id));
 });
 
@@ -217,10 +223,11 @@ router.patch('/controles/:id', ...registrar, async (req, res) => {
   res.json(await ctl.resolverControl({ ...ctx(req), id, ...data }));
 });
 
-router.patch('/atenciones/:id/reabrir', ...anular, async (req, res) => {
+// Reabrir: hc.anular siempre; hc.registrar solo dentro de las 24 h del cierre (lo decide el servicio).
+router.patch('/atenciones/:id/reabrir', ...registrar, async (req, res) => {
   const { sedeId } = await sedeDeAtencion(req.params.id);
   assertSede(req, sedeId);
-  res.json(await hc.reabrirAtencion({ ...ctx(req), atencionId: req.params.id }));
+  res.json(await hc.reabrirAtencion({ ...ctx(req), atencionId: req.params.id, user: user(req) }));
 });
 
 // ─── Consentimiento informado (5.1) ───────────────────────────────────────────
@@ -278,9 +285,12 @@ router.patch('/notas/:id', ...registrar, async (req, res) => {
   res.json(await hc.editarNota({ ...ctx(req), notaId: req.params.id, ...data }));
 });
 
+// Eliminar nota / diagnóstico: el motivo que escribe la pantalla queda en la auditoría.
+const motivoOpc = z.object({ motivo: texto(500) }).partial();
 router.delete('/notas/:id', ...anular, async (req, res) => {
+  const { motivo } = motivoOpc.parse(req.body ?? {});
   assertSede(req, await sedeDeNota(req.params.id));
-  res.json(await hc.eliminarNota({ ...ctx(req), notaId: req.params.id }));
+  res.json(await hc.eliminarNota({ ...ctx(req), notaId: req.params.id, motivo }));
 });
 
 // ─── Diagnósticos ─────────────────────────────────────────────────────────────
@@ -298,14 +308,17 @@ router.patch('/diagnosticos/:id', ...registrar, async (req, res) => {
 });
 
 router.delete('/diagnosticos/:id', ...registrar, async (req, res) => {
+  const { motivo } = motivoOpc.parse(req.body ?? {});
   assertSede(req, await sedeDeDx(req.params.id));
-  res.json(await hc.eliminarDiagnostico({ ...ctx(req), diagnosticoId: req.params.id }));
+  res.json(await hc.eliminarDiagnostico({ ...ctx(req), diagnosticoId: req.params.id, motivo }));
 });
 
 // ─── Antecedentes y alergias (por paciente, sin cita) ────────────────────────
+// La sede que manda la pantalla (para la auditoría y la apertura de la HC) debe ser una del usuario.
 router.post('/paciente/:pacienteId/antecedentes', ...registrar, async (req, res) => {
   const data = antecedenteSchema.parse(req.body);
   await hc.assertAccesoPaciente(user(req), req.params.pacienteId);
+  if (data.sedeId) assertSede(req, data.sedeId);
   res.status(201).json(await hc.registrarAntecedente({ ...ctx(req), pacienteId: req.params.pacienteId, ...data }));
 });
 router.patch('/antecedentes/:id', ...registrar, async (req, res) => {
@@ -321,6 +334,7 @@ router.delete('/antecedentes/:id', ...anular, async (req, res) => {
 router.post('/paciente/:pacienteId/alergias', ...registrar, async (req, res) => {
   const data = alergiaSchema.parse(req.body);
   await hc.assertAccesoPaciente(user(req), req.params.pacienteId);
+  if (data.sedeId) assertSede(req, data.sedeId);
   res.status(201).json(await hc.registrarAlergia({ ...ctx(req), pacienteId: req.params.pacienteId, ...data }));
 });
 router.patch('/alergias/:id', ...registrar, async (req, res) => {
@@ -420,7 +434,9 @@ router.patch('/paciente/:pacienteId/estado', ...anular, async (req, res) => {
 router.get('/paciente/:pacienteId/escalas', ...verHc, async (req, res) => {
   await hc.assertAccesoPaciente(user(req), req.params.pacienteId);
   const tipo = typeof req.query.tipo === 'string' ? req.query.tipo : undefined;
-  res.json(await fp.escalasDePaciente(req.params.pacienteId, tipo));
+  const escalas = await fp.escalasDePaciente(req.params.pacienteId, tipo);
+  if (escalas.length) await hc.auditarLecturaHC({ ...ctx(req), pacienteId: req.params.pacienteId, origen: 'escalas' });
+  res.json(escalas);
 });
 
 // Historial del podograma por zona: todo lo registrado en el pie del paciente, atención por atención
@@ -596,7 +612,7 @@ const fotoSchema = z.object({
   zona: texto(120),
   categoria: z.enum(['lesion', 'calzado', 'otro']).optional(),
   descripcion: texto(300),
-  tomadaEn: z.string().datetime().optional(),
+  tomadaEn: z.string().datetime({ offset: true }).optional(), // la tablet puede mandar «…-05:00»
 });
 async function sedeDeFoto(id: string) {
   const r = await prisma.fotoClinica.findUnique({ where: { id }, select: { atencion: { select: { sedeId: true } } } });
@@ -647,7 +663,9 @@ router.delete('/fotos/:id', ...registrar, async (req, res) => {
 // Todas las fotos del paciente (para el antes/después), opcionalmente por zona
 router.get('/paciente/:pacienteId/fotos', ...verHc, async (req, res) => {
   await hc.assertAccesoPaciente(user(req), req.params.pacienteId);
-  res.json(await b3.fotosDePaciente(req.params.pacienteId, (req.query.zona as string | undefined) || null));
+  const fotos = await b3.fotosDePaciente(req.params.pacienteId, (req.query.zona as string | undefined) || null);
+  if (fotos.length) await hc.auditarLecturaHC({ ...ctx(req), pacienteId: req.params.pacienteId, origen: 'fotos' });
+  res.json(fotos);
 });
 
 export default router;

@@ -16,7 +16,7 @@ import { prisma } from '../db';
 import { AppError } from '../middleware/errorHandler';
 import { AuthPayload } from '../middleware/auth';
 import { auditEnTx } from './audit';
-import { Ctx, etiquetaUsuario } from './historiaClinicaService';
+import { Ctx, etiquetaUsuario, exigirAbierta } from './historiaClinicaService';
 
 const ctxAudit = (c: Ctx) => ({ usuarioId: c.usuarioId, ip: c.ip, userAgent: c.userAgent });
 
@@ -107,14 +107,15 @@ export async function asegurarMedicoPrescriptor(user: AuthPayload) {
   return { id: p.id, nombre: `${p.nombres} ${p.apellidos}`.trim(), registro: cmp };
 }
 
-/** Emisor de INDICACIONES: un profesional persona (por defecto, quien atendió). */
+/** Emisor de INDICACIONES: un profesional persona ACTIVO (por defecto, quien atendió). */
 async function asegurarEmisorIndicaciones(profesionalId: string) {
   const p = await prisma.profesional.findFirst({
     where: { id: profesionalId, deletedAt: null },
-    select: { id: true, nombres: true, apellidos: true, esEquipo: true, colegiatura: true },
+    select: { id: true, nombres: true, apellidos: true, esEquipo: true, activo: true, colegiatura: true },
   });
   if (!p) throw new AppError('Profesional no encontrado', 404, 'PROFESIONAL_INVALIDO');
   if (p.esEquipo) throw new AppError('Un equipo no puede emitir indicaciones', 400, 'PROFESIONAL_ES_EQUIPO');
+  if (!p.activo) throw new AppError('Ese profesional está inactivo: las indicaciones deben ir a nombre de un profesional activo', 400, 'PROFESIONAL_INACTIVO');
   return { id: p.id, nombre: `${p.nombres} ${p.apellidos}`.trim(), registro: limpiar(p.colegiatura) };
 }
 
@@ -158,9 +159,10 @@ export async function emitirReceta(p: Ctx & {
 }) {
   const at = await prisma.atencionClinica.findUnique({
     where: { id: p.atencionId },
-    select: { id: true, citaId: true, sedeId: true, pacienteId: true, historiaClinicaId: true, profesionalId: true },
+    select: { id: true, citaId: true, sedeId: true, pacienteId: true, historiaClinicaId: true, profesionalId: true, estado: true },
   });
   if (!at) throw new AppError('Atención no encontrada', 404);
+  exigirAbierta(at);
   if (!p.items.length) throw new AppError('La receta necesita al menos un ítem', 400, 'RECETA_SIN_ITEMS');
 
   const esReceta = p.tipoDocumento === 'RECETA_MEDICA';
@@ -227,7 +229,12 @@ export async function emitirReceta(p: Ctx & {
     });
     await auditEnTx(tx, {
       ...ctxAudit(p), citaId: at.citaId, accion: esReceta ? 'emitir_receta' : 'emitir_indicaciones', entidad: 'receta', entidadId: r.id, sedeId: at.sedeId,
-      despues: { numero: r.numero, tipoDocumento: r.tipoDocumento, pacienteId: at.pacienteId, emisor: emisor.nombre, items: itemsData.map((i) => ({ tipo: i.tipo, nombre: i.nombre })) },
+      despues: {
+        numero: r.numero, tipoDocumento: r.tipoDocumento, pacienteId: at.pacienteId, emisor: emisor.nombre, emisorProfesionalId: emisor.id,
+        // Queda constancia cuando las indicaciones salen a nombre de alguien distinto de quien atendió.
+        ...(emisor.id !== at.profesionalId ? { emisorDistintoDelQueAtendio: true } : {}),
+        items: itemsData.map((i) => ({ tipo: i.tipo, nombre: i.nombre })),
+      },
     });
     return r;
   });
@@ -246,7 +253,9 @@ export async function anularReceta(p: Ctx & { user: AuthPayload; recetaId: strin
   if (!puede) throw new AppError('Solo quien la emitió o un usuario con permiso de anulación puede anularla', 403, 'SIN_PERMISO');
   const etiqueta = await etiquetaUsuario(prisma, p.usuarioId);
   await prisma.$transaction(async (tx) => {
-    await tx.receta.update({ where: { id: r.id }, data: { estado: 'anulada', anuladaEn: new Date(), anuladaPorUsuarioId: p.usuarioId ?? null, motivoAnulacion: motivo } });
+    // Con guarda: dos anulaciones a la vez → la segunda recibe 409 y no pisa el motivo de la primera.
+    const u = await tx.receta.updateMany({ where: { id: r.id, estado: 'emitida' }, data: { estado: 'anulada', anuladaEn: new Date(), anuladaPorUsuarioId: p.usuarioId ?? null, motivoAnulacion: motivo } });
+    if (u.count === 0) throw new AppError('La receta ya está anulada', 409, 'YA_ANULADA');
     await auditEnTx(tx, { ...ctxAudit(p), citaId: r.atencion.citaId, accion: 'anular_receta', entidad: 'receta', entidadId: r.id, sedeId: r.sedeId, despues: { numero: r.numero, motivo, por: etiqueta } });
   });
   return getRecetaCompleta(r.id);
@@ -264,8 +273,10 @@ export function advertenciasAlergia(
     const sust = norm(a.sustancia);
     if (sust.length < 3) continue;
     for (const it of items) {
+      const nombre = norm(it.nombre ?? '');
+      if (nombre.length < 3) continue; // un nombre vacío o de 2 letras "estaría contenido" en cualquier alergia
       const txt = norm(`${it.nombre} ${it.marcaImpresa ?? ''}`);
-      if (txt.includes(sust) || sust.includes(norm(it.nombre))) out.push({ item: it.nombre, sustancia: a.sustancia, severidad: a.severidad });
+      if (txt.includes(sust) || sust.includes(nombre)) out.push({ item: it.nombre, sustancia: a.sustancia, severidad: a.severidad });
     }
   }
   return out;

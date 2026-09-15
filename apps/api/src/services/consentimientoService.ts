@@ -85,10 +85,12 @@ export async function revocarConsentimiento(p: Ctx & { id: string; motivo: strin
   if (!c) throw new AppError('Consentimiento no encontrado', 404);
   if (c.estado === 'revocado') throw new AppError('El consentimiento ya fue revocado', 409, 'YA_REVOCADO');
   await prisma.$transaction(async (tx) => {
-    await tx.consentimientoInformado.update({
-      where: { id: c.id },
+    // Con guarda: dos revocaciones a la vez → la segunda recibe 409 y no pisa el motivo de la primera.
+    const u = await tx.consentimientoInformado.updateMany({
+      where: { id: c.id, estado: 'firmado' },
       data: { estado: 'revocado', revocadoEn: new Date(), revocadoPorUsuarioId: p.usuarioId ?? null, motivoRevocacion: p.motivo.trim() },
     });
+    if (u.count === 0) throw new AppError('El consentimiento ya fue revocado', 409, 'YA_REVOCADO');
     await auditEnTx(tx, {
       ...ctxAudit(p), sedeId: c.sedeId, accion: 'revocar_consentimiento', entidad: 'consentimiento', entidadId: c.id,
       antes: { estado: 'firmado' }, despues: { estado: 'revocado', motivo: p.motivo.trim() },

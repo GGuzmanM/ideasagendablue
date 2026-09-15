@@ -6,6 +6,7 @@
 // Lo que no se puede ubicar (sin pie o sin zona reconocible) queda fuera del mapa.
 import { COLOR_LESION, TIPO_LESION_LABEL, TIPO_PROCEDIMIENTO_LABEL, type HistorialPodograma, type PiePodograma, type TipoLesion, type TipoProcedimiento, type VistaSilueta } from '../api/historiaClinica';
 import { coordZona, zonaMasCercana, zonaPorId, zonaPorTexto } from './zonasPie';
+import { diaLima } from './fechas';
 
 export type FuenteEvento = 'punto' | 'trazo' | 'foto' | 'procedimiento' | 'ulcera';
 export const FUENTE_ICONO: Record<FuenteEvento, string> = { punto: 'location_on', trazo: 'brush', foto: 'photo_camera', procedimiento: 'medical_services', ulcera: 'straighten' };
@@ -49,7 +50,7 @@ export function eventosPorZona(historial: HistorialPodograma[]): EventoZona[] {
       if (!z) continue;
       for (const pie of piesDe(f.pie)) {
         const c = coordZona(z.id, pie);
-        out.push({ ...base, fecha: f.tomadaEn.slice(0, 10), zonaId: z.id, vista: z.vista, pie, fuente: 'foto', tipo: null, texto: unir(`Foto${f.zona ? `: ${f.zona}` : ''}`, f.descripcion), color: '#475569', x: c.x, y: c.y, fotoId: f.id });
+        out.push({ ...base, fecha: diaLima(f.tomadaEn), zonaId: z.id, vista: z.vista, pie, fuente: 'foto', tipo: null, texto: unir(`Foto${f.zona ? `: ${f.zona}` : ''}`, f.descripcion), color: '#475569', x: c.x, y: c.y, fotoId: f.id });
       }
     }
     for (const p of a.procedimientos) {

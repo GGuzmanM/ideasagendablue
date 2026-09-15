@@ -4,44 +4,16 @@ import { prisma } from '../db';
 import { requireAuth, requirePermiso } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { registrarAudit } from '../services/audit';
+import { PERMISOS_VALIDOS } from '../permisos';
 
 const router = Router();
 
-// Catálogo GRANULAR (40). Cada permiso = una acción cableada a su candado. Espeja el seed y la
-// matriz aprobada. Si agregas uno, cablea su `requirePermiso` en el/los endpoint(s) o no hace nada.
-// Los 5 de "Historia clínica" se otorgan a los roles existentes por MIGRACIÓN de datos
-// (20260908120100_permisos_hc_rol_medico), que también crea el rol `medico`.
-const PERMISOS_VALIDOS = [
-  // Historia clínica y receta
-  'hc.ver', 'hc.registrar', 'hc.anular', 'receta.ver', 'receta.emitir',
-  // Citas
-  'citas.ver', 'citas.crear', 'citas.reprogramar', 'citas.cancelar', 'citas.estado', 'citas.revertir',
-  // Pacientes
-  'pacientes.ver', 'pacientes.crear', 'pacientes.editar',
-  // Membresías
-  'membresias.ver', 'membresias.vender', 'membresias.consumir', 'membresias.gestionar',
-  // Promociones
-  'promociones.ver', 'promociones.gestionar',
-  // Movimientos
-  'movimientos.ver', 'movimientos.editar',
-  // Horarios / almuerzos
-  'horarios.ver', 'horarios.editar',
-  // Profesionales y servicios
-  'profesionales.ver', 'profesionales.editar', 'competencias.editar', 'servicios.ver', 'servicios.editar',
-  // Analítica y exportaciones
-  'analytics.ver', 'analytics.agentes', 'exportar.usar',
-  // Comunicaciones
-  'comunicaciones.gestionar', 'canales.gestionar',
-  // Sistema
-  'usuarios.ver', 'usuarios.editar', 'roles.editar', 'auditoria.ver', 'notificaciones.ver', 'config.editar',
-  // Aparatos de consultorio (otorgado a admin/coordinadora por 20260914120100_consultorios_permiso_dispositivos)
-  'dispositivos.gestionar',
-];
+// Catálogo GRANULAR de permisos: vive en src/permisos.ts (única fuente para el API y el seed).
 
 const rolSchema = z.object({
   label: z.string().min(2),
   descripcion: z.string().optional(),
-  permisos: z.array(z.enum(PERMISOS_VALIDOS as [string, ...string[]])),
+  permisos: z.array(z.enum(PERMISOS_VALIDOS as unknown as [string, ...string[]])),
 });
 
 const crearSchema = rolSchema.extend({
@@ -98,7 +70,7 @@ router.get('/permisos', requireAuth, async (_req, res) => {
       { id: 'hc.registrar', label: 'Registrar atenciones, evolución, diagnósticos, antecedentes y alergias' },
       { id: 'hc.anular', label: 'Eliminar / corregir registros clínicos, anular recetas y ver el historial de versiones' },
       { id: 'receta.ver', label: 'Ver recetas e indicaciones y su PDF' },
-      { id: 'receta.emitir', label: 'Emitir recetas médicas (solo médico colegiado vinculado) e indicaciones' },
+      { id: 'receta.emitir', label: 'Emitir recetas médicas (solo médico colegiado vinculado); las indicaciones podológicas van con «Registrar»' },
     ],
     'Membresías': [
       { id: 'membresias.ver', label: 'Ver catálogo vendible' },

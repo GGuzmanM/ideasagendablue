@@ -4,27 +4,30 @@ import { useRegistrarAtencionForm } from '../../services/historiaClinicaService'
 
 const INPUT = 'w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2.5 text-sm text-on-surface outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all';
 const LBL = 'block text-[11px] font-semibold uppercase tracking-wide text-on-surface-variant mb-1';
+const ESTADO_CITA: Record<string, string> = { llego: 'Llegó', en_atencion: 'En atención', completada: 'Completada', agendada: 'Agendada', confirmada: 'Confirmada' };
 
 // Registrar atención clínica desde una cita atendida (llegó / en atención / completada).
 export function RegistrarAtencionModal({ cita, nombrePaciente, onClose, onCreada }: { cita: CitaResumen; nombrePaciente: string; onClose: () => void; onCreada: (a: AtencionCompleta) => void }) {
   const f = useRegistrarAtencionForm(cita, onCreada);
   const fecha = (cita.fecha ?? '').slice(0, 10).split('-').reverse().join('/');
+  const estado = (cita.estado || '').toLowerCase();
   return (
-    <div className="fixed inset-0 bg-inverse-surface/40 backdrop-blur-[2px] z-[120] flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={onClose}>
-      <div className="bg-surface-container-lowest w-full max-w-[560px] rounded-2xl flex flex-col overflow-hidden custom-shadow animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
+    // El fondo no cierra (se sale con Cancelar o la X): en la tablet se toca sin querer.
+    <div className="fixed inset-0 bg-inverse-surface/40 backdrop-blur-[2px] z-[120] flex items-center justify-center p-4 animate-in fade-in duration-200" role="dialog" aria-modal="true">
+      <div className="bg-surface-container-lowest w-full max-w-[560px] rounded-2xl flex flex-col overflow-hidden custom-shadow animate-in zoom-in-95 duration-200">
         <div className="bg-[#0044ab] text-white p-6 flex justify-between items-start shrink-0 shadow-md">
           <div>
             <h3 className="font-headline-md text-headline-md font-bold">Registrar atención clínica</h3>
             <p className="text-sm text-white/80 mt-1 flex items-center gap-1.5"><span className="material-symbols-outlined text-base">clinical_notes</span>{nombrePaciente}</p>
           </div>
-          <button onClick={onClose} className="material-symbols-outlined text-white/80 hover:text-white text-xl">close</button>
+          <button onClick={onClose} aria-label="Cerrar" className="material-symbols-outlined text-white/80 hover:text-white text-2xl min-w-[44px] min-h-[44px] flex items-center justify-center">close</button>
         </div>
         <div className="p-6 space-y-5">
           <div className="rounded-xl bg-surface-container-low/60 border border-outline-variant/20 p-3 text-sm grid grid-cols-2 gap-2">
             <div><span className={LBL}>Cita</span><b>{fecha} · {cita.horaInicio}</b></div>
             <div><span className={LBL}>Servicio</span><b>{cita.servicio?.nombre ?? '—'}</b></div>
             <div><span className={LBL}>Sede</span><b>{cita.sede?.nombre ?? '—'}</b></div>
-            <div><span className={LBL}>Estado</span><b className="uppercase">{cita.estado}</b></div>
+            <div><span className={LBL}>Estado</span><b>{ESTADO_CITA[estado] ?? cita.estado}</b></div>
           </div>
           <div>
             <label className={LBL}>Motivo de consulta *</label>
@@ -33,7 +36,7 @@ export function RegistrarAtencionModal({ cita, nombrePaciente, onClose, onCreada
           <div>
             <label className={LBL}>Profesional que atendió {f.columnaEsEquipo ? '(médico que supervisó) *' : ''}</label>
             <select value={f.profesionalId} onChange={(e) => f.setProfesionalId(e.target.value)} className={INPUT}>
-              {!f.columnaEsEquipo && <option value="">— El de la cita —</option>}
+              {f.columnaEsEquipo ? <option value="">— Elige el médico que supervisó —</option> : <option value="">— El de la cita —</option>}
               {f.opciones.map((p) => <option key={p.id} value={p.id}>{p.nombres} {p.apellidos} · {p.tipo}</option>)}
             </select>
             {f.columnaEsEquipo && (

@@ -30,6 +30,9 @@ export function conflictoUnicidad(target: string): { error: string; message: str
   if (target.includes('historias_clinicas_pacienteId_key')) {
     return { error: 'HC_YA_EXISTE', message: 'El paciente ya tiene historia clínica abierta.' };
   }
+  if (target.includes('notas_evolucion_versiones') || target.includes('notaId,version')) {
+    return { error: 'NOTA_MODIFICADA', message: 'Otra persona modificó esta nota hace un momento. Vuelve a abrirla y repite el cambio.' };
+  }
   if (target.includes('usuarios_profesionalId_key')) {
     return { error: 'PROFESIONAL_YA_VINCULADO', message: 'Ese profesional ya está vinculado a otro usuario.' };
   }
@@ -126,6 +129,16 @@ export function errorHandler(
       res.status(404).json({
         error: 'NOT_FOUND',
         message: 'Registro no encontrado',
+        statusCode: 404,
+      });
+      return;
+    }
+    // P2023: un id que no es uuid (p. ej. "/atenciones/abc") llega a una columna @db.Uuid. No existe
+    // tal registro → 404, en vez de un 500 con el stack en consola.
+    if (prismaErr.code === 'P2023') {
+      res.status(404).json({
+        error: 'NOT_FOUND',
+        message: 'Registro no encontrado (identificador no válido)',
         statusCode: 404,
       });
       return;

@@ -41,7 +41,7 @@ export interface DiagnosticoAtencion {
 
 export interface RecetaResumen {
   id: string; numero: number; tipoDocumento: 'RECETA_MEDICA' | 'INDICACIONES_PODOLOGICAS'; estado: 'emitida' | 'anulada';
-  fechaEmision: string; emisorNombre: string; codigoVerificacion: string; _count: { items: number };
+  fechaEmision: string; emisorNombre: string; emisorUsuarioId: string | null; codigoVerificacion: string; _count: { items: number };
 }
 
 export interface Alergia {
@@ -76,7 +76,7 @@ export interface CamposConsentimiento {
 
 // Controles sugeridos al cerrar (4.1) y su alerta en la bandeja y el menú (4.2).
 export type OrigenControl = 'iwgdf' | 'indicacion' | 'manual';
-export const ORIGEN_CONTROL_LABEL: Record<OrigenControl, string> = { iwgdf: 'IWGDF', indicacion: 'Indicación', manual: 'Manual' };
+export const ORIGEN_CONTROL_LABEL: Record<OrigenControl, string> = { iwgdf: 'Por riesgo del pie', indicacion: 'Por indicación', manual: 'Agregado a mano' };
 export const RIESGO_IWGDF_LABEL = ['muy bajo', 'bajo', 'moderado', 'alto'];
 export interface ControlEntrada { fechaSugerida: string; motivo: string; origen: OrigenControl; servicioId?: string | null }
 export interface SugerenciaControl extends ControlEntrada { riesgo: number | null; servicioNombre: string | null }
@@ -118,9 +118,11 @@ export const TIPO_PROCEDIMIENTO_LABEL: Record<TipoProcedimiento, string> = {
   matricectomia: 'Matricectomía', laser: 'Láser', curacion: 'Curación', debridacion: 'Debridación',
   onicotomia: 'Onicotomía', quiropodia: 'Quiropodia', infiltracion: 'Infiltración', otro: 'Otro',
 };
+// Nombre claro primero, la sigla después: quien no la conoce igual entiende qué mide.
 export const TIPO_ESCALA_LABEL: Record<TipoEscala, string> = {
-  eva: 'EVA (dolor)', wagner: 'Wagner', texas: 'Texas', iwgdf: 'IWGDF (riesgo)', monofilamento: 'Monofilamento', termometria: 'Termometría plantar', ulcera: 'Úlcera (medidas)',
-  examen: 'Examen del pie', itb: 'ITB y pulsos', osi: 'OSI (onicomicosis)', manchester: 'Manchester (hallux valgus)',
+  eva: 'Dolor del 0 al 10 (EVA)', wagner: 'Úlcera: grado Wagner', texas: 'Úlcera: clasificación Texas', iwgdf: 'Riesgo de pie diabético (IWGDF)',
+  monofilamento: 'Sensibilidad (monofilamento)', termometria: 'Temperatura de la planta', ulcera: 'Úlcera: medidas',
+  examen: 'Examen del pie y calzado', itb: 'Circulación: índice tobillo-brazo y pulsos', osi: 'Hongos en la uña: gravedad (OSI)', manchester: 'Juanete: grado (Manchester)',
 };
 export const TIPO_LESION_LABEL: Record<TipoLesion, string> = {
   hiperqueratosis: 'Hiperqueratosis', heloma: 'Heloma', onicocriptosis: 'Onicocriptosis', ulcera: 'Úlcera',
@@ -287,12 +289,12 @@ export const historiaClinicaApi = {
   reabrirAtencion: (id: string) => api.patch<AtencionCompleta>(`${B}/atenciones/${id}/reabrir`, {}),
   agregarNota: (atencionId: string, data: CamposNota) => api.post<AtencionCompleta>(`${B}/atenciones/${atencionId}/notas`, data),
   editarNota: (notaId: string, data: CamposNota) => api.patch<AtencionCompleta>(`${B}/notas/${notaId}`, data),
-  eliminarNota: (notaId: string) => api.delete<AtencionCompleta>(`${B}/notas/${notaId}`),
+  eliminarNota: (notaId: string, motivo?: string) => api.delete<AtencionCompleta>(`${B}/notas/${notaId}`, motivo ? { motivo } : undefined),
   agregarDiagnostico: (atencionId: string, data: { cie10Codigo: string; tipo?: TipoDiagnostico; principal?: boolean; observacion?: string | null }) =>
     api.post<AtencionCompleta>(`${B}/atenciones/${atencionId}/diagnosticos`, data),
   editarDiagnostico: (id: string, data: { cie10Codigo?: string; tipo?: TipoDiagnostico; principal?: boolean; observacion?: string | null }) =>
     api.patch<AtencionCompleta>(`${B}/diagnosticos/${id}`, data),
-  eliminarDiagnostico: (id: string) => api.delete<AtencionCompleta>(`${B}/diagnosticos/${id}`),
+  eliminarDiagnostico: (id: string, motivo?: string) => api.delete<AtencionCompleta>(`${B}/diagnosticos/${id}`, motivo ? { motivo } : undefined),
   registrarAntecedente: (pacienteId: string, data: { tipo: TipoAntecedente; descripcion: string; sedeId?: string | null }) =>
     api.post<HistoriaCompleta>(`${B}/paciente/${pacienteId}/antecedentes`, data),
   editarAntecedente: (id: string, data: { tipo?: TipoAntecedente; descripcion?: string; activo?: boolean }) => api.patch<HistoriaCompleta>(`${B}/antecedentes/${id}`, data),
@@ -419,13 +421,20 @@ export function useResumenAtencionCita(citaId: string | undefined, enabled = tru
   });
 }
 
-/** Invalida HC + atención + resumen de cita + recetas del paciente de una sola vez. */
+/**
+ * Invalida todo lo del paciente de una sola vez: HC, atención, resumen de cita, recetas, escalas y fotos
+ * por paciente (curvas, comparaciones, antes/después) y la ficha previa. Así lo recién guardado se ve
+ * al instante en todas las pestañas y en la otra tablet cuando vuelve a consultar.
+ */
 export function useInvalidarHistoriaClinica() {
   const qc = useQueryClient();
   return (p: { pacienteId?: string; atencionId?: string; citaId?: string }) => {
     if (p.pacienteId) {
       void qc.invalidateQueries({ queryKey: historiaClinicaKey(p.pacienteId) });
       void qc.invalidateQueries({ queryKey: ['recetas-paciente', p.pacienteId] });
+      void qc.invalidateQueries({ queryKey: ['escalas-paciente', p.pacienteId] });
+      void qc.invalidateQueries({ queryKey: ['fotos-paciente', p.pacienteId] });
+      void qc.invalidateQueries({ queryKey: ['ficha-previa', p.pacienteId] });
     }
     if (p.atencionId) void qc.invalidateQueries({ queryKey: atencionKey(p.atencionId) });
     if (p.citaId) void qc.invalidateQueries({ queryKey: atencionPorCitaKey(p.citaId) });

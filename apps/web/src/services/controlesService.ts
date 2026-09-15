@@ -34,7 +34,9 @@ export function useCierreConControles(a: AtencionCompleta) {
   const hoy = q.data?.hoy ?? hoyLima();
   const lista = filas ?? [];
   const cambiar = (clave: string, cambios: Partial<FilaControl>) => setFilas((fs) => (fs ?? []).map((f) => (f.clave === clave ? { ...f, ...cambios } : f)));
-  const agregarManual = () => setFilas((fs) => [...(fs ?? []), {
+  // El servidor acepta hasta 6 controles por cierre.
+  const MAX_CONTROLES = 6;
+  const agregarManual = () => setFilas((fs) => (fs ?? []).length >= MAX_CONTROLES ? fs : [...(fs ?? []), {
     clave: `manual-${Date.now()}`, incluir: true, origen: 'manual', fechaSugerida: sumarDias(hoy, 30), motivo: '',
     servicioId: a.servicioId, servicioNombre: a.servicio.nombre, riesgo: null,
   }]);
@@ -43,7 +45,7 @@ export function useCierreConControles(a: AtencionCompleta) {
   const invalidas = elegidas.filter((f) => f.motivo.trim().length < 3 || !f.fechaSugerida || f.fechaSugerida < hoy).length;
   const controles: ControlEntrada[] = elegidas.map((f) => ({ fechaSugerida: f.fechaSugerida, motivo: f.motivo.trim(), origen: f.origen, servicioId: f.servicioId ?? null }));
   return {
-    cargando: q.isLoading, error: q.error as Error | null, hoy, filas: lista, cambiar, agregarManual, quitar,
+    cargando: q.isLoading, error: q.error as Error | null, hoy, filas: lista, cambiar, agregarManual, quitar, puedeAgregar: lista.length < MAX_CONTROLES,
     controles, invalidas, pendientes: q.data?.pendientes ?? [],
   };
 }
