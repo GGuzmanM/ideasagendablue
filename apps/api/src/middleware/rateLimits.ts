@@ -99,6 +99,17 @@ export const analyticsLimiter = crearLimiter({
 });
 
 /**
+ * Verificación pública de recetas (`/verificar/*`, sin sesión): 60/min por IP. Una farmacia la usa
+ * de a una; corta a quien pruebe códigos al azar.
+ */
+export const verificacionLimiter = crearLimiter({
+  limit: 60,
+  windowMs: 60 * 1000,
+  code: 'DEMASIADAS_VERIFICACIONES',
+  message: 'Demasiadas verificaciones desde esta red. Espera un momento e intenta de nuevo.',
+});
+
+/**
  * Aparato del consultorio (`/dispositivo/*`): 60/min POR APARATO (prefijo de su clave), no por IP:
  * varios aparatos de una sede salen por la misma IP pública, y en producción el API ve a todos como
  * 127.0.0.1 (el proxy aún no reenvía la IP real). Uso normal: 1 latido/min + botones.

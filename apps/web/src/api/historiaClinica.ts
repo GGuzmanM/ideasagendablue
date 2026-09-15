@@ -61,8 +61,45 @@ export interface AtencionClinica {
   _count?: { procedimientos: number; escalas: number; marcasPodograma: number };
 }
 
+// Consentimiento informado (5.1): inmutable; se corrige revocándolo con motivo.
+export type RelacionFirmante = 'paciente' | 'apoderado';
+export interface Consentimiento {
+  id: string; numero: number; procedimiento: string; firmanteNombre: string; firmanteDocumento: string | null; firmanteRelacion: RelacionFirmante;
+  estado: 'firmado' | 'revocado'; firmadoEn: string; revocadoEn: string | null; motivoRevocacion: string | null; registradoEtiqueta: string | null;
+}
+/** Trazo de la firma: puntos normalizados 0..1 sobre el lienzo (ancho × alto). */
+export interface TrazoFirma { puntos: [number, number][]; grosor?: number }
+export interface CamposConsentimiento {
+  procedimiento: string; texto: string; firmanteNombre: string; firmanteDocumento?: string | null; firmanteRelacion: RelacionFirmante;
+  firma: TrazoFirma[]; firmaAspecto: number;
+}
+
+// Controles sugeridos al cerrar (4.1) y su alerta en la bandeja y el menú (4.2).
+export type OrigenControl = 'iwgdf' | 'indicacion' | 'manual';
+export const ORIGEN_CONTROL_LABEL: Record<OrigenControl, string> = { iwgdf: 'IWGDF', indicacion: 'Indicación', manual: 'Manual' };
+export const RIESGO_IWGDF_LABEL = ['muy bajo', 'bajo', 'moderado', 'alto'];
+export interface ControlEntrada { fechaSugerida: string; motivo: string; origen: OrigenControl; servicioId?: string | null }
+export interface SugerenciaControl extends ControlEntrada { riesgo: number | null; servicioNombre: string | null }
+export interface SugerenciasControl {
+  hoy: string; sugerencias: SugerenciaControl[];
+  pendientes: { id: string; fechaSugerida: string; motivo: string; origen: OrigenControl }[];
+}
+export interface ControlAtencion { id: string; fechaSugerida: string; motivo: string; origen: OrigenControl; estado: 'pendiente' | 'agendado' | 'descartado' }
+export interface ControlPendiente {
+  id: string; fechaSugerida: string; diasRestantes: number; vencido: boolean; motivo: string; origen: OrigenControl; registradoEtiqueta: string | null;
+  servicio: { id: string; nombre: string; color: string } | null;
+  atencion: { id: string; fecha: string; citaId: string; sede: string; profesional: { nombres: string; apellidos: string } };
+  paciente: { id: string; nombres: string; apellidoPaterno: string; apellidoMaterno: string; telefono: string | null };
+  riesgo: number | null;
+  proximaCita: { id: string; fecha: string; horaInicio: string; servicio: string; sede: string } | null;
+}
+export interface ControlesBandeja { hoy: string; horizonteDias: number; controles: ControlPendiente[] }
+export interface ContadorControles { vencidos: number; proximos: number; total: number }
+
 export interface AtencionCompleta extends AtencionClinica {
   procedimientos: Procedimiento[]; escalas: Escala[]; marcasPodograma: MarcaPodograma[]; imagenesPodograma: ImagenPodograma[]; fotos: FotoClinica[]; dibujosSilueta?: DibujoSilueta[];
+  consentimientos?: Consentimiento[];
+  controles?: ControlAtencion[];
   historiaClinica: { id: string; numero: number; pacienteId: string; alergias: Alergia[] };
   paciente: PacienteHc;
 }
@@ -241,7 +278,12 @@ export const historiaClinicaApi = {
   anteriores: (atencionId: string) => api.get<Anteriores>(`${B}/atenciones/${atencionId}/anteriores`),
   abrirAtencion: (data: { citaId: string; motivoConsulta: string; profesionalId?: string | null }) => api.post<AtencionCompleta>(`${B}/atenciones`, data),
   editarAtencion: (id: string, data: { motivoConsulta?: string; profesionalId?: string | null }) => api.patch<AtencionCompleta>(`${B}/atenciones/${id}`, data),
-  cerrarAtencion: (id: string) => api.patch<AtencionCompleta>(`${B}/atenciones/${id}/cerrar`, {}),
+  cerrarAtencion: (id: string, controles?: ControlEntrada[]) => api.patch<AtencionCompleta>(`${B}/atenciones/${id}/cerrar`, controles?.length ? { controles } : {}),
+  sugerenciasControl: (atencionId: string) => api.get<SugerenciasControl>(`${B}/atenciones/${atencionId}/controles-sugeridos`),
+  controles: (dias = 14) => api.get<ControlesBandeja>(`${B}/controles`, { dias: String(dias) }),
+  contadorControles: () => api.get<ContadorControles>(`${B}/controles/contador`),
+  resolverControl: (id: string, data: { accion: 'agendar' | 'descartar'; citaId?: string | null; motivo?: string | null }) =>
+    api.patch<{ ok: boolean; estado: 'agendado' | 'descartado' }>(`${B}/controles/${id}`, data),
   reabrirAtencion: (id: string) => api.patch<AtencionCompleta>(`${B}/atenciones/${id}/reabrir`, {}),
   agregarNota: (atencionId: string, data: CamposNota) => api.post<AtencionCompleta>(`${B}/atenciones/${atencionId}/notas`, data),
   editarNota: (notaId: string, data: CamposNota) => api.patch<AtencionCompleta>(`${B}/notas/${notaId}`, data),
@@ -318,6 +360,28 @@ export const historiaClinicaApi = {
     const token = useAuthStore.getState().token;
     const res = await fetch(`/api/v1${B}/fotos/${id}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
     if (!res.ok) throw new Error('No se pudo cargar la foto');
+    return res.blob();
+  },
+  // PDF COMPLETO de la historia (7.6): se abre en otra pestaña; su descarga queda auditada.
+  descargarHistoriaPdf: async (pacienteId: string, conFotos: boolean): Promise<Blob> => {
+    const token = useAuthStore.getState().token;
+    const res = await fetch(`/api/v1${B}/paciente/${pacienteId}/pdf${conFotos ? '?fotos=1' : ''}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: 'No se pudo generar el PDF' }));
+      throw new Error((err as { message?: string }).message ?? 'No se pudo generar el PDF');
+    }
+    return res.blob();
+  },
+  // Consentimiento informado (5.1)
+  crearConsentimiento: (atencionId: string, data: CamposConsentimiento) => api.post<{ id: string; numero: number }>(`${B}/atenciones/${atencionId}/consentimientos`, data),
+  revocarConsentimiento: (id: string, motivo: string) => api.patch<{ ok: boolean }>(`${B}/consentimientos/${id}/revocar`, { motivo }),
+  blobConsentimientoPdf: async (id: string): Promise<Blob> => {
+    const token = useAuthStore.getState().token;
+    const res = await fetch(`/api/v1${B}/consentimientos/${id}/pdf`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: 'No se pudo generar el PDF' }));
+      throw new Error((err as { message?: string }).message ?? 'No se pudo generar el PDF');
+    }
     return res.blob();
   },
   editarFoto: (id: string, campos: CamposFoto) => api.patch<AtencionCompleta>(`${B}/fotos/${id}`, campos),

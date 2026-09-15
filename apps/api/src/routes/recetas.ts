@@ -1,12 +1,12 @@
 import { Router, Request } from 'express';
 import { z } from 'zod';
-import PDFDocument from 'pdfkit';
 import { prisma } from '../db';
 import { requireAuth, requirePermiso, assertSede, AuthPayload } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import * as hc from '../services/historiaClinicaService';
 import * as rx from '../services/recetaService';
 import { escribirRecetaPdf } from '../services/recetaPdf';
+import { nuevoPdf, qrPng, urlVerificacionReceta } from '../services/pdfComun';
 
 // ─── Recetas e indicaciones (Fase 2) ──────────────────────────────────────────
 // Permisos por TIPO de documento:
@@ -80,6 +80,33 @@ router.post('/advertencias', requireAuth, requirePermiso('hc.registrar'), async 
   res.json({ advertencias: rx.advertenciasAlergia(at.historiaClinica.alergias, data.items) });
 });
 
+// ─── Favoritas (3.5) — ANTES de /:id para que «favoritas» no se tome como un id ───
+const TIPO_DOC = z.enum(['RECETA_MEDICA', 'INDICACIONES_PODOLOGICAS']);
+const favoritaSchema = z.object({
+  nombre: z.string().trim().min(2).max(80),
+  tipoDocumento: TIPO_DOC,
+  items: z.array(itemSchema).min(1).max(30),
+  indicacionesGenerales: texto(1500),
+  vigenciaDias: z.number().int().min(1).max(365).nullable().optional(),
+});
+
+// GET /recetas/favoritas?tipo= — quien puede emitir ese tipo de documento
+router.get('/favoritas', requireAuth, async (req, res) => {
+  const { tipo } = z.object({ tipo: TIPO_DOC }).parse(req.query);
+  exigirPermiso(req, permisoParaTipo(tipo));
+  res.json(await rx.listarFavoritas(tipo));
+});
+
+router.post('/favoritas', requireAuth, async (req, res) => {
+  const data = favoritaSchema.parse(req.body);
+  exigirPermiso(req, permisoParaTipo(data.tipoDocumento));
+  res.status(201).json(await rx.crearFavorita({ ...ctx(req), ...data }));
+});
+
+router.delete('/favoritas/:id', requireAuth, async (req, res) => {
+  res.json(await rx.eliminarFavorita({ ...ctx(req), user: user(req), id: uuid.parse(req.params.id) }));
+});
+
 // GET /recetas/paciente/:pacienteId — historial de recetas del paciente
 router.get('/paciente/:pacienteId', ...ver, async (req, res) => {
   await hc.assertAccesoPaciente(user(req), req.params.pacienteId);
@@ -97,18 +124,22 @@ router.get('/:id', ...ver, async (req, res) => {
   res.json(receta);
 });
 
-// GET /recetas/:id/pdf — PDF en streaming (inline)
+// GET /recetas/:id/pdf — PDF en streaming (inline), con QR de verificación.
+// La receta médica sale con ORIGINAL (paciente) + COPIA (farmacia) en páginas separadas; ?copias=1
+// imprime solo el original. Las indicaciones salen en una sola copia.
 router.get('/:id/pdf', ...ver, async (req, res) => {
   const meta = await recetaMeta(req.params.id);
   assertSede(req, meta.sedeId);
   const receta = await rx.getRecetaCompleta(meta.id);
   await hc.auditarLecturaHC({ ...ctx(req), pacienteId: meta.pacienteId, origen: 'pdf', recetaId: meta.id, sedeId: meta.sedeId });
-  const doc = new PDFDocument({ size: 'A4', margin: 0, bufferPages: true, info: { Title: `Receta ${receta.numero}` } });
+  const conCopia = receta.tipoDocumento === 'RECETA_MEDICA' && req.query.copias !== '1';
+  const qr = await qrPng(urlVerificacionReceta(receta.codigoVerificacion));
+  const doc = nuevoPdf(`Receta ${receta.numero}`);
   const prefijo = receta.tipoDocumento === 'RECETA_MEDICA' ? 'receta' : 'indicaciones';
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `inline; filename="${prefijo}-${String(receta.numero).padStart(6, '0')}.pdf"`);
   doc.pipe(res);
-  escribirRecetaPdf(doc, receta);
+  escribirRecetaPdf(doc, receta, { qr, copias: conCopia ? ['original', 'farmacia'] : [null] });
   doc.end();
 });
 

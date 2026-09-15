@@ -17,6 +17,7 @@ import { prisma } from '../db';
 import { AppError } from '../middleware/errorHandler';
 import { AuthPayload, puedeTodasLasSedes } from '../middleware/auth';
 import { auditEnTx, registrarAudit } from './audit';
+import { validarControles, crearControlesEnTx, type ControlEntrada } from './controlService';
 
 type Tx = Prisma.TransactionClient | PrismaClient;
 
@@ -208,6 +209,13 @@ export async function getAtencionCompleta(id: string) {
         where: { deletedAt: null }, orderBy: { tomadaEn: 'asc' },
         select: { id: true, atencionId: true, pie: true, zona: true, categoria: true, descripcion: true, mime: true, tamano: true, tomadaEn: true, subidoEtiqueta: true, creadoEn: true },
       },
+      // Consentimientos informados (5.1): sin la firma (pesa; va solo en su PDF).
+      consentimientos: {
+        orderBy: { firmadoEn: 'asc' },
+        select: { id: true, numero: true, procedimiento: true, firmanteNombre: true, firmanteDocumento: true, firmanteRelacion: true, estado: true, firmadoEn: true, revocadoEn: true, motivoRevocacion: true, registradoEtiqueta: true },
+      },
+      // Controles sugeridos al cerrar (4.1).
+      controles: { orderBy: { fechaSugerida: 'asc' }, select: { id: true, fechaSugerida: true, motivo: true, origen: true, estado: true } },
       historiaClinica: {
         select: {
           id: true, numero: true, pacienteId: true,
@@ -238,6 +246,50 @@ export async function getHistoriaCompleta(pacienteId: string) {
   return { paciente, historia };
 }
 
+/**
+ * Todo lo de la historia para el PDF completo (7.6): atenciones en orden CRONOLÓGICO y sin límite,
+ * con notas, diagnósticos, procedimientos, escalas, recetas con sus ítems, consentimientos y fotos
+ * (la `ruta` de las fotos solo se usa en el servidor para incrustarlas; nunca sale en una respuesta).
+ */
+export async function historiaParaPdf(pacienteId: string) {
+  const paciente = await prisma.paciente.findFirst({
+    where: { id: pacienteId, deletedAt: null },
+    select: { id: true, nombres: true, apellidoPaterno: true, apellidoMaterno: true, numeroDocumento: true, tipoDocumento: true, fechaNacimiento: true, sexo: true, telefono: true },
+  });
+  if (!paciente) throw new AppError('Paciente no encontrado', 404);
+  const historia = await prisma.historiaClinica.findUnique({
+    where: { pacienteId },
+    include: {
+      alergias: { where: { deletedAt: null }, orderBy: { creadoEn: 'asc' } },
+      antecedentes: { where: { deletedAt: null }, orderBy: [{ tipo: 'asc' }, { creadoEn: 'asc' }] },
+      atenciones: {
+        orderBy: [{ fecha: 'asc' }, { creadoEn: 'asc' }],
+        include: {
+          profesional: { select: { nombres: true, apellidos: true, tipo: true } },
+          sede: { select: { nombre: true, direccion: true } },
+          servicio: { select: { nombre: true } },
+          notas: notasInclude,
+          diagnosticos: diagnosticosInclude,
+          procedimientos: procedimientosInclude,
+          escalas: escalasInclude,
+          recetas: {
+            orderBy: { fechaEmision: 'asc' },
+            select: {
+              numero: true, tipoDocumento: true, estado: true, fechaEmision: true, emisorNombre: true,
+              items: { orderBy: { orden: 'asc' }, select: { tipo: true, nombre: true, concentracionSnapshot: true, formaSnapshot: true, marcaImpresa: true, dosis: true, via: true, frecuencia: true, duracion: true, cantidad: true } },
+            },
+          },
+          consentimientos: { orderBy: { firmadoEn: 'asc' }, select: { numero: true, procedimiento: true, firmanteNombre: true, firmanteRelacion: true, estado: true, firmadoEn: true } },
+          fotos: { where: { deletedAt: null }, orderBy: { tomadaEn: 'asc' }, select: { id: true, ruta: true, mime: true, zona: true, pie: true, categoria: true, tomadaEn: true } },
+        },
+      },
+    },
+  });
+  if (!historia) throw new AppError('El paciente aún no tiene historia clínica', 404, 'SIN_HISTORIA');
+  return { paciente, historia };
+}
+export type HistoriaParaPdf = Awaited<ReturnType<typeof historiaParaPdf>>;
+
 /** Resumen liviano para el modal de cita (NO audita: no expone contenido clínico). */
 export async function resumenAtencionPorCita(citaId: string) {
   const cita = await resolverCitaPrincipal(citaId);
@@ -256,9 +308,10 @@ export async function resumenAtencionPorCita(citaId: string) {
 }
 
 /** Auditoría de LECTURA (awaited, nunca lanza): quién abrió qué historia y desde dónde. */
-export async function auditarLecturaHC(p: Ctx & { pacienteId: string; origen: 'ficha' | 'ficha_previa' | 'historial_podograma' | 'atencion' | 'receta' | 'pdf'; atencionId?: string; recetaId?: string; sedeId?: string }) {
+export async function auditarLecturaHC(p: Ctx & { pacienteId: string; origen: 'ficha' | 'ficha_previa' | 'historial_podograma' | 'atencion' | 'receta' | 'pdf' | 'hc_pdf' | 'consentimiento'; atencionId?: string; recetaId?: string; sedeId?: string }) {
+  // 'pdf' = PDF de una receta; 'hc_pdf' = copia completa de la historia (se audita aparte: sale entera).
   await registrarAudit({
-    ...ctxAudit(p), accion: p.origen === 'receta' || p.origen === 'pdf' ? 'ver_receta' : 'ver_hc',
+    ...ctxAudit(p), accion: p.origen === 'hc_pdf' ? 'exportar_hc' : p.origen === 'receta' || p.origen === 'pdf' ? 'ver_receta' : 'ver_hc',
     entidad: 'historia_clinica', entidadId: p.pacienteId, sedeId: p.sedeId,
     despues: { origen: p.origen, atencionId: p.atencionId, recetaId: p.recetaId },
   });
@@ -341,12 +394,16 @@ export async function editarAtencion(p: Ctx & { atencionId: string; motivoConsul
   return getAtencionCompleta(at.id);
 }
 
-export async function cerrarAtencion(p: Ctx & { atencionId: string }) {
+export async function cerrarAtencion(p: Ctx & { atencionId: string; controles?: ControlEntrada[] }) {
   const at = await atencionOr404(p.atencionId);
   if (at.estado === 'cerrada') throw new AppError('La atención ya está cerrada', 409, 'ATENCION_CERRADA');
+  // Controles sugeridos (4.1) elegidos en el diálogo de cierre: se guardan en la MISMA transacción.
+  const controles = p.controles?.length ? await validarControles(p.controles) : [];
+  const etiqueta = controles.length ? await etiquetaUsuario(prisma, p.usuarioId) : null;
   await prisma.$transaction(async (tx) => {
     await tx.atencionClinica.update({ where: { id: at.id }, data: { estado: 'cerrada', cerradaEn: new Date(), cerradaPorUsuarioId: p.usuarioId ?? null } });
-    await auditEnTx(tx, { ...ctxAudit(p), citaId: at.citaId, accion: 'cerrar_atencion', entidad: 'atencion_clinica', entidadId: at.id, sedeId: at.sedeId });
+    await auditEnTx(tx, { ...ctxAudit(p), citaId: at.citaId, accion: 'cerrar_atencion', entidad: 'atencion_clinica', entidadId: at.id, sedeId: at.sedeId, ...(controles.length ? { despues: { controles: controles.length } } : {}) });
+    if (controles.length) await crearControlesEnTx(tx, { ctx: p, atencion: at, controles, etiqueta });
   });
   return getAtencionCompleta(at.id);
 }

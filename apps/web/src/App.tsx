@@ -39,6 +39,7 @@ import { ComposicionSedePage } from './pages/herramientas/ComposicionSedePage';
 import { ComposicionImprimirPage } from './pages/herramientas/ComposicionImprimirPage';
 import { ComprobantesImprimirPage } from './pages/herramientas/ComprobantesImprimirPage';
 import { MovimientosImprimirPage } from './pages/herramientas/MovimientosImprimirPage';
+import { VerificarRecetaPage } from './pages/VerificarRecetaPage';
 import { VideosServicioPage } from './pages/herramientas/VideosServicioPage';
 import { TiemposTratamientoPage } from './pages/herramientas/TiemposTratamientoPage';
 import { Idea1AgendaPage } from './pages/Idea1AgendaPage';
@@ -92,6 +93,8 @@ export default function App() {
       <Route path="/imprimir/comprobantes" element={<ComprobantesImprimirPage />} />
       {/* Cambios de personal del mes (movimientos) — A4 vertical para PDF */}
       <Route path="/imprimir/movimientos" element={<MovimientosImprimirPage />} />
+      {/* PÚBLICA (sin login): verificación de recetas desde el QR del PDF */}
+      <Route path="/verificar/:codigo" element={<VerificarRecetaPage />} />
       <Route element={<RequireAuth><Layout /></RequireAuth>}>
         <Route path="/" element={<Navigate to="/AgendaPrincipal" replace />} />
         {/* Agenda antigua DESHABILITADA: se redirige a la agenda principal (ya no se usa). */}

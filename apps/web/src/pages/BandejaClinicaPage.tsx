@@ -4,6 +4,7 @@
 import { Skeleton } from '../components/ui/Skeleton';
 import { useBandejaPage } from '../services/historiaClinicaService';
 import { useAuthStore } from '../stores/authStore';
+import { ControlesPorAgendar } from '../components/historiaClinica/ControlesPorAgendar';
 
 const fmtFecha = (iso: string) => iso.slice(0, 10).split('-').reverse().join('/');
 const CARD = 'rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5';
@@ -25,6 +26,9 @@ export function BandejaClinicaPage() {
         </div>
         <button onClick={b.refrescar} className={BTN_SEC}><span className="material-symbols-outlined text-base">refresh</span>Actualizar</button>
       </header>
+
+      {/* Controles sugeridos al cerrar que vencen pronto o ya vencieron (4.2) */}
+      <ControlesPorAgendar puedeRegistrar={puedeRegistrar} />
 
       {b.cargando ? <Skeleton className="h-40 w-full" /> : b.error ? <p className="text-sm text-rose-700">{b.error.message}</p> : (
         <>

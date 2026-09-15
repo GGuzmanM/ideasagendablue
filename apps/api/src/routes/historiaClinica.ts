@@ -9,6 +9,11 @@ import * as fp from '../services/fichaPreviaService';
 import * as pl from '../services/plantillasService';
 import fs from 'fs';
 import { subirImagenPodograma, validarImagenPodogramaReal, subirFotoClinica, validarFotoClinicaReal } from '../middleware/uploadPodograma';
+import { nuevoPdf } from '../services/pdfComun';
+import { escribirHistoriaPdf } from '../services/historiaPdf';
+import * as cs from '../services/consentimientoService';
+import * as ctl from '../services/controlService';
+import { escribirConsentimientoPdf } from '../services/consentimientoPdf';
 
 // ─── Historia clínica (Fase 1) ────────────────────────────────────────────────
 // Todas las rutas exigen usuario + permiso (`requirePermiso`, nunca `requireAcceso`: las API keys
@@ -25,6 +30,22 @@ const user = (req: Request) => req.user as AuthPayload;
 
 const texto = (max: number) => z.string().trim().max(max).nullable().optional();
 const uuid = z.string().uuid();
+
+// GET /historia-clinica/paciente/:pacienteId/pdf?fotos=1 — COPIA COMPLETA de la historia (7.6).
+// Mismo candado que ver la historia (hc.ver + acceso al paciente); se audita como `exportar_hc`.
+router.get('/paciente/:pacienteId/pdf', ...verHc, async (req, res) => {
+  const pacienteId = uuid.parse(req.params.pacienteId);
+  await hc.assertAccesoPaciente(user(req), pacienteId);
+  const datos = await hc.historiaParaPdf(pacienteId);
+  await hc.auditarLecturaHC({ ...ctx(req), pacienteId, origen: 'hc_pdf' });
+  const doc = nuevoPdf(`Historia clínica ${String(datos.historia.numero).padStart(6, '0')}`);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="historia-clinica-${String(datos.historia.numero).padStart(6, '0')}.pdf"`);
+  res.setHeader('Cache-Control', 'private, no-store');
+  doc.pipe(res);
+  escribirHistoriaPdf(doc, datos, { fotos: req.query.fotos === '1' });
+  doc.end();
+});
 
 const abrirSchema = z.object({
   citaId: uuid,
@@ -153,16 +174,94 @@ router.patch('/atenciones/:id', ...registrar, async (req, res) => {
   res.json(await hc.editarAtencion({ ...ctx(req), atencionId: req.params.id, ...data }));
 });
 
+// Cerrar: opcionalmente con los controles sugeridos elegidos en el diálogo (4.1).
+const controlSchema = z.object({
+  fechaSugerida: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  motivo: z.string().trim().min(3).max(300),
+  origen: z.enum(['iwgdf', 'indicacion', 'manual']),
+  servicioId: uuid.nullable().optional(),
+});
 router.patch('/atenciones/:id/cerrar', ...registrar, async (req, res) => {
+  const { controles } = z.object({ controles: z.array(controlSchema).max(6).optional() }).parse(req.body ?? {});
   const { sedeId } = await sedeDeAtencion(req.params.id);
   assertSede(req, sedeId);
-  res.json(await hc.cerrarAtencion({ ...ctx(req), atencionId: req.params.id }));
+  res.json(await hc.cerrarAtencion({ ...ctx(req), atencionId: req.params.id, controles }));
+});
+
+// ─── Controles sugeridos (4.1) y su alerta (4.2) ─────────────────────────────
+router.get('/atenciones/:id/controles-sugeridos', ...registrar, async (req, res) => {
+  const { sedeId } = await sedeDeAtencion(req.params.id);
+  assertSede(req, sedeId);
+  res.json(await ctl.sugerirControles(req.params.id));
+});
+// Alcance igual que la bandeja: sedes del usuario; el médico ve los de sus atenciones.
+const alcanceControles = (req: Request) => {
+  const u = user(req);
+  return { sedeIds: puedeTodasLasSedes(u) ? null : u.sedes, profesionalId: u.rol === 'medico' ? u.profesionalId ?? null : null };
+};
+router.get('/controles', ...verHc, async (req, res) => {
+  const horizonteDias = Math.min(90, Math.max(0, Number(req.query.dias) || 14));
+  res.json(await ctl.listarControles({ ...alcanceControles(req), horizonteDias }));
+});
+router.get('/controles/contador', ...verHc, async (req, res) => {
+  res.json(await ctl.contarControles(alcanceControles(req)));
+});
+router.patch('/controles/:id', ...registrar, async (req, res) => {
+  const data = z.object({
+    accion: z.enum(['agendar', 'descartar']),
+    citaId: uuid.nullable().optional(),
+    motivo: z.string().trim().max(300).nullable().optional(),
+  }).parse(req.body);
+  const id = uuid.parse(req.params.id);
+  assertSede(req, await ctl.sedeDeControl(id));
+  res.json(await ctl.resolverControl({ ...ctx(req), id, ...data }));
 });
 
 router.patch('/atenciones/:id/reabrir', ...anular, async (req, res) => {
   const { sedeId } = await sedeDeAtencion(req.params.id);
   assertSede(req, sedeId);
   res.json(await hc.reabrirAtencion({ ...ctx(req), atencionId: req.params.id }));
+});
+
+// ─── Consentimiento informado (5.1) ───────────────────────────────────────────
+// Se firma en la tablet con la atención abierta; inmutable (se corrige REVOCANDO con motivo, que es
+// un derecho del paciente: lo registra el mismo profesional, no hace falta hc.anular).
+const consentimientoSchema = z.object({
+  procedimiento: z.string().trim().min(3).max(300),
+  texto: z.string().trim().min(40).max(20000),
+  firmanteNombre: z.string().trim().min(3).max(200),
+  firmanteDocumento: z.string().trim().max(20).nullable().optional(),
+  firmanteRelacion: z.enum(['paciente', 'apoderado']),
+  firma: z.array(z.unknown()).max(300),
+  firmaAspecto: z.number().min(0.5).max(8),
+});
+router.post('/atenciones/:id/consentimientos', ...registrar, async (req, res) => {
+  const data = consentimientoSchema.parse(req.body);
+  const { sedeId } = await sedeDeAtencion(req.params.id);
+  assertSede(req, sedeId);
+  res.status(201).json(await cs.crearConsentimiento({ ...ctx(req), atencionId: req.params.id, ...data }));
+});
+
+router.get('/consentimientos/:id/pdf', ...verHc, async (req, res) => {
+  const c = await cs.consentimientoParaPdf(uuid.parse(req.params.id));
+  assertSede(req, c.sedeId);
+  await hc.auditarLecturaHC({ ...ctx(req), pacienteId: c.pacienteId, origen: 'consentimiento', atencionId: c.atencionId, sedeId: c.sedeId });
+  const doc = nuevoPdf(`Consentimiento informado ${String(c.numero).padStart(5, '0')}`);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="consentimiento-${String(c.numero).padStart(5, '0')}.pdf"`);
+  res.setHeader('Cache-Control', 'private, no-store');
+  doc.pipe(res);
+  escribirConsentimientoPdf(doc, c);
+  doc.end();
+});
+
+router.patch('/consentimientos/:id/revocar', ...registrar, async (req, res) => {
+  const { motivo } = z.object({ motivo: z.string().trim().min(5).max(500) }).parse(req.body);
+  const c = await prisma.consentimientoInformado.findUnique({ where: { id: uuid.parse(req.params.id) }, select: { sedeId: true } });
+  if (!c) throw new AppError('Consentimiento no encontrado', 404);
+  assertSede(req, c.sedeId);
+  await cs.revocarConsentimiento({ ...ctx(req), id: req.params.id, motivo });
+  res.json({ ok: true });
 });
 
 // ─── Notas ────────────────────────────────────────────────────────────────────

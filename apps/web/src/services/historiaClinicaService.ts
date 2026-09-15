@@ -14,8 +14,9 @@ import {
   type TipoProcedimiento, type TipoEscala, type TipoLesion, type Pie, type PiePodograma,
   type VistaPodograma, type ImagenPodograma, VISTAS_PODOGRAMA, VISTA_PODOGRAMA_LABEL,
   usePlantillas, TIPO_LESION_LABEL, PIE_LABEL, type PlantillaClinica, type TipoPlantilla, type CamposMarca, type VistaSilueta, atencionKey, COLOR_LESION, useHistorialPodograma,
+  type ControlEntrada,
 } from '../api/historiaClinica';
-import { recetasApi, verRecetaPdf, imprimirReceta, type ItemEntrada, type TipoDocumentoReceta, type RecetaCompleta, type TipoItemReceta } from '../api/recetas';
+import { recetasApi, verRecetaPdf, imprimirReceta, useRecetasPaciente, favoritasKey, type ItemEntrada, type TipoDocumentoReceta, type RecetaCompleta, type TipoItemReceta } from '../api/recetas';
 import type { Cie10Item, MedicamentoItem } from '../api/catalogos';
 import { useDictado, anexarDictado } from '../hooks/useDictado';
 import { useDictadoConsulta } from '../hooks/useDictadoConsulta';
@@ -98,7 +99,7 @@ export function useHistoriaClinicaPage() {
   const seleccionarAtencion = (id: string) => { setAtencionSel(id); setTab('evolucion'); };
 
   const cerrarMut = useMutation({
-    mutationFn: () => historiaClinicaApi.cerrarAtencion(atencionSel!),
+    mutationFn: (controles: ControlEntrada[]) => historiaClinicaApi.cerrarAtencion(atencionSel!, controles),
     onSuccess: () => { invalidar({ pacienteId, atencionId: atencionSel! }); toast.success('Atención cerrada'); },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -386,6 +387,63 @@ export function useEmitirRecetaForm(atencion: AtencionCompleta, tipoDocumento: T
   const actualizarItem = (key: string, cambios: Partial<ItemBorrador>) => setItems((xs) => xs.map((x) => (x.key === key ? { ...x, ...cambios } : x)));
   const quitarItem = (key: string) => setItems((xs) => xs.filter((x) => x.key !== key));
 
+  // ── Repetir una anterior (3.10) / usar una favorita (3.5): llenan el formulario; se revisa y se emite ──
+  const qc = useQueryClient();
+  const { data: anterioresTodas = [] } = useRecetasPaciente(atencion.pacienteId);
+  const anteriores = useMemo(
+    () => anterioresTodas.filter((r) => r.tipoDocumento === tipoDocumento && r.estado === 'emitida'),
+    [anterioresTodas, tipoDocumento],
+  );
+  const { data: favoritas = [] } = useQuery({ queryKey: favoritasKey(tipoDocumento), queryFn: () => recetasApi.favoritas(tipoDocumento), staleTime: 60_000 });
+  const cargarItems = (entrada: ItemEntrada[], extra: { indicacionesGenerales?: string | null; vigenciaDias?: number | null }, origen: string) => {
+    if (items.length && !window.confirm(`Esto reemplaza los ${items.length} ítem(s) que ya agregaste. ¿Continuar?`)) return;
+    const codigos = new Set(diagnosticos.map((d) => d.cie10Codigo));
+    // Una receta anterior puede traer fármacos bajo receta: en indicaciones no van.
+    const permitidos = esReceta ? entrada : entrada.filter((it) => it.tipo !== 'MEDICAMENTO_RX');
+    if (permitidos.length < entrada.length) toast(`${entrada.length - permitidos.length} ítem(s) de venta bajo receta no van en indicaciones y se omitieron`);
+    setItems(permitidos.map((it) => ({
+      ...it,
+      key: nuevaKey(),
+      etiqueta: [it.nombre, it.concentracion, it.formaFarmaceutica].filter(Boolean).join(' ') || 'Ítem',
+      requiereReceta: it.tipo === 'MEDICAMENTO_RX',
+      // El diagnóstico se conserva si esta atención lo tiene; si no, va bajo el diagnóstico activo.
+      diagnosticoCie10Codigo: it.diagnosticoCie10Codigo && codigos.has(it.diagnosticoCie10Codigo) ? it.diagnosticoCie10Codigo : dxActivo,
+    })));
+    if (extra.indicacionesGenerales) setIndicacionesGenerales(extra.indicacionesGenerales);
+    if (esReceta && extra.vigenciaDias) setVigenciaDias(extra.vigenciaDias);
+    toast.success(`${permitidos.length} ítem(s) cargados de ${origen}: revísalos y emite`);
+  };
+  const repetirMut = useMutation({
+    mutationFn: (id: string) => recetasApi.obtener(id),
+    onSuccess: (r) => cargarItems(
+      r.items.map((it) => ({
+        tipo: it.tipo, diagnosticoCie10Codigo: it.diagnosticoCie10Codigo, medicamentoId: it.medicamentoId, servicioId: it.servicioId,
+        nombre: it.nombre, marcaImpresa: it.marcaImpresa, concentracion: it.concentracionSnapshot, formaFarmaceutica: it.formaSnapshot,
+        dosis: it.dosis, via: it.via, frecuencia: it.frecuencia, duracion: it.duracion, cantidad: it.cantidad, indicaciones: it.indicaciones,
+      })),
+      { indicacionesGenerales: r.indicacionesGenerales, vigenciaDias: r.vigenciaDias },
+      `la N° ${String(r.numero).padStart(6, '0')}`,
+    ),
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const usarFavorita = (id: string) => {
+    const fav = favoritas.find((x) => x.id === id);
+    if (fav) cargarItems(fav.items, { indicacionesGenerales: fav.indicacionesGenerales, vigenciaDias: fav.vigenciaDias }, `«${fav.nombre}»`);
+  };
+  const guardarFavoritaMut = useMutation({
+    mutationFn: (nombre: string) => recetasApi.crearFavorita({
+      nombre, tipoDocumento, indicacionesGenerales: indicacionesGenerales.trim() || null, vigenciaDias: esReceta ? vigenciaDias : null,
+      items: items.map(({ key: _k, etiqueta: _e, requiereReceta: _r, diagnosticoCie10Codigo: _d, ...it }) => it),
+    }),
+    onSuccess: (fav) => { qc.invalidateQueries({ queryKey: favoritasKey(tipoDocumento) }); toast.success(`Guardada como favorita: «${fav.nombre}»`); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const eliminarFavoritaMut = useMutation({
+    mutationFn: (id: string) => recetasApi.eliminarFavorita(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: favoritasKey(tipoDocumento) }); toast.success('Favorita quitada'); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   // Ítems agrupados por diagnóstico (como se imprimen), respetando el orden en que aparecen los dx.
   const grupos = useMemo(() => {
     const porDx = new Map<string, ItemBorrador[]>();
@@ -418,6 +476,7 @@ export function useEmitirRecetaForm(atencion: AtencionCompleta, tipoDocumento: T
     esReceta, dxPrincipal, diagnosticos, dxActivo, setDxActivo, grupos, items, agregarMedicamento, agregarManual, agregarServicio, actualizarItem, quitarItem, servicios,
     indicacionesGenerales, setIndicacionesGenerales, vigenciaDias, setVigenciaDias, emisorProfesionalId, setEmisorProfesionalId, opcionesEmisor,
     puedeGuardar, emitirMut, emitida, abrirPdf, imprimir, alergias: atencion.historiaClinica.alergias,
+    anteriores, repetirMut, favoritas, usarFavorita, guardarFavoritaMut, eliminarFavoritaMut,
   };
 }
 

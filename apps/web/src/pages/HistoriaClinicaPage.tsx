@@ -16,6 +16,9 @@ import { CamaraFantasma } from '../components/historiaClinica/CamaraFantasma';
 import { RegistrarAtencionModal } from '../components/historiaClinica/RegistrarAtencionModal';
 import { EmitirRecetaModal } from '../components/historiaClinica/EmitirRecetaModal';
 import { DialogoMotivo } from '../components/historiaClinica/DialogoMotivo';
+import { PanelConsentimientos } from '../components/historiaClinica/PanelConsentimientos';
+import { DialogoCierreAtencion } from '../components/historiaClinica/DialogoCierreAtencion';
+import { useInvalidarControles } from '../services/controlesService';
 import { BotonHistorialGenexis } from '../components/pacientes/HistorialGenexis';
 import { ComparadorFotos } from '../components/historiaClinica/ComparadorFotos';
 import { SiluetaPie, MonofilamentoPie, aspectoSilueta, proporcionSilueta } from '../components/historiaClinica/SiluetaPie';
@@ -30,6 +33,8 @@ import { useHistoriaClinicaPage, useAntecedentesAlergias, useRecetasAtencion, us
 import type { FotoPendiente, CamposPendiente } from '../stores/fotosPendientesStore';
 import { VISTA_SILUETA_LABEL, TIPO_ANTECEDENTE_LABEL, TIPO_NOTA_LABEL, TIPO_PROCEDIMIENTO_LABEL, TIPO_ESCALA_LABEL, TIPO_LESION_LABEL, COLOR_LESION, etiquetaLesion, PIE_LABEL, VISTAS_PODOGRAMA, VISTA_PODOGRAMA_LABEL, CATEGORIA_FOTO_LABEL, edadDe, nombreProfesional, type AtencionClinica, type AtencionCompleta, type TipoAntecedente, type TipoNota, type SeveridadAlergia, type TipoProcedimiento, type TipoEscala, type TipoLesion, type MarcaPodograma, type VistaSilueta, type AnotacionPodograma, type ImagenPodograma, type VistaPodograma, type CategoriaFoto, type FotoClinica, type Pie } from '../api/historiaClinica';
 import { TIPO_DOC_LABEL } from '../api/recetas';
+import { historiaClinicaApi, ORIGEN_CONTROL_LABEL } from '../api/historiaClinica';
+import toast from 'react-hot-toast';
 
 // text-base en pantallas chicas: con menos de 16px iOS hace zoom al enfocar un campo (molesto en tablet).
 const INPUT = 'w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2.5 lg:py-2 text-base lg:text-sm text-on-surface outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all';
@@ -45,7 +50,7 @@ const TABS: { id: TabHc; label: string; icon: string; pronto?: boolean }[] = [
   { id: 'escalas', label: 'Escalas', icon: 'monitor_heart' },
   { id: 'podograma', label: 'Podograma', icon: 'footprint' },
   { id: 'fotos', label: 'Fotos', icon: 'photo_camera' },
-  { id: 'consentimientos', label: 'Consentimientos', icon: 'contract', pronto: true },
+  { id: 'consentimientos', label: 'Consentimientos', icon: 'contract' },
 ];
 
 export function HistoriaClinicaPage() {
@@ -127,6 +132,7 @@ export function HistoriaClinicaPage() {
                 {h.sugerirPasiva && <span className="w-full text-[11px] text-amber-700">Más de 5 años sin atenciones: puede pasar a archivo pasivo.</span>}
               </div>
             )}
+            {h.historia && h.pacienteId && <BotonPdfHistoria pacienteId={h.pacienteId} />}
             <AlergiasBanner alergias={alergias} compacto />
 
             {/* Accesos: en pantallas chicas se ocultan (ya existen como pestañas) */}
@@ -188,7 +194,7 @@ export function HistoriaClinicaPage() {
           </div>
           <div className="p-3 sm:p-4 lg:p-6 max-w-[1100px]">
             {h.tab === 'antecedentes' && <PanelAntecedentes h={h} />}
-            {(h.tab === 'evolucion' || h.tab === 'receta' || h.tab === 'procedimientos' || h.tab === 'escalas' || h.tab === 'podograma' || h.tab === 'fotos') && (
+            {(h.tab === 'evolucion' || h.tab === 'receta' || h.tab === 'procedimientos' || h.tab === 'escalas' || h.tab === 'podograma' || h.tab === 'fotos' || h.tab === 'consentimientos') && (
               !h.atencionSel ? (
                 <div className="text-center py-20 text-on-surface-variant">
                   <span className="material-symbols-outlined text-5xl mb-2">clinical_notes</span>
@@ -203,6 +209,7 @@ export function HistoriaClinicaPage() {
                   {h.tab === 'escalas' && <PanelEscalas h={h} a={h.atencion} />}
                   {h.tab === 'podograma' && <PanelPodograma h={h} a={h.atencion} />}
                   {h.tab === 'fotos' && <PanelFotos h={h} a={h.atencion} />}
+                  {h.tab === 'consentimientos' && <PanelConsentimientos a={h.atencion} puedeRegistrar={h.puedeRegistrar} />}
                 </>
               )
             )}
@@ -236,7 +243,10 @@ function CabeceraAtencion({ h, a }: { h: H; a: AtencionCompleta }) {
   // Fotos tomadas sin guardar: al cerrar ya no se pueden subir, así que van primero en la lista.
   const sinGuardar = h.fotosSinGuardar ? [`${h.fotosSinGuardar} foto${h.fotosSinGuardar === 1 ? '' : 's'} sin guardar (pestaña Fotos): al cerrar ya no se podrán guardar`] : [];
   const faltantes = [...sinGuardar, ...faltantesParaCerrar(a)];
-  const cerrar =() => { if (faltantes.length) setConfirmarCierre(true); else h.cerrarMut.mutate(); };
+  const invalidarControles = useInvalidarControles();
+  // Siempre pasa por el diálogo: además de lo que falta, propone los próximos controles (4.1).
+  const cerrar = () => setConfirmarCierre(true);
+  const controles = (a.controles ?? []).filter((x) => x.estado !== 'descartado');
   return (
     <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5 mb-5 flex flex-wrap items-start justify-between gap-4">
       <div className="min-w-0">
@@ -247,6 +257,15 @@ function CabeceraAtencion({ h, a }: { h: H; a: AtencionCompleta }) {
         </div>
         <p className="text-sm text-on-surface-variant mt-1"><b className="text-on-surface">{nombreProfesional(a.profesional)}</b> · {a.sede.nombre}{a.abiertaEtiqueta ? ` · registrada por ${a.abiertaEtiqueta}` : ''}</p>
         <p className="text-sm mt-2"><span className={LBL}>Motivo de consulta</span>{a.motivoConsulta}</p>
+        {controles.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mt-2" data-testid="controles-atencion">
+            {controles.map((x) => (
+              <span key={x.id} className={`text-[11px] px-2 py-0.5 rounded-md border ${x.estado === 'agendado' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-primary/30 bg-primary/5 text-primary'}`} title={x.motivo}>
+                <span className="material-symbols-outlined text-xs align-middle mr-0.5">event_repeat</span>Control {fmtFecha(x.fechaSugerida)} · {ORIGEN_CONTROL_LABEL[x.origen]}{x.estado === 'agendado' ? ' · agendado' : ''}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
       {h.puedeRegistrar && (
         a.estado === 'abierta'
@@ -264,21 +283,10 @@ function CabeceraAtencion({ h, a }: { h: H; a: AtencionCompleta }) {
       {/* Dictado de toda la consulta por palabras clave (visible en todas las pestañas) */}
       {h.puedeRegistrar && a.estado === 'abierta' && <BarraDictadoConsulta consulta={h.consulta} tab={h.tab} irA={h.setTab} />}
 
-      {/* Cierre inteligente: lista lo que falta y deja decidir (aviso, no bloqueo) */}
+      {/* Cierre inteligente: lista lo que falta (aviso, no bloqueo) y propone los próximos controles */}
       {confirmarCierre && (
-        <div className="fixed inset-0 z-[120] bg-black/40 flex items-center justify-center p-4" onClick={() => setConfirmarCierre(false)}>
-          <div className="bg-surface-container-lowest rounded-2xl shadow-2xl w-full max-w-md p-6" onClick={(ev) => ev.stopPropagation()}>
-            <h3 className="font-headline-sm text-headline-sm font-bold text-on-surface flex items-center gap-2"><span className="material-symbols-outlined text-amber-600">warning</span>Antes de cerrar, falta:</h3>
-            <ul className="mt-3 space-y-1.5">
-              {faltantes.map((f) => <li key={f} className="text-sm text-on-surface flex items-start gap-2"><span className="material-symbols-outlined text-base text-amber-600">radio_button_unchecked</span>{f}</li>)}
-            </ul>
-            <p className="text-xs text-on-surface-variant mt-3">Puedes cerrar igual; queda registrado que la atención se cerró con estos pendientes.</p>
-            <div className="flex justify-end gap-2 mt-5">
-              <button onClick={() => setConfirmarCierre(false)} className="min-h-[44px] lg:min-h-0 px-4 py-2 bg-primary text-on-primary rounded-xl text-sm font-bold">Volver a completar</button>
-              <button onClick={() => { setConfirmarCierre(false); h.cerrarMut.mutate(); }} disabled={h.cerrarMut.isPending} className="min-h-[44px] lg:min-h-0 px-4 py-2 border border-outline-variant rounded-xl text-sm font-semibold text-on-surface hover:bg-surface-container-high">Cerrar de todos modos</button>
-            </div>
-          </div>
-        </div>
+        <DialogoCierreAtencion a={a} faltantes={faltantes} pending={h.cerrarMut.isPending} onClose={() => setConfirmarCierre(false)}
+          onCerrar={(ctrls) => h.cerrarMut.mutate(ctrls, { onSuccess: () => { setConfirmarCierre(false); invalidarControles(); } })} />
       )}
     </div>
   );
@@ -424,6 +432,34 @@ function PanelEvolucion({ h, a }: { h: H; a: AtencionCompleta }) {
       {catalogoAbierto && <CatalogoCie10Dialog onClose={() => setCatalogoAbierto(false)} />}
       {confirmarDx && <DialogoMotivo titulo="Eliminar diagnóstico" descripcion="Se quita de la atención (queda registro interno)." confirmar="Eliminar" pending={e.eliminarDxMut.isPending} onConfirmar={() => { e.eliminarDxMut.mutate(confirmarDx); setConfirmarDx(null); }} onClose={() => setConfirmarDx(null)} />}
       {confirmarNota && <DialogoMotivo titulo="Eliminar nota" descripcion="La nota deja de verse en la historia (queda en el historial interno)." confirmar="Eliminar" pending={e.eliminarNotaMut.isPending} onConfirmar={() => { e.eliminarNotaMut.mutate(confirmarNota); setConfirmarNota(null); }} onClose={() => setConfirmarNota(null)} />}
+    </div>
+  );
+}
+
+// 7.6 · Copia completa de la historia en PDF (se abre en otra pestaña; la descarga queda auditada).
+function BotonPdfHistoria({ pacienteId }: { pacienteId: string }) {
+  const [conFotos, setConFotos] = useState(false);
+  const [generando, setGenerando] = useState(false);
+  const abrir = async () => {
+    setGenerando(true);
+    try {
+      const url = URL.createObjectURL(await historiaClinicaApi.descargarHistoriaPdf(pacienteId, conFotos));
+      window.open(url, '_blank');
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setGenerando(false);
+    }
+  };
+  return (
+    <div className="flex items-center gap-2 flex-wrap rounded-lg px-3 py-2 text-xs bg-surface-container-low/60" data-testid="pdf-historia">
+      <button onClick={abrir} disabled={generando} className="flex items-center gap-1 text-primary font-semibold hover:underline disabled:opacity-50">
+        <span className="material-symbols-outlined text-base">picture_as_pdf</span>{generando ? 'Generando…' : 'PDF de la historia completa'}
+      </button>
+      <label className="ml-auto flex items-center gap-1 text-on-surface-variant cursor-pointer">
+        <input type="checkbox" checked={conFotos} onChange={(e) => setConFotos(e.target.checked)} />con fotos
+      </label>
     </div>
   );
 }

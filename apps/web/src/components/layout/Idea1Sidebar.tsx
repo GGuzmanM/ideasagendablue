@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '../../utils/cn';
 import { useAuthStore } from '../../stores/authStore';
+import { useContadorControles } from '../../services/controlesService';
 
 export interface NavItem {
   to: string;
@@ -39,6 +40,8 @@ export function Idea1Sidebar() {
           : perms.includes(n.permiso);
       })
     : idea1NavItems;
+  // Alerta de controles (4.2): vencidos + los que vencen en 7 días, sobre «Bandeja clínica».
+  const controles = useContadorControles();
 
   return (
     <aside className="h-full sticky top-0 left-0 w-sidebar-expanded bg-[#0e4f9f] border-r border-outline-variant/20 flex flex-col py-6 px-4 z-30 shrink-0 select-none">
@@ -87,6 +90,13 @@ export function Idea1Sidebar() {
                 {item.icon}
               </span>
               <span className="truncate">{item.label}</span>
+              {item.to === '/historia-clinica/bandeja' && controles.total > 0 && (
+                <span data-testid="badge-controles"
+                  title={`${controles.vencidos} control(es) vencido(s) · ${controles.proximos} en los próximos 7 días`}
+                  className={cn('ml-auto min-w-[20px] h-5 px-1.5 rounded-full text-[11px] font-bold flex items-center justify-center text-white shrink-0', controles.vencidos ? 'bg-red-500' : 'bg-amber-500')}>
+                  {controles.total > 99 ? '99+' : controles.total}
+                </span>
+              )}
             </Link>
           );
         })}

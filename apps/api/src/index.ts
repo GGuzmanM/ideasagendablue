@@ -3,6 +3,7 @@ import 'express-async-errors';
 import dispositivosRouter from './routes/dispositivos';
 import dispositivoApiRouter from './routes/dispositivoApi';
 import tiemposTratamientoRouter from './routes/tiemposTratamiento';
+import verificacionPublicaRouter from './routes/verificacionPublica';
 import { cerrarTiemposAbandonados } from './services/tiempoTratamientoService';
 
 // Zona horaria del PROCESO fija a UTC: toda fecha @db.Date se ancla a UTC (mediodía
@@ -230,7 +231,8 @@ app.use(`${v1}/historia-clinica`, historiaClinicaRouter); // Historia clínica (
 app.use(`${v1}/recetas`, recetasRouter); // Recetas médicas e indicaciones (receta.*)
 app.use(`${v1}/dispositivos`, dispositivosRouter); // Administración de aparatos de consultorio (dispositivos.gestionar)
 app.use(`${v1}/dispositivo`, dispositivoApiRouter); // API del aparato (botones INICIO/FIN), clave propia
-app.use(`${v1}/tiempos-tratamiento`, tiemposTratamientoRouter); // Tiempos sin cita, enlazar, reporte
+app.use(`${v1}/tiempos-tratamiento`, tiemposTratamientoRouter); // Reporte de tiempos reales de tratamiento
+app.use(`${v1}/verificar`, verificacionPublicaRouter); // PÚBLICO (sin login): verificación de recetas por el QR
 
 // ─── Error handler ────────────────────────────────────────────────────────────
 app.use(errorHandler);

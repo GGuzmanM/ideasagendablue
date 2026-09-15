@@ -558,6 +558,7 @@ model Servicio {
   videos                    ServicioVideo[]
   atencionesClinicas        AtencionClinica[]
   recetaItems               RecetaItem[] // ítems tipo SERVICIO en indicaciones (profilaxis, láser)
+  controlesSugeridos        ControlSugerido[]
 
   creadoPor     String?  @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
@@ -1910,6 +1911,8 @@ model AtencionClinica {
   imagenesPodograma ImagenPodograma[]
   fotos             FotoClinica[]
   dibujosSilueta    DibujoSilueta[]
+  consentimientos   ConsentimientoInformado[]
+  controles         ControlSugerido[]
 
   @@index([historiaClinicaId, fecha])
   @@index([pacienteId])
@@ -2088,6 +2091,90 @@ model RecetaItem {
 
   @@index([recetaId])
   @@map("receta_items")
+}
+
+// Receta FAVORITA (3.5): plantilla reutilizable de receta médica o de indicaciones, compartida por la
+// clínica. Los ítems se guardan SIN diagnóstico (se asigna al usarla en una atención). Borrado suave.
+model RecetaFavorita {
+  id                    String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nombre                String
+  tipoDocumento         TipoDocumentoReceta
+  items                 Json // ItemEntrada[] (mismo formato que POST /recetas, sin diagnóstico)
+  indicacionesGenerales String?
+  vigenciaDias          Int?
+  creadoPorUsuarioId    String?             @db.Uuid
+  creadoEtiqueta        String?
+  creadoEn              DateTime            @default(now())
+  actualizadoEn         DateTime            @updatedAt
+  deletedAt             DateTime?
+
+  @@index([tipoDocumento])
+  @@map("recetas_favoritas")
+}
+
+// CONSENTIMIENTO INFORMADO (5.1) firmado en la tablet. Inmutable como la receta: el texto que se
+// firmó queda como snapshot y la corrección es la REVOCACIÓN con motivo (nunca se borra).
+model ConsentimientoInformado {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  numero                 Int       @unique @default(autoincrement())
+  atencionId             String    @db.Uuid
+  pacienteId             String    @db.Uuid
+  sedeId                 String    @db.Uuid // copiado de la atención; sin relación
+  procedimiento          String // qué se autoriza (ej. «Matricectomía parcial del hallux derecho»)
+  texto                  String // texto completo que se leyó y firmó (snapshot)
+  firmanteNombre         String
+  firmanteDocumento      String?
+  firmanteRelacion       String    @default("paciente") // paciente | apoderado
+  // Firma = trazos normalizados 0..1 sobre un lienzo de proporción `firmaAspecto` (ancho/alto):
+  // [{ puntos: [[x,y],...], grosor }]. El PDF la redibuja como vector (nítida al imprimir).
+  firma                  Json
+  firmaAspecto           Float     @default(3)
+  profesionalId          String?   @db.Uuid // quien informó (el profesional de la atención)
+  profesionalEtiqueta    String?
+  registradoPorUsuarioId String?   @db.Uuid
+  registradoEtiqueta     String?
+  firmadoEn              DateTime  @default(now())
+  estado                 String    @default("firmado") // firmado | revocado
+  revocadoEn             DateTime?
+  revocadoPorUsuarioId   String?   @db.Uuid
+  motivoRevocacion       String?
+  creadoEn               DateTime  @default(now())
+
+  atencion AtencionClinica @relation(fields: [atencionId], references: [id], onDelete: Restrict)
+
+  @@index([atencionId])
+  @@index([pacienteId])
+  @@map("consentimientos_informados")
+}
+
+// CONTROL SUGERIDO al cerrar la atención (4.1): próximo control con fecha y servicio. Recepción lo
+// agenda tras confirmarlo con el paciente (queda ligado a la cita) o lo descarta con motivo. Un
+// control pendiente cuya fecha ya pasó es la alerta de «no volvió» (4.2).
+model ControlSugerido {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  atencionId             String    @db.Uuid
+  pacienteId             String    @db.Uuid
+  sedeId                 String    @db.Uuid // sede de la atención (sin relación)
+  servicioId             String?   @db.Uuid
+  fechaSugerida          DateTime  @db.Date
+  motivo                 String
+  origen                 String    @default("manual") // iwgdf | indicacion | manual
+  estado                 String    @default("pendiente") // pendiente | agendado | descartado
+  citaId                 String?   @db.Uuid // la cita con la que se agendó (sin relación)
+  motivoDescarte         String?
+  registradoPorUsuarioId String?   @db.Uuid
+  registradoEtiqueta     String?
+  resueltoPorUsuarioId   String?   @db.Uuid
+  resueltoEn             DateTime?
+  creadoEn               DateTime  @default(now())
+  actualizadoEn          DateTime  @updatedAt
+
+  atencion AtencionClinica @relation(fields: [atencionId], references: [id], onDelete: Restrict)
+  servicio Servicio?       @relation(fields: [servicioId], references: [id], onDelete: Restrict)
+
+  @@index([pacienteId, estado])
+  @@index([sedeId, estado, fechaSugerida])
+  @@map("controles_sugeridos")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

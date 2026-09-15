@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '../../utils/cn';
 import { useAuthStore } from '../../stores/authStore';
+import { useContadorControles } from '../../services/controlesService';
 
 // El menú se guía por PERMISOS del rol (configurables en Administración → Roles).
 const navItems = [
@@ -20,6 +21,8 @@ export function Sidebar() {
 
   const perms = usuario?.permisos ?? [];
   const items = navItems.filter(n => Array.isArray(n.permiso) ? n.permiso.some(p => perms.includes(p)) : perms.includes(n.permiso));
+  // Alerta de controles (4.2): vencidos + los que vencen en 7 días, sobre «Bandeja clínica».
+  const controles = useContadorControles();
 
   return (
     <nav className="w-16 bg-[#0e4f9f] flex flex-col items-center py-3 gap-1 flex-shrink-0">
@@ -39,9 +42,9 @@ export function Sidebar() {
           <Link
             key={item.to}
             to={item.to}
-            title={item.label}
+            title={item.to === '/historia-clinica/bandeja' && controles.total ? `${item.label} · ${controles.vencidos} control(es) vencido(s), ${controles.proximos} en 7 días` : item.label}
             className={cn(
-              'w-11 h-11 rounded-xl flex flex-col items-center justify-center gap-0.5 transition-all',
+              'relative w-11 h-11 rounded-xl flex flex-col items-center justify-center gap-0.5 transition-all',
               active
                 ? 'bg-limablue-600 text-white shadow-lg shadow-limablue-900/50'
                 : 'text-limablue-300 hover:bg-limablue-800 hover:text-white'
@@ -49,6 +52,11 @@ export function Sidebar() {
           >
             <span className="text-lg leading-none">{item.icon}</span>
             <span className="text-xxs leading-none">{item.label.split(' ')[0]}</span>
+            {item.to === '/historia-clinica/bandeja' && controles.total > 0 && (
+              <span data-testid="badge-controles" className={cn('absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center text-white', controles.vencidos ? 'bg-red-500' : 'bg-amber-500')}>
+                {controles.total > 99 ? '99+' : controles.total}
+              </span>
+            )}
           </Link>
         );
       })}

@@ -46,6 +46,53 @@ export interface ItemEntrada {
 
 const limpiar = (s?: string | null) => { const t = (s ?? '').trim(); return t ? t : null; };
 
+// ─── Recetas favoritas (3.5) ──────────────────────────────────────────────────
+// Plantillas compartidas por la clínica. Se guardan SIN diagnóstico (se asigna al usarla) y con el
+// mismo candado de contenido que la emisión: una favorita de indicaciones no lleva ítems Rx. Al
+// usarla, la receta se emite por el flujo normal (con todos sus candados).
+export async function listarFavoritas(tipoDocumento: TipoDocumentoReceta) {
+  return prisma.recetaFavorita.findMany({ where: { deletedAt: null, tipoDocumento }, orderBy: { nombre: 'asc' } });
+}
+
+export async function crearFavorita(p: Ctx & {
+  nombre: string; tipoDocumento: TipoDocumentoReceta; items: ItemEntrada[]; indicacionesGenerales?: string | null; vigenciaDias?: number | null;
+}) {
+  const items = p.items.map(({ diagnosticoCie10Codigo: _dx, ...it }) => it).filter((it) => limpiar(it.nombre));
+  if (!items.length) throw new AppError('La favorita necesita al menos un ítem con nombre', 400, 'FAVORITA_VACIA');
+  if (p.tipoDocumento === 'INDICACIONES_PODOLOGICAS' && items.some((it) => it.tipo === 'MEDICAMENTO_RX')) {
+    throw new AppError('Las indicaciones no llevan medicamentos de venta bajo receta', 400, 'RX_EN_INDICACIONES');
+  }
+  const etiqueta = await etiquetaUsuario(prisma, p.usuarioId);
+  return prisma.$transaction(async (tx) => {
+    const f = await tx.recetaFavorita.create({
+      data: {
+        nombre: p.nombre.trim(), tipoDocumento: p.tipoDocumento, items: items as unknown as Prisma.InputJsonValue,
+        indicacionesGenerales: limpiar(p.indicacionesGenerales), vigenciaDias: p.vigenciaDias ?? null,
+        creadoPorUsuarioId: p.usuarioId ?? null, creadoEtiqueta: etiqueta,
+      },
+    });
+    await auditEnTx(tx, {
+      ...ctxAudit(p), accion: 'crear_receta_favorita', entidad: 'receta_favorita', entidadId: f.id,
+      despues: { nombre: f.nombre, tipoDocumento: f.tipoDocumento, items: items.length },
+    });
+    return f;
+  });
+}
+
+/** La quita quien la creó o coordinación/admin (`hc.anular`). Borrado suave. */
+export async function eliminarFavorita(p: Ctx & { user: AuthPayload; id: string }) {
+  const f = await prisma.recetaFavorita.findFirst({ where: { id: p.id, deletedAt: null } });
+  if (!f) throw new AppError('Favorita no encontrada', 404);
+  if (f.creadoPorUsuarioId !== p.user.userId && !p.user.permisos?.includes('hc.anular')) {
+    throw new AppError('Solo quien creó la favorita o coordinación puede quitarla', 403, 'SIN_PERMISO');
+  }
+  await prisma.$transaction(async (tx) => {
+    await tx.recetaFavorita.update({ where: { id: f.id }, data: { deletedAt: new Date() } });
+    await auditEnTx(tx, { ...ctxAudit(p), accion: 'eliminar_receta_favorita', entidad: 'receta_favorita', entidadId: f.id, antes: { nombre: f.nombre } });
+  });
+  return { ok: true };
+}
+
 // ─── Candados de emisor ───────────────────────────────────────────────────────
 /** Médico prescriptor válido para RECETA_MEDICA. 403 NO_ES_MEDICO / 409 SIN_COLEGIATURA. */
 export async function asegurarMedicoPrescriptor(user: AuthPayload) {

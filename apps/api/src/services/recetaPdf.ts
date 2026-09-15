@@ -4,27 +4,18 @@
  *  · Cabecera azul: logo + nombre de la clínica (izq) y documento + N° + subtítulo (der).
  *  · Franja de datos de la sede (dirección · RUC · tel) a todo el ancho, SIN chocar con la cabecera.
  *  · Bloque del paciente, alergias en rojo, ítems agrupados por diagnóstico CIE-10 con etiqueta de
- *    tipo, pie con emisor + registro, firma y código de verificación. Marca de agua "ANULADA".
+ *    tipo, pie con emisor + registro, firma, código de verificación y QR. Marca de agua "ANULADA".
+ *  · Copias: la receta médica sale con ORIGINAL (paciente) + COPIA (farmacia); cada copia es el
+ *    documento completo en su propia página.
  * Todas las alturas de los ítems se MIDEN (heightOfString) para paginar bien y no encimar textos
  * cuando un nombre o una posología ocupan varias líneas.
  */
-import PDFDocument from 'pdfkit';
-import * as fs from 'fs';
-import * as path from 'path';
 import type { RecetaCompleta } from './recetaService';
+import {
+  Doc, W, H, M, CONTENT_W, AZUL, AZUL_C, GRIS, INK, ROJO, ROJO_F, LINEA, SUAVE, SEXO,
+  fechaLima, edadDe, dibujarCabecera, campo, urlVerificacionReceta,
+} from './pdfComun';
 
-const W = 595.28, H = 841.89, M = 40;
-const CONTENT_W = W - 2 * M;
-const AZUL = '#003366', AZUL_C = '#0A4B8C', GRIS = '#55617A', INK = '#1F2A3D', ROJO = '#B42318', ROJO_F = '#FDECEC', LINEA = '#CBD6E8', SUAVE = '#EAF1FC', FRANJA = '#EDF1F7';
-const LOGO = path.join(process.cwd(), 'assets', 'logo-limablue.png');
-
-const CLINICA = {
-  nombre: process.env.CLINICA_NOMBRE || 'Clínica del pie',
-  ruc: process.env.CLINICA_RUC || '',
-  tel: process.env.CLINICA_TELEFONO || '',
-};
-
-type Doc = InstanceType<typeof PDFDocument>;
 type Item = RecetaCompleta['items'][number];
 
 const ETIQUETA: Record<string, { texto: string; color: string }> = {
@@ -34,70 +25,58 @@ const ETIQUETA: Record<string, { texto: string; color: string }> = {
   SERVICIO: { texto: 'SERVICIO', color: '#1F56B0' },
 };
 
-function fechaLima(d: Date) {
-  return new Intl.DateTimeFormat('es-PE', { timeZone: 'America/Lima', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).format(d).replace(',', ' ·');
-}
-function edadDe(fn: Date | null): string {
-  if (!fn) return '—';
-  const hoy = new Date(); let e = hoy.getUTCFullYear() - fn.getUTCFullYear();
-  const m = hoy.getUTCMonth() - fn.getUTCMonth();
-  if (m < 0 || (m === 0 && hoy.getUTCDate() < fn.getUTCDate())) e--;
-  return `${e} años`;
-}
-const SEXO: Record<string, string> = { masculino: 'Masculino', femenino: 'Femenino', otro: 'Otro' };
+export type CopiaReceta = 'original' | 'farmacia' | null;
+const ROTULO_COPIA: Record<'original' | 'farmacia', { texto: string; fondo: string; tinta: string }> = {
+  original: { texto: 'ORIGINAL · PARA EL PACIENTE', fondo: SUAVE, tinta: AZUL },
+  farmacia: { texto: 'COPIA · PARA LA FARMACIA', fondo: '#FFF4E5', tinta: '#8A4B00' },
+};
 
-export function escribirRecetaPdf(doc: Doc, r: RecetaCompleta): void {
+/**
+ * Escribe la receta. `copias`: una página por copia (`null` = sin rótulo). `qr`: PNG del código
+ * de verificación (se genera antes, con `qrPng`).
+ */
+export function escribirRecetaPdf(doc: Doc, r: RecetaCompleta, opts: { copias?: CopiaReceta[]; qr?: Buffer } = {}): void {
+  const copias = opts.copias?.length ? opts.copias : [null];
+  copias.forEach((copia, i) => {
+    if (i > 0) doc.addPage();
+    escribirCopia(doc, r, copia, opts.qr);
+  });
+}
+
+function escribirCopia(doc: Doc, r: RecetaCompleta, copia: CopiaReceta, qr?: Buffer): void {
   const esReceta = r.tipoDocumento === 'RECETA_MEDICA';
   const titulo = esReceta ? 'RECETA MÉDICA' : 'INDICACIONES DE TRATAMIENTO';
   const numero = esReceta ? `N° ${String(r.numero).padStart(6, '0')}` : `Podológico · N° ${String(r.numero).padStart(6, '0')}`;
-  const subt = esReceta
+  const subtitulo = esReceta
     ? (r.vigenciaDias ? `Válida por ${r.vigenciaDias} días desde su emisión` : 'Receta médica')
     : 'Tratamiento tópico, productos y servicios indicados';
-  const sede = r.atencion.sede;
   const pac = r.paciente;
   const alergias = r.historiaClinica.alergias;
 
   const xT = M + 26;            // sangría del contenido del ítem (tras el número)
   const wT = CONTENT_W - 26;    // ancho útil del contenido del ítem
 
-  // ── Cabecera (banda azul + franja de datos). Devuelve la Y donde empieza el contenido. ──
   const cabecera = (): number => {
-    const BAND = 60;
-    doc.rect(0, 0, W, BAND).fill(AZUL);
-    // Logo sobre placa blanca
-    doc.roundedRect(M, 9, 132, 42, 7).fill('#FFFFFF');
-    if (fs.existsSync(LOGO)) doc.image(LOGO, M + 8, 13, { fit: [116, 34], align: 'center', valign: 'center' });
-    else doc.font('Helvetica-Bold').fontSize(15).fillColor(AZUL).text('limablue', M + 12, 24);
-    // Nombre de la clínica (columna izquierda, corta → no choca con la derecha)
-    doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(14).text(CLINICA.nombre, M + 144, 14, { width: 150, lineBreak: false });
-    doc.font('Helvetica').fontSize(8).fillColor('#C7D6EC').text('Podología · Fisioterapia · Baropodometría', M + 144, 34, { width: 160, lineBreak: false });
-    // Documento (columna derecha, ancho fijo con separación)
-    const RW = 250, RX = W - M - RW;
-    doc.font('Helvetica-Bold').fontSize(12.5).fillColor('#FFFFFF').text(titulo, RX, 13, { width: RW, align: 'right', lineBreak: false });
-    doc.font('Helvetica').fontSize(9).fillColor('#DCE6F5').text(numero, RX, 31, { width: RW, align: 'right', lineBreak: false });
-    doc.fontSize(8.5).fillColor('#C7D6EC').text(subt, RX, 43, { width: RW, align: 'right', lineBreak: false });
-    // Franja de datos de la sede a todo el ancho (dirección + RUC + tel)
-    const datos = [sede.nombre, sede.direccion, CLINICA.ruc ? `RUC ${CLINICA.ruc}` : null, CLINICA.tel ? `Tel. ${CLINICA.tel}` : null].filter(Boolean).join('  ·  ');
-    doc.font('Helvetica').fontSize(8.5);
-    const stripH = Math.max(18, doc.heightOfString(datos, { width: CONTENT_W }) + 8);
-    doc.rect(0, BAND, W, stripH).fill(FRANJA);
-    doc.fillColor(GRIS).text(datos, M, BAND + 5, { width: CONTENT_W });
-    return BAND + stripH + 10;
-  };
-
-  const campo = (label: string, valor: string, x: number, y: number, w: number) => {
-    doc.font('Helvetica').fontSize(7).fillColor(GRIS).text(label.toUpperCase(), x, y, { width: w, lineBreak: false });
-    doc.font('Helvetica-Bold').fontSize(9.5).fillColor(INK).text(valor, x, y + 10, { width: w, lineBreak: false, ellipsis: true });
+    let y = dibujarCabecera(doc, { titulo, numero, subtitulo, sede: r.atencion.sede });
+    if (copia) {
+      const rot = ROTULO_COPIA[copia];
+      doc.font('Helvetica-Bold').fontSize(8);
+      const w = doc.widthOfString(rot.texto) + 20;
+      doc.roundedRect(W - M - w, y - 4, w, 15, 4).fill(rot.fondo);
+      doc.fillColor(rot.tinta).text(rot.texto, W - M - w, y, { width: w, align: 'center', lineBreak: false });
+      y += 16;
+    }
+    return y;
   };
 
   const bloquePaciente = (y: number) => {
     doc.roundedRect(M, y, CONTENT_W, 58, 6).fillAndStroke(SUAVE, LINEA);
     // Columnas dentro de [M+12 .. W-M-12] (≈491 px), con separación, para que ningún campo se corte.
-    campo('Paciente', `${pac.apellidoPaterno} ${pac.apellidoMaterno}, ${pac.nombres}`.toUpperCase(), M + 12, y + 9, 206);
-    campo(pac.tipoDocumento, pac.numeroDocumento, M + 228, y + 9, 62);
-    campo('Edad', edadDe(pac.fechaNacimiento), M + 298, y + 9, 50);
-    campo('Sexo', pac.sexo ? SEXO[pac.sexo] ?? pac.sexo : '—', M + 356, y + 9, 60);
-    campo('Historia', `HC N° ${String(r.historiaClinica.numero).padStart(6, '0')}`, M + 422, y + 9, 82);
+    campo(doc, 'Paciente', `${pac.apellidoPaterno} ${pac.apellidoMaterno}, ${pac.nombres}`.toUpperCase(), M + 12, y + 9, 206);
+    campo(doc, pac.tipoDocumento, pac.numeroDocumento, M + 228, y + 9, 62);
+    campo(doc, 'Edad', edadDe(pac.fechaNacimiento), M + 298, y + 9, 50);
+    campo(doc, 'Sexo', pac.sexo ? SEXO[pac.sexo] ?? pac.sexo : '—', M + 356, y + 9, 60);
+    campo(doc, 'Historia', `HC N° ${String(r.historiaClinica.numero).padStart(6, '0')}`, M + 422, y + 9, 82);
     doc.font('Helvetica').fontSize(7).fillColor(GRIS).text('FECHA DE EMISIÓN', M + 12, y + 38);
     doc.font('Helvetica-Bold').fontSize(9).fillColor(INK).text(fechaLima(r.fechaEmision), M + 92, y + 37);
     return y + 66;
@@ -148,12 +127,9 @@ export function escribirRecetaPdf(doc: Doc, r: RecetaCompleta): void {
     const p = partesItem(it);
     const et = ETIQUETA[it.tipo] ?? ETIQUETA.MEDICAMENTO_OTC;
     const tagW = tagWidth(it);
-    // número
     doc.font('Helvetica-Bold').fontSize(10).fillColor(AZUL).text(String(n), M + 4, y, { width: 18, lineBreak: false });
-    // etiqueta de tipo (arriba a la derecha)
     doc.roundedRect(W - M - tagW, y - 1, tagW, 12, 3).fill(et.color);
     doc.font('Helvetica-Bold').fontSize(6.5).fillColor('#FFFFFF').text(et.texto, W - M - tagW, y + 2, { width: tagW, align: 'center', lineBreak: false });
-    // nombre (+ marca al lado si cabe)
     doc.font('Helvetica-Bold').fontSize(10.5).fillColor(INK);
     let yy: number;
     if (p.marcaJunta) {
@@ -170,8 +146,10 @@ export function escribirRecetaPdf(doc: Doc, r: RecetaCompleta): void {
     return yy + 11;
   };
 
+  // Pie: indicaciones generales + firma, y la barra de verificación con el QR (56 pt).
+  const BARRA = 64;
   const pie = (y: number) => {
-    const yF = Math.max(y + 10, H - 150);
+    const yF = Math.max(y + 10, H - BARRA - 116);
     doc.moveTo(M, yF).lineTo(W - M, yF).lineWidth(0.5).strokeColor(LINEA).stroke();
     doc.font('Helvetica-Bold').fontSize(8).fillColor(GRIS).text('INDICACIONES GENERALES', M, yF + 8);
     const nota = r.indicacionesGenerales
@@ -185,10 +163,16 @@ export function escribirRecetaPdf(doc: Doc, r: RecetaCompleta): void {
     const tienePrefijo = /^(CMP|COP|CTMP|CEP|RNE|REG\.?)\b/i.test(regRaw);
     const reg = regRaw ? (tienePrefijo ? regRaw : (esReceta ? `CMP ${regRaw}` : `Reg. ${regRaw}`)) : '';
     doc.font('Helvetica').fontSize(8).fillColor(GRIS).text(cargo, xS, yF + 78, { width: 190, align: 'center' }).text(reg, xS, yF + 88, { width: 190, align: 'center' });
-    doc.rect(0, H - 34, W, 34).fill('#F2F4F6');
-    doc.font('Helvetica').fontSize(7).fillColor(GRIS).text(`Generado por Limablue Agenda · Verificación: ${r.codigoVerificacion}`, M, H - 24, { width: W - 2 * M - 120 });
-    doc.rect(W - M - 26, H - 30, 26, 26).lineWidth(0.6).strokeColor(GRIS).stroke();
-    doc.font('Helvetica').fontSize(5).fillColor(GRIS).text('QR', W - M - 26, H - 20, { width: 26, align: 'center' });
+    // Barra de verificación: texto a la izquierda, QR a la derecha.
+    doc.rect(0, H - BARRA, W, BARRA).fill('#F2F4F6');
+    const QR = 52;
+    const txtW = W - 2 * M - QR - 16;
+    doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text('Verifique la autenticidad y vigencia de este documento', M, H - BARRA + 12, { width: txtW });
+    doc.font('Helvetica').fontSize(7.5).fillColor(GRIS)
+      .text(`Escanee el código QR o ingrese a ${urlVerificacionReceta(r.codigoVerificacion)}`, M, H - BARRA + 25, { width: txtW })
+      .text(`Código de verificación: ${r.codigoVerificacion}  ·  Generado por Limablue Agenda`, M, H - BARRA + 38, { width: txtW });
+    if (qr) doc.image(qr, W - M - QR, H - BARRA + 6, { width: QR, height: QR });
+    else doc.rect(W - M - QR, H - BARRA + 6, QR, QR).lineWidth(0.6).strokeColor(GRIS).stroke();
     if (r.estado === 'anulada') {
       doc.save().rotate(-30, { origin: [W / 2, H / 2] }).font('Helvetica-Bold').fontSize(64).fillColor('#B42318').fillOpacity(0.18)
         .text('ANULADA', 0, H / 2 - 40, { width: W, align: 'center' }).restore();
@@ -207,7 +191,7 @@ export function escribirRecetaPdf(doc: Doc, r: RecetaCompleta): void {
     if (!grupos.has(key)) grupos.set(key, { codigo: it.diagnostico?.codigo ?? '', desc: it.diagnostico?.descripcion ?? 'Sin diagnóstico asociado', items: [] });
     grupos.get(key)!.items.push(it);
   }
-  const LIMITE = H - 160; // reserva para el pie
+  const LIMITE = H - BARRA - 126; // reserva para el pie (firma + barra de verificación)
   let n = 1;
   const nuevaPagina = () => { pie(y); doc.addPage(); y = cabecera(); };
   for (const g of grupos.values()) {

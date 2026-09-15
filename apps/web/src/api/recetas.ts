@@ -1,5 +1,5 @@
 // Recetas médicas e indicaciones podológicas — API + helpers de PDF (blob autenticado → ver / imprimir),
-// mismo patrón que membresias.ts (contrato).
+// mismo patrón que membresias.ts (contrato). Incluye favoritas (3.5) y la verificación pública del QR (3.7).
 import { useQuery } from '@tanstack/react-query';
 import { api } from './client';
 import { useAuthStore } from '../stores/authStore';
@@ -52,7 +52,15 @@ export interface RecetaListado {
   codigoVerificacion: string; atencionId: string; _count: { items: number }; items: { nombre: string; tipo: TipoItemReceta }[];
 }
 
+/** Receta favorita (3.5): plantilla compartida por la clínica; ítems sin diagnóstico. */
+export interface RecetaFavorita {
+  id: string; nombre: string; tipoDocumento: TipoDocumentoReceta; items: ItemEntrada[];
+  indicacionesGenerales: string | null; vigenciaDias: number | null;
+  creadoPorUsuarioId: string | null; creadoEtiqueta: string | null; creadoEn: string;
+}
+
 export const recetasPacienteKey = (pacienteId: string) => ['recetas-paciente', pacienteId] as const;
+export const favoritasKey = (tipo: TipoDocumentoReceta) => ['recetas-favoritas', tipo] as const;
 
 export const recetasApi = {
   emitir: (data: { atencionId: string; tipoDocumento: TipoDocumentoReceta; emisorProfesionalId?: string | null; indicacionesGenerales?: string | null; vigenciaDias?: number | null; items: ItemEntrada[] }) =>
@@ -62,10 +70,15 @@ export const recetasApi = {
   obtener: (id: string) => api.get<RecetaCompleta>(`/recetas/${id}`),
   dePaciente: (pacienteId: string) => api.get<RecetaListado[]>(`/recetas/paciente/${pacienteId}`),
   anular: (id: string, motivo: string) => api.patch<RecetaCompleta>(`/recetas/${id}/anular`, { motivo }),
+  favoritas: (tipo: TipoDocumentoReceta) => api.get<RecetaFavorita[]>('/recetas/favoritas', { tipo }),
+  crearFavorita: (data: { nombre: string; tipoDocumento: TipoDocumentoReceta; items: ItemEntrada[]; indicacionesGenerales?: string | null; vigenciaDias?: number | null }) =>
+    api.post<RecetaFavorita>('/recetas/favoritas', data),
+  eliminarFavorita: (id: string) => api.delete<{ ok: boolean }>(`/recetas/favoritas/${id}`),
   // PDF en streaming (blob autenticado): el <iframe>/window.open no puede mandar Authorization.
-  descargarPdfBlob: async (id: string): Promise<Blob> => {
+  // `copias`: la receta médica sale por defecto con ORIGINAL + COPIA PARA FARMACIA (2); 1 = solo original.
+  descargarPdfBlob: async (id: string, copias?: 1 | 2): Promise<Blob> => {
     const token = useAuthStore.getState().token;
-    const res = await fetch(`/api/v1/recetas/${id}/pdf`, { headers: { Authorization: `Bearer ${token}` } });
+    const res = await fetch(`/api/v1/recetas/${id}/pdf${copias ? `?copias=${copias}` : ''}`, { headers: { Authorization: `Bearer ${token}` } });
     if (!res.ok) {
       const e = await res.json().catch(() => ({}));
       throw new Error((e as { message?: string; error?: string }).message || (e as { error?: string }).error || 'No se pudo generar el PDF');
@@ -85,16 +98,16 @@ export function useRecetasPaciente(pacienteId: string | undefined, enabled = tru
 }
 
 /** Abre el PDF en una pestaña nueva. */
-export async function verRecetaPdf(id: string): Promise<void> {
-  const blob = await recetasApi.descargarPdfBlob(id);
+export async function verRecetaPdf(id: string, copias?: 1 | 2): Promise<void> {
+  const blob = await recetasApi.descargarPdfBlob(id, copias);
   const url = URL.createObjectURL(blob);
   window.open(url, '_blank');
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 /** Genera el PDF y abre la ventana de IMPRESIÓN (iframe oculto → print; respaldo: pestaña). */
-export async function imprimirReceta(id: string): Promise<void> {
-  const blob = await recetasApi.descargarPdfBlob(id);
+export async function imprimirReceta(id: string, copias?: 1 | 2): Promise<void> {
+  const blob = await recetasApi.descargarPdfBlob(id, copias);
   const url = URL.createObjectURL(blob);
   const iframe = document.createElement('iframe');
   iframe.style.position = 'fixed'; iframe.style.right = '0'; iframe.style.bottom = '0';
@@ -105,4 +118,20 @@ export async function imprimirReceta(id: string): Promise<void> {
     setTimeout(() => { URL.revokeObjectURL(url); iframe.remove(); }, 60_000);
   };
   document.body.appendChild(iframe);
+}
+
+// ─── Verificación pública (QR del PDF) ────────────────────────────────────────
+export interface VerificacionReceta {
+  tipoDocumento: TipoDocumentoReceta; numero: number; fechaEmision: string; vigenciaDias: number | null; vence: string | null;
+  estado: 'emitida' | 'anulada'; anuladaEn: string | null; vigente: boolean;
+  emisor: { nombre: string; registro: string | null }; sede: string; paciente: string;
+  items: { tipo: TipoItemReceta; nombre: string; marca: string | null; cantidad: string | null }[];
+}
+
+/** Sin sesión (la abre una farmacia desde el QR): fetch directo, sin el cliente autenticado. */
+export async function verificarReceta(codigo: string): Promise<VerificacionReceta> {
+  const res = await fetch(`/api/v1/verificar/receta/${encodeURIComponent(codigo)}`);
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error((json as { message?: string }).message || 'No se pudo verificar'), { statusCode: res.status });
+  return json as VerificacionReceta;
 }

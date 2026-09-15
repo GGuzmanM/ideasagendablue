@@ -17,6 +17,8 @@ export function EmitirRecetaModal({ atencion, tipoDocumento, onClose }: { atenci
   const f = useEmitirRecetaForm(atencion, tipoDocumento);
   const [servicioSel, setServicioSel] = useState('');
   const [productoManual, setProductoManual] = useState('');
+  const [favSel, setFavSel] = useState('');
+  const [nombreFav, setNombreFav] = useState('');
   const sinDx = f.diagnosticos.length === 0;
   const dxActivoDesc = f.diagnosticos.find((d) => d.cie10Codigo === f.dxActivo);
 
@@ -45,6 +47,7 @@ export function EmitirRecetaModal({ atencion, tipoDocumento, onClose }: { atenci
             <span className="material-symbols-outlined text-6xl text-emerald-600" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
             <h4 className="font-headline-sm text-headline-sm font-bold text-on-surface">{TIPO_DOC_LABEL[tipoDocumento]} N° {String(f.emitida.numero).padStart(6, '0')} emitida</h4>
             <p className="text-sm text-on-surface-variant">Código de verificación <b className="font-mono-label">{f.emitida.codigoVerificacion}</b> · {f.emitida.items.length} ítem(s)</p>
+            {f.esReceta && <p className="text-xs text-on-surface-variant -mt-2">El PDF trae el original para el paciente y una copia para la farmacia, con QR de verificación.</p>}
             {!!f.emitida.advertencias?.length && (
               <div className="w-full max-w-md rounded-xl border border-error/30 bg-error-container text-on-error-container text-xs px-4 py-3 text-left">
                 <b>Advertencia de alergia:</b> {f.emitida.advertencias.map((a) => `${a.item} ↔ ${a.sustancia}`).join('; ')}
@@ -65,6 +68,36 @@ export function EmitirRecetaModal({ atencion, tipoDocumento, onClose }: { atenci
                   Solo tratamiento <b>de venta libre</b>, productos y servicios. Los fármacos bajo receta van en una Receta Médica firmada por médico.
                   {' '}Se emite a nombre de <b>{atencion.profesional.nombres} {atencion.profesional.apellidos}</b>.
                 </p>
+              )}
+
+              {/* Atajo · repetir una anterior del paciente o usar una favorita (se revisa antes de emitir) */}
+              {(f.anteriores.length > 0 || f.favoritas.length > 0) && (
+                <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-low/40 p-4 grid grid-cols-1 md:grid-cols-2 gap-3" data-testid="atajos-receta">
+                  <div>
+                    <label className={LBL}>Repetir una anterior del paciente</label>
+                    <select value="" disabled={f.repetirMut.isPending || f.anteriores.length === 0} onChange={(e) => { if (e.target.value) f.repetirMut.mutate(e.target.value); }} className={INPUT} data-testid="repetir-receta">
+                      <option value="">{f.anteriores.length ? (f.repetirMut.isPending ? 'Cargando…' : '— Elegir para repetir —') : 'Sin documentos anteriores'}</option>
+                      {f.anteriores.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          N° {String(r.numero).padStart(6, '0')} · {new Date(r.fechaEmision).toLocaleDateString('es-PE', { timeZone: 'America/Lima' })} · {r.items.map((i) => i.nombre).join(', ')}{r._count.items > r.items.length ? '…' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className={LBL}>Usar una favorita</label>
+                    <div className="flex gap-2">
+                      <select value={favSel} disabled={f.favoritas.length === 0} onChange={(e) => { setFavSel(e.target.value); if (e.target.value) f.usarFavorita(e.target.value); }} className={INPUT} data-testid="usar-favorita">
+                        <option value="">{f.favoritas.length ? '— Elegir favorita —' : 'Aún no hay favoritas'}</option>
+                        {f.favoritas.map((x) => <option key={x.id} value={x.id}>{x.nombre} ({x.items.length})</option>)}
+                      </select>
+                      {favSel && (
+                        <button type="button" title="Quitar esta favorita de la lista" className="material-symbols-outlined text-on-surface-variant/60 hover:text-rose-600 text-xl"
+                          onClick={() => { if (window.confirm('¿Quitar esta favorita de la lista? Las recetas ya emitidas no cambian.')) { f.eliminarFavoritaMut.mutate(favSel); setFavSel(''); } }}>delete</button>
+                      )}
+                    </div>
+                  </div>
+                </div>
               )}
 
               {/* Paso 1 · ¿Para qué diagnóstico? — el ancla de todo lo que se agregue */}
@@ -174,6 +207,20 @@ export function EmitirRecetaModal({ atencion, tipoDocumento, onClose }: { atenci
                       </div>
                     </div>
                   ))}
+                </div>
+              )}
+
+              {f.items.length > 0 && (
+                <div className="flex flex-wrap items-end gap-2">
+                  <div className="flex-1 min-w-[220px]">
+                    <label className={LBL}>Guardar como favorita (para reutilizarla)</label>
+                    <input value={nombreFav} onChange={(e) => setNombreFav(e.target.value)} maxLength={80} placeholder="Ej. Onicomicosis leve · tratamiento tópico" className={INPUT} data-testid="nombre-favorita" />
+                  </div>
+                  <button type="button" disabled={nombreFav.trim().length < 2 || f.guardarFavoritaMut.isPending}
+                    onClick={() => { f.guardarFavoritaMut.mutate(nombreFav.trim()); setNombreFav(''); }}
+                    className="px-4 py-2 border border-primary/40 text-primary rounded-lg text-sm font-semibold hover:bg-primary/5 disabled:opacity-40 flex items-center gap-1">
+                    <span className="material-symbols-outlined text-base">star</span>Guardar favorita
+                  </button>
                 </div>
               )}
 
