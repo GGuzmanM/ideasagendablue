@@ -152,7 +152,7 @@ function etiquetaTipoProcedimiento(tipo: string): string {
 // ─────────────────────────────────────────────────────────────────────────────
 // 2.1–2.5 · Escalas clínicas (EVA, Wagner, Texas, IWGDF, monofilamento)
 // ─────────────────────────────────────────────────────────────────────────────
-const TIPOS_ESCALA = ['eva', 'wagner', 'texas', 'iwgdf', 'monofilamento', 'termometria', 'ulcera'] as const;
+const TIPOS_ESCALA = ['eva', 'wagner', 'texas', 'iwgdf', 'monofilamento', 'termometria', 'ulcera', 'itb', 'osi', 'manchester', 'examen'] as const;
 // Sitios plantares (mismo orden que el monofilamento y la termometría en el front).
 const SITIOS_PLANTARES = ['hallux', '1er metatarsiano', '3er metatarsiano', '5º metatarsiano', 'mediopié', 'talón'];
 const bool = (v: unknown): boolean => v === true;
@@ -165,6 +165,48 @@ function assertTipoEscala(tipo: string): TipoEscala {
 }
 
 const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+
+// ── ITB + pulsos (2.4), OSI de onicomicosis (2.6), Manchester (2.7) y examen del pie (1.5) ──
+// Misma regla que apps/web/src/utils/escalasPie.ts (el front muestra el cálculo en vivo).
+const pos = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null);
+/** ITB de un pie = mayor presión del tobillo (pedia o tibial posterior) ÷ mayor presión braquial. */
+function itbDe(pedia: unknown, tibial: unknown, braqIzq: unknown, braqDer: unknown): number | null {
+  const tobillo = Math.max(pos(pedia) ?? 0, pos(tibial) ?? 0);
+  const brazo = Math.max(pos(braqIzq) ?? 0, pos(braqDer) ?? 0);
+  return tobillo && brazo ? Math.round((tobillo / brazo) * 100) / 100 : null;
+}
+function textoItb(v: number): string {
+  if (v > 1.4) return 'no compresible';
+  if (v >= 1) return 'normal';
+  if (v >= 0.91) return 'limítrofe';
+  if (v >= 0.7) return 'EAP leve';
+  if (v >= 0.4) return 'EAP moderada';
+  return 'EAP grave';
+}
+const PULSO_SITIO: Record<string, string> = { pedioIzq: 'pedio izq', tibialIzq: 'tibial posterior izq', pedioDer: 'pedio der', tibialDer: 'tibial posterior der' };
+const OSI_UNA: Record<string, string> = { hallux: 'hallux', '2': '2º dedo', '3': '3er dedo', '4': '4º dedo', '5': '5º dedo' };
+const MANCHESTER_GRADO: Record<number, string> = { 1: 'sin deformidad', 2: 'leve', 3: 'moderada', 4: 'grave' };
+const EXAMEN_GRUPOS: [string, string, Record<string, string>][] = [
+  ['piel', 'Piel', { seca: 'piel seca', fisuras: 'fisuras', hiperqueratosis: 'hiperqueratosis', maceracion: 'maceración interdigital', eritema: 'eritema', palidez: 'palidez o cianosis', edema: 'edema', infeccion: 'signos de infección', sin_vello: 'piel trófica (sin vello, brillante)' }],
+  ['unas', 'Uñas', { engrosadas: 'engrosadas', micosis: 'aspecto de onicomicosis', encarnada: 'uñero', onicogrifosis: 'onicogrifosis', distrofia: 'distrofia', color: 'cambio de color', hematoma: 'hematoma subungueal', corte: 'corte inadecuado' }],
+  ['deformidades', 'Deformidades', { hallux_valgus: 'hallux valgus', garra: 'dedos en garra', martillo: 'dedos en martillo', sastre: 'juanete de sastre', hallux_rigidus: 'hallux rigidus', plano: 'pie plano', cavo: 'pie cavo', prominencias: 'prominencias óseas', charcot: 'pie de Charcot', amputacion: 'amputación parcial' }],
+];
+const LADO_CORTO: Record<string, string> = { izquierdo: 'izq', derecho: 'der', ambos: 'ambos' };
+const CALZADO_TIPO: Record<string, string> = { deportivo: 'deportivo', vestir: 'de vestir', sandalia: 'sandalia', seguridad: 'de seguridad', ortopedico: 'ortopédico', otro: 'otro' };
+const CALZADO_PROBLEMA: Record<string, string> = { punta_estrecha: 'punta estrecha', tacon: 'tacón alto', talla: 'talla incorrecta', costuras: 'costuras internas', sin_sujecion: 'sin sujeción', gastado: 'muy gastado', suela: 'suela inadecuada' };
+const DESGASTE_ZONA: Record<string, string> = { punta: 'punta', antepie_int: 'antepié interno', antepie_ext: 'antepié externo', talon_int: 'talón interno', talon_ext: 'talón externo' };
+/** Guía de desgaste de la suela: qué sugiere el patrón (lo confirma el médico). */
+function lecturaDesgaste(zonas: string[]): string | null {
+  const s = new Set(zonas);
+  const out: string[] = [];
+  if (s.has('talon_int') || s.has('antepie_int')) out.push('sugiere pronación');
+  else if (s.has('antepie_ext')) out.push('sugiere supinación');
+  else if (s.has('talon_ext')) out.push('patrón habitual (apoyo por el talón externo)');
+  if (s.has('punta')) out.push('arrastre de la punta (calzado corto o marcha en equino)');
+  return out.length ? out.join('; ') : null;
+}
+const cadenas = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
+const objeto = (v: unknown): Record<string, unknown> => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 
 /** Calcula la etiqueta legible de una escala a partir de sus datos. Defensivo: nunca lanza. */
 export function calcularResultadoEscala(tipo: TipoEscala, datos: Record<string, unknown>): string {
@@ -259,6 +301,65 @@ export function calcularResultadoEscala(tipo: TipoEscala, datos: Record<string, 
         const metodo = datos.metodo === 'foto' ? ' · medida sobre foto' : '';
         return `Úlcera ${l.toFixed(1)} × ${a.toFixed(1)} cm · área ${ar.toFixed(1)} cm²${pr != null ? ` · prof. ${pr.toFixed(1)} cm` : ''}${ubic}${pie}${metodo}`;
       }
+      case 'itb': {
+        // Se recalcula desde las presiones (si faltan, se usa el ITB que mandó el front).
+        const iz = itbDe(datos.pediaIzq, datos.tibialIzq, datos.braqIzq, datos.braqDer) ?? pos(datos.itbIzq);
+        const de = itbDe(datos.pediaDer, datos.tibialDer, datos.braqIzq, datos.braqDer) ?? pos(datos.itbDer);
+        const partes: string[] = [];
+        if (iz != null) partes.push(`Izq ${iz.toFixed(2)} (${textoItb(iz)})`);
+        if (de != null) partes.push(`Der ${de.toFixed(2)} (${textoItb(de)})`);
+        const pulsos = objeto(datos.pulsos);
+        const ausentes = Object.entries(pulsos).filter(([, v]) => v === 'ausente').map(([k]) => PULSO_SITIO[k] ?? k);
+        const disminuidos = Object.entries(pulsos).filter(([, v]) => v === 'disminuido').map(([k]) => PULSO_SITIO[k] ?? k);
+        if (ausentes.length) partes.push(`pulso ausente: ${ausentes.join(', ')}`);
+        if (disminuidos.length) partes.push(`pulso disminuido: ${disminuidos.join(', ')}`);
+        if (!partes.length) return 'ITB sin mediciones';
+        const eap = [iz, de].some((v) => v != null && v <= 0.9) || ausentes.length > 0;
+        return `ITB y pulsos — ${partes.join(' · ')}${eap ? ' · sugiere enfermedad arterial periférica' : ''}`;
+      }
+      case 'osi': {
+        // Onychomycosis Severity Index (Carney 2011): área × proximidad a la matriz, +10 si hay
+        // dermatofitoma o hiperqueratosis subungueal > 2 mm. 0 = sin compromiso · 1–5 leve · 6–15 moderada · 16–35 grave.
+        const area = num(datos.area), prox = num(datos.proximidad);
+        if (area == null) return 'OSI sin área';
+        const p = area === 0 ? 0 : area * (prox ?? 1) + (bool(datos.dermatofitoma) || bool(datos.hiperqueratosis) ? 10 : 0);
+        const sev = p === 0 ? 'sin compromiso' : p <= 5 ? 'leve' : p <= 15 ? 'moderada' : 'grave';
+        const una = typeof datos.una === 'string' ? OSI_UNA[datos.una] ?? datos.una : null;
+        const pie = typeof datos.pie === 'string' && datos.pie ? ` (${datos.pie})` : '';
+        return `OSI ${p}/35 — onicomicosis ${sev}${una ? ` · uña ${una}${pie}` : pie}`;
+      }
+      case 'manchester': {
+        const parte = (l: string, g: number | null) => (g != null && MANCHESTER_GRADO[g] ? `${l} grado ${g} (${MANCHESTER_GRADO[g]})` : null);
+        const partes = [parte('Izq', num(datos.izquierdo)), parte('Der', num(datos.derecho))].filter(Boolean);
+        return partes.length ? `Hallux valgus (Manchester) — ${partes.join(' · ')}` : 'Manchester sin grado';
+      }
+      case 'examen': {
+        const hallazgos = objeto(datos.hallazgos);
+        const partes: string[] = [];
+        for (const [gid, titulo, items] of EXAMEN_GRUPOS) {
+          const xs = Object.entries(hallazgos)
+            .filter(([k, v]) => k.startsWith(`${gid}.`) && typeof v === 'string' && LADO_CORTO[v])
+            .map(([k, v]) => `${items[k.slice(gid.length + 1)] ?? k} (${LADO_CORTO[v as string]})`);
+          if (xs.length) partes.push(`${titulo}: ${xs.join(', ')}`);
+        }
+        const cz = objeto(datos.calzado);
+        const tipoC = typeof cz.tipo === 'string' ? CALZADO_TIPO[cz.tipo] : undefined;
+        const problemas = cadenas(cz.problemas).map((x) => CALZADO_PROBLEMA[x] ?? x);
+        if (typeof cz.adecuado === 'boolean' || tipoC || problemas.length) {
+          const cab = ['Calzado', cz.adecuado === false ? 'inadecuado' : cz.adecuado === true ? 'adecuado' : null, tipoC ? `(${tipoC})` : null].filter(Boolean).join(' ');
+          partes.push(`${cab}${problemas.length ? `: ${problemas.join(', ')}` : ''}`);
+        }
+        if (cz.plantillas === true) partes.push('usa plantillas');
+        const desgaste = objeto(cz.desgaste);
+        for (const [lado, corto] of [['izquierdo', 'izq'], ['derecho', 'der']] as const) {
+          const zonas = cadenas(desgaste[lado]).filter((z) => DESGASTE_ZONA[z]);
+          if (!zonas.length) continue;
+          const lectura = lecturaDesgaste(zonas);
+          partes.push(`desgaste de suela ${corto}: ${zonas.map((z) => DESGASTE_ZONA[z]).join(', ')}${lectura ? ` → ${lectura}` : ''}`);
+        }
+        if (typeof datos.observacion === 'string' && datos.observacion.trim()) partes.push(datos.observacion.trim().slice(0, 300));
+        return partes.length ? `Examen del pie — ${partes.join(' · ')}` : 'Examen del pie sin hallazgos';
+      }
       default:
         return '—';
     }
@@ -316,7 +417,8 @@ export async function eliminarEscala(p: Ctx & { escalaId: string }) {
 // 1.3 · Podograma (marcas sobre la silueta del pie)
 // ─────────────────────────────────────────────────────────────────────────────
 const PIES_PODOGRAMA = ['izquierdo', 'derecho'] as const;
-const TIPOS_LESION = ['hiperqueratosis', 'heloma', 'onicocriptosis', 'ulcera', 'fisura', 'micosis', 'ampolla', 'verruga', 'dolor', 'inflamacion', 'otro'] as const;
+// cirugia (cicatriz / operación previa) y riesgo (preúlcera, presión alta) son capas propias del podograma.
+const TIPOS_LESION = ['hiperqueratosis', 'heloma', 'onicocriptosis', 'ulcera', 'fisura', 'micosis', 'ampolla', 'verruga', 'dolor', 'inflamacion', 'cirugia', 'riesgo', 'otro'] as const;
 
 function assertPiePodograma(pie: string): string {
   const p = (pie ?? '').trim().toLowerCase();

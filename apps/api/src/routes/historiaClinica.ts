@@ -253,7 +253,7 @@ const procedimientoSchema = z.object({
 });
 const procedimientoEditarSchema = procedimientoSchema.partial();
 const escalaSchema = z.object({
-  tipo: z.enum(['eva', 'wagner', 'texas', 'iwgdf', 'monofilamento', 'termometria', 'ulcera']),
+  tipo: z.enum(['eva', 'wagner', 'texas', 'iwgdf', 'monofilamento', 'termometria', 'ulcera', 'itb', 'osi', 'manchester', 'examen']),
   datos: z.record(z.any()),
   pie: pieOpc,
 });
@@ -264,7 +264,7 @@ const marcaSchema = z.object({
   x: z.number().min(0).max(1),
   y: z.number().min(0).max(1),
   zona: texto(120),
-  tipoLesion: z.enum(['hiperqueratosis', 'heloma', 'onicocriptosis', 'ulcera', 'fisura', 'micosis', 'ampolla', 'verruga', 'dolor', 'inflamacion', 'otro']),
+  tipoLesion: z.enum(['hiperqueratosis', 'heloma', 'onicocriptosis', 'ulcera', 'fisura', 'micosis', 'ampolla', 'verruga', 'dolor', 'inflamacion', 'cirugia', 'riesgo', 'otro']),
   nota: texto(500),
 });
 const marcaEditarSchema = marcaSchema.partial();
@@ -306,6 +306,15 @@ router.get('/paciente/:pacienteId/ficha-previa', ...verHc, async (req, res) => {
   const ficha = await fp.fichaPrevia(pacienteId);
   if (ficha.tieneHistoria) await hc.auditarLecturaHC({ ...ctx(req), pacienteId, origen: 'ficha_previa' });
   res.json(ficha);
+});
+
+// Estado de la HC (A3): activa ↔ pasiva (archivo; norma: activa 5 años, pasiva 15). Paso manual de
+// administración / coordinación (hc.anular); al registrar una nueva atención vuelve sola a activa.
+const estadoHcSchema = z.object({ estado: z.enum(['activa', 'pasiva']), motivo: texto(300) });
+router.patch('/paciente/:pacienteId/estado', ...anular, async (req, res) => {
+  const data = estadoHcSchema.parse(req.body);
+  await hc.assertAccesoPaciente(user(req), req.params.pacienteId);
+  res.json(await hc.cambiarEstadoHistoria({ ...ctx(req), pacienteId: req.params.pacienteId, estado: data.estado, motivo: data.motivo ?? null }));
 });
 
 // Escalas del paciente a lo largo de sus atenciones (comparar visitas, curva de úlceras)

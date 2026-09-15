@@ -4,7 +4,7 @@
 import { COLOR_LESION, TIPO_LESION_AYUDA, TIPO_LESION_LABEL, type AnotacionPodograma, type TipoLesion } from '../../api/historiaClinica';
 
 /** Orden por uso frecuente en la clínica del pie. */
-export const TIPOS_LESION_ORDEN: TipoLesion[] = ['hiperqueratosis', 'heloma', 'onicocriptosis', 'micosis', 'dolor', 'inflamacion', 'ulcera', 'fisura', 'ampolla', 'verruga', 'otro'];
+export const TIPOS_LESION_ORDEN: TipoLesion[] = ['hiperqueratosis', 'heloma', 'onicocriptosis', 'micosis', 'dolor', 'inflamacion', 'ulcera', 'fisura', 'ampolla', 'verruga', 'riesgo', 'cirugia', 'otro'];
 
 /** Clave de capa: el tipo, o "sin" para los trazos antiguos sin significado. */
 export const claveCapa = (tipo: TipoLesion | null | undefined) => tipo ?? 'sin';

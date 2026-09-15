@@ -295,9 +295,33 @@ export async function abrirAtencion(p: Ctx & { citaId: string; motivoConsulta: s
       ...ctxAudit(p), citaId: cita.id, accion: 'abrir_atencion', entidad: 'atencion_clinica', entidadId: a.id, sedeId: cita.sedeId,
       despues: { pacienteId: cita.pacienteId, profesionalId, motivoConsulta: motivo },
     });
+    // Una HC pasiva (archivo) vuelve sola a activa cuando el paciente regresa.
+    if (hc.estado === 'pasiva') {
+      await tx.historiaClinica.update({ where: { id: hc.id }, data: { estado: 'activa' } });
+      await auditEnTx(tx, {
+        ...ctxAudit(p), accion: 'cambiar_estado_hc', entidad: 'historia_clinica', entidadId: cita.pacienteId, sedeId: cita.sedeId,
+        antes: { estado: 'pasiva' }, despues: { estado: 'activa', motivo: 'Nueva atención' },
+      });
+    }
     return a;
   });
   return getAtencionCompleta(creada.id);
+}
+
+/** A3 · Pasa la HC a pasiva (archivo) o la reactiva. Paso manual, auditado; devuelve la HC completa. */
+export async function cambiarEstadoHistoria(p: Ctx & { pacienteId: string; estado: 'activa' | 'pasiva'; motivo?: string | null }) {
+  const hcRow = await prisma.historiaClinica.findUnique({ where: { pacienteId: p.pacienteId }, select: { id: true, estado: true } });
+  if (!hcRow) throw new AppError('El paciente aún no tiene historia clínica', 404, 'HC_NO_EXISTE');
+  if (hcRow.estado !== p.estado) {
+    await prisma.$transaction(async (tx) => {
+      await tx.historiaClinica.update({ where: { id: hcRow.id }, data: { estado: p.estado } });
+      await auditEnTx(tx, {
+        ...ctxAudit(p), accion: 'cambiar_estado_hc', entidad: 'historia_clinica', entidadId: p.pacienteId,
+        antes: { estado: hcRow.estado }, despues: { estado: p.estado, motivo: p.motivo ?? null },
+      });
+    });
+  }
+  return getHistoriaCompleta(p.pacienteId);
 }
 
 export async function editarAtencion(p: Ctx & { atencionId: string; motivoConsulta?: string; profesionalId?: string | null }) {

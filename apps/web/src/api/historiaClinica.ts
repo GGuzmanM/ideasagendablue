@@ -69,13 +69,13 @@ export interface AtencionCompleta extends AtencionClinica {
 
 // ─── Bloque 3 · procedimientos, escalas y podograma ──────────────────────────
 export type TipoProcedimiento = 'matricectomia' | 'laser' | 'curacion' | 'debridacion' | 'onicotomia' | 'quiropodia' | 'infiltracion' | 'otro';
-export type TipoEscala = 'eva' | 'wagner' | 'texas' | 'iwgdf' | 'monofilamento' | 'termometria' | 'ulcera';
+export type TipoEscala = 'eva' | 'wagner' | 'texas' | 'iwgdf' | 'monofilamento' | 'termometria' | 'ulcera' | 'itb' | 'osi' | 'manchester' | 'examen';
 export type Pie = 'izquierdo' | 'derecho' | 'ambos';
 export type PiePodograma = 'izquierdo' | 'derecho';
 /** Silueta sobre la que se marca: planta del pie o dorso (uñas, empeine). */
 export type VistaSilueta = 'plantar' | 'dorsal';
 export const VISTA_SILUETA_LABEL: Record<VistaSilueta, string> = { plantar: 'Planta', dorsal: 'Dorso' };
-export type TipoLesion = 'hiperqueratosis' | 'heloma' | 'onicocriptosis' | 'ulcera' | 'fisura' | 'micosis' | 'ampolla' | 'verruga' | 'dolor' | 'inflamacion' | 'otro';
+export type TipoLesion = 'hiperqueratosis' | 'heloma' | 'onicocriptosis' | 'ulcera' | 'fisura' | 'micosis' | 'ampolla' | 'verruga' | 'dolor' | 'inflamacion' | 'cirugia' | 'riesgo' | 'otro';
 
 export const TIPO_PROCEDIMIENTO_LABEL: Record<TipoProcedimiento, string> = {
   matricectomia: 'Matricectomía', laser: 'Láser', curacion: 'Curación', debridacion: 'Debridación',
@@ -83,21 +83,25 @@ export const TIPO_PROCEDIMIENTO_LABEL: Record<TipoProcedimiento, string> = {
 };
 export const TIPO_ESCALA_LABEL: Record<TipoEscala, string> = {
   eva: 'EVA (dolor)', wagner: 'Wagner', texas: 'Texas', iwgdf: 'IWGDF (riesgo)', monofilamento: 'Monofilamento', termometria: 'Termometría plantar', ulcera: 'Úlcera (medidas)',
+  examen: 'Examen del pie', itb: 'ITB y pulsos', osi: 'OSI (onicomicosis)', manchester: 'Manchester (hallux valgus)',
 };
 export const TIPO_LESION_LABEL: Record<TipoLesion, string> = {
   hiperqueratosis: 'Hiperqueratosis', heloma: 'Heloma', onicocriptosis: 'Onicocriptosis', ulcera: 'Úlcera',
-  fisura: 'Fisura', micosis: 'Micosis', ampolla: 'Ampolla', verruga: 'Verruga', dolor: 'Dolor', inflamacion: 'Inflamación', otro: 'Otro',
+  fisura: 'Fisura', micosis: 'Micosis', ampolla: 'Ampolla', verruga: 'Verruga', dolor: 'Dolor', inflamacion: 'Inflamación',
+  cirugia: 'Cirugía / cicatriz', riesgo: 'Zona de riesgo', otro: 'Otro',
 };
 /** Nombre común de cada lesión (como lo dice el paciente), para que el significado de la marca sea claro. */
 export const TIPO_LESION_AYUDA: Record<TipoLesion, string> = {
   hiperqueratosis: 'callosidad, dureza', heloma: 'callo, ojo de gallo', onicocriptosis: 'uñero, uña encarnada', ulcera: 'herida abierta',
   fisura: 'grieta', micosis: 'hongos en piel o uña', ampolla: 'flictena', verruga: 'mezquino', dolor: 'punto de dolor',
-  inflamacion: 'hinchazón, edema', otro: 'escribe qué es en el detalle',
+  inflamacion: 'hinchazón, edema', cirugia: 'operación previa, cicatriz', riesgo: 'preúlcera, presión alta, prominencia ósea',
+  otro: 'escribe qué es en el detalle',
 };
 /** Color fijo por tipo de lesión: el mismo en los puntos, los dibujos y la leyenda. */
 export const COLOR_LESION: Record<TipoLesion, string> = {
   hiperqueratosis: '#f59e0b', heloma: '#ea580c', onicocriptosis: '#8b5cf6', ulcera: '#dc2626', fisura: '#0891b2',
-  micosis: '#65a30d', ampolla: '#f472b6', verruga: '#92400e', dolor: '#2563eb', inflamacion: '#c026d3', otro: '#64748b',
+  micosis: '#65a30d', ampolla: '#f472b6', verruga: '#92400e', dolor: '#2563eb', inflamacion: '#c026d3',
+  cirugia: '#0f766e', riesgo: '#111827', otro: '#64748b',
 };
 /** "Heloma · callo, ojo de gallo" (para desplegables y títulos). */
 export const etiquetaLesion = (t: TipoLesion) => `${TIPO_LESION_LABEL[t]} · ${TIPO_LESION_AYUDA[t]}`;
@@ -255,6 +259,8 @@ export const historiaClinicaApi = {
     api.post<HistoriaCompleta>(`${B}/paciente/${pacienteId}/alergias`, data),
   editarAlergia: (id: string, data: { sustancia?: string; reaccion?: string | null; severidad?: SeveridadAlergia; activa?: boolean }) => api.patch<HistoriaCompleta>(`${B}/alergias/${id}`, data),
   eliminarAlergia: (id: string) => api.delete<HistoriaCompleta>(`${B}/alergias/${id}`),
+  cambiarEstadoHistoria: (pacienteId: string, estado: 'activa' | 'pasiva', motivo?: string | null) =>
+    api.patch<HistoriaCompleta>(`${B}/paciente/${pacienteId}/estado`, { estado, motivo: motivo ?? null }),
   // Bloque 3
   bandeja: (dias = 45) => api.get<Bandeja>(`${B}/bandeja`, { dias: String(dias) }),
   // 2.8 ficha previa, escalas por paciente y plantillas

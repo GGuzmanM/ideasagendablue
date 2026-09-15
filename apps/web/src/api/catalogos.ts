@@ -25,8 +25,14 @@ export interface MedicamentoItem {
   posologiaSugerida?: string | null;
 }
 
+/** Fila del catálogo CIE-10 para gestionarlo (D3): incluye inactivos y cuántos diagnósticos lo usan. */
+export interface Cie10Admin extends Cie10Item { activo: boolean; usos: number }
+
 export const catalogosApi = {
   cie10: (q: string, limit = 20) => api.get<Cie10Item[]>('/catalogos/cie10', { q, limit: String(limit) }),
+  cie10Admin: (q: string, inactivos: boolean) => api.get<{ items: Cie10Admin[]; categorias: string[] }>('/catalogos/cie10/admin', { q, ...(inactivos ? { inactivos: '1' } : {}) }),
+  crearCie10: (data: { codigo: string; descripcion: string; categoria?: string | null }) => api.post<Cie10Admin>('/catalogos/cie10', data),
+  editarCie10: (codigo: string, data: { descripcion?: string; categoria?: string | null; activo?: boolean }) => api.patch<Cie10Admin>(`/catalogos/cie10/${encodeURIComponent(codigo)}`, data),
   medicamentos: (q: string, grupo?: string, limit = 20) =>
     api.get<MedicamentoItem[]>('/catalogos/medicamentos', { q, limit: String(limit), ...(grupo ? { grupo } : {}) }),
 };

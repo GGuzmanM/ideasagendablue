@@ -21,6 +21,10 @@ import { useDictado, anexarDictado } from '../hooks/useDictado';
 import { useDictadoConsulta } from '../hooks/useDictadoConsulta';
 import { adivinarTipoProcedimiento, type DiagnosticoDictado } from '../utils/dictadoEstructurado';
 import { coordZona, zonaMasCercana, ZONAS_PIE } from '../utils/zonasPie';
+import {
+  ITB_VACIO, PULSOS_VACIOS, CALZADO_VACIO, itbPie, numOrNull, puntajeOsi, combinarLado, eapDeItb, examenSugiereDeformidad, manchesterSugiereDeformidad,
+  type CamposItb, type PulsosPie, type EstadoPulso, type CalzadoForm, type ZonaDesgaste,
+} from '../utils/escalasPie';
 import { eventosPorZona, resumenZonas, claveZona } from '../utils/historialZonas';
 import { indiceTrazoEn } from '../utils/trazos';
 import { useAutotextoStore } from '../stores/autotextoStore';
@@ -154,6 +158,21 @@ export function useHistoriaClinicaPage() {
     },
   });
 
+  // A3 · Estado de la HC: pasar a pasiva (archivo) o reactivar. Paso manual de administración / coordinación;
+  // al registrar una nueva atención vuelve sola a activa. Se sugiere con más de 5 años sin atenciones.
+  const estadoHcMut = useMutation({
+    mutationFn: (estado: 'activa' | 'pasiva') => historiaClinicaApi.cambiarEstadoHistoria(pacienteId!, estado),
+    onSuccess: (_r, estado) => { invalidar({ pacienteId }); toast.success(estado === 'pasiva' ? 'Historia clínica pasada a archivo pasivo' : 'Historia clínica reactivada'); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const alternarEstadoHc = () => {
+    const nuevo = historia?.estado === 'pasiva' ? 'activa' : 'pasiva';
+    if (nuevo === 'pasiva' && !confirm('¿Pasar esta historia clínica a archivo PASIVO?\n\nSe puede reactivar cuando quieras, y vuelve sola a activa si el paciente se atiende de nuevo.')) return;
+    estadoHcMut.mutate(nuevo);
+  };
+  const ultimaAtencionFecha = historia?.atenciones?.[0]?.fecha ?? null;
+  const sugerirPasiva = historia?.estado === 'activa' && !!ultimaAtencionFecha && Date.now() - new Date(ultimaAtencionFecha).getTime() > 5 * 365.25 * 86_400_000;
+
   // Fotos tomadas que aún no se guardan: se cuentan en la pestaña Fotos y en el cierre, y se avisa antes
   // de recargar o cerrar la página (viven en memoria).
   const fotosSinGuardar = usePendientesDe(atencionSel).length;
@@ -167,6 +186,7 @@ export function useHistoriaClinicaPage() {
 
   return {
     pacienteId, paciente, historia, cargando: historiaQ.isLoading, errorCarga: historiaQ.error as Error | null, fotosSinGuardar,
+    estadoHcMut, alternarEstadoHc, sugerirPasiva,
     atencion, atencionSel, seleccionarAtencion, cargandoAtencion: atencionQ.isLoading,
     tab, setTab, navigate,
     puedeRegistrar, puedeAnular, puedeVerRecetas, esMedicoPrescriptor, usuario,
@@ -499,6 +519,7 @@ export function useEscalas(atencion: AtencionCompleta | null, puedeRegistrar: bo
   // Historial del paciente: monofilamento de la visita anterior (comparar sitio a sitio) y mediciones de úlceras (curva).
   const { data: mfHist = [] } = useQuery({ queryKey: ['escalas-paciente', pacienteId, 'monofilamento'], queryFn: () => historiaClinicaApi.escalasPaciente(pacienteId!, 'monofilamento'), enabled: !!pacienteId, staleTime: 60_000 });
   const { data: ulceraHist = [] } = useQuery({ queryKey: ['escalas-paciente', pacienteId, 'ulcera'], queryFn: () => historiaClinicaApi.escalasPaciente(pacienteId!, 'ulcera'), enabled: !!pacienteId, staleTime: 60_000 });
+  const { data: osiHist = [] } = useQuery({ queryKey: ['escalas-paciente', pacienteId, 'osi'], queryFn: () => historiaClinicaApi.escalasPaciente(pacienteId!, 'osi'), enabled: !!pacienteId, staleTime: 60_000 });
   const mfAnteriorRow = [...mfHist].reverse().find((x) => x.atencionId !== atencionId && (!atencion || x.fecha <= atencion.fecha));
   const mfAnterior = mfAnteriorRow
     ? { fecha: mfAnteriorRow.fecha, izquierdo: (mfAnteriorRow.datos.izquierdo as boolean[] | undefined) ?? [], derecho: (mfAnteriorRow.datos.derecho as boolean[] | undefined) ?? [] }
@@ -548,6 +569,50 @@ export function useEscalas(atencion: AtencionCompleta | null, puedeRegistrar: bo
   const ulNombre = [ulPie ? PIE_LABEL[ulPie] : null, ulUbicacion.trim() || null].filter(Boolean).join(' · ') || 'Úlcera';
   const ulSerie = seriesUlcera.find((x) => x.nombre === ulNombre);
   const ulAnterior = ulSerie ? [...ulSerie.puntos].reverse().find((x) => x.atencionId !== atencionId) ?? null : null;
+  // ITB y pulsos (2.4): presiones sistólicas por lado; el ITB de cada pie se calcula en vivo.
+  const [itb, setItb] = useState<CamposItb>(ITB_VACIO);
+  const setCampoItb = (k: keyof CamposItb, v: string) => setItb((prev) => ({ ...prev, [k]: v }));
+  const [pulsos, setPulsos] = useState<PulsosPie>(PULSOS_VACIOS);
+  const setPulso = (k: keyof PulsosPie, v: EstadoPulso | '') => setPulsos((prev) => ({ ...prev, [k]: v }));
+  const braqIzq = numOrNull(itb.braqIzq), braqDer = numOrNull(itb.braqDer);
+  const itbIzq = itbPie(numOrNull(itb.pediaIzq), numOrNull(itb.tibialIzq), braqIzq, braqDer);
+  const itbDer = itbPie(numOrNull(itb.pediaDer), numOrNull(itb.tibialDer), braqIzq, braqDer);
+  // OSI (2.6): una uña por registro; se compara con la última medición de esa misma uña.
+  const [osiPie, setOsiPie] = useState<'izquierdo' | 'derecho' | ''>('');
+  const [osiUna, setOsiUna] = useState('hallux');
+  const [osiArea, setOsiArea] = useState(0);
+  const [osiProx, setOsiProx] = useState(1);
+  const [osiDerm, setOsiDerm] = useState(false);
+  const [osiHiper, setOsiHiper] = useState(false);
+  const osiPuntaje = puntajeOsi(osiArea, osiProx, osiDerm, osiHiper);
+  const osiAnteriorRow = osiPie
+    ? [...osiHist].reverse().find((x) => x.atencionId !== atencionId && (!atencion || x.fecha <= atencion.fecha) && x.datos.pie === osiPie && x.datos.una === osiUna)
+    : undefined;
+  const osiAnterior = osiAnteriorRow
+    ? { fecha: osiAnteriorRow.fecha, puntaje: typeof osiAnteriorRow.datos.puntaje === 'number' ? osiAnteriorRow.datos.puntaje : puntajeOsi(Number(osiAnteriorRow.datos.area) || 0, Number(osiAnteriorRow.datos.proximidad) || 1, osiAnteriorRow.datos.dermatofitoma === true, osiAnteriorRow.datos.hiperqueratosis === true) }
+    : null;
+  // Manchester (2.7): grado 1–4 por pie.
+  const [manIzq, setManIzq] = useState<number | null>(null);
+  const [manDer, setManDer] = useState<number | null>(null);
+  // Examen del pie (1.5): hallazgos por pie + calzado con la guía de desgaste de la suela.
+  const [hallazgos, setHallazgos] = useState<Record<string, { izq: boolean; der: boolean }>>({});
+  const toggleHallazgo = (clave: string, lado: 'izq' | 'der') => setHallazgos((prev) => {
+    const actual = prev[clave] ?? { izq: false, der: false };
+    return { ...prev, [clave]: { ...actual, [lado]: !actual[lado] } };
+  });
+  const [calzado, setCalzado] = useState<CalzadoForm>(CALZADO_VACIO);
+  const setCampoCalzado = (c: Partial<CalzadoForm>) => setCalzado((prev) => ({ ...prev, ...c }));
+  const toggleProblema = (k: string) => setCalzado((prev) => ({ ...prev, problemas: prev.problemas.includes(k) ? prev.problemas.filter((x) => x !== k) : [...prev.problemas, k] }));
+  const toggleDesgaste = (lado: 'izquierdo' | 'derecho', z: ZonaDesgaste) => setCalzado((prev) => {
+    const lista = lado === 'izquierdo' ? prev.desgasteIzq : prev.desgasteDer;
+    const nueva = lista.includes(z) ? lista.filter((x) => x !== z) : [...lista, z];
+    return lado === 'izquierdo' ? { ...prev, desgasteIzq: nueva } : { ...prev, desgasteDer: nueva };
+  });
+  const [obsExamen, setObsExamen] = useState('');
+  const hallazgosMarcados = Object.values(hallazgos).filter((v) => v.izq || v.der).length;
+  // IWGDF: factores SUGERIDOS por lo registrado hoy (el médico los puede desmarcar).
+  const eapSugerida = escalas.some((x) => x.tipo === 'itb' && eapDeItb(x.datos));
+  const deformidadSugerida = escalas.some((x) => (x.tipo === 'manchester' && manchesterSugiereDeformidad(x.datos)) || (x.tipo === 'examen' && examenSugiereDeformidad(x.datos)));
 
   useEffect(() => { limpiar(); /* eslint-disable-line react-hooks/exhaustive-deps */ }, [atencionId]);
   const limpiar = () => {
@@ -555,8 +620,13 @@ export function useEscalas(atencion: AtencionCompleta | null, puedeRegistrar: bo
     setIwgdfF({ psp: false, eap: false, deformidad: false, ulceraPrevia: false, amputacion: false, erc: false });
     setMfIzq(Array(MF_PUNTOS).fill(true)); setMfDer(Array(MF_PUNTOS).fill(true)); setTempIzq(Array(MF_PUNTOS).fill('')); setTempDer(Array(MF_PUNTOS).fill(''));
     setUlLargo(''); setUlAncho(''); setUlProf(''); setUlPie(''); setUlUbicacion('');
+    setItb(ITB_VACIO); setPulsos(PULSOS_VACIOS); setOsiPie(''); setOsiUna('hallux'); setOsiArea(0); setOsiProx(1); setOsiDerm(false); setOsiHiper(false);
+    setManIzq(null); setManDer(null); setHallazgos({}); setCalzado(CALZADO_VACIO); setObsExamen('');
   };
-  const setTipo = (t: TipoEscala | '') => { setTipoRaw(t); if (t === 'iwgdf') setIwgdfF((prev) => ({ ...prev, psp: pspSugerida })); };
+  const setTipo = (t: TipoEscala | '') => {
+    setTipoRaw(t);
+    if (t === 'iwgdf') setIwgdfF((prev) => ({ ...prev, psp: pspSugerida, eap: prev.eap || eapSugerida, deformidad: prev.deformidad || deformidadSugerida }));
+  };
   const toggleMf = (lado: 'izq' | 'der', i: number) => {
     const set = lado === 'izq' ? setMfIzq : setMfDer;
     set((prev) => prev.map((v, idx) => (idx === i ? !v : v)));
@@ -571,12 +641,27 @@ export function useEscalas(atencion: AtencionCompleta | null, puedeRegistrar: bo
       case 'monofilamento': return { izquierdo: mfIzq, derecho: mfDer };
       case 'termometria': return { izquierdo: tempIzq.map((v) => (v === '' ? null : Number(v))), derecho: tempDer.map((v) => (v === '' ? null : Number(v))) };
       case 'ulcera': return { largo: Number(ulLargo), ancho: Number(ulAncho), profundidad: ulProf === '' ? null : Number(ulProf), pie: ulPie || null, ubicacion: ulUbicacion.trim() || null };
+      case 'itb': return {
+        braqIzq, braqDer, pediaIzq: numOrNull(itb.pediaIzq), tibialIzq: numOrNull(itb.tibialIzq), pediaDer: numOrNull(itb.pediaDer), tibialDer: numOrNull(itb.tibialDer),
+        itbIzq, itbDer, pulsos: Object.fromEntries(Object.entries(pulsos).filter(([, v]) => v)),
+      };
+      case 'osi': return { pie: osiPie || null, una: osiUna, area: osiArea, proximidad: osiArea ? osiProx : null, dermatofitoma: osiDerm, hiperqueratosis: osiHiper, puntaje: osiPuntaje };
+      case 'manchester': return { izquierdo: manIzq, derecho: manDer };
+      case 'examen': return {
+        hallazgos: Object.fromEntries(Object.entries(hallazgos).map(([k, v]) => [k, combinarLado(v.izq, v.der)] as const).filter(([, v]) => v)),
+        calzado: { adecuado: calzado.adecuado, tipo: calzado.tipo || null, problemas: calzado.problemas, plantillas: calzado.plantillas, desgaste: { izquierdo: calzado.desgasteIzq, derecho: calzado.desgasteDer } },
+        observacion: obsExamen.trim() || null,
+      };
       default: return {};
     }
   };
-  const puedeGuardar = puedeRegistrar && !!tipo && atencion?.estado !== 'cerrada' && (tipo !== 'termometria' || pares.length > 0) && (tipo !== 'ulcera' || ulArea != null);
+  const examenConDatos = hallazgosMarcados > 0 || calzado.adecuado != null || calzado.plantillas != null || !!calzado.tipo || calzado.problemas.length > 0
+    || calzado.desgasteIzq.length + calzado.desgasteDer.length > 0 || !!obsExamen.trim();
+  const puedeGuardar = puedeRegistrar && !!tipo && atencion?.estado !== 'cerrada' && (tipo !== 'termometria' || pares.length > 0) && (tipo !== 'ulcera' || ulArea != null)
+    && (tipo !== 'itb' || itbIzq != null || itbDer != null || Object.values(pulsos).some(Boolean))
+    && (tipo !== 'osi' || !!osiPie) && (tipo !== 'manchester' || manIzq != null || manDer != null) && (tipo !== 'examen' || examenConDatos);
   const guardarMut = useMutation({
-    mutationFn: () => historiaClinicaApi.guardarEscala(atencionId!, { tipo: tipo as TipoEscala, datos: datos(), pie: tipo === 'ulcera' && ulPie ? ulPie : undefined }),
+    mutationFn: () => historiaClinicaApi.guardarEscala(atencionId!, { tipo: tipo as TipoEscala, datos: datos(), pie: tipo === 'ulcera' && ulPie ? ulPie : tipo === 'osi' && osiPie ? osiPie : undefined }),
     onSuccess: () => { inval(); limpiar(); toast.success('Escala registrada'); },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -594,6 +679,11 @@ export function useEscalas(atencion: AtencionCompleta | null, puedeRegistrar: bo
     mfIzq, mfDer, toggleMf,
     tempIzq, tempDer, setTemp, termoDeltaMax,
     mfAnterior, seriesUlcera, ulLargo, setUlLargo, ulAncho, setUlAncho, ulProf, setUlProf, ulPie, setUlPie, ulUbicacion, setUlUbicacion, ulArea, ulAnterior,
+    itb, setCampoItb, pulsos, setPulso, itbIzq, itbDer,
+    osiPie, setOsiPie, osiUna, setOsiUna, osiArea, setOsiArea, osiProx, setOsiProx, osiDerm, setOsiDerm, osiHiper, setOsiHiper, osiPuntaje, osiAnterior,
+    manIzq, setManIzq, manDer, setManDer,
+    hallazgos, toggleHallazgo, calzado, setCampoCalzado, toggleProblema, toggleDesgaste, obsExamen, setObsExamen,
+    eapSugerida, deformidadSugerida,
     puedeGuardar, guardarMut, eliminarMut,
   };
 }
@@ -962,7 +1052,7 @@ export function useFotosClinicas(atencion: AtencionCompleta | null, puedeRegistr
   const quitarPend = useFotosPendientesStore((s) => s.quitar);
   const [guardando, setGuardando] = useState<string[]>([]);
   const enLoteRef = useRef(false);
-  const agregarArchivos = (lista: FileList | null | undefined) => {
+  const agregarArchivos = (lista: FileList | File[] | null | undefined, campos?: Partial<CamposPendiente>) => {
     if (!lista?.length || !puedeEditar || !atencionId) return;
     const nuevas: FotoPendiente[] = [];
     for (const archivo of Array.from(lista)) {
@@ -970,12 +1060,17 @@ export function useFotosClinicas(atencion: AtencionCompleta | null, puedeRegistr
       if (archivo.size > MAX_FOTO_BYTES) { toast.error(`${archivo.name}: la foto supera los 15 MB`); continue; }
       nuevas.push({
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, archivo, url: URL.createObjectURL(archivo),
-        tomadaEn: new Date(archivo.lastModified || Date.now()).toISOString(), zona: '', pie: '', categoria: 'lesion', descripcion: '',
+        tomadaEn: new Date(archivo.lastModified || Date.now()).toISOString(), zona: '', pie: '', categoria: 'lesion', descripcion: '', ...campos,
       });
     }
     if (nuevas.length) agregarPend(atencionId, nuevas);
   };
   const actualizarPendiente = (id: string, cambios: Partial<CamposPendiente>) => { if (atencionId) actualizarPend(atencionId, id, cambios); };
+  // Foto «fantasma»: cámara en vivo con una foto anterior en transparencia para repetir el encuadre; cada
+  // captura va a «Por guardar» con la zona, lado y tipo de la foto de referencia.
+  const [fantasmaAbierta, setFantasmaAbierta] = useState(false);
+  const capturarFantasma = (archivo: File, ref: FotoPaciente | null) =>
+    agregarArchivos([archivo], ref ? { zona: ref.zona ?? '', pie: ref.pie ?? '', categoria: ref.categoria } : undefined);
   // La atención viaja en las variables: si el doctor cambia de atención mientras sube, la foto no se cruza.
   const subirMut = useMutation({
     mutationFn: (v: { p: FotoPendiente; atencionId: string }) => historiaClinicaApi.subirFoto(v.atencionId, v.p.archivo, { pie: v.p.pie || null, zona: v.p.zona || null, categoria: v.p.categoria, descripcion: v.p.descripcion || null, tomadaEn: v.p.tomadaEn }),
@@ -1057,6 +1152,7 @@ export function useFotosClinicas(atencion: AtencionCompleta | null, puedeRegistr
     fotos, cerrada, puedeEditar,
     fotoMedir, setFotoMedir, medirMut, pedalActivo, setPedalActivo,
     pendientes, agregarArchivos, actualizarPendiente, guardarPendiente, guardarTodas, descartarPendiente, aplicarATodas, guardando,
+    fantasmaAbierta, setFantasmaAbierta, capturarFantasma,
     subirMut, eliminarMut, editarMut,
     todas, zonas, sugerenciasZona, zonaComparar, elegirZona, enZona, antes, despues, setAntesId, setDespuesId,
   };

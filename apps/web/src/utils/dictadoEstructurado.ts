@@ -172,6 +172,8 @@ export function interpretarDiagnostico(texto: string): DiagnosticoDictado {
 export interface LesionDictada { tipoLesion: TipoLesion | null; pie: 'izquierdo' | 'derecho' | null; zona: ZonaPie | null; grado: number | null; texto: string }
 
 const LESIONES: [RegExp, TipoLesion][] = [
+  // Primero: "preúlcera" o "zona de presión" son RIESGO aunque contengan "úlcera".
+  [/zonas? de riesgo|pre[\s-]?ulcer|zonas? de (?:alta )?presion|puntos? de (?:alta )?presion|hiperpresion|prominencia/, 'riesgo'],
   [/onicocriptosis|una encarnada|una enterrada|una incarnada|una clavada|uneros?\b/, 'onicocriptosis'],
   [/hiperqueratosis|callosidad|callos?\b|queratosis|durezas?\b/, 'hiperqueratosis'],
   [/helomas?\b|ojo de gallo|clavo plantar|clavos plantares/, 'heloma'],
@@ -180,6 +182,7 @@ const LESIONES: [RegExp, TipoLesion][] = [
   [/onicomicosis|micosis|hongos?\b|tina\b|pie de atleta|dermatofit/, 'micosis'],
   [/ampollas?\b|flictenas?\b/, 'ampolla'],
   [/verrugas?\b|papilomas?\b|mezquinos?\b/, 'verruga'],
+  [/cicatri|cirugi|operad[oa]|operacion|quirurgic|postoperatori|posoperatori/, 'cirugia'],
   // Al final: "heloma doloroso" sigue siendo heloma; solo si no hay otra lesión es un punto de dolor.
   [/\bdolor|\bduele|doloros/, 'dolor'],
   [/inflamac|inflamad|edema|hinchaz|hinchad/, 'inflamacion'],

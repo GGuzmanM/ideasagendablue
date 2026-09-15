@@ -10,6 +10,9 @@ import { BarraDictadoConsulta } from '../components/historiaClinica/DictadoConsu
 import type { SeccionDictado } from '../utils/dictadoEstructurado';
 import { AlergiasBanner } from '../components/historiaClinica/AlergiasBanner';
 import { BuscadorCie10 } from '../components/historiaClinica/Buscadores';
+import { FormItb, FormOsi, FormManchester, FormExamenPie } from '../components/historiaClinica/EscalasPie';
+import { CatalogoCie10Dialog } from '../components/historiaClinica/CatalogoCie10Dialog';
+import { CamaraFantasma } from '../components/historiaClinica/CamaraFantasma';
 import { RegistrarAtencionModal } from '../components/historiaClinica/RegistrarAtencionModal';
 import { EmitirRecetaModal } from '../components/historiaClinica/EmitirRecetaModal';
 import { DialogoMotivo } from '../components/historiaClinica/DialogoMotivo';
@@ -68,6 +71,7 @@ export function HistoriaClinicaPage() {
           <span className="font-headline-sm text-headline-sm font-semibold text-on-surface truncate flex items-center gap-2">
             <span className="material-symbols-outlined text-primary">clinical_notes</span>Historia clínica
             {h.historia && <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[11px] font-bold font-mono-label">HC N° {String(h.historia.numero).padStart(6, '0')}</span>}
+            {h.historia?.estado === 'pasiva' && <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[11px] font-bold uppercase" title="Historia en archivo pasivo">Pasiva</span>}
           </span>
         </div>
         {h.puedeRegistrar && (
@@ -112,6 +116,17 @@ export function HistoriaClinicaPage() {
               <div className="rounded-lg bg-surface-container-low/60 p-2"><span className={LBL}>Sexo</span><b className="capitalize">{p.sexo ?? '—'}</b></div>
               <div className="rounded-lg bg-surface-container-low/60 p-2"><span className={LBL}>Nacimiento</span><b>{p.fechaNacimiento ? fmtFecha(p.fechaNacimiento) : '—'}</b></div>
             </div>
+            {/* A3 · Estado de la HC: activa / pasiva (archivo). Lo cambia administración o coordinación. */}
+            {h.historia && (
+              <div className={`flex items-center gap-2 flex-wrap rounded-lg px-3 py-2 text-xs ${h.historia.estado === 'pasiva' ? 'bg-amber-50 border border-amber-200' : 'bg-surface-container-low/60'}`} data-testid="estado-hc">
+                <span className={`font-bold uppercase text-[10px] px-1.5 py-0.5 rounded ${h.historia.estado === 'pasiva' ? 'bg-amber-200 text-amber-900' : 'bg-emerald-100 text-emerald-700'}`}>HC {h.historia.estado}</span>
+                <span className="text-on-surface-variant flex-1 min-w-0">{atenciones[0] ? `Última atención: ${fmtFecha(atenciones[0].fecha)}` : 'Sin atenciones'}</span>
+                {h.puedeAnular && (
+                  <button onClick={h.alternarEstadoHc} disabled={h.estadoHcMut.isPending} className="text-primary font-semibold hover:underline disabled:opacity-50">{h.historia.estado === 'pasiva' ? 'Reactivar' : 'Pasar a pasiva'}</button>
+                )}
+                {h.sugerirPasiva && <span className="w-full text-[11px] text-amber-700">Más de 5 años sin atenciones: puede pasar a archivo pasivo.</span>}
+              </div>
+            )}
             <AlergiasBanner alergias={alergias} compacto />
 
             {/* Accesos: en pantallas chicas se ocultan (ya existen como pestañas) */}
@@ -277,13 +292,17 @@ function PanelEvolucion({ h, a }: { h: H; a: AtencionCompleta }) {
   const [confirmarDx, setConfirmarDx] = useState<string | null>(null);
   const [confirmarNota, setConfirmarNota] = useState<string | null>(null);
   const [plantillasAbierto, setPlantillasAbierto] = useState(false);
+  const [catalogoAbierto, setCatalogoAbierto] = useState(false);
   return (
     <div className="space-y-6">
       {/* Diagnósticos */}
       <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5">
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-headline-sm text-headline-sm font-semibold text-on-surface flex items-center"><span className="material-symbols-outlined mr-2 text-primary">diagnosis</span>Diagnósticos</h3>
-          {h.puedeRegistrar && e.tieneDxAnteriores && <button onClick={e.copiarDxAnteriores} className="text-primary text-xs font-semibold hover:underline flex items-center gap-1"><span className="material-symbols-outlined text-base">content_copy</span>Copiar anteriores</button>}
+          <div className="flex items-center gap-3">
+            {h.gestionaPlantillas && <button onClick={() => setCatalogoAbierto(true)} title="Agregar los códigos CIE-10 que falten o desactivar los que no se usan" className="text-on-surface-variant text-xs font-semibold hover:text-primary hover:underline flex items-center gap-1"><span className="material-symbols-outlined text-base">menu_book</span>Catálogo CIE-10</button>}
+            {h.puedeRegistrar && e.tieneDxAnteriores && <button onClick={e.copiarDxAnteriores} className="text-primary text-xs font-semibold hover:underline flex items-center gap-1"><span className="material-symbols-outlined text-base">content_copy</span>Copiar anteriores</button>}
+          </div>
         </div>
         {a.diagnosticos.length === 0 && <p className="text-sm text-on-surface-variant mb-3">Sin diagnósticos registrados.</p>}
         <div className="space-y-1.5 mb-3">
@@ -402,6 +421,7 @@ function PanelEvolucion({ h, a }: { h: H; a: AtencionCompleta }) {
         )}
       </section>
       {plantillasAbierto && <PlantillasDialog onClose={() => setPlantillasAbierto(false)} />}
+      {catalogoAbierto && <CatalogoCie10Dialog onClose={() => setCatalogoAbierto(false)} />}
       {confirmarDx && <DialogoMotivo titulo="Eliminar diagnóstico" descripcion="Se quita de la atención (queda registro interno)." confirmar="Eliminar" pending={e.eliminarDxMut.isPending} onConfirmar={() => { e.eliminarDxMut.mutate(confirmarDx); setConfirmarDx(null); }} onClose={() => setConfirmarDx(null)} />}
       {confirmarNota && <DialogoMotivo titulo="Eliminar nota" descripcion="La nota deja de verse en la historia (queda en el historial interno)." confirmar="Eliminar" pending={e.eliminarNotaMut.isPending} onConfirmar={() => { e.eliminarNotaMut.mutate(confirmarNota); setConfirmarNota(null); }} onClose={() => setConfirmarNota(null)} />}
     </div>
@@ -689,6 +709,8 @@ function PanelEscalas({ h, a }: { h: H; a: AtencionCompleta }) {
                   <label key={k} className={`flex items-center gap-2 text-sm text-on-surface min-h-[44px] lg:min-h-0 px-3 py-2 rounded-xl border ${e.iwgdfF[k] ? 'border-primary bg-primary/5' : 'border-outline-variant/40'}`}>
                     <input type="checkbox" checked={e.iwgdfF[k]} onChange={(ev) => e.setFactorIwgdf(k, ev.target.checked)} className="accent-primary w-4 h-4" />{l}
                     {k === 'psp' && e.pspSugerida && <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 ml-auto">según monofilamento de hoy</span>}
+                    {k === 'eap' && e.eapSugerida && <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 ml-auto">según ITB / pulsos de hoy</span>}
+                    {k === 'deformidad' && e.deformidadSugerida && <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 ml-auto">según examen / Manchester de hoy</span>}
                   </label>
                 ))}
               </div>
@@ -768,6 +790,11 @@ function PanelEscalas({ h, a }: { h: H; a: AtencionCompleta }) {
               )}
             </div>
           )}
+
+          {e.tipo === 'itb' && <FormItb e={e} />}
+          {e.tipo === 'osi' && <FormOsi e={e} />}
+          {e.tipo === 'manchester' && <FormManchester e={e} />}
+          {e.tipo === 'examen' && <FormExamenPie e={e} />}
 
           {e.tipo && (
             <div className="flex justify-end">
@@ -1341,7 +1368,7 @@ function PanelFotos({ h, a }: { h: H; a: AtencionCompleta }) {
   // Pedal Bluetooth (o teclado): con el pedal activo, Av Pág o las flechas disparan "Tomar foto".
   // Un pedal de pasar páginas es un teclado de un botón; no se toma si se está escribiendo en un campo.
   useEffect(() => {
-    if (!f.puedeEditar || !f.pedalActivo) return;
+    if (!f.puedeEditar || !f.pedalActivo || f.fantasmaAbierta) return; // con la foto fantasma abierta, el pedal captura allí
     const alPresionar = (ev: KeyboardEvent) => {
       if (!['PageDown', 'PageUp', 'ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp'].includes(ev.key) || ev.ctrlKey || ev.altKey || ev.metaKey) return;
       // Solo se ignora mientras se escribe (texto, números, listas); casillas y botones dejan pasar el pedal.
@@ -1354,7 +1381,7 @@ function PanelFotos({ h, a }: { h: H; a: AtencionCompleta }) {
     };
     window.addEventListener('keydown', alPresionar);
     return () => window.removeEventListener('keydown', alPresionar);
-  }, [f.puedeEditar, f.pedalActivo]);
+  }, [f.puedeEditar, f.pedalActivo, f.fantasmaAbierta]);
   return (
     <div className="space-y-5">
       {f.puedeEditar && (
@@ -1370,6 +1397,11 @@ function PanelFotos({ h, a }: { h: H; a: AtencionCompleta }) {
             </button>
             <button onClick={() => galRef.current?.click()} className="min-h-[44px] lg:min-h-0 px-4 py-2 border border-outline-variant rounded-xl text-sm font-semibold text-on-surface hover:bg-surface-container-high flex items-center gap-1.5">
               <span className="material-symbols-outlined text-base">upload</span>Subir de la galería
+            </button>
+            <button onClick={() => f.setFantasmaAbierta(true)} disabled={!f.todas.length}
+              title={f.todas.length ? 'Cámara en vivo con una foto anterior en transparencia, para repetir el mismo encuadre' : 'Necesitas al menos una foto anterior del paciente'}
+              className="min-h-[44px] lg:min-h-0 px-4 py-2 border border-outline-variant rounded-xl text-sm font-semibold text-on-surface hover:bg-surface-container-high flex items-center gap-1.5 disabled:opacity-40">
+              <span className="material-symbols-outlined text-base">filter_center_focus</span>Foto fantasma
             </button>
             <label className="ml-auto flex items-center gap-2 text-xs text-on-surface-variant min-h-[44px] lg:min-h-0" title="Un pedal Bluetooth de pasar páginas envía Av Pág o flechas">
               <input type="checkbox" checked={f.pedalActivo} onChange={(e) => { f.setPedalActivo(e.target.checked); e.currentTarget.blur(); }} className="accent-primary w-4 h-4" data-testid="pedal-fotos" />
@@ -1434,6 +1466,7 @@ function PanelFotos({ h, a }: { h: H; a: AtencionCompleta }) {
           </>
         )}
       </section>
+      {f.fantasmaAbierta && <CamaraFantasma referencias={f.todas} onCapturar={f.capturarFantasma} onClose={() => f.setFantasmaAbierta(false)} />}
       {f.fotoMedir && (
         <MedidorUlcera fotoId={f.fotoMedir.id} titulo={`${f.fotoMedir.zona || 'Foto'}${f.fotoMedir.pie ? ` · ${PIE_LABEL[f.fotoMedir.pie]}` : ''} · ${fmtFecha(f.fotoMedir.tomadaEn)}`}
           guardando={f.medirMut.isPending} onClose={() => f.setFotoMedir(null)} onGuardar={(m) => f.medirMut.mutate({ foto: f.fotoMedir!, ...m })} />

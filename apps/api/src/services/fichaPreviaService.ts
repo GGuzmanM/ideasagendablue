@@ -78,6 +78,10 @@ export async function fichaPrevia(pacienteId: string) {
   const wagner = ultimaPorTipo.get('wagner');
   const wagnerGrado = typeof (wagner?.datos as Record<string, unknown> | undefined)?.grado === 'number' ? ((wagner!.datos as Record<string, unknown>).grado as number) : null;
   const ulcera = ultimaPorTipo.get('ulcera');
+  // EAP por el último ITB (≤ 0,90) o algún pulso ausente.
+  const itbDatos = (ultimaPorTipo.get('itb')?.datos ?? {}) as Record<string, unknown>;
+  const itbMin = [itbDatos.itbIzq, itbDatos.itbDer].filter((v): v is number => typeof v === 'number' && Number.isFinite(v)).reduce<number | null>((m, v) => (m == null || v < m ? v : m), null);
+  const pulsoAusente = Object.values((itbDatos.pulsos && typeof itbDatos.pulsos === 'object' ? itbDatos.pulsos : {}) as Record<string, unknown>).includes('ausente');
 
   // ── Banderas de riesgo (deduplicadas por clave; gana el nivel más alto) ──
   const banderas = new Map<string, Bandera>();
@@ -91,6 +95,8 @@ export async function fichaPrevia(pacienteId: string) {
   if (categoria != null && categoria >= 2) poner({ clave: 'iwgdf', etiqueta: `Riesgo IWGDF ${categoria} (${categoria === 3 ? 'alto' : 'moderado'})`, nivel: 'alto' });
   else if (categoria === 1) poner({ clave: 'iwgdf', etiqueta: 'Riesgo IWGDF 1 (bajo)', nivel: 'medio' });
   if (mfAlterado) poner({ clave: 'psp', etiqueta: 'Sensibilidad protectora disminuida', nivel: 'medio' });
+  if (itbMin != null && itbMin <= 0.9) poner({ clave: 'eap', etiqueta: `Enfermedad arterial: ITB ${itbMin.toFixed(2)}`, nivel: itbMin < 0.7 ? 'alto' : 'medio' });
+  else if (pulsoAusente) poner({ clave: 'eap', etiqueta: 'Pulso pedio o tibial ausente', nivel: 'medio' });
   if (wagnerGrado != null && wagnerGrado >= 1) poner({ clave: 'ulcera', etiqueta: `Úlcera Wagner ${wagnerGrado}`, nivel: 'alto' });
   if (ulcera) poner({ clave: 'ulcera', etiqueta: 'Úlcera en seguimiento', nivel: 'alto' });
   if (sesionesPendientes.length) poner({ clave: 'sesiones', etiqueta: `${sesionesPendientes.reduce((n, q) => n + q.restantes, 0)} sesión(es) por usar`, nivel: 'info' });
