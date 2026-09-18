@@ -465,6 +465,51 @@ function pieLimablue(): string {
     </tr>`;
 }
 
+/** El nombre del paciente va dentro del HTML del correo: se escapa por si trae < o &. */
+function escapar(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
+}
+
+/**
+ * Correo con el RESUMEN DE LA ATENCIÓN (4.4). El contenido va en el PDF adjunto; el cuerpo del
+ * correo es corto a propósito: quién lo atendió, qué encontrará dentro y a quién escribir. Nada de
+ * datos clínicos en el cuerpo, porque un correo se ve en la pantalla de bloqueo del teléfono.
+ */
+export function renderPlantillaResumenAtencion(d: { paciente: string; sede: string; profesional: string }): string {
+  const nombre = (d.paciente || '').split(' ')[0] || 'Hola';
+  return `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
+  <body style="margin:0;padding:0;background:#f4f6fb;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6fb;padding:24px 12px;">
+      <tr><td align="center">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 2px 10px rgba(16,24,40,.06);">
+          ${headerNuevo()}
+          <tr><td style="padding:28px 32px 8px;font-family:'Manrope',Arial,Helvetica,sans-serif;">
+            <h1 style="margin:0 0 12px;font-size:20px;line-height:1.3;color:#101828;">${escapar(nombre)}, aquí está el resumen de tu atención</h1>
+            <p style="margin:0 0 14px;font-size:15px;line-height:1.65;color:#475467;">
+              Te adjuntamos en PDF lo que hicimos hoy${d.profesional ? ` con ${escapar(d.profesional)}` : ''}${d.sede ? ` en la sede ${escapar(d.sede)}` : ''}:
+              qué encontramos, tu tratamiento, los cuidados en casa y cuándo volver.
+            </p>
+            <p style="margin:0 0 14px;font-size:15px;line-height:1.65;color:#475467;">
+              Guárdalo o imprímelo. Si algo no se entiende, escríbenos y lo vemos contigo.
+            </p>
+            <table role="presentation" cellpadding="0" cellspacing="0" style="margin:18px 0 6px;width:100%;">
+              <tr><td style="background:#fef3f2;border:1px solid #fda29b;border-radius:12px;padding:14px 16px;font-family:'Manrope',Arial,Helvetica,sans-serif;">
+                <p style="margin:0;font-size:14px;line-height:1.6;color:#912018;">
+                  <strong>No esperes a tu control</strong> si el dolor aumenta, sale pus o mal olor, tienes fiebre, o la zona se pone más roja, caliente o hinchada.
+                </p>
+              </td></tr>
+            </table>
+            <p style="margin:16px 0 0;font-size:13px;line-height:1.6;color:#98a2b3;">
+              Este resumen no reemplaza tu receta ni tu historia clínica.
+            </p>
+          </td></tr>
+          ${pieNuevo()}
+        </table>
+      </td></tr>
+    </table>
+  </body></html>`;
+}
+
 // ─── Módulo Videos por Servicio ───────────────────────────────────────────────
 /**
  * Sustituye las variables {paciente} / {servicio} / {fecha} en un texto (asunto,

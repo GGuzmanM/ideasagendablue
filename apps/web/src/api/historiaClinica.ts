@@ -107,11 +107,15 @@ export interface ControlPendiente {
 export interface ControlesBandeja { hoy: string; horizonteDias: number; controles: ControlPendiente[] }
 export interface ContadorControles { vencidos: number; proximos: number; total: number }
 
+/** Transcripción cruda de lo dictado en la consulta (1.6): se autoguarda para que nada se pierda. */
+export interface DictadoAtencion { texto: string; aplicadoEn: string | null; actualizadoEn: string; registradoEtiqueta: string | null }
+
 export interface AtencionCompleta extends AtencionClinica {
   procedimientos: Procedimiento[]; escalas: Escala[]; marcasPodograma: MarcaPodograma[]; imagenesPodograma: ImagenPodograma[]; fotos: FotoClinica[]; dibujosSilueta?: DibujoSilueta[];
   consentimientos?: Consentimiento[];
   controles?: ControlAtencion[];
   constancias?: Constancia[];
+  dictado?: DictadoAtencion | null;
   historiaClinica: { id: string; numero: number; pacienteId: string; alergias: Alergia[] };
   paciente: PacienteHc;
 }
@@ -209,7 +213,10 @@ export interface HistorialPodograma {
   procedimientos: { id: string; tipo: TipoProcedimiento; nombre: string; pie: Pie | null; ubicacion: string | null; detalle: string | null }[];
   ulceras: { id: string; datos: Record<string, unknown>; resultado: string | null; pie: Pie | null }[];
 }
-export type TipoPlantilla = 'nota' | 'autotexto';
+export type TipoPlantilla = 'nota' | 'autotexto' | 'consentimiento';
+export const TIPO_PLANTILLA_LABEL: Record<TipoPlantilla, string> = {
+  nota: 'Nota por diagnóstico', autotexto: 'Autotexto', consentimiento: 'Consentimiento por procedimiento',
+};
 export interface PlantillaClinica {
   id: string; tipo: TipoPlantilla; clave: string | null; nombre: string; contenido: Record<string, string>;
   activa: boolean; creadoEtiqueta: string | null; creadoEn: string; actualizadoEn: string;
@@ -400,6 +407,20 @@ export const historiaClinicaApi = {
     }
     return res.blob();
   },
+  // Resumen de la atención para el paciente (4.4): el PDF que se lleva a casa.
+  blobResumenPaciente: async (atencionId: string): Promise<Blob> => {
+    const token = useAuthStore.getState().token;
+    const res = await fetch(`/api/v1${B}/atenciones/${atencionId}/resumen-paciente.pdf`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: 'No se pudo generar el resumen' }));
+      throw new Error((err as { message?: string }).message ?? 'No se pudo generar el resumen');
+    }
+    return res.blob();
+  },
+  // Dictado de la consulta (1.6): la transcripción cruda, autoguardada mientras se dicta.
+  guardarDictado: (atencionId: string, texto: string, aplicado?: boolean) =>
+    api.put<AtencionCompleta>(`${B}/atenciones/${atencionId}/dictado`, { texto, ...(aplicado ? { aplicado: true } : {}) }),
+  limpiarDictado: (atencionId: string) => api.delete<AtencionCompleta>(`${B}/atenciones/${atencionId}/dictado`),
   // Constancias y descansos médicos (5.4)
   emitirConstancia: (atencionId: string, data: CamposConstancia) => api.post<{ id: string; numero: number; tipo: TipoConstancia; codigoVerificacion: string }>(`${B}/atenciones/${atencionId}/constancias`, data),
   anularConstancia: (id: string, motivo: string) => api.patch<{ ok: boolean }>(`${B}/constancias/${id}/anular`, { motivo }),

@@ -19,16 +19,19 @@ import { DialogoMotivo } from '../components/historiaClinica/DialogoMotivo';
 import { PanelConsentimientos } from '../components/historiaClinica/PanelConsentimientos';
 import { ConstanciasSection } from '../components/historiaClinica/ConstanciasSection';
 import { DialogoCierreAtencion } from '../components/historiaClinica/DialogoCierreAtencion';
+import { RevisarDictadoDialog } from '../components/historiaClinica/RevisarDictadoDialog';
 import { useInvalidarControles } from '../services/controlesService';
 import { BotonHistorialGenexis } from '../components/pacientes/HistorialGenexis';
 import type { HistorialGenexisRegistro } from '../api';
 import { ComparadorFotos } from '../components/historiaClinica/ComparadorFotos';
 import { SiluetaPie, MonofilamentoPie, aspectoSilueta, proporcionSilueta } from '../components/historiaClinica/SiluetaPie';
+import { estiloGiro, giroSilueta, puntoTocado } from '../utils/giroSilueta';
 import { LienzoSilueta } from '../components/historiaClinica/LienzoSilueta';
 import { SelectorLesion, LeyendaLesiones, calcularLeyenda, trazosComoLeyenda, resumenTipos } from '../components/historiaClinica/Lesiones';
 import { MedidorUlcera } from '../components/historiaClinica/MedidorUlcera';
 import { FUENTE_ICONO, FUENTE_LABEL, type EventoZona } from '../utils/historialZonas';
 import { PlantillasDialog } from '../components/historiaClinica/PlantillasDialog';
+import { ResumenPacienteDialog } from '../components/historiaClinica/ResumenPacienteDialog';
 import { ZONAS_PIE, coordZona, zonaPorId } from '../utils/zonasPie';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useHistoriaClinicaPage, useAntecedentesAlergias, useRecetasAtencion, useEscalas, usePodograma, useMiniaturaPodograma, useFotosClinicas, useFotoUrl, MF_ETIQUETAS, IWGDF_CONTROL, type TabHc } from '../services/historiaClinicaService';
@@ -248,6 +251,23 @@ export function HistoriaClinicaPage() {
 
       {h.citaARegistrar && <RegistrarAtencionModal cita={h.citaARegistrar} nombrePaciente={nombre} onClose={() => h.setCitaARegistrar(null)} onCreada={h.onAtencionCreada} />}
       {h.recetaModal && h.atencion && <EmitirRecetaModal atencion={h.atencion} tipoDocumento={h.recetaModal} onClose={() => h.setRecetaModal(null)} />}
+      {h.revisarDictado && h.propuestaDictado && (
+        <RevisarDictadoDialog
+          propuesta={h.propuestaDictado}
+          actuales={{
+            subjetivo: h.evolucion.subjetivo, objetivo: h.evolucion.objetivo, apreciacion: h.evolucion.apreciacion,
+            plan: h.evolucion.plan, observacion: h.evolucion.texto, procedimiento: h.procedimientos.detalle,
+          }}
+          transcripcion={h.consulta.transcripcion}
+          onTranscripcion={h.consulta.cambiarTranscripcion}
+          onAplicar={h.aplicarDictado}
+          onLimpiar={() => h.limpiarDictadoMut.mutate()}
+          onDiagnostico={(d) => { h.usarDiagnosticoDictado(d); h.setTab('evolucion'); }}
+          onLesion={h.usarLesionDictada}
+          onClose={h.cerrarRevisionDictado}
+          guardando={h.guardandoDictado}
+        />
+      )}
     </div>
   );
 }
@@ -281,9 +301,15 @@ function VisitaGenexisCard({ visita }: { visita: HistorialGenexisRegistro | null
 }
 
 function CabeceraAtencion({ h, a }: { h: H; a: AtencionCompleta }) {
+  // Resumen para el paciente (4.4): se puede ver siempre, también con la atención ya cerrada.
+  const [verResumen, setVerResumen] = useState(false);
   const [confirmarCierre, setConfirmarCierre] = useState(false);
   // Fotos tomadas sin guardar: al cerrar ya no se pueden subir, así que van primero en la lista.
-  const sinGuardar = h.fotosSinGuardar ? [`${h.fotosSinGuardar} foto${h.fotosSinGuardar === 1 ? '' : 's'} sin guardar (pestaña Fotos): al cerrar ya no se podrán guardar`] : [];
+  const sinGuardar = [
+    ...(h.fotosSinGuardar ? [`${h.fotosSinGuardar} foto${h.fotosSinGuardar === 1 ? '' : 's'} sin guardar (pestaña Fotos): al cerrar ya no se podrán guardar`] : []),
+    // Lo dictado está guardado, pero si no se repartió a los campos no queda en la nota.
+    ...(h.dictadoSinAplicar ? ['Dictado sin repartir a los campos: toca «Revisar lo dictado» antes de cerrar'] : []),
+  ];
   // Cierre inteligente (misma regla y textos que la Bandeja clínica): avisa, no bloquea.
   const faltantes = [...sinGuardar, ...faltantesAtencion(a)];
   const cerrada = a.estado === 'cerrada';
@@ -311,6 +337,13 @@ function CabeceraAtencion({ h, a }: { h: H; a: AtencionCompleta }) {
           </div>
         )}
       </div>
+      <div className="flex items-center gap-2">
+        <button onClick={() => setVerResumen(true)} data-testid="abrir-resumen-paciente"
+          className="min-h-[44px] lg:min-h-0 px-4 py-2 border border-outline-variant rounded-xl text-sm font-semibold text-on-surface hover:bg-surface-container-high flex items-center gap-1.5">
+          <span className="material-symbols-outlined text-base">summarize</span>Resumen para el paciente
+        </button>
+      </div>
+      {verResumen && <ResumenPacienteDialog atencionId={a.id} puedeRegistrar={h.puedeRegistrar} onClose={() => setVerResumen(false)} />}
       {h.puedeRegistrar && (
         !cerrada
           ? (
@@ -340,7 +373,9 @@ function CabeceraAtencion({ h, a }: { h: H; a: AtencionCompleta }) {
       )}
 
       {/* Dictado de toda la consulta por palabras clave (visible en todas las pestañas) */}
-      {h.puedeRegistrar && !cerrada && <BarraDictadoConsulta consulta={h.consulta} tab={h.tab} irA={h.setTab} />}
+      {h.puedeRegistrar && !cerrada && (
+        <BarraDictadoConsulta consulta={h.consulta} tab={h.tab} irA={h.setTab} onRevisar={h.abrirRevisionDictado} sinAplicar={h.dictadoSinAplicar} guardando={h.guardandoDictado} />
+      )}
 
       {/* Cierre inteligente: lista lo que falta (aviso, no bloqueo) y propone los próximos controles */}
       {confirmarCierre && (
@@ -921,9 +956,13 @@ function PanelEscalas({ h, a }: { h: H; a: AtencionCompleta }) {
 }
 
 // ─── Bloque 3 · Podograma (mapa interactivo) ─────────────────────────────────
-// Vista PLANTAR (planta del pie) del pie izquierdo vista desde atrás del paciente: talón arriba, dedos
-// abajo, dedo gordo al lado medial (derecha). El derecho es el espejo → mostrados lado a lado, los dedos
-// gordos quedan hacia el centro y cada pie es el del paciente (izquierdo a la izquierda).
+// Vista PLANTAR: las dos plantas se ven como en la foto original —dedos arriba, talón abajo y los dedos
+// gordos hacia el centro— y cada pie se inclina unos 20° hacia afuera, pivotando en el talón, para que
+// juntas se lean como una PISADA (utils/giroSilueta.ts). Como en esa foto el pie de la izquierda es el
+// DERECHO del paciente, en la planta las dos columnas van en ese orden (derecho, izquierdo) y no se
+// rotula el pie; en el dorso sí se rotula y no se inclina nada.
+// La inclinación es solo de presentación: lo que se guarda son las coordenadas del pie sin inclinar, y
+// el marco que mide los toques (`cajaRef`) NO se inclina; la capa de dentro sí.
 function MapaPie({ pie, vista, marcas, pendiente, onClick, modo = 'punto', dibujo = [], pincel, visible, historial, onMoverMarca, onTocarMarca }: {
   pie: 'izquierdo' | 'derecho'; vista: VistaSilueta; marcas: MarcaPodograma[]; pendiente: { pie: string; vista: VistaSilueta; x: number; y: number } | null;
   onClick: (x: number, y: number) => void;
@@ -944,23 +983,32 @@ function MapaPie({ pie, vista, marcas, pendiente, onClick, modo = 'punto', dibuj
   const enHistorial = modo === 'historial' && !!historial;
   const aspecto = proporcionSilueta(vista);
   const arrastrable = modo === 'punto' && !!onMoverMarca;
+  const giro = giroSilueta(vista, pie);
+  /** Marco recto de la caja del pie: mide los toques aunque lo de dentro esté inclinado. */
+  const cajaRef = useRef<HTMLDivElement | null>(null);
   // Arrastre de un punto ya puesto: posición provisional mientras se mueve (se confirma al soltar).
   const [arrastre, setArrastre] = useState<{ id: string; x: number; y: number } | null>(null);
   const inicioRef = useRef<{ id: string; cx: number; cy: number; movido: boolean } | null>(null);
   const posEnCaja = (ev: EventoPuntero<HTMLElement>): [number, number] => {
-    const caja = ev.currentTarget.parentElement!.getBoundingClientRect();
-    return [Math.min(1, Math.max(0, (ev.clientX - caja.left) / caja.width)), Math.min(1, Math.max(0, (ev.clientY - caja.top) / caja.height))];
+    const caja = (cajaRef.current ?? ev.currentTarget.parentElement!).getBoundingClientRect();
+    return puntoTocado((ev.clientX - caja.left) / caja.width, (ev.clientY - caja.top) / caja.height, giro, aspecto);
   };
   return (
     <div className="flex-1 min-w-[130px] max-w-[200px]">
-      <p className="text-center text-xs font-bold text-on-surface-variant mb-1">{pie === 'izquierdo' ? 'Izquierdo' : 'Derecho'}</p>
-      <div data-testid={`mapa-pie-${pie}`} className={`relative select-none ${pintando ? '' : 'cursor-crosshair'}`} style={{ aspectRatio: aspectoSilueta(vista) }}
+      {/* En la PLANTA no se rotula el pie (a pedido del doctor): la planta se mira «a través», igual que
+          el dorso, así que el pie izquierdo es el de la izquierda en las dos vistas. En el dorso sí se rotula. */}
+      {vista === 'dorsal'
+        ? <p className="text-center text-xs font-bold text-on-surface-variant mb-1">{pie === 'izquierdo' ? 'Izquierdo' : 'Derecho'}</p>
+        : <p className="text-center text-xs font-bold text-transparent mb-1 select-none" aria-hidden>·</p>}
+      <div ref={cajaRef} data-testid={`mapa-pie-${pie}`} title={pie === 'izquierdo' ? 'Pie izquierdo' : 'Pie derecho'} className={`relative select-none ${pintando ? '' : 'cursor-crosshair'}`} style={{ aspectRatio: aspectoSilueta(vista) }}
         onClick={(ev) => {
           if (pintando) return;
           const r = ev.currentTarget.getBoundingClientRect();
-          const x = (ev.clientX - r.left) / r.width, y = (ev.clientY - r.top) / r.height;
+          const [x, y] = puntoTocado((ev.clientX - r.left) / r.width, (ev.clientY - r.top) / r.height, giro, aspecto);
           if (enHistorial) historial!.onElegir(x, y); else onClick(x, y);
         }}>
+        {/* Capa inclinada: la foto, los trazos y las marcas giran JUNTOS, así cada marca sigue en su zona. */}
+        <div className="absolute inset-0" style={estiloGiro(giro)}>
         <SiluetaPie espejo={pie === 'derecho'} vista={vista} />
         {enHistorial ? (
           <>
@@ -975,7 +1023,7 @@ function MapaPie({ pie, vista, marcas, pendiente, onClick, modo = 'punto', dibuj
           </>
         ) : (
           <>
-            <LienzoSilueta anotaciones={dibujo} aspecto={aspecto} editable={pintando} herramienta={pincel?.herramienta ?? 'lapiz'} color={pincel?.color ?? '#ef4444'} grosor={pincel?.grosor ?? 16}
+            <LienzoSilueta anotaciones={dibujo} aspecto={aspecto} giro={giro} caja={cajaRef} editable={pintando} herramienta={pincel?.herramienta ?? 'lapiz'} color={pincel?.color ?? '#ef4444'} grosor={pincel?.grosor ?? 16}
               onTrazo={(t) => pincel?.onTrazo(t)} onBorrar={(x, y) => pincel?.onBorrar(x, y, aspecto)}
               onSeleccionar={(x, y) => pincel?.onSeleccionar(x, y, aspecto)} seleccionado={pintando ? pincel?.seleccionado ?? null : null}
               oculto={(a) => a.tipo === 'trazo' && !ver(a.tipoLesion)} />
@@ -1017,6 +1065,7 @@ function MapaPie({ pie, vista, marcas, pendiente, onClick, modo = 'punto', dibuj
             )}
           </>
         )}
+        </div>
       </div>
     </div>
   );
@@ -1123,7 +1172,8 @@ function CasillaVista({ vista, img, seleccionada, puedeEditar, subiendo, onSelec
 }
 
 function PanelPodograma({ h, a }: { h: H; a: AtencionCompleta }) {
-  const pod = usePodograma(a, h.puedeRegistrar);
+  // La vista (planta/dorso) y el modo vienen de la página: así no se pierden al cambiar de atención.
+  const pod = usePodograma(a, h.puedeRegistrar, { vista: h.vistaSilueta, setVista: h.setVistaSilueta, modo: h.modoSilueta, setModo: h.setModoSilueta });
   const inputRef = useRef<HTMLInputElement>(null);
   // Un solo <input type=file> oculto para las 4 casillas: se recuerda a qué vista va antes de abrirlo.
   const vistaPendienteRef = useRef<VistaPodograma | null>(null);
@@ -1313,8 +1363,10 @@ function PanelPodograma({ h, a }: { h: H; a: AtencionCompleta }) {
                 {pod.modoSilueta === 'historial' && <p className="text-[11px] text-on-surface-variant text-center">Todas las visitas del paciente en esta vista (lo de hoy más intenso). Toca una zona del pie para ver su historial.</p>}
               </div>
             )}
-            <div className="flex justify-center gap-8">
-              {(['izquierdo', 'derecho'] as const).map((pie) => (
+            {/* En la planta, la foto pone el pie derecho a la izquierda: se respeta ese orden para que se
+                vea como la original. En el dorso, el izquierdo va a la izquierda. */}
+            <div className="flex justify-center gap-8 px-6 pb-8">
+              {(pod.vistaSilueta === 'plantar' ? (['derecho', 'izquierdo'] as const) : (['izquierdo', 'derecho'] as const)).map((pie) => (
                 <MapaPie key={pie} pie={pie} vista={pod.vistaSilueta} marcas={pod.marcas} pendiente={pod.pendiente} onClick={(x, y) => pod.marcarPunto(pie, x, y)}
                   modo={pod.modoSilueta} dibujo={pod.dibujoDe(pod.vistaSilueta, pie)} visible={pod.capaVisible}
                   onMoverMarca={pod.puedeEditar ? pod.moverMarca : undefined}

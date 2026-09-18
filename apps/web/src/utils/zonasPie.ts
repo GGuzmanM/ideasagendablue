@@ -1,9 +1,9 @@
-// Zonas anatómicas del pie con su posición sobre las FOTOS de la silueta (SiluetaPie.tsx). Las dos fotos
-// están GIRADAS 180° respecto del original (15-sep-2026) para que el pie de la izquierda sea de verdad el
-// izquierdo del paciente y el de la derecha, el derecho:
-//  · vista 'plantar' → public/Silueta.jpg (caja 744×1843 por pie, dedos ABAJO, talón arriba: las plantas
-//    como se ven desde atrás del paciente). Esa foto es simétrica: x/y son del pie IZQUIERDO y el derecho
-//    se espeja (x → 1 − x).
+// Zonas anatómicas del pie con su posición sobre las FOTOS de la silueta (SiluetaPie.tsx). En las dos, el
+// pie de la izquierda de la pantalla es el izquierdo del paciente y el de la derecha, el derecho:
+//  · vista 'plantar' → public/Silueta.jpg (caja 744×1843 por pie, dedos ARRIBA, talón abajo; girada otra
+//    vez 180° el 17-sep-2026 a pedido del doctor, así que la planta se ve como el dorso: el mismo pie
+//    queda del mismo lado en las dos vistas y el dedo gordo, hacia afuera). Esa foto es simétrica: x/y son
+//    del pie IZQUIERDO y el derecho se espeja (x → 1 − x).
 //  · vista 'dorsal' → public/Silueta-dorsal.jpg (caja 874×1960 por pie, dedos ARRIBA, uñas visibles: el
 //    dorso como lo ve el propio paciente mirándose los pies). Esa foto NO es simétrica: cada zona dorsal
 //    trae también xd/yd para el pie derecho.
@@ -16,22 +16,22 @@ export interface ZonaPie { id: string; etiqueta: string; vista: VistaSilueta; x:
 
 export const ZONAS_PIE: ZonaPie[] = [
   // ── Planta ──
-  { id: 'hallux', etiqueta: 'Hallux', vista: 'plantar', x: 0.79, y: 0.9, alias: ['hallux', 'primer dedo', 'dedo gordo', 'primer ortejo', '1er dedo', 'dedo uno'] },
-  { id: 'dedo2', etiqueta: '2º dedo', vista: 'plantar', x: 0.47, y: 0.915, alias: ['segundo dedo', 'segundo ortejo', '2do dedo', 'dedo dos'] },
-  { id: 'dedo3', etiqueta: '3er dedo', vista: 'plantar', x: 0.31, y: 0.875, alias: ['tercer dedo', 'tercer ortejo', '3er dedo', 'dedo tres'] },
-  { id: 'dedo4', etiqueta: '4º dedo', vista: 'plantar', x: 0.2, y: 0.81, alias: ['cuarto dedo', 'cuarto ortejo', '4to dedo', 'dedo cuatro'] },
-  { id: 'dedo5', etiqueta: '5º dedo', vista: 'plantar', x: 0.1, y: 0.74, alias: ['quinto dedo', 'quinto ortejo', '5to dedo', 'dedo cinco', 'dedo meñique', 'dedo pequeño', 'dedo chiquito'] },
-  { id: 'meta1', etiqueta: '1er metatarsiano', vista: 'plantar', x: 0.76, y: 0.68, alias: ['primer metatarsiano', 'primera cabeza metatarsal', 'cabeza del primer metatarsiano', 'metatarsiano uno', '1er metatarsiano'] },
-  { id: 'meta2', etiqueta: '2º metatarsiano', vista: 'plantar', x: 0.6, y: 0.7, alias: ['segundo metatarsiano', 'metatarsiano dos', '2do metatarsiano'] },
-  { id: 'meta3', etiqueta: '3er metatarsiano', vista: 'plantar', x: 0.46, y: 0.69, alias: ['tercer metatarsiano', 'metatarsiano tres', '3er metatarsiano'] },
-  { id: 'meta4', etiqueta: '4º metatarsiano', vista: 'plantar', x: 0.33, y: 0.68, alias: ['cuarto metatarsiano', 'metatarsiano cuatro', '4to metatarsiano'] },
-  { id: 'meta5', etiqueta: '5º metatarsiano', vista: 'plantar', x: 0.16, y: 0.66, alias: ['quinto metatarsiano', 'metatarsiano cinco', '5to metatarsiano'] },
-  { id: 'antepie', etiqueta: 'Antepié', vista: 'plantar', x: 0.47, y: 0.67, alias: ['antepié', 'antepie', 'metatarso', 'cabezas metatarsales', 'zona metatarsal', 'región metatarsal'] },
-  { id: 'mediopie', etiqueta: 'Mediopié / arco', vista: 'plantar', x: 0.52, y: 0.4, alias: ['mediopié', 'mediopie', 'arco plantar', 'arco medial', 'arco'] },
-  { id: 'borde_lateral_pie', etiqueta: 'Borde lateral del pie', vista: 'plantar', x: 0.17, y: 0.44, alias: ['borde lateral del pie', 'borde externo del pie', 'borde externo'] },
-  { id: 'borde_medial_pie', etiqueta: 'Borde medial del pie', vista: 'plantar', x: 0.85, y: 0.4, alias: ['borde medial del pie', 'borde interno del pie', 'borde interno'] },
-  { id: 'talon', etiqueta: 'Talón', vista: 'plantar', x: 0.55, y: 0.12, alias: ['talón', 'talon', 'calcáneo', 'calcaneo', 'retropié', 'retropie'] },
-  { id: 'planta', etiqueta: 'Planta', vista: 'plantar', x: 0.52, y: 0.53, alias: ['planta del pie', 'región plantar', 'zona plantar', 'planta', 'plantar'] },
+  { id: 'hallux', etiqueta: 'Hallux', vista: 'plantar', x: 0.21, y: 0.1, alias: ['hallux', 'primer dedo', 'dedo gordo', 'primer ortejo', '1er dedo', 'dedo uno'] },
+  { id: 'dedo2', etiqueta: '2º dedo', vista: 'plantar', x: 0.53, y: 0.085, alias: ['segundo dedo', 'segundo ortejo', '2do dedo', 'dedo dos'] },
+  { id: 'dedo3', etiqueta: '3er dedo', vista: 'plantar', x: 0.69, y: 0.125, alias: ['tercer dedo', 'tercer ortejo', '3er dedo', 'dedo tres'] },
+  { id: 'dedo4', etiqueta: '4º dedo', vista: 'plantar', x: 0.8, y: 0.19, alias: ['cuarto dedo', 'cuarto ortejo', '4to dedo', 'dedo cuatro'] },
+  { id: 'dedo5', etiqueta: '5º dedo', vista: 'plantar', x: 0.9, y: 0.26, alias: ['quinto dedo', 'quinto ortejo', '5to dedo', 'dedo cinco', 'dedo meñique', 'dedo pequeño', 'dedo chiquito'] },
+  { id: 'meta1', etiqueta: '1er metatarsiano', vista: 'plantar', x: 0.24, y: 0.32, alias: ['primer metatarsiano', 'primera cabeza metatarsal', 'cabeza del primer metatarsiano', 'metatarsiano uno', '1er metatarsiano'] },
+  { id: 'meta2', etiqueta: '2º metatarsiano', vista: 'plantar', x: 0.4, y: 0.3, alias: ['segundo metatarsiano', 'metatarsiano dos', '2do metatarsiano'] },
+  { id: 'meta3', etiqueta: '3er metatarsiano', vista: 'plantar', x: 0.54, y: 0.31, alias: ['tercer metatarsiano', 'metatarsiano tres', '3er metatarsiano'] },
+  { id: 'meta4', etiqueta: '4º metatarsiano', vista: 'plantar', x: 0.67, y: 0.32, alias: ['cuarto metatarsiano', 'metatarsiano cuatro', '4to metatarsiano'] },
+  { id: 'meta5', etiqueta: '5º metatarsiano', vista: 'plantar', x: 0.84, y: 0.34, alias: ['quinto metatarsiano', 'metatarsiano cinco', '5to metatarsiano'] },
+  { id: 'antepie', etiqueta: 'Antepié', vista: 'plantar', x: 0.53, y: 0.33, alias: ['antepié', 'antepie', 'metatarso', 'cabezas metatarsales', 'zona metatarsal', 'región metatarsal'] },
+  { id: 'mediopie', etiqueta: 'Mediopié / arco', vista: 'plantar', x: 0.48, y: 0.6, alias: ['mediopié', 'mediopie', 'arco plantar', 'arco medial', 'arco'] },
+  { id: 'borde_lateral_pie', etiqueta: 'Borde lateral del pie', vista: 'plantar', x: 0.83, y: 0.56, alias: ['borde lateral del pie', 'borde externo del pie', 'borde externo'] },
+  { id: 'borde_medial_pie', etiqueta: 'Borde medial del pie', vista: 'plantar', x: 0.15, y: 0.6, alias: ['borde medial del pie', 'borde interno del pie', 'borde interno'] },
+  { id: 'talon', etiqueta: 'Talón', vista: 'plantar', x: 0.45, y: 0.88, alias: ['talón', 'talon', 'calcáneo', 'calcaneo', 'retropié', 'retropie'] },
+  { id: 'planta', etiqueta: 'Planta', vista: 'plantar', x: 0.48, y: 0.47, alias: ['planta del pie', 'región plantar', 'zona plantar', 'planta', 'plantar'] },
   // ── Dorso: uñas (bordes del hallux), dedos por encima, juanete, empeine y tobillo ──
   { id: 'hallux_medial', etiqueta: 'Uña del hallux, borde medial', vista: 'dorsal', x: 0.785, y: 0.075, xd: 0.105, yd: 0.075, alias: ['hallux borde medial', 'primer dedo borde medial', 'dedo gordo borde medial', 'borde medial del hallux', 'borde medial del primer dedo', 'uña borde medial', 'borde medial de la uña', 'borde medial'] },
   { id: 'hallux_lateral', etiqueta: 'Uña del hallux, borde lateral', vista: 'dorsal', x: 0.645, y: 0.075, xd: 0.245, yd: 0.075, alias: ['hallux borde lateral', 'primer dedo borde lateral', 'dedo gordo borde lateral', 'borde lateral del hallux', 'borde lateral del primer dedo', 'uña borde lateral', 'borde lateral de la uña', 'borde lateral'] },

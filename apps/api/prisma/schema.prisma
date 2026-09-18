@@ -1914,6 +1914,7 @@ model AtencionClinica {
   consentimientos   ConsentimientoInformado[]
   constancias     ConstanciaClinica[]
   controles         ControlSugerido[]
+  dictado           DictadoConsulta?
 
   @@index([historiaClinicaId, fecha])
   @@index([pacienteId])
@@ -2151,6 +2152,27 @@ model ConsentimientoInformado {
 // CONTROL SUGERIDO al cerrar la atención (4.1): próximo control con fecha y servicio. Recepción lo
 // agenda tras confirmarlo con el paciente (queda ligado a la cita) o lo descarta con motivo. Un
 // control pendiente cuya fecha ya pasó es la alerta de «no volvió» (4.2).
+// ─── Dictado de la consulta (1.6 / 1.7): la TRANSCRIPCIÓN CRUDA ──────────────
+// Lo que el profesional dictó, tal como lo entendió el reconocedor de voz, antes de repartirlo en
+// los campos. Se autoguarda mientras dicta para que nada se pierda si se cierra la tablet o falla
+// el reparto; el profesional lo puede releer, volver a repartir o limpiarlo. UNO por atención (el
+// texto se acumula). Es contenido clínico: mismo candado que la HC y borrado suave.
+model DictadoConsulta {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  atencionId             String    @unique @db.Uuid
+  texto                  String    @default("")
+  // Cuándo se aplicó por última vez a los campos (para avisar «hay dictado sin repartir»).
+  aplicadoEn             DateTime?
+  registradoPorUsuarioId String?   @db.Uuid
+  registradoEtiqueta     String?
+  creadoEn               DateTime  @default(now())
+  actualizadoEn          DateTime  @updatedAt
+
+  atencion AtencionClinica @relation(fields: [atencionId], references: [id], onDelete: Cascade)
+
+  @@map("dictados_consulta")
+}
+
 // ─── Constancias y certificados (5.4) ────────────────────────────────────────
 // Constancia de atención (cualquier profesional de la atención) y descanso médico (solo médico con
 // CMP, con diagnóstico y días). Documentos INMUTABLES: se anulan con motivo y se emite otro. Llevan

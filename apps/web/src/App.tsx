@@ -42,6 +42,7 @@ import { MovimientosImprimirPage } from './pages/herramientas/MovimientosImprimi
 import { VerificarRecetaPage } from './pages/VerificarRecetaPage';
 import { VideosServicioPage } from './pages/herramientas/VideosServicioPage';
 import { TiemposTratamientoPage } from './pages/herramientas/TiemposTratamientoPage';
+import { ReportesClinicosPage } from './pages/herramientas/ReportesClinicosPage';
 import { Idea1AgendaPage } from './pages/Idea1AgendaPage';
 import { HorariosRestriccionesPage } from './pages/HorariosRestriccionesPage';
 import { HistoriaClinicaPage } from './pages/HistoriaClinicaPage';
@@ -124,6 +125,7 @@ export default function App() {
         <Route path="/herramientas/videos-servicio" element={<RequirePermiso permiso="comunicaciones.gestionar"><VideosServicioPage /></RequirePermiso>} />
         <Route path="/herramientas/reportes-rrhh" element={<RequirePermiso permiso="analytics.ver"><ReportesRrhhPage /></RequirePermiso>} />
         <Route path="/herramientas/tiempos-tratamiento" element={<RequirePermiso permiso="analytics.ver"><TiemposTratamientoPage /></RequirePermiso>} />
+        <Route path="/herramientas/reportes-clinicos" element={<RequirePermiso permiso="analytics.ver"><ReportesClinicosPage /></RequirePermiso>} />
         <Route path="/herramientas/composicion-sede" element={<RequirePermiso permiso="movimientos.editar"><ComposicionSedePage /></RequirePermiso>} />
         <Route path="/herramientas/horarios-personal" element={<Navigate to="/herramientas/horarios?tab=semana" replace />} />
         <Route path="/movimientos" element={<RequirePermiso permiso="movimientos.ver"><MovimientosPage /></RequirePermiso>} />

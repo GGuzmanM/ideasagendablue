@@ -291,6 +291,14 @@ export function HerramientasPage() {
                 <span>⏱️</span> Tiempos de tratamiento →
               </button>
             )}
+            {tiene('analytics.ver') && (
+              <button
+                onClick={() => navigate('/herramientas/reportes-clinicos')}
+                className="px-4 py-2 text-xs font-bold rounded-xl bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100 transition-all flex items-center gap-2"
+              >
+                <span>🩺</span> Reportes clínicos (diagnósticos, productividad, calidad) →
+              </button>
+            )}
           </div>
 
           <div className="max-w-2xl">

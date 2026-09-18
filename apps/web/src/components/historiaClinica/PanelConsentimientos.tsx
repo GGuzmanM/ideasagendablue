@@ -30,7 +30,7 @@ export function PanelConsentimientos({ a, puedeRegistrar }: { a: AtencionComplet
               <label className={LBL}>Procedimiento que se autoriza</label>
               <input list="sugerencias-consentimiento" value={c.procedimiento} onChange={(e) => c.setProcedimiento(e.target.value)} maxLength={300}
                 placeholder="Ej. Matricectomía parcial del borde externo, 1er dedo pie derecho" className={INPUT} data-testid="consentimiento-procedimiento" />
-              <datalist id="sugerencias-consentimiento">{c.sugerencias.map((s) => <option key={s} value={s} />)}</datalist>
+              <datalist id="sugerencias-consentimiento">{c.sugerencias.map((s) => <option key={s.texto} value={s.texto} />)}</datalist>
             </div>
             <div className="md:col-span-2 flex gap-2">
               {(['paciente', 'apoderado'] as const).map((r) => (
@@ -45,12 +45,22 @@ export function PanelConsentimientos({ a, puedeRegistrar }: { a: AtencionComplet
           </div>
 
           <div>
-            <div className="flex items-center gap-2 mb-1">
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
               <span className={LBL + ' mb-0'}>Texto que se lee y se firma</span>
+              {/* De dónde sale el cuerpo: la plantilla del procedimiento (5.2) o el texto general. */}
+              <span className="text-[11px] text-on-surface-variant" data-testid="consentimiento-origen">
+                {c.plantilla ? <>Plantilla: <b className="text-on-surface">{c.plantilla.nombre}</b></> : 'Texto general (este procedimiento no tiene plantilla propia)'}
+              </span>
               <span className="flex-1" />
+              {c.plantilla && (
+                <button type="button" onClick={() => { c.setSinPlantilla(true); c.setTextoEditado(null); }} className="text-xs text-on-surface-variant font-semibold hover:underline">Usar el texto general</button>
+              )}
+              {!c.plantilla && c.sinPlantilla && (
+                <button type="button" onClick={() => { c.setSinPlantilla(false); c.setTextoEditado(null); }} className="text-xs text-on-surface-variant font-semibold hover:underline">Volver a la plantilla</button>
+              )}
               {c.textoEditado === null
                 ? <button type="button" onClick={() => c.setTextoEditado(c.texto)} className="text-xs text-primary font-semibold hover:underline">Ajustar texto</button>
-                : <button type="button" onClick={() => c.setTextoEditado(null)} className="text-xs text-primary font-semibold hover:underline">Volver a la plantilla</button>}
+                : <button type="button" onClick={() => c.setTextoEditado(null)} className="text-xs text-primary font-semibold hover:underline">Deshacer mis cambios</button>}
             </div>
             {c.textoEditado === null
               ? <div className="rounded-xl bg-surface-container-low/60 border border-outline-variant/30 px-4 py-3 text-sm leading-relaxed text-on-surface whitespace-pre-line max-h-72 overflow-y-auto" data-testid="consentimiento-texto">{c.texto}</div>

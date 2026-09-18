@@ -10,6 +10,8 @@ import * as pl from '../services/plantillasService';
 import fs from 'fs';
 import { subirImagenPodograma, validarImagenPodogramaReal, subirFotoClinica, validarFotoClinicaReal } from '../middleware/uploadPodograma';
 import { nuevoPdf } from '../services/pdfComun';
+import * as resumen from '../services/resumenPacienteService';
+import { escribirResumenPacientePdf } from '../services/resumenPacientePdf';
 import { escribirHistoriaPdf } from '../services/historiaPdf';
 import * as cs from '../services/consentimientoService';
 import * as ctl from '../services/controlService';
@@ -262,6 +264,43 @@ router.post('/atenciones/:id/consentimientos', ...registrar, async (req, res) =>
   res.status(201).json(await cs.crearConsentimiento({ ...ctx(req), atencionId: req.params.id, ...data }));
 });
 
+// ── Resumen de la atención PARA EL PACIENTE (4.4) ────────────────────────────
+// Verlo o descargarlo: `hc.ver` (también con la atención cerrada, que es cuando más se pide).
+router.get('/atenciones/:id/resumen-paciente.pdf', ...verHc, async (req, res) => {
+  const id = uuid.parse(req.params.id);
+  const { resumen: r, at } = await resumen.resumenDeAtencion(id);
+  assertSede(req, at.sedeId);
+  await hc.auditarLecturaHC({ ...ctx(req), pacienteId: at.pacienteId, origen: 'resumen_paciente', atencionId: at.id, sedeId: at.sedeId });
+  const doc = nuevoPdf('Resumen de tu atención');
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="resumen-atencion-${new Date(at.fecha).toISOString().slice(0, 10)}.pdf"`);
+  res.setHeader('Cache-Control', 'private, no-store');
+  doc.pipe(res);
+  escribirResumenPacientePdf(doc, r);
+  doc.end();
+});
+
+// Qué se le va a mandar y si se puede (para que la pantalla avise ANTES de intentarlo).
+router.get('/atenciones/:id/resumen-paciente', ...verHc, async (req, res) => {
+  const id = uuid.parse(req.params.id);
+  const { resumen: r, at } = await resumen.resumenDeAtencion(id);
+  assertSede(req, at.sedeId);
+  res.json({
+    resumen: r,
+    correo: at.paciente.email ?? null,
+    motivoNoEnviable: resumen.motivoNoEnviable(at),
+    ultimoEnvio: await resumen.ultimoEnvioResumen(id),
+  });
+});
+
+// Enviarlo por correo con el PDF adjunto: escribe (queda en la auditoría), así que pide `hc.registrar`.
+router.post('/atenciones/:id/resumen-paciente/enviar', ...registrar, async (req, res) => {
+  const id = uuid.parse(req.params.id);
+  const at = await hc.atencionOr404(id);
+  assertSede(req, at.sedeId);
+  res.json(await resumen.enviarResumenPaciente({ ...ctx(req), atencionId: id }));
+});
+
 router.get('/consentimientos/:id/pdf', ...verHc, async (req, res) => {
   const c = await cs.consentimientoParaPdf(uuid.parse(req.params.id));
   assertSede(req, c.sedeId);
@@ -273,6 +312,21 @@ router.get('/consentimientos/:id/pdf', ...verHc, async (req, res) => {
   doc.pipe(res);
   escribirConsentimientoPdf(doc, c);
   doc.end();
+});
+
+// ─── Dictado de la consulta (1.6): la transcripción cruda ────────────────────
+// El front la autoguarda mientras se dicta (texto completo acumulado) para que nada se pierda si
+// se cierra la tablet. `aplicado: true` marca que ya se repartió a los campos.
+router.put('/atenciones/:id/dictado', ...registrar, async (req, res) => {
+  const { texto, aplicado } = z.object({ texto: z.string().max(50_000), aplicado: z.boolean().optional() }).parse(req.body);
+  const { sedeId } = await sedeDeAtencion(req.params.id);
+  assertSede(req, sedeId);
+  res.json(await hc.guardarDictado({ ...ctx(req), atencionId: req.params.id, texto, aplicado }));
+});
+router.delete('/atenciones/:id/dictado', ...registrar, async (req, res) => {
+  const { sedeId } = await sedeDeAtencion(req.params.id);
+  assertSede(req, sedeId);
+  res.json(await hc.limpiarDictado({ ...ctx(req), atencionId: req.params.id }));
 });
 
 // ─── Constancias y descansos médicos (5.4) ───────────────────────────────────
@@ -504,7 +558,7 @@ router.get('/paciente/:pacienteId/podograma-historial', ...verHc, async (req, re
 // Plantillas de nota por diagnóstico (1.1) y autotextos (1.2): las lee cualquiera con hc.ver;
 // las gestionan administración, coordinación y médicos.
 const plantillaSchema = z.object({
-  tipo: z.enum(['nota', 'autotexto']),
+  tipo: z.enum(['nota', 'autotexto', 'consentimiento']),
   clave: z.string().trim().max(40).nullable().optional(),
   nombre: z.string().trim().min(2).max(120),
   contenido: z.record(z.any()),

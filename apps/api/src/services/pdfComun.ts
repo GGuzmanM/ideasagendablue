@@ -16,8 +16,11 @@ export const AZUL = '#003366', AZUL_C = '#0A4B8C', GRIS = '#55617A', INK = '#1F2
   LINEA = '#CBD6E8', SUAVE = '#EAF1FC', FRANJA = '#EDF1F7';
 export const LOGO = path.join(process.cwd(), 'assets', 'logo-limablue.png');
 
+// Nombre legal para los textos («…fue atendido en Limablue Centro de Podología Médica…») y el rótulo
+// que va junto al logo en la cabecera (el logo ya dice «limablue»). Nunca «Clínica del pie».
 export const CLINICA = {
-  nombre: process.env.CLINICA_NOMBRE || 'Clínica del pie',
+  nombre: process.env.CLINICA_NOMBRE || 'Limablue Centro de Podología Médica',
+  encabezado: process.env.CLINICA_ENCABEZADO || 'Centro de Podología Médica',
   ruc: process.env.CLINICA_RUC || '',
   tel: process.env.CLINICA_TELEFONO || '',
 };
@@ -27,6 +30,27 @@ export const SEXO: Record<string, string> = { masculino: 'Masculino', femenino: 
 /** Documento A4 sin márgenes automáticos (cada PDF pagina a mano, midiendo). */
 export function nuevoPdf(titulo: string): Doc {
   return new PDFDocument({ size: 'A4', margin: 0, bufferPages: true, info: { Title: titulo, Author: CLINICA.nombre } });
+}
+
+/**
+ * Recoge el PDF en memoria en vez de mandarlo a la respuesta HTTP. Hace falta para ADJUNTARLO a un
+ * correo (el resto de PDFs se transmiten con `doc.pipe(res)` y no se guardan en ningún lado).
+ * `escribir` recibe el documento ya creado; esta función lo cierra y devuelve los bytes.
+ */
+export function pdfABuffer(titulo: string, escribir: (doc: Doc) => void): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    try {
+      const doc = nuevoPdf(titulo);
+      const trozos: Buffer[] = [];
+      doc.on('data', (t: Buffer) => trozos.push(t));
+      doc.on('end', () => resolve(Buffer.concat(trozos)));
+      doc.on('error', reject);
+      escribir(doc);
+      doc.end();
+    } catch (e) {
+      reject(e instanceof Error ? e : new Error(String(e)));
+    }
+  });
 }
 
 /** «dd/mm/aaaa · hh:mm» en hora de Lima. */
@@ -55,12 +79,14 @@ export function edadDe(fn: Date | null): string {
 export function dibujarCabecera(doc: Doc, p: { titulo: string; numero: string; subtitulo: string; sede: { nombre: string; direccion: string | null } }): number {
   const BAND = 60;
   doc.rect(0, 0, W, BAND).fill(AZUL);
-  doc.roundedRect(M, 9, 132, 42, 7).fill('#FFFFFF');
-  if (fs.existsSync(LOGO)) doc.image(LOGO, M + 8, 13, { fit: [116, 34], align: 'center', valign: 'center' });
-  else doc.font('Helvetica-Bold').fontSize(15).fillColor(AZUL).text('limablue', M + 12, 24);
-  doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(14).text(CLINICA.nombre, M + 144, 14, { width: 150, lineBreak: false });
-  doc.font('Helvetica').fontSize(8).fillColor('#C7D6EC').text('Podología · Fisioterapia · Baropodometría', M + 144, 34, { width: 160, lineBreak: false });
+  // Caja del logo como la marca: el trazo «limablue» y debajo, en pequeño, CENTRO DE PODOLOGÍA MÉDICA.
+  doc.roundedRect(M, 7, 132, 46, 7).fill('#FFFFFF');
+  if (fs.existsSync(LOGO)) doc.image(LOGO, M + 14, 10, { fit: [104, 26], align: 'center', valign: 'center' });
+  else doc.font('Helvetica-Bold').fontSize(14).fillColor(AZUL).text('limablue', M + 12, 16);
+  doc.font('Helvetica-Bold').fontSize(5.4).fillColor(AZUL).text(CLINICA.encabezado.toUpperCase(), M, 41, { width: 132, align: 'center', lineBreak: false, characterSpacing: 0.4 });
+  // Rótulo junto al logo (en dos líneas para no pisar el título del documento, a la derecha).
   const RW = 250, RX = W - M - RW;
+  doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(11).text(CLINICA.encabezado, M + 144, 16, { width: RX - (M + 144) - 8, lineGap: 1 });
   doc.font('Helvetica-Bold').fontSize(12.5).fillColor('#FFFFFF').text(p.titulo, RX, 13, { width: RW, align: 'right', lineBreak: false });
   doc.font('Helvetica').fontSize(9).fillColor('#DCE6F5').text(p.numero, RX, 31, { width: RW, align: 'right', lineBreak: false });
   doc.fontSize(8.5).fillColor('#C7D6EC').text(p.subtitulo, RX, 43, { width: RW, align: 'right', lineBreak: false, ellipsis: true });

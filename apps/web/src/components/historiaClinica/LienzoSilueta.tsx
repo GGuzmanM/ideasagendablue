@@ -3,8 +3,9 @@
 // terminado, el punto a borrar o el punto a "etiquetar" (elegir un trazo para decir qué es). Mouse, dedo
 // y lápiz (pointer events; touch-action none solo mientras se pinta, para que el dedo no desplace la
 // página). Fuera del modo pintar solo muestra los trazos (con su significado al pasar el mouse).
-import { useRef, useState, type PointerEvent } from 'react';
+import { useRef, useState, type PointerEvent, type RefObject } from 'react';
 import { TIPO_LESION_LABEL, type AnotacionPodograma } from '../../api/historiaClinica';
+import { puntoTocado } from '../../utils/giroSilueta';
 import { ESCALA_PINCEL, MAX_PUNTOS_TRAZO_SILUETA } from '../../utils/trazos';
 
 type Punto = [number, number];
@@ -24,16 +25,24 @@ interface Props {
   seleccionado?: number | null;
   /** Trazos de capas ocultas: no se dibujan (los índices no cambian). */
   oculto?: (a: AnotacionPodograma) => boolean;
+  /**
+   * Grados que está inclinada la silueta (la planta se dibuja como una pisada). El SVG se inclina con
+   * ella, así que un toque se mide sobre `caja` —el marco SIN inclinar— y se des-inclina: lo que se
+   * guarda es el punto del PIE, no el de la pantalla.
+   */
+  giro?: number;
+  caja?: RefObject<HTMLElement | null>;
 }
 
-export function LienzoSilueta({ anotaciones, aspecto, editable, herramienta, color, grosor, onTrazo, onBorrar, onSeleccionar, seleccionado = null, oculto }: Props) {
+export function LienzoSilueta({ anotaciones, aspecto, editable, herramienta, color, grosor, onTrazo, onBorrar, onSeleccionar, seleccionado = null, oculto, giro = 0, caja }: Props) {
   const alto = ANCHO / aspecto;
   const puntosRef = useRef<Punto[] | null>(null);
   const [enCurso, setEnCurso] = useState<Punto[] | null>(null);
 
   const coord = (ev: PointerEvent<SVGSVGElement>): Punto => {
-    const r = ev.currentTarget.getBoundingClientRect();
-    return [Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width)), Math.min(1, Math.max(0, (ev.clientY - r.top) / r.height))];
+    // Con la silueta inclinada, el rectángulo del SVG ya viene girado: se mide sobre el marco recto.
+    const r = (caja?.current ?? ev.currentTarget).getBoundingClientRect();
+    return puntoTocado((ev.clientX - r.left) / r.width, (ev.clientY - r.top) / r.height, giro, aspecto);
   };
   const alBajar = (ev: PointerEvent<SVGSVGElement>) => {
     if (!editable) return;

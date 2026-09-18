@@ -41,7 +41,7 @@ function plantilla(titulo: string, cuerpo: string): string {
       <img src="cid:${LOGO_CID}" alt="Limablue" style="height:36px;margin-bottom:16px">
       <h1 style="font-size:20px;margin:0 0 12px;color:#003366">${esc(titulo)}</h1>
       ${cuerpo}
-      <p style="font-size:12px;color:#7a8699;margin-top:24px">Limablue · clínica del pie. Este correo se genera automáticamente desde la historia clínica.</p>
+      <p style="font-size:12px;color:#7a8699;margin-top:24px">Limablue · Centro de Podología Médica. Este correo se genera automáticamente desde la historia clínica.</p>
     </div>
   </div></body></html>`;
 }

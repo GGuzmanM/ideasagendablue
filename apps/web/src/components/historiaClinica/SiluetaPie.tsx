@@ -1,12 +1,14 @@
-// Silueta del pie (vista pura) + monofilamento dibujado sobre ella. Son FOTOS reales de ambos pies,
-// giradas 180° respecto del original para que izquierdo y derecho sean los del PACIENTE:
-//  · plantar (public/Silueta.jpg): las plantas vistas desde atrás del paciente, dedos abajo y talón
-//    arriba; cada pie en una caja de 744×1843.
+// Silueta del pie (vista pura) + monofilamento dibujado sobre ella. Son FOTOS reales de ambos pies:
+//  · plantar (public/Silueta.jpg): dedos ARRIBA y talón abajo; cada pie en una caja de 744×1843. La foto
+//    se giró 180° el 17-sep-2026 (a pedido del doctor), así que la planta se mira «a través» del pie,
+//    igual que el dorso: cada pie queda del MISMO lado de la pantalla en las dos vistas, y el dedo gordo
+//    apunta hacia afuera. Como la foto se giró, el pie izquierdo pasó a la mitad DERECHA del archivo:
+//    por eso en esta vista el recorte va al revés (ver `mitadDerecha`).
 //  · dorsal  (public/Silueta-dorsal.jpg): el dorso como lo ve el propio paciente (dedos arriba, uñas
 //    visibles); cada pie en una caja de 874×1960. Sirve para marcar uñas (onicocriptosis, onicomicosis…)
-//    y empeine.
-// En ambas el pie izquierdo va a la izquierda y el derecho a la derecha, con los dedos gordos hacia el
-// centro. Un solo archivo por vista sirve para los dos pies recortando con background-size/position.
+//    y empeine. Aquí el izquierdo sí es la mitad izquierda del archivo.
+// En las dos, el pie izquierdo del paciente se dibuja a la IZQUIERDA de la pantalla. Un solo archivo por
+// vista sirve para los dos pies recortando con background-size/position.
 // Las zonas de cada vista (y su calibración) viven en utils/zonasPie.ts.
 import type { VistaSilueta } from '../../api/historiaClinica';
 import { SITIOS_MONOFILAMENTO, coordZona, zonaPorId } from '../../utils/zonasPie';
@@ -22,14 +24,17 @@ export const ASPECTO_SILUETA = FOTOS.plantar.aspecto;
 /** Lo mismo como número (ancho / alto), para la capa de dibujo. */
 export const proporcionSilueta = (vista: VistaSilueta = 'plantar') => { const [a, b] = FOTOS[vista].aspecto.split('/').map(Number); return a! / b!; };
 
+/** `espejo` = es el pie DERECHO del paciente. Dice qué mitad del archivo hay que recortar. */
 export function SiluetaPie({ espejo, vista = 'plantar' }: { espejo?: boolean; vista?: VistaSilueta }) {
   const f = FOTOS[vista];
+  // En la planta el archivo está girado, así que el pie derecho es la mitad IZQUIERDA (al revés que el dorso).
+  const mitadDerecha = vista === 'plantar' ? !espejo : !!espejo;
   return (
     <div aria-hidden className="w-full h-full bg-no-repeat"
       style={{
         backgroundImage: `url(${f.url})`,
         backgroundSize: `${(f.anchoImagen / f.anchoPie) * 100}% 100%`,
-        backgroundPosition: espejo ? '100% 0%' : '0% 0%', // derecho = mitad derecha de la foto
+        backgroundPosition: mitadDerecha ? '100% 0%' : '0% 0%',
         mixBlendMode: 'multiply', // el fondo casi blanco de la foto se funde con la tarjeta (sin recuadro)
       }} />
   );

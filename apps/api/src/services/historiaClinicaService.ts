@@ -230,6 +230,9 @@ export async function getAtencionCompleta(id: string) {
       },
       // Controles sugeridos al cerrar (4.1).
       controles: { orderBy: { fechaSugerida: 'asc' }, select: { id: true, fechaSugerida: true, motivo: true, origen: true, estado: true } },
+      // Dictado de la consulta (1.6): la transcripción cruda tal como se dictó, para releerla o
+      // volver a repartirla; se autoguarda mientras se dicta.
+      dictado: { select: { texto: true, aplicadoEn: true, actualizadoEn: true, registradoEtiqueta: true } },
       // Constancias y descansos médicos (5.4): resumen (el texto va en su PDF).
       constancias: {
         orderBy: { fechaEmision: 'asc' },
@@ -328,7 +331,7 @@ export async function resumenAtencionPorCita(citaId: string) {
 }
 
 /** Auditoría de LECTURA (awaited, nunca lanza): quién abrió qué historia y desde dónde. */
-export async function auditarLecturaHC(p: Ctx & { pacienteId: string; origen: 'ficha' | 'ficha_previa' | 'historial_podograma' | 'atencion' | 'receta' | 'pdf' | 'hc_pdf' | 'consentimiento' | 'constancia' | 'anteriores' | 'versiones' | 'escalas' | 'fotos'; atencionId?: string; recetaId?: string; sedeId?: string }) {
+export async function auditarLecturaHC(p: Ctx & { pacienteId: string; origen: 'ficha' | 'ficha_previa' | 'historial_podograma' | 'atencion' | 'receta' | 'pdf' | 'hc_pdf' | 'consentimiento' | 'constancia' | 'anteriores' | 'resumen_paciente' | 'versiones' | 'escalas' | 'fotos'; atencionId?: string; recetaId?: string; sedeId?: string }) {
   // 'pdf' = PDF de una receta; 'hc_pdf' = copia completa de la historia (se audita aparte: sale entera).
   await registrarAudit({
     ...ctxAudit(p), accion: p.origen === 'hc_pdf' ? 'exportar_hc' : p.origen === 'receta' || p.origen === 'pdf' ? 'ver_receta' : 'ver_hc',
@@ -452,6 +455,47 @@ export async function reabrirAtencion(p: Ctx & { atencionId: string; user: AuthP
     const r = await tx.atencionClinica.updateMany({ where: { id: at.id, estado: 'cerrada' }, data: { estado: 'abierta', cerradaEn: null, cerradaPorUsuarioId: null } });
     if (r.count === 0) throw new AppError('La atención no está cerrada', 409, 'ATENCION_ABIERTA');
     await auditEnTx(tx, { ...ctxAudit(p), citaId: at.citaId, accion: 'reabrir_atencion', entidad: 'atencion_clinica', entidadId: at.id, sedeId: at.sedeId, antes: { cerradaEn: at.cerradaEn } });
+  });
+  return getAtencionCompleta(at.id);
+}
+
+// ─── Dictado de la consulta: la transcripción cruda (1.6) ────────────────────
+/**
+ * Guarda TODO lo dictado tal como lo entendió el reconocedor, antes de repartirlo en los campos.
+ * Se llama en segundo plano mientras el profesional dicta (autoguardado), así que:
+ *   · reemplaza el texto completo (el front manda lo acumulado; es la copia de respaldo del dictado),
+ *   · solo audita la PRIMERA vez (si auditara cada autoguardado llenaría la auditoría de ruido),
+ *   · exige la atención abierta, como toda escritura clínica.
+ * `aplicado` marca que ya se repartió a los campos (para avisar «tienes dictado sin repartir»).
+ */
+export async function guardarDictado(p: Ctx & { atencionId: string; texto: string; aplicado?: boolean }) {
+  const at = await atencionOr404(p.atencionId);
+  exigirAbierta(at);
+  const texto = p.texto.replace(/\r/g, '');
+  const previo = await prisma.dictadoConsulta.findUnique({ where: { atencionId: at.id }, select: { id: true } });
+  const etiqueta = previo ? undefined : await etiquetaUsuario(prisma, p.usuarioId);
+  await prisma.$transaction(async (tx) => {
+    await tx.dictadoConsulta.upsert({
+      where: { atencionId: at.id },
+      create: { atencionId: at.id, texto, aplicadoEn: p.aplicado ? new Date() : null, registradoPorUsuarioId: p.usuarioId ?? null, registradoEtiqueta: etiqueta ?? null },
+      update: { texto, ...(p.aplicado ? { aplicadoEn: new Date() } : {}) },
+    });
+    if (!previo) {
+      await auditEnTx(tx, { ...ctxAudit(p), citaId: at.citaId, sedeId: at.sedeId, accion: 'guardar_dictado', entidad: 'atencion_clinica', entidadId: at.id, despues: { caracteres: texto.length } });
+    }
+  });
+  return getAtencionCompleta(at.id);
+}
+
+/** Borra la transcripción (el profesional ya la repartió o se dictó sobre el paciente equivocado). */
+export async function limpiarDictado(p: Ctx & { atencionId: string }) {
+  const at = await atencionOr404(p.atencionId);
+  exigirAbierta(at);
+  const d = await prisma.dictadoConsulta.findUnique({ where: { atencionId: at.id }, select: { texto: true } });
+  if (!d) return getAtencionCompleta(at.id);
+  await prisma.$transaction(async (tx) => {
+    await tx.dictadoConsulta.delete({ where: { atencionId: at.id } });
+    await auditEnTx(tx, { ...ctxAudit(p), citaId: at.citaId, sedeId: at.sedeId, accion: 'limpiar_dictado', entidad: 'atencion_clinica', entidadId: at.id, antes: { caracteres: d.texto.length } });
   });
   return getAtencionCompleta(at.id);
 }

@@ -1,31 +1,16 @@
-// Consentimiento informado (5.1) — lógica de la pestaña «Consentimientos» de la HC.
-// El texto sale de una plantilla general con los datos del paciente, del profesional y del
-// procedimiento; se puede ajustar antes de firmar. Lo que se firma queda como snapshot (inmutable).
+// Consentimiento informado (5.1 + 5.2) — lógica de la pestaña «Consentimientos» de la HC.
+// El texto se arma en utils/consentimientoTexto.ts: el encabezado legal lo pone el sistema y el
+// cuerpo sale de la PLANTILLA del procedimiento que se está autorizando (matricectomía, láser,
+// curación…) o, si no hay ninguna, del texto general. Se puede ajustar antes de firmar y lo que se
+// firma queda como copia fija (inmutable): cambiar la plantilla después no toca lo ya firmado.
 import { useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import { historiaClinicaApi, atencionKey, TIPO_PROCEDIMIENTO_LABEL, type AtencionCompleta, type RelacionFirmante, type TrazoFirma } from '../api/historiaClinica';
+import { historiaClinicaApi, atencionKey, usePlantillas, TIPO_PROCEDIMIENTO_LABEL, type AtencionCompleta, type RelacionFirmante, type TipoProcedimiento, type TrazoFirma } from '../api/historiaClinica';
+import { plantillaParaProcedimiento, textoConsentimiento, type DatosConsentimiento } from '../utils/consentimientoTexto';
 import { ASPECTO_FIRMA } from '../components/historiaClinica/FirmaPad';
 
 const MIN_PUNTOS_FIRMA = 12; // igual que el API (FIRMA_VACIA)
-
-export function textoConsentimiento(p: {
-  firmante: string; documento: string; relacion: RelacionFirmante; paciente: string; profesional: string; procedimiento: string;
-}): string {
-  const quien = p.relacion === 'apoderado'
-    ? `Yo, ${p.firmante || '________'}, identificado(a) con ${p.documento || '________'}, en mi calidad de apoderado(a) o representante de ${p.paciente},`
-    : `Yo, ${p.firmante || '________'}, identificado(a) con ${p.documento || '________'},`;
-  const proc = p.procedimiento.trim() || '________';
-  return [
-    `${quien} declaro que ${p.profesional} me ha explicado de forma clara y comprensible, y con palabras que entiendo:`,
-    `1. En qué consiste el procedimiento «${proc}», su finalidad y cómo se realiza.`,
-    '2. Los beneficios que se esperan y las alternativas disponibles, incluida la de no realizarlo y sus consecuencias.',
-    '3. Los riesgos y molestias posibles: dolor, sangrado, infección, reacción a la anestesia local o a los productos que se usen, retraso en la cicatrización y que la lesión vuelva a aparecer. En personas con diabetes o mala circulación estos riesgos pueden ser mayores.',
-    '4. Los cuidados que debo seguir después y la importancia de acudir a los controles indicados.',
-    'He podido hacer preguntas y me las han respondido. Sé que puedo retirar este consentimiento en cualquier momento antes del procedimiento, sin que eso afecte mi atención.',
-    'Por lo anterior, doy mi consentimiento libre y voluntario para que se me realice el procedimiento indicado (Ley N° 26842, Ley General de Salud, arts. 4 y 15, y Ley N° 29414).',
-  ].join('\n');
-}
 
 export function useConsentimientos(a: AtencionCompleta, puedeRegistrar: boolean) {
   const qc = useQueryClient();
@@ -38,6 +23,10 @@ export function useConsentimientos(a: AtencionCompleta, puedeRegistrar: boolean)
 
   const [abierto, setAbierto] = useState(false);
   const [procedimiento, setProcedimiento] = useState('');
+  /** Tipo del procedimiento elegido de las sugerencias: es lo que casa con la plantilla. */
+  const [tipoProcedimiento, setTipoProcedimiento] = useState<TipoProcedimiento | null>(null);
+  /** El profesional puede decidir usar el texto general aunque exista plantilla. */
+  const [sinPlantilla, setSinPlantilla] = useState(false);
   const [relacion, setRelacion] = useState<RelacionFirmante>('paciente');
   const [firmanteNombre, setFirmanteNombre] = useState(nombrePaciente);
   const [firmanteDocumento, setFirmanteDocumento] = useState(docPaciente);
@@ -45,12 +34,29 @@ export function useConsentimientos(a: AtencionCompleta, puedeRegistrar: boolean)
   const [firma, setFirma] = useState<TrazoFirma[]>([]);
   const [revocando, setRevocando] = useState<string | null>(null);
 
-  // Sugerencias: procedimientos ya registrados en esta atención y el servicio de la cita.
-  const sugerencias = useMemo(
-    () => [...new Set([...a.procedimientos.map((p) => p.nombre || TIPO_PROCEDIMIENTO_LABEL[p.tipo]), a.servicio.nombre].filter(Boolean))],
-    [a.procedimientos, a.servicio.nombre],
+  // Sugerencias: procedimientos ya registrados en esta atención y el servicio de la cita. Cada una
+  // lleva su tipo cuando viene de un procedimiento registrado, para encontrar su plantilla.
+  const sugerencias = useMemo(() => {
+    const out: { texto: string; tipo: TipoProcedimiento | null }[] = [];
+    for (const p of a.procedimientos) {
+      const texto = p.nombre || TIPO_PROCEDIMIENTO_LABEL[p.tipo];
+      if (texto && !out.some((x) => x.texto === texto)) out.push({ texto, tipo: p.tipo });
+    }
+    if (a.servicio.nombre && !out.some((x) => x.texto === a.servicio.nombre)) out.push({ texto: a.servicio.nombre, tipo: null });
+    return out;
+  }, [a.procedimientos, a.servicio.nombre]);
+
+  // Plantillas de consentimiento (5.2). Se buscan por el tipo del procedimiento y, si no, por nombre.
+  const { data: plantillas = [] } = usePlantillas('consentimiento');
+  const datos: DatosConsentimiento = {
+    firmante: firmanteNombre.trim(), documento: firmanteDocumento.trim(), relacion,
+    paciente: nombrePaciente, profesional, procedimiento, sede: a.sede?.nombre,
+  };
+  const plantilla = useMemo(
+    () => (sinPlantilla ? null : plantillaParaProcedimiento(plantillas, { tipo: tipoProcedimiento, texto: procedimiento })),
+    [plantillas, tipoProcedimiento, procedimiento, sinPlantilla],
   );
-  const textoBase = textoConsentimiento({ firmante: firmanteNombre.trim(), documento: firmanteDocumento.trim(), relacion, paciente: nombrePaciente, profesional, procedimiento });
+  const textoBase = textoConsentimiento(datos, plantilla);
   const texto = textoEditado ?? textoBase;
 
   const puntosFirma = firma.reduce((n, t) => n + t.puntos.length, 0);
@@ -67,8 +73,16 @@ export function useConsentimientos(a: AtencionCompleta, puedeRegistrar: boolean)
     setFirmanteDocumento(r === 'paciente' ? docPaciente : '');
   };
   const reiniciar = () => {
-    setAbierto(false); setProcedimiento(''); setRelacion('paciente'); setFirmanteNombre(nombrePaciente);
+    setAbierto(false); setProcedimiento(''); setTipoProcedimiento(null); setSinPlantilla(false);
+    setRelacion('paciente'); setFirmanteNombre(nombrePaciente);
     setFirmanteDocumento(docPaciente); setTextoEditado(null); setFirma([]);
+  };
+  /** Al escribir o elegir el procedimiento: si coincide con una sugerencia, se toma su tipo. */
+  const cambiarProcedimiento = (texto: string) => {
+    setProcedimiento(texto);
+    const s = sugerencias.find((x) => x.texto === texto);
+    setTipoProcedimiento(s?.tipo ?? null);
+    setTextoEditado(null); // el texto se vuelve a armar con la plantilla que corresponda
   };
 
   const firmarMut = useMutation({
@@ -104,7 +118,8 @@ export function useConsentimientos(a: AtencionCompleta, puedeRegistrar: boolean)
 
   return {
     lista: a.consentimientos ?? [], cerrada, puedeFirmar, nombrePaciente,
-    abierto, setAbierto, reiniciar, procedimiento, setProcedimiento, sugerencias,
+    abierto, setAbierto, reiniciar, procedimiento, setProcedimiento: cambiarProcedimiento, sugerencias,
+    plantilla, sinPlantilla, setSinPlantilla,
     relacion, cambiarRelacion, firmanteNombre, setFirmanteNombre, firmanteDocumento, setFirmanteDocumento,
     texto, textoEditado, setTextoEditado, textoBase, firma, setFirma, faltantes,
     firmarMut, revocando, setRevocando, revocarMut, verPdf,

@@ -1,6 +1,7 @@
 // Botón de micrófono + campo de texto con dictado (vista pura; la lógica vive en hooks/useDictado).
-import type { ChangeEvent, Dispatch, SetStateAction } from 'react';
-import { anexarDictado, type Dictado } from '../../hooks/useDictado';
+import { useEffect, useRef, type ChangeEvent, type Dispatch, type SetStateAction } from 'react';
+import { type Dictado } from '../../hooks/useDictado';
+import { unirFrase } from '../../utils/dictadoEstructurado';
 import { useAutotextoStore } from '../../stores/autotextoStore';
 import { expandirAutotexto } from '../../utils/autotexto';
 
@@ -51,10 +52,23 @@ interface TextareaProps {
   resaltar?: boolean;
 }
 
-/** Textarea con etiqueta y botón "Dictar": lo dictado se ANEXA al texto existente (no lo pisa). */
+/**
+ * Textarea con etiqueta y botón «Dictar». Lo dictado se escribe a continuación de lo que ya había,
+ * y se REDIBUJA en cada aviso del micrófono (el navegador reenvía toda su lista, ver useDictado):
+ * así no puede quedar la misma frase dos veces. Si el profesional corrige el campo a mano mientras
+ * dicta, su corrección manda y lo que siga dictando se escribe debajo.
+ */
 export function TextareaDictado({ label, campo, valor, setValor, dictado, rows = 3, placeholder, maxLength = 5000, labelClass, inputClass, disabled, resaltar }: TextareaProps) {
   const activo = dictado.activo === campo || !!resaltar;
   const atajos = useAutotextoStore((s) => s.atajos);
+  // Texto del campo al empezar a dictar: lo dictado se escribe siempre a continuación de eso.
+  const baseRef = useRef('');
+  const valorRef = useRef(valor);
+  valorRef.current = valor;
+  const dictandoAqui = dictado.activo === campo;
+  useEffect(() => { if (dictandoAqui) baseRef.current = valorRef.current; }, [dictandoAqui]);
+  /** Recibe TODO lo dictado en esta tanda (no la última frase) y lo escribe encima. */
+  const escribirDictado = (dicho: string) => setValor(unirFrase(baseRef.current, dicho));
   // Autotexto (1.2): ".oc" + espacio → "onicocriptosis". El cursor se recoloca tras el reemplazo.
   const onChange = (ev: ChangeEvent<HTMLTextAreaElement>) => {
     const el = ev.target;
@@ -67,7 +81,7 @@ export function TextareaDictado({ label, campo, valor, setValor, dictado, rows =
     <div>
       <div className="flex items-center justify-between gap-2 mb-1">
         <label className={`${labelClass} !mb-0`}>{label}</label>
-        <BotonDictado campo={campo} dictado={dictado} disabled={disabled} onTexto={(t) => setValor((prev) => anexarDictado(prev, t))} />
+        <BotonDictado campo={campo} dictado={dictado} disabled={disabled} onTexto={escribirDictado} />
       </div>
       <textarea value={valor} onChange={onChange} rows={rows} maxLength={maxLength} placeholder={placeholder} disabled={disabled}
         className={`${inputClass} ${activo ? 'border-rose-400 ring-1 ring-rose-300' : ''}`} />

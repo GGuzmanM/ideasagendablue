@@ -1,6 +1,6 @@
 // Historia clínica — LÓGICA (hooks). Las vistas (.tsx) son puras y consumen estos hooks.
 // Un useState por campo, `puedeGuardar` derivado, useMutation → invalidar + toast (patrón de la casa).
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -20,7 +20,10 @@ import { recetasApi, verRecetaPdf, imprimirReceta, useRecetasPaciente, favoritas
 import type { Cie10Item, MedicamentoItem } from '../api/catalogos';
 import { useDictado, anexarDictado } from '../hooks/useDictado';
 import { useDictadoConsulta } from '../hooks/useDictadoConsulta';
-import { adivinarTipoProcedimiento, type DiagnosticoDictado } from '../utils/dictadoEstructurado';
+import {
+  adivinarTipoProcedimiento, repartirTranscripcion, anexarDictado as unirTexto, CAMPOS_PROPUESTA,
+  type DiagnosticoDictado, type LesionDictada, type PropuestaDictado, type CampoPropuesta,
+} from '../utils/dictadoEstructurado';
 import { coordZona, zonaMasCercana, ZONAS_PIE } from '../utils/zonasPie';
 import {
   ITB_VACIO, PULSOS_VACIOS, CALZADO_VACIO, itbPie, numOrNull, puntajeOsi, combinarLado, eapDeItb, examenSugiereDeformidad, manchesterSugiereDeformidad,
@@ -44,6 +47,16 @@ const esEquipoNombre = (p: { nombres: string; esEquipo?: boolean }) => p.esEquip
 const ERROR_TIENE_409 = (e: unknown) => (e as { statusCode?: number })?.statusCode === 409;
 
 // ─── Página de dos paneles ────────────────────────────────────────────────────
+/**
+ * Callback con identidad ESTABLE que siempre ve los valores frescos del render (patrón
+ * «useEvent»): sirve para pasar funciones a hooks/efectos sin que cambien sus dependencias.
+ */
+function useCallbackRef<A extends unknown[], R>(fn: (...args: A) => R): (...args: A) => R {
+  const ref = useRef(fn);
+  ref.current = fn;
+  return useCallback((...args: A) => ref.current(...args), []);
+}
+
 export function useHistoriaClinicaPage() {
   const { pacienteId } = useParams<{ pacienteId: string }>();
   const [params, setParams] = useSearchParams();
@@ -71,6 +84,12 @@ export function useHistoriaClinicaPage() {
   const refrescarSi409 = (e: Error) => { if (ERROR_TIENE_409(e) && atencionSel) void qc.invalidateQueries({ queryKey: atencionKey(atencionSel) }); toast.error(e.message); };
 
   const [tab, setTab] = useState<TabHc>('evolucion');
+  // La vista del podograma (planta / dorso) y su modo (punto, pintar, historial) viven AQUÍ y no en el
+  // panel: al cambiar de atención el panel se desmonta un instante mientras carga (esqueleto), y si el
+  // estado viviera ahí se volvería a la planta cada vez. Así, si estás mirando el dorso de una visita y
+  // tocas otra, sigues en el dorso (pedido del doctor, 17-sep-2026).
+  const [vistaSilueta, setVistaSilueta] = useState<VistaSilueta>('plantar');
+  const [modoSilueta, setModoSilueta] = useState<ModoSilueta>('punto');
   const [citaARegistrar, setCitaARegistrar] = useState<CitaResumen | null>(null);
   const [recetaModal, setRecetaModal] = useState<TipoDocumentoReceta | null>(null);
   const [mostrarCandidatas, setMostrarCandidatas] = useState(false);
@@ -138,9 +157,14 @@ export function useHistoriaClinicaPage() {
     limpiarBorradores();
     return true;
   };
-  const seleccionarAtencion = (id: string) => { if ((id === atencionSel && !genexisSel) || !confirmarCambio()) return; setGenexisSel(null); setAtencionSel(id); setTab('evolucion'); };
-  // Una visita del sistema anterior se mira en el panel derecho como tarjeta de solo lectura.
-  const seleccionarGenexis = (id: string) => { if (id === genexisSel || !confirmarCambio()) return; setGenexisSel(id); setAtencionSel(null); setTab('evolucion'); };
+  // Al cambiar de atención se MANTIENE la pestaña abierta (pedido del doctor, 17-sep-2026): si está
+  // mirando el podograma de una visita y toca otra, sigue en el podograma; igual con la receta, las
+  // fotos o cualquier otra. Antes volvía siempre a Evolución y había que navegar de nuevo. Las ocho
+  // pestañas existen para toda atención, así que ninguna queda «huérfana» al cambiar.
+  const seleccionarAtencion = (id: string) => { if ((id === atencionSel && !genexisSel) || !confirmarCambio()) return; setGenexisSel(null); setAtencionSel(id); };
+  // Una visita del sistema anterior se mira en el panel derecho como tarjeta de solo lectura; la
+  // pestaña se conserva para volver a ella al elegir de nuevo una atención del sistema actual.
+  const seleccionarGenexis = (id: string) => { if (id === genexisSel || !confirmarCambio()) return; setGenexisSel(id); setAtencionSel(null); };
 
   const cerrarMut = useMutation({
     mutationFn: (controles: ControlEntrada[]) => historiaClinicaApi.cerrarAtencion(atencionSel!, controles),
@@ -162,7 +186,7 @@ export function useHistoriaClinicaPage() {
     setCitaARegistrar(null);
     limpiarBorradores();
     setAtencionSel(a.id);
-    setTab('evolucion');
+    setTab('evolucion'); // una atención RECIÉN creada sí empieza por la evolución
   };
 
   // Formularios de evolución y procedimientos viven AQUÍ (no en su pestaña) para que un borrador
@@ -186,26 +210,91 @@ export function useHistoriaClinicaPage() {
     onSuccess: (_r, d) => { invalidar({ pacienteId, atencionId: atencionSel! }); toast.success(`Podograma: ${TIPO_LESION_LABEL[d.tipoLesion]} · ${PIE_LABEL[d.pie]}${d.vista === 'dorsal' ? ' · dorso' : ''}${d.zona ? ` · ${d.zona}` : ''}`); },
     onError: (e: Error) => toast.error(e.message),
   });
+  // ── Dictado: la transcripción cruda se GUARDA (nada se pierde) y luego se reparte ──
+  // Autoguardado con un pequeño retardo: dictar genera una frase cada pocos segundos y no queremos
+  // una escritura por frase. Al detener el dictado se guarda lo que quede pendiente.
+  const dictadoGuardadoRef = useRef<string>('');
+  const timerDictadoRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const guardarDictadoMut = useMutation({
+    mutationFn: (p: { texto: string; aplicado?: boolean }) => historiaClinicaApi.guardarDictado(atencionSel!, p.texto, p.aplicado),
+    onSuccess: (a) => { qc.setQueryData(atencionKey(a.id), a); dictadoGuardadoRef.current = a.dictado?.texto ?? ''; },
+    // Si falla (red, atención cerrada), el texto sigue en pantalla: se avisa y se puede reintentar.
+    onError: (e: Error) => toast.error(`No se pudo guardar lo dictado: ${e.message}`),
+  });
+  const guardarDictadoYa = useCallbackRef((texto: string, aplicado?: boolean) => {
+    if (timerDictadoRef.current) { clearTimeout(timerDictadoRef.current); timerDictadoRef.current = null; }
+    if (!atencionSel || (texto === dictadoGuardadoRef.current && !aplicado)) return;
+    guardarDictadoMut.mutate({ texto, aplicado });
+  });
+  const programarGuardadoDictado = useCallbackRef((texto: string) => {
+    if (timerDictadoRef.current) clearTimeout(timerDictadoRef.current);
+    timerDictadoRef.current = setTimeout(() => guardarDictadoYa(texto), 2500);
+  });
+  useEffect(() => () => { if (timerDictadoRef.current) clearTimeout(timerDictadoRef.current); }, []);
+  const textoDictadoGuardado = atencion?.dictado?.texto ?? '';
+  useEffect(() => { dictadoGuardadoRef.current = textoDictadoGuardado; }, [textoDictadoGuardado, atencionSel]);
+
+  /** Diagnóstico dictado → precarga el buscador CIE-10 (o solo cambia tipo/principal). */
+  const usarDiagnosticoDictado = (d: DiagnosticoDictado) => {
+    if (!d.termino) { if (d.tipo) evolucion.setDxTipo(d.tipo); if (d.principal !== undefined) evolucion.setDxPrincipal(d.principal); return; }
+    setDxDictado((prev) => ({ ...d, n: (prev?.n ?? 0) + 1 }));
+  };
+  /** Lesión dictada → marca en el podograma; sin pie o zona clara, su texto va a Objetivo. */
+  const usarLesionDictada = (l: LesionDictada) => {
+    if (!l.pie || !l.zona) {
+      evolucion.setObjetivo((prev) => anexarDictado(prev, l.texto));
+      toast(`Lesión sin ${!l.pie ? 'pie' : 'zona'} clara: el texto fue a Objetivo. Di p. ej. «lesión heloma quinto dedo izquierdo».`, { icon: '⚠️', duration: 6000 });
+      return;
+    }
+    const c = coordZona(l.zona.id, l.pie);
+    marcaDictadoMut.mutate({ pie: l.pie, vista: c.vista, x: c.x, y: c.y, zona: l.zona.etiqueta, tipoLesion: l.tipoLesion ?? 'otro', nota: `${l.texto}${l.grado != null ? ` · grado ${l.grado}` : ''}` });
+  };
   const consulta = useDictadoConsulta(dictado, {
     setSubjetivo: evolucion.setSubjetivo, setObjetivo: evolucion.setObjetivo, setApreciacion: evolucion.setApreciacion,
     setPlan: evolucion.setPlan, setObservacion: evolucion.setTexto,
-    onProcedimiento: (t) => {
-      procedimientos.setDetalle((prev) => anexarDictado(prev, t));
-      if (!procedimientos.tipo) { const tipo = adivinarTipoProcedimiento(t); if (tipo) procedimientos.setTipo(tipo); }
-    },
-    onDiagnostico: (d) => {
-      if (!d.termino) { if (d.tipo) evolucion.setDxTipo(d.tipo); if (d.principal !== undefined) evolucion.setDxPrincipal(d.principal); return; }
-      setDxDictado((prev) => ({ ...d, n: (prev?.n ?? 0) + 1 }));
-    },
-    onLesion: (l) => {
-      if (!l.pie || !l.zona) {
-        evolucion.setObjetivo((prev) => anexarDictado(prev, l.texto));
-        toast(`Lesión sin ${!l.pie ? 'pie' : 'zona'} clara: el texto fue a Objetivo. Di p. ej. «lesión heloma quinto dedo izquierdo».`, { icon: '⚠️', duration: 6000 });
-        return;
-      }
-      const c = coordZona(l.zona.id, l.pie);
-      marcaDictadoMut.mutate({ pie: l.pie, vista: c.vista, x: c.x, y: c.y, zona: l.zona.etiqueta, tipoLesion: l.tipoLesion ?? 'otro', nota: `${l.texto}${l.grado != null ? ` · grado ${l.grado}` : ''}` });
-    },
+    setProcedimiento: procedimientos.setDetalle,
+    onTextoProcedimiento: (t) => { if (!procedimientos.tipo) { const tipo = adivinarTipoProcedimiento(t); if (tipo) procedimientos.setTipo(tipo); } },
+    onDiagnostico: usarDiagnosticoDictado,
+    onLesion: usarLesionDictada,
+  }, { clave: atencionSel, transcripcionInicial: textoDictadoGuardado, onTranscripcion: programarGuardadoDictado });
+
+  // ── Revisar lo dictado y llenar los campos (previsualización) ──
+  const [revisarDictado, setRevisarDictado] = useState(false);
+  const propuestaDictado: PropuestaDictado | null = useMemo(
+    () => (consulta.transcripcion.trim() ? repartirTranscripcion(consulta.transcripcion) : null),
+    [consulta.transcripcion],
+  );
+  /** Hay dictado guardado que todavía no se repartió a los campos (se avisa antes de cerrar). */
+  const dictadoSinAplicar = !!atencion?.dictado?.texto.trim()
+    && (!atencion.dictado.aplicadoEn || new Date(atencion.dictado.actualizadoEn).getTime() > new Date(atencion.dictado.aplicadoEn).getTime() + 1000);
+  const abrirRevisionDictado = () => { guardarDictadoYa(consulta.transcripcion); setRevisarDictado(true); };
+  /** Escribe en los campos lo elegido en la revisión: `reemplazar` pisa lo que hubiera; si no, lo añade al final. */
+  const aplicarDictado = (eleccion: Partial<Record<CampoPropuesta, 'reemplazar' | 'anadir'>>) => {
+    if (!propuestaDictado) return;
+    const setters: Record<CampoPropuesta, (f: (prev: string) => string) => void> = {
+      subjetivo: evolucion.setSubjetivo, objetivo: evolucion.setObjetivo, apreciacion: evolucion.setApreciacion,
+      plan: evolucion.setPlan, observacion: evolucion.setTexto, procedimiento: procedimientos.setDetalle,
+    };
+    let n = 0;
+    for (const campo of CAMPOS_PROPUESTA) {
+      const modo = eleccion[campo];
+      const texto = propuestaDictado.campos[campo];
+      if (!modo || !texto.trim()) continue;
+      setters[campo]((prev) => (modo === 'reemplazar' ? texto : unirTexto(prev, texto)));
+      n++;
+    }
+    if (eleccion.procedimiento && !procedimientos.tipo) {
+      const tipo = adivinarTipoProcedimiento(propuestaDictado.campos.procedimiento);
+      if (tipo) procedimientos.setTipo(tipo);
+    }
+    setRevisarDictado(false);
+    guardarDictadoYa(consulta.transcripcion, true); // queda marcado como repartido
+    toast.success(n ? `Se llenaron ${n} campo${n === 1 ? '' : 's'} con lo dictado` : 'No se eligió ningún campo');
+  };
+  const limpiarDictadoMut = useMutation({
+    mutationFn: () => historiaClinicaApi.limpiarDictado(atencionSel!),
+    onSuccess: (a) => { qc.setQueryData(atencionKey(a.id), a); consulta.cambiarTranscripcion(''); dictadoGuardadoRef.current = ''; setRevisarDictado(false); toast.success('Se borró lo dictado'); },
+    onError: (e: Error) => toast.error(e.message),
   });
 
   // A3 · Estado de la HC: pasar a pasiva (archivo) o reactivar. Paso manual de administración / coordinación;
@@ -243,6 +332,7 @@ export function useHistoriaClinicaPage() {
     lineaTiempo, genexisTotal, genexisSel, visitaGenexis, seleccionarGenexis,
     hayMasGenexis: !!genexisQ.hasNextPage, cargarMasGenexis: () => void genexisQ.fetchNextPage(), cargandoGenexis: genexisQ.isFetchingNextPage,
     tab, setTab, navigate,
+    vistaSilueta, setVistaSilueta, modoSilueta, setModoSilueta,
     puedeRegistrar, puedeAnular, puedeVerRecetas, esMedicoPrescriptor, usuario,
     citasCandidatas, mostrarCandidatas, setMostrarCandidatas,
     citaARegistrar, setCitaARegistrar, onAtencionCreada,
@@ -250,6 +340,10 @@ export function useHistoriaClinicaPage() {
     cerrarMut, reabrirMut,
     invalidar,
     evolucion, procedimientos, dictado, consulta, dxDictado, limpiarDxDictado, gestionaPlantillas,
+    // Dictado guardado + revisión antes de llenar los campos
+    propuestaDictado, revisarDictado, abrirRevisionDictado, cerrarRevisionDictado: () => setRevisarDictado(false),
+    aplicarDictado, limpiarDictadoMut, dictadoSinAplicar, guardandoDictado: guardarDictadoMut.isPending,
+    guardarDictadoYa, usarDiagnosticoDictado, usarLesionDictada,
   };
 }
 
@@ -876,7 +970,18 @@ function indiceAnotacionEn(lista: AnotacionPodograma[], x: number, y: number, sa
   return -1;
 }
 
-export function usePodograma(atencion: AtencionCompleta | null, puedeRegistrar: boolean) {
+/** Modo de trabajo sobre la silueta. */
+export type ModoSilueta = 'punto' | 'pintar' | 'historial';
+
+/**
+ * `ui` = vista y modo guardados fuera del panel (en el hook de la página), para que sobrevivan al
+ * cambio de atención. Si no se pasan, el hook los lleva por su cuenta.
+ */
+export function usePodograma(
+  atencion: AtencionCompleta | null,
+  puedeRegistrar: boolean,
+  ui?: { vista: VistaSilueta; setVista: (v: VistaSilueta) => void; modo: ModoSilueta; setModo: (m: ModoSilueta) => void },
+) {
   const qc = useQueryClient();
   const invalidar = useInvalidarHistoriaClinica();
   const atencionId = atencion?.id;
@@ -888,12 +993,16 @@ export function usePodograma(atencion: AtencionCompleta | null, puedeRegistrar: 
   const [pendiente, setPendiente] = useState<{ pie: PiePodograma; vista: VistaSilueta; x: number; y: number } | null>(null);
   const [tipoLesion, setTipoLesion] = useState<TipoLesion>('hiperqueratosis');
   // Planta o dorso (uñas / empeine). Al pasar al dorso se propone onicocriptosis (lo más común en uñas).
-  const [vistaSilueta, setVistaSiluetaRaw] = useState<VistaSilueta>('plantar');
+  const [vistaLocal, setVistaLocal] = useState<VistaSilueta>('plantar');
+  const vistaSilueta = ui?.vista ?? vistaLocal;
+  const setVistaSiluetaRaw = ui?.setVista ?? setVistaLocal;
   const cambiarVistaSilueta = (v: VistaSilueta) => { setVistaSiluetaRaw(v); setPendiente(null); setTrazoSel(null); setZonaHist(null); if (v === 'dorsal' && tipoLesion === 'hiperqueratosis') setTipoLesion('onicocriptosis'); };
 
   // ── Modo de la silueta: "Punto" (marca tipificada) o "Pintar" (trazos a mano alzada) ──
-  const [modoSilueta, setModoSiluetaRaw] = useState<'punto' | 'pintar' | 'historial'>('punto');
-  const cambiarModoSilueta = (m: 'punto' | 'pintar' | 'historial') => { setModoSiluetaRaw(m); setPendiente(null); setTrazoSel(null); };
+  const [modoLocal, setModoLocal] = useState<ModoSilueta>('punto');
+  const modoSilueta = ui?.modo ?? modoLocal;
+  const setModoSiluetaRaw = ui?.setModo ?? setModoLocal;
+  const cambiarModoSilueta = (m: ModoSilueta) => { setModoSiluetaRaw(m); setPendiente(null); setTrazoSel(null); };
   // ── Capas: tipos ocultos en el mapa (clave = tipo de lesión o "sin" para trazos sin significado) ──
   const [capasOcultas, setCapasOcultas] = useState<string[]>([]);
   const alternarCapa = (clave: string) => setCapasOcultas((xs) => (xs.includes(clave) ? xs.filter((x) => x !== clave) : [...xs, clave]));
@@ -1044,7 +1153,11 @@ export function usePodograma(atencion: AtencionCompleta | null, puedeRegistrar: 
   const primera = VISTAS_PODOGRAMA.map((v) => porVista[v]).find(Boolean) ?? otras[0] ?? null;
   const imagenSel = imagenes.find((i) => i.id === imagenSelId) ?? primera;
   const imagenSelIdReal = imagenSel?.id ?? null;
-  useEffect(() => { setImagenSelId(null); setVerSilueta(null); setPendiente(null); setNota(''); setVistaSiluetaRaw('plantar'); setModoSiluetaRaw('punto'); setZonaHist(null); descartarDibujo(); /* eslint-disable-line react-hooks/exhaustive-deps */ }, [atencionId]);
+  // Al cambiar de atención se limpia lo que pertenece a ESA atención (imagen elegida, marca a medio
+  // poner, nota, zona del historial y el borrador de dibujo). La VISTA (planta / dorso) y el MODO no se
+  // tocan a propósito: son la forma de mirar, no datos de la atención, y el doctor pidió seguir donde
+  // estaba al pasar de una visita a otra (17-sep-2026).
+  useEffect(() => { setImagenSelId(null); setVerSilueta(null); setPendiente(null); setNota(''); setZonaHist(null); descartarDibujo(); /* eslint-disable-line react-hooks/exhaustive-deps */ }, [atencionId]);
 
   // Blob autenticado → object URL (se revoca al cambiar de imagen o desmontar).
   const [urlImagen, setUrlImagen] = useState<string | null>(null);
@@ -1364,7 +1477,11 @@ export function usePlantillasAdmin() {
   };
   const cancelar = () => { limpiar(); setEditando(null); };
   const contenido = (): Record<string, string> => (tipo === 'nota' ? { subjetivo, objetivo, apreciacion, plan } : { texto });
-  const puedeGuardar = nombre.trim().length >= 2 && (tipo === 'nota' ? [subjetivo, objetivo, apreciacion, plan].some((x) => x.trim()) : !!clave.trim() && !!texto.trim());
+  // El consentimiento pide procedimiento (clave) y un texto que de verdad informe: el servidor exige 120.
+  const puedeGuardar = nombre.trim().length >= 2 && (
+    tipo === 'nota' ? [subjetivo, objetivo, apreciacion, plan].some((x) => x.trim())
+      : tipo === 'consentimiento' ? !!clave.trim() && texto.trim().length >= 120
+        : !!clave.trim() && !!texto.trim());
   const invalidar = () => qc.invalidateQueries({ queryKey: ['plantillas'] });
   const guardarMut = useMutation({
     mutationFn: () => {

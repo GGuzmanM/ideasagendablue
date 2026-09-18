@@ -1,19 +1,39 @@
-// Plantillas de nota por diagnóstico (1.1) y autotextos (1.2). Contenido editable por
-// administración y médicos; borrado suave y auditado. El contenido clínico real lo carga el doctor
-// (las de muestra vienen en la migración y se pueden editar o quitar).
+// Plantillas de la historia clínica, todas en la misma tabla:
+//   · `nota`          (1.1) — texto S/O/A/P sugerido por diagnóstico CIE-10 (la clave es el código).
+//   · `autotexto`     (1.2) — atajo que se expande mientras se escribe (la clave es el atajo, «.oc»).
+//   · `consentimiento`(5.2) — cuerpo del consentimiento informado por PROCEDIMIENTO (la clave es el
+//     mismo slug que `procedimientos_atencion.tipo`: matricectomia, laser, curacion…). El encabezado
+//     legal (quién firma y con qué documento) NO va en la plantilla: lo pone siempre el sistema.
+// Contenido editable por administración y médicos; borrado suave y auditado. El contenido clínico y
+// legal real lo carga el doctor (las de muestra vienen en la migración y se pueden editar o quitar).
 import { prisma } from '../db';
 import { AppError } from '../middleware/errorHandler';
 import { auditEnTx } from './audit';
 import { Ctx, ctxAudit, etiquetaUsuario } from './historiaClinicaService';
 
-export type TipoPlantilla = 'nota' | 'autotexto';
+export type TipoPlantilla = 'nota' | 'autotexto' | 'consentimiento';
+export const TIPOS_PLANTILLA: TipoPlantilla[] = ['nota', 'autotexto', 'consentimiento'];
 const CAMPOS_NOTA = ['subjetivo', 'objetivo', 'apreciacion', 'plan'] as const;
 const RE_ATAJO = /^[.\/#][a-z0-9_-]{1,20}$/;
+/** Procedimientos que pueden tener su propio consentimiento (mismos slugs que el bloque 3). */
+const TIPOS_PROCEDIMIENTO = ['matricectomia', 'laser', 'curacion', 'debridacion', 'onicotomia', 'quiropodia', 'infiltracion', 'otro'] as const;
+/** Un consentimiento corto no informa de nada; el tope es el mismo que acepta la ruta al firmar. */
+const MIN_CONSENTIMIENTO = 120;
+const MAX_CONSENTIMIENTO = 20000;
 
 const seleccion = { id: true, tipo: true, clave: true, nombre: true, contenido: true, activa: true, creadoEtiqueta: true, creadoEn: true, actualizadoEn: true } as const;
 
 /** Valida y normaliza contenido + clave según el tipo. Devuelve lo que se guarda. */
 function normalizar(tipo: TipoPlantilla, clave: string | null | undefined, contenido: Record<string, unknown>) {
+  if (tipo === 'consentimiento') {
+    const proc = (clave ?? '').trim().toLowerCase();
+    if (!proc) throw new AppError('Elige para qué procedimiento es este consentimiento', 400, 'CONSENTIMIENTO_SIN_PROCEDIMIENTO');
+    if (!(TIPOS_PROCEDIMIENTO as readonly string[]).includes(proc)) throw new AppError('Ese procedimiento no existe en la lista', 400, 'PROCEDIMIENTO_INVALIDO');
+    const texto = typeof contenido.texto === 'string' ? contenido.texto.trim() : '';
+    if (texto.length < MIN_CONSENTIMIENTO) throw new AppError(`El consentimiento necesita al menos ${MIN_CONSENTIMIENTO} caracteres: tiene que explicar en qué consiste, los riesgos y los cuidados`, 400, 'CONSENTIMIENTO_CORTO');
+    if (texto.length > MAX_CONSENTIMIENTO) throw new AppError(`El consentimiento es demasiado largo (máx. ${MAX_CONSENTIMIENTO})`, 400, 'CONSENTIMIENTO_LARGO');
+    return { clave: proc, contenido: { texto } };
+  }
   if (tipo === 'autotexto') {
     const atajo = (clave ?? '').trim().toLowerCase();
     if (!RE_ATAJO.test(atajo)) throw new AppError('El atajo debe empezar con ".", "/" o "#" y tener hasta 20 letras o números (ej. ".oc")', 400, 'ATAJO_INVALIDO');
@@ -36,7 +56,7 @@ function normalizar(tipo: TipoPlantilla, clave: string | null | undefined, conte
 export async function listarPlantillas(tipo?: string) {
   const t = tipo?.trim().toLowerCase();
   return prisma.plantillaClinica.findMany({
-    where: { deletedAt: null, ...(t === 'nota' || t === 'autotexto' ? { tipo: t } : {}) },
+    where: { deletedAt: null, ...((TIPOS_PLANTILLA as string[]).includes(t ?? '') ? { tipo: t } : {}) },
     select: seleccion,
     orderBy: [{ tipo: 'asc' }, { nombre: 'asc' }],
   });

@@ -1,8 +1,13 @@
-// Gestión de plantillas de nota por diagnóstico (1.1) y autotextos (1.2). Vista pura; la lógica
-// vive en usePlantillasAdmin (services/historiaClinicaService.ts). Solo administración, coordinación
-// y médicos (el backend también lo exige).
+// Gestión de plantillas de nota por diagnóstico (1.1), autotextos (1.2) y consentimientos por
+// procedimiento (5.2). Vista pura; la lógica vive en usePlantillasAdmin
+// (services/historiaClinicaService.ts). Solo administración, coordinación y médicos (el backend
+// también lo exige).
+import { TIPO_PROCEDIMIENTO_LABEL, type TipoProcedimiento } from '../../api/historiaClinica';
 import { usePlantillasAdmin } from '../../services/historiaClinicaService';
 import { BuscadorCie10 } from './Buscadores';
+
+/** Procedimientos que pueden tener consentimiento propio (mismos slugs que el bloque 3 y el API). */
+const PROCEDIMIENTOS: TipoProcedimiento[] = ['matricectomia', 'onicotomia', 'laser', 'curacion', 'debridacion', 'infiltracion', 'quiropodia', 'otro'];
 
 const INPUT = 'w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2.5 lg:py-2 text-base lg:text-sm text-on-surface outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all';
 const LBL = 'block text-[10px] font-semibold uppercase tracking-wide text-on-surface-variant mb-1';
@@ -11,6 +16,7 @@ export function PlantillasDialog({ onClose }: { onClose: () => void }) {
   const p = usePlantillasAdmin();
   const notas = p.plantillas.filter((x) => x.tipo === 'nota');
   const autos = p.plantillas.filter((x) => x.tipo === 'autotexto');
+  const consent = p.plantillas.filter((x) => x.tipo === 'consentimiento');
   return (
     <div className="fixed inset-0 z-[120] bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-surface-container-lowest rounded-2xl shadow-2xl w-full max-w-5xl max-h-[92vh] overflow-y-auto p-6" onClick={(ev) => ev.stopPropagation()}>
@@ -21,6 +27,7 @@ export function PlantillasDialog({ onClose }: { onClose: () => void }) {
         <p className="text-xs text-on-surface-variant mb-4">
           <b>Plantillas</b>: texto base por diagnóstico que rellena Subjetivo / Objetivo / Apreciación / Plan (solo los campos vacíos).
           <b> Autotextos</b>: al escribir el atajo y un espacio (ej. <code>.oc</code>) se reemplaza por su texto en cualquier campo de la nota.
+          <b> Consentimientos</b>: el texto que se lee y se firma antes de cada procedimiento. El encabezado con los datos de quien firma lo pone el sistema; aquí va el cuerpo.
         </p>
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.2fr] gap-5">
           <div className="space-y-4">
@@ -59,13 +66,47 @@ export function PlantillasDialog({ onClose }: { onClose: () => void }) {
                 ))}
               </div>
             </section>
+            <section>
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-sm font-semibold text-on-surface">Consentimientos ({consent.length})</h4>
+                <button onClick={() => p.nueva('consentimiento')} className="text-primary text-xs font-semibold hover:underline flex items-center gap-1" data-testid="nueva-plantilla-consentimiento"><span className="material-symbols-outlined text-base">add</span>Nuevo consentimiento</button>
+              </div>
+              {!p.cargando && consent.length === 0 && <p className="text-xs text-on-surface-variant">Sin consentimientos: se usará el texto general para todos los procedimientos.</p>}
+              <div className="space-y-1.5">
+                {consent.map((x) => (
+                  <div key={x.id} className={`flex items-center gap-2 rounded-xl border px-3 py-2 ${p.editando === x.id ? 'border-primary bg-primary/5' : 'border-outline-variant/20'}`}>
+                    <span className="text-[10px] font-bold uppercase tracking-wide text-primary bg-primary/10 px-1.5 py-0.5 rounded shrink-0">{TIPO_PROCEDIMIENTO_LABEL[(x.clave ?? 'otro') as TipoProcedimiento] ?? x.clave}</span>
+                    <span className="text-sm text-on-surface flex-1 min-w-0 truncate">{x.nombre}</span>
+                    <button onClick={() => p.cargar(x)} className="text-primary text-xs font-semibold hover:underline">Editar</button>
+                    <button onClick={() => p.eliminarMut.mutate(x.id)} disabled={p.eliminarMut.isPending} className="material-symbols-outlined text-on-surface-variant/60 hover:text-rose-600 text-lg">delete</button>
+                  </div>
+                ))}
+              </div>
+            </section>
           </div>
 
           <div>
             {p.editando ? (
               <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-low/40 p-4 space-y-3">
-                <h4 className="text-sm font-semibold text-on-surface">{p.editando === 'nueva' ? (p.tipo === 'nota' ? 'Nueva plantilla de nota' : 'Nuevo autotexto') : 'Editar'}</h4>
-                {p.tipo === 'nota' ? (
+                <h4 className="text-sm font-semibold text-on-surface">{p.editando === 'nueva' ? (p.tipo === 'nota' ? 'Nueva plantilla de nota' : p.tipo === 'consentimiento' ? 'Nuevo consentimiento' : 'Nuevo autotexto') : 'Editar'}</h4>
+                {p.tipo === 'consentimiento' ? (
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div><label className={LBL}>Procedimiento</label>
+                        <select value={p.clave} onChange={(ev) => p.setClave(ev.target.value)} className={INPUT} data-testid="plantilla-procedimiento">
+                          <option value="">Elige…</option>
+                          {PROCEDIMIENTOS.map((t) => <option key={t} value={t}>{TIPO_PROCEDIMIENTO_LABEL[t]}</option>)}
+                        </select>
+                      </div>
+                      <div><label className={LBL}>Nombre</label><input value={p.nombre} onChange={(ev) => p.setNombre(ev.target.value)} placeholder="Ej. Matricectomía (uña encarnada)" className={INPUT} /></div>
+                    </div>
+                    <div><label className={LBL}>Texto que se lee y se firma</label><textarea value={p.texto} onChange={(ev) => p.setTexto(ev.target.value)} rows={14} maxLength={20000} className={INPUT + ' leading-relaxed'} data-testid="plantilla-texto-consentimiento" /></div>
+                    <p className="text-[11px] text-on-surface-variant">
+                      Puedes usar <code>{'{paciente}'}</code>, <code>{'{profesional}'}</code> y <code>{'{procedimiento}'}</code>: se reemplazan al mostrarlo.
+                      El encabezado con el nombre y el documento de quien firma lo agrega el sistema. Lo ya firmado no cambia si editas esta plantilla.
+                    </p>
+                  </>
+                ) : p.tipo === 'nota' ? (
                   <>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div><label className={LBL}>Nombre</label><input value={p.nombre} onChange={(ev) => p.setNombre(ev.target.value)} placeholder="Ej. Onicocriptosis" className={INPUT} /></div>

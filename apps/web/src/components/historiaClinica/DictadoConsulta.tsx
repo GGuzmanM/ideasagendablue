@@ -1,6 +1,7 @@
 // Barra "Dictar consulta" (vista pura): un micrófono para toda la atención, sección vigente,
 // chips para cambiar de sección a mano (por si una palabra no se entendió) y texto parcial.
 // La lógica vive en hooks/useDictadoConsulta.ts; las reglas en utils/dictadoEstructurado.ts.
+import toast from 'react-hot-toast';
 import type { DictadoConsulta } from '../../hooks/useDictadoConsulta';
 import type { TabHc } from '../../services/historiaClinicaService';
 import { SECCIONES, SECCION_LABEL, SECCION_VOZ, type SeccionDictado } from '../../utils/dictadoEstructurado';
@@ -10,10 +11,18 @@ const ICONO: Record<SeccionDictado, string> = {
   indicaciones: 'checklist', observacion: 'sticky_note_2', procedimiento: 'medical_services', diagnostico: 'diagnosis', lesion: 'footprint',
 };
 
-export function BarraDictadoConsulta({ consulta, tab, irA }: { consulta: DictadoConsulta; tab: TabHc; irA: (t: TabHc) => void }) {
+export function BarraDictadoConsulta({ consulta, tab, irA, onRevisar, sinAplicar, guardando }: {
+  consulta: DictadoConsulta; tab: TabHc; irA: (t: TabHc) => void;
+  /** Abre la revisión de TODO lo dictado (previsualización campo por campo). */
+  onRevisar: () => void;
+  /** Hay dictado guardado que aún no se repartió a los campos. */
+  sinAplicar?: boolean;
+  guardando?: boolean;
+}) {
   if (!consulta.soportado) return null;
   const { activo, seccion } = consulta;
   const total = Object.values(consulta.entregas).reduce((a, b) => a + (b ?? 0), 0);
+  const frasesGuardadas = consulta.transcripcion.split('\n').filter((l) => l.trim()).length;
   const destinoTab: TabHc = seccion === 'procedimiento' ? 'procedimientos' : 'evolucion';
   return (
     <div className="basis-full w-full border-t border-outline-variant/20 pt-3 mt-1">
@@ -26,6 +35,15 @@ export function BarraDictadoConsulta({ consulta, tab, irA }: { consulta: Dictado
         {activo
           ? <span className="text-xs text-on-surface-variant">Escribiendo en <b className="text-on-surface">{SECCION_LABEL[seccion]}</b>{total ? ` · ${total} frase${total === 1 ? '' : 's'}` : ''}</span>
           : <span className="text-xs text-on-surface-variant">Un solo micrófono para toda la consulta: di la sección y sigue hablando.</span>}
+        {/* Todo lo dictado queda guardado: desde aquí se revisa y se llena campo por campo. */}
+        {frasesGuardadas > 0 && (
+          <button type="button" onClick={onRevisar} data-testid="revisar-dictado-abrir"
+            className={`min-h-[44px] lg:min-h-0 px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-1.5 border ${sinAplicar ? 'border-amber-400 bg-amber-50 text-amber-800' : 'border-primary/40 bg-primary/5 text-primary hover:bg-primary/10'}`}>
+            <span className="material-symbols-outlined text-base">fact_check</span>
+            Revisar lo dictado ({frasesGuardadas})
+          </button>
+        )}
+        <span className="text-[11px] text-on-surface-variant">{guardando ? 'Guardando lo dictado…' : frasesGuardadas > 0 ? 'Lo dictado está guardado' : ''}</span>
       </div>
       {activo ? (
         <>
@@ -39,11 +57,27 @@ export function BarraDictadoConsulta({ consulta, tab, irA }: { consulta: Dictado
             ))}
           </div>
           <p className="text-[11px] italic text-on-surface-variant mt-1.5 min-h-[16px] truncate">{consulta.parcial ? `…${consulta.parcial}` : 'Escuchando…'}</p>
-          {consulta.ultima && (
-            <p className="text-[11px] text-on-surface-variant truncate">
-              Última frase → <b className="text-on-surface">{SECCION_LABEL[consulta.ultima.seccion]}</b>
-              {consulta.ultima.pista ? <> por «{consulta.ultima.pista}»</> : null}: «{consulta.ultima.texto}»
-            </p>
+          {/* Lo que va entendiendo: cada frase con el campo donde cayó. Así se ve al instante si una
+              palabra clave no se escuchó (y se puede corregir con los chips de arriba). */}
+          {consulta.ultimas.length > 0 && (
+            <div className="mt-1 rounded-lg bg-surface-container-low/60 border border-outline-variant/20 px-2.5 py-1.5" data-testid="escuchado">
+              <div className="flex items-center gap-2 mb-0.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-on-surface-variant flex-1">Lo que se escuchó ({consulta.ultimas.length})</p>
+                {/* Si algo se oye raro, esto copia lo que entregó el navegador para revisarlo. */}
+                <button type="button" onClick={async () => {
+                  try { await navigator.clipboard.writeText(consulta.diagnostico()); toast.success('Diagnóstico copiado: pégalo en el chat de soporte'); }
+                  catch { toast.error('No se pudo copiar'); }
+                }} className="text-[10px] font-semibold text-primary hover:underline" data-testid="copiar-diagnostico">Copiar diagnóstico</button>
+              </div>
+              <ul className="space-y-0.5 max-h-24 overflow-y-auto">
+                {consulta.ultimas.slice(-4).reverse().map((u, i) => (
+                  <li key={consulta.ultimas.length - i} className="text-[11px] text-on-surface-variant truncate">
+                    <b className="text-primary">{SECCION_LABEL[u.seccion]}</b>
+                    {u.pista ? <span className="text-on-surface-variant/70"> (por «{u.pista}»)</span> : null}: «{u.texto}»
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
           {tab !== destinoTab && (
             <button type="button" onClick={() => irA(destinoTab)} className="text-primary text-[11px] font-semibold hover:underline">

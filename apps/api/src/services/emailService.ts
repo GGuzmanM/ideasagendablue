@@ -90,7 +90,14 @@ export interface EnviarEmailArgs {
   html: string;
   /** Adjunto de calendario opcional. Si viene, se envía como attachment del correo. */
   ics?: AdjuntoIcs;
+  /**
+   * Archivos adjuntos (p. ej. el PDF del resumen de la atención). Van en memoria: aquí no se guarda
+   * ningún archivo en disco, se generan al vuelo y se mandan.
+   */
+  adjuntos?: { filename: string; contenido: Buffer; contentType?: string }[];
 }
+/** Tope prudente del correo: Resend admite más, pero un adjunto enorme suele terminar en spam. */
+const MAX_ADJUNTOS_BYTES = 8 * 1024 * 1024;
 
 /**
  * Envía un correo vía Resend. Devuelve `{ id }` con el id de Resend, o `null` si
@@ -100,7 +107,7 @@ export interface EnviarEmailArgs {
  * El logo de la cabecera (si hay archivo en assets/correo) se adjunta INLINE con
  * `contentId = logo-limablue`, que las plantillas referencian vía `cid:logo-limablue`.
  */
-export async function enviarEmail({ to, subject, html, ics }: EnviarEmailArgs): Promise<{ id: string } | null> {
+export async function enviarEmail({ to, subject, html, ics, adjuntos }: EnviarEmailArgs): Promise<{ id: string } | null> {
   if (MAIL_DRY_RUN) {
     // Dry-run: se saltó el envío real a Resend, pero la cuota ya se reservó aguas arriba.
     return { id: `dry-run-${Date.now()}` };
@@ -123,6 +130,14 @@ export async function enviarEmail({ to, subject, html, ics }: EnviarEmailArgs): 
       contentType: logo.mime,
       contentId: LOGO_CID,
     });
+  }
+
+  for (const a of adjuntos ?? []) {
+    attachments.push({ filename: a.filename, content: a.contenido, contentType: a.contentType ?? 'application/octet-stream' });
+  }
+  const pesoAdjuntos = (adjuntos ?? []).reduce((n, a) => n + a.contenido.length, 0);
+  if (pesoAdjuntos > MAX_ADJUNTOS_BYTES) {
+    throw new Error(`Los adjuntos pesan ${(pesoAdjuntos / 1048576).toFixed(1)} MB y el máximo es ${MAX_ADJUNTOS_BYTES / 1048576} MB`);
   }
 
   if (ics) {
