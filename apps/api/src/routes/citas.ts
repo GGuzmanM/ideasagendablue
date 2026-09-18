@@ -248,6 +248,14 @@ async function guardSedeCita(req: Request, _res: Response, next: NextFunction): 
   } catch (e) { next(e); }
 }
 
+// ─── Médico de la cita al reprogramar ──────────────────────────────────────────
+// Si la cita pasa a OTRO DÍA y aún no tiene atención clínica, el médico que la había tomado puede
+// no estar ese día: se suelta y la toma el médico de turno. Cambiar solo la hora lo conserva.
+const SIN_MEDICO = { medicoId: null, medicoAsignadoEn: null, medicoAsignadoPorId: null } as const;
+function sueltaMedico(c: { medicoId: string | null; fecha: Date }, nuevaFecha: string, conAtencion: boolean): boolean {
+  return !!c.medicoId && !conAtencion && c.fecha.toISOString().slice(0, 10) !== nuevaFecha;
+}
+
 // ─── Helper: el profesional no puede estar en dos lados a la vez ──────────────
 // Una persona ocupa su tiempo aunque la cita esté en otra unidad: cuenta tanto las
 // citas donde es el profesional de columna (profesionalId) como donde fue pedido
@@ -354,6 +362,7 @@ router.get('/', requireAuth, async (req, res) => {
       paciente: { select: { id: true, nombres: true, apellidoPaterno: true, apellidoMaterno: true, tipoDocumento: true, numeroDocumento: true, telefono: true, email: true, fechaNacimiento: true, requiereActualizacionDatos: true } },
       profesional: { select: { id: true, nombres: true, apellidos: true, colorAvatar: true } },
       solicitadoProfesional: { select: { id: true, nombres: true, apellidos: true, tipo: true } },
+      medico: { select: { id: true, nombres: true, apellidos: true } },
       sede: { select: { id: true, nombre: true, color: true, consultorios: true } },
       unidadNegocio: { select: { id: true, nombre: true, color: true } },
       servicio: { select: { id: true, nombre: true, duracionMinutos: true, color: true } },
@@ -1959,6 +1968,8 @@ router.patch('/:id/mover', requireAuth, requireAcceso('appointments:write', 'cit
           horaInicio: data.horaInicio,
           estado: ['completada', 'confirmada'].includes(cita.estado) ? cita.estado : 'agendada',
           ...(data.origenAsignacion ? { origenAsignacion: data.origenAsignacion } : {}),
+          // Otro DÍA sin atención registrada → se suelta el médico: lo toma el médico de ese día.
+          ...(sueltaMedico(cita, data.fecha, tieneAtencion) ? SIN_MEDICO : {}),
         },
       });
       if (tieneAtencion) await sincronizarFechaAtencion(tx, cita.id, fechaDb(data.fecha));
@@ -1969,7 +1980,7 @@ router.patch('/:id/mover', requireAuth, requireAcceso('appointments:write', 'cit
         entidad: 'cita',
         entidadId: cita.id,
         antes,
-        despues: { profesionalId: nuevoProfesionalId, fecha: data.fecha, horaInicio: data.horaInicio },
+        despues: { profesionalId: nuevoProfesionalId, fecha: data.fecha, horaInicio: data.horaInicio, ...(sueltaMedico(cita, data.fecha, tieneAtencion) ? { medicoSoltado: cita.medicoId } : {}) },
         sedeId: cita.sedeId,
         ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
       });
@@ -2086,13 +2097,14 @@ router.patch('/grupo/:slotGrupoId/mover', requireAuth, requireAcceso('appointmen
             horaInicio: data.horaInicio,
             estado: ['completada', 'confirmada'].includes(c.estado) ? c.estado : 'agendada',
             ...(data.origenAsignacion ? { origenAsignacion: data.origenAsignacion } : {}),
+            ...(sueltaMedico(c, data.fecha, bloqueConAtencion) ? SIN_MEDICO : {}),
           },
         });
         if (bloqueConAtencion) await sincronizarFechaAtencion(tx, c.id, fechaDb(data.fecha));
         await auditEnTx(tx, {
           citaId: c.id, usuarioId, accion: 'mover', entidad: 'cita', entidadId: c.id,
           antes: { profesionalId: c.profesionalId, fecha: c.fecha, horaInicio: c.horaInicio },
-          despues: { profesionalId: nuevoProfesionalId, fecha: data.fecha, horaInicio: data.horaInicio, bloque: slotGrupoId },
+          despues: { profesionalId: nuevoProfesionalId, fecha: data.fecha, horaInicio: data.horaInicio, bloque: slotGrupoId, ...(sueltaMedico(c, data.fecha, bloqueConAtencion) ? { medicoSoltado: c.medicoId } : {}) },
           sedeId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
         });
       }

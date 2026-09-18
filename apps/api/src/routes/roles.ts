@@ -69,8 +69,11 @@ router.get('/permisos', requireAuth, async (_req, res) => {
       { id: 'hc.ver', label: 'Ver historia clínica (cada lectura queda auditada)' },
       { id: 'hc.registrar', label: 'Registrar atenciones, evolución, diagnósticos, antecedentes y alergias' },
       { id: 'hc.anular', label: 'Eliminar / corregir registros clínicos, anular recetas y ver el historial de versiones' },
-      { id: 'receta.ver', label: 'Ver recetas e indicaciones y su PDF' },
-      { id: 'receta.emitir', label: 'Emitir recetas médicas (solo médico colegiado vinculado); las indicaciones podológicas van con «Registrar»' },
+      { id: 'receta.ver', label: 'Ver indicaciones podológicas y su PDF (y el listado de documentos)' },
+      { id: 'receta_medica.ver', label: 'Ver e imprimir RECETAS MÉDICAS' },
+      { id: 'receta.emitir', label: 'Emitir recetas médicas: el médico a su nombre; admin/coordinación a nombre del médico de la cita' },
+      { id: 'medico.autoasignar', label: 'Tomar o soltar una cita como su médico (solo a sí mismo)' },
+      { id: 'medico.asignar', label: 'Asignar o cambiar el médico de cualquier cita' },
     ],
     'Membresías': [
       { id: 'membresias.ver', label: 'Ver catálogo vendible' },

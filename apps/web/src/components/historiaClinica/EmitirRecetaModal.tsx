@@ -64,6 +64,11 @@ export function EmitirRecetaModal({ atencion, tipoDocumento, onClose }: { atenci
           <>
             <div className="flex-1 overflow-y-auto p-6 space-y-5 custom-scrollbar">
               <AlergiasBanner alergias={f.alergias} />
+              {f.esReceta && atencion.cita.medico && (
+                <p className="text-xs text-sky-900 bg-sky-50 border border-sky-200 rounded-xl px-3 py-2" data-testid="receta-a-nombre-de">
+                  Sale a nombre de <b>{atencion.cita.medico.nombres} {atencion.cita.medico.apellidos}</b>{atencion.cita.medico.colegiatura ? <> · {atencion.cita.medico.colegiatura}</> : null}, el médico de la cita.
+                </p>
+              )}
               {!f.esReceta && (
                 <p className="text-xs text-on-surface-variant bg-surface-container-low/60 border border-outline-variant/20 rounded-xl px-3 py-2">
                   Solo tratamiento <b>de venta libre</b>, productos y servicios. Los fármacos bajo receta van en una Receta Médica firmada por médico.

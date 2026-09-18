@@ -3,6 +3,9 @@
 // Derecha: pestañas Evolución · Receta · Antecedentes y alergias (+ próximas: procedimientos, escalas, podograma, consentimientos).
 // Vista PURA: toda la lógica vive en services/historiaClinicaService.ts.
 import { useEffect, useRef, useState, type PointerEvent as EventoPuntero } from 'react';
+import { MedicoDeLaCita } from '../components/agenda/MedicoDeLaCita';
+import { citaLlevaMedico } from '../services/medicoCitaService';
+import { MiFirmaBoton } from '../components/historiaClinica/MiFirmaDialog';
 import { Skeleton } from '../components/ui/Skeleton';
 import { PodogramaEditor } from '../components/historiaClinica/PodogramaEditor';
 import { TextareaDictado } from '../components/historiaClinica/BotonDictado';
@@ -570,9 +573,18 @@ function PanelReceta({ h, a }: { h: H; a: AtencionCompleta }) {
         <p className="text-xs text-on-surface-variant bg-surface-container-low/60 rounded-lg px-3 py-2">Atención cerrada: las recetas e indicaciones ya emitidas se pueden ver, imprimir o anular. Para emitir una nueva, reabre la atención.</p>
       ) : (
         <div className="flex flex-wrap gap-2">
-          {h.esMedicoPrescriptor && <button onClick={() => h.setRecetaModal('RECETA_MEDICA')} className="min-h-[44px] lg:min-h-0 px-5 py-2.5 bg-primary text-on-primary rounded-xl text-sm font-bold shadow-md shadow-primary/20 hover:opacity-90 flex items-center gap-2"><span className="material-symbols-outlined text-base">prescriptions</span>Emitir receta médica</button>}
+          {r.emitirReceta.puede && <button data-testid="emitir-receta-medica" onClick={() => h.setRecetaModal('RECETA_MEDICA')} className="min-h-[44px] lg:min-h-0 px-5 py-2.5 bg-primary text-on-primary rounded-xl text-sm font-bold shadow-md shadow-primary/20 hover:opacity-90 flex items-center gap-2"><span className="material-symbols-outlined text-base">prescriptions</span>Emitir receta médica</button>}
           {h.puedeRegistrar && <button onClick={() => h.setRecetaModal('INDICACIONES_PODOLOGICAS')} className="min-h-[44px] lg:min-h-0 px-5 py-2.5 border border-primary/40 text-primary bg-primary/5 rounded-xl text-sm font-bold hover:bg-primary/10 flex items-center gap-2"><span className="material-symbols-outlined text-base">clinical_notes</span>Indicaciones podológicas</button>}
           {!h.esMedicoPrescriptor && h.usuario?.rol === 'medico' && <p className="text-xs text-amber-700 self-center">Para emitir recetas tu ficha de médico necesita la colegiatura (CMP) cargada.</p>}
+          {r.soyMedico && <MiFirmaBoton />}
+        </div>
+      )}
+      {/* Médico de la cita: se toma / asigna aquí mismo, y a su nombre sale la receta médica */}
+      {a.cita.sedeId && (citaLlevaMedico(a.cita) || (!cerrada && !!r.emitirReceta.aviso)) && (
+        <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4 space-y-2">
+          <MedicoDeLaCita cita={{ id: a.cita.id, sedeId: a.cita.sedeId, estado: a.cita.estado, medicoId: a.cita.medicoId, medico: a.cita.medico, unidadNegocio: a.cita.unidadNegocio }} />
+          {!cerrada && r.emitirReceta.aviso && <p className="text-xs text-amber-800" data-testid="aviso-receta-medico">{r.emitirReceta.aviso}</p>}
+          {!cerrada && r.emitirReceta.aNombreDe && <p className="text-xs text-on-surface-variant">La receta médica sale a nombre de <b>{r.emitirReceta.aNombreDe}</b> y con su CMP; queda registrado que la emitiste tú.</p>}
         </div>
       )}
       {r.recetas.length === 0 ? (
@@ -584,10 +596,14 @@ function PanelReceta({ h, a }: { h: H; a: AtencionCompleta }) {
               <span className="material-symbols-outlined text-primary">{x.tipoDocumento === 'RECETA_MEDICA' ? 'prescriptions' : 'clinical_notes'}</span>
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-semibold text-on-surface">{TIPO_DOC_LABEL[x.tipoDocumento]} N° {String(x.numero).padStart(6, '0')} {x.estado === 'anulada' && <span className="ml-2 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-rose-100 text-rose-700">Anulada</span>}</div>
-                <div className="text-[11px] text-on-surface-variant">{fmtFechaHora(x.fechaEmision)} · {x.emisorNombre} · {x._count.items} ítem(s) · verificación {x.codigoVerificacion}</div>
+                <div className="text-[11px] text-on-surface-variant">{fmtFechaHora(x.fechaEmision)} · {x.emisorNombre}{x.reservada ? '' : ` · ${x._count.items} ítem(s) · verificación ${x.codigoVerificacion}`}</div>
+                {x.reservada && <div className="text-[11px] text-on-surface-variant flex items-center gap-1" data-testid="receta-reservada"><span className="material-symbols-outlined text-sm">lock</span>La receta médica la ven e imprimen el médico, coordinación y administración.</div>}
               </div>
+              {!x.reservada && <>
               <button onClick={() => r.ver(x.id)} className="min-h-[44px] lg:min-h-0 px-3 py-1.5 border border-outline-variant rounded-lg text-xs font-semibold hover:bg-surface-container-high flex items-center gap-1"><span className="material-symbols-outlined text-base">picture_as_pdf</span>Ver</button>
               <button onClick={() => r.imprimir(x.id)} className="min-h-[44px] lg:min-h-0 px-3 py-1.5 border border-outline-variant rounded-lg text-xs font-semibold hover:bg-surface-container-high flex items-center gap-1"><span className="material-symbols-outlined text-base">print</span>Imprimir</button>
+              {r.puedeFirmar(x) && <button data-testid="imprimir-con-firma" onClick={() => r.imprimirConFirma(x.id)} className="min-h-[44px] lg:min-h-0 px-3 py-1.5 border border-sky-300 text-sky-800 bg-sky-50 rounded-lg text-xs font-semibold hover:bg-sky-100 flex items-center gap-1"><span className="material-symbols-outlined text-base">signature</span>Imprimir con mi firma</button>}
+              </>}
               {r.puedeAnular(x) && <button onClick={() => r.setAnulando(x.id)} className="min-h-[44px] lg:min-h-0 px-3 py-1.5 text-rose-600 text-xs font-semibold hover:underline">Anular</button>}
             </div>
           ))}

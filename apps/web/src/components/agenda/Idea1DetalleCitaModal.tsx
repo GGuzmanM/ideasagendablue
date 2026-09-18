@@ -12,6 +12,7 @@ import { CuadroFamiliares } from '../pacientes/CuadroFamiliares';
 import { ToggleDatosPaciente } from '../pacientes/ToggleDatosPaciente';
 import { BadgeAsistencia } from '../pacientes/BadgeAsistencia';
 import { FichaPreviaCard } from '../historiaClinica/FichaPrevia';
+import { MedicoDeLaCita } from './MedicoDeLaCita';
 import { formatPromoValor } from '../../api/promociones';
 import { horaLima, fmtMinutos } from '../../api/tiemposTratamiento';
 import { horaInicioValidaParaDuracion } from '@limablue/shared';
@@ -758,6 +759,9 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                 Reprogramar cita (otro día)
               </button>
             )}
+
+            {/* MÉDICO DE LA CITA — el médico se la toma; admin/coordinación asignan */}
+            <MedicoDeLaCita cita={cita} />
 
             {/* SELECCIÓN DE CONSULTORIO */}
             {totalConsultorios > 0 && (

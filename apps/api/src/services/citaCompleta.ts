@@ -37,6 +37,8 @@ export async function getCitaCompleta(id: string) {
       paciente: true,
       profesional: true,
       solicitadoProfesional: { select: { id: true, nombres: true, apellidos: true, tipo: true } },
+      // Médico de la cita (podología): quien firma la receta médica de la atención.
+      medico: { select: { id: true, nombres: true, apellidos: true, colegiatura: true } },
       sede: true,
       unidadNegocio: true,
       servicio: true,

@@ -2,9 +2,10 @@
  * Receta — servicio de dominio (Fase 2).
  *
  * Dos documentos del mismo flujo, ambos INMUTABLES (corrección = anulación con motivo):
- *  · RECETA_MEDICA: solo un MÉDICO colegiado vinculado. Candado explícito (sin heurísticas):
- *    req.user.profesionalId → Profesional tipo=medico, !esEquipo, activo, colegiatura no vacía.
- *    Único documento que admite ítems MEDICAMENTO_RX (venta bajo receta).
+ *  · RECETA_MEDICA: sale SIEMPRE a nombre del MÉDICO DE LA CITA (Cita.medicoId), con su CMP.
+ *    La emite ese médico (si la cita no tenía médico, se le asigna al emitir) o, a su nombre,
+ *    admin/coordinación (`medico.asignar`). Candado del firmante: tipo=medico, !esEquipo, activo,
+ *    colegiatura no vacía. Único documento que admite ítems MEDICAMENTO_RX (venta bajo receta).
  *  · INDICACIONES_PODOLOGICAS: la emite el profesional que atendió (podóloga/fisio/médico) —
  *    recepción puede registrarla a su nombre. Solo ítems OTC, productos y servicios.
  * Los ítems se agrupan por diagnóstico CIE-10 y llevan snapshot de nombre/concentración/forma
@@ -18,6 +19,9 @@ import { AuthPayload } from '../middleware/auth';
 import { auditEnTx } from './audit';
 import { Ctx, etiquetaUsuario, exigirAbierta } from './historiaClinicaService';
 import { fichaPrevia } from './fichaPreviaService';
+import { firmanteReceta } from './medicoCitaReglas';
+import { emitirEventoCita } from '../socket';
+import { getCitaCompleta } from './citaCompleta';
 import { ALERGIA_FAMILIAS, familiasDe, interaccionesEntre, contraindicacionesPara, condicionesDeAntecedentes, type ItemReceta, type AvisoInteraccion, type AvisoContraindicacion } from '../data/interaccionesMedicamentos';
 
 const ctxAudit = (c: Ctx) => ({ usuarioId: c.usuarioId, ip: c.ip, userAgent: c.userAgent });
@@ -109,6 +113,41 @@ export async function asegurarMedicoPrescriptor(user: AuthPayload) {
   return { id: p.id, nombre: `${p.nombres} ${p.apellidos}`.trim(), registro: cmp };
 }
 
+/** Médico a cuyo nombre sale la receta: persona activa, tipo médico y con CMP. */
+async function asegurarFirmanteReceta(profesionalId: string) {
+  const p = await prisma.profesional.findFirst({
+    where: { id: profesionalId, deletedAt: null },
+    select: { id: true, nombres: true, apellidos: true, tipo: true, esEquipo: true, activo: true, colegiatura: true },
+  });
+  const nombre = p ? `${p.nombres} ${p.apellidos}`.trim() : '';
+  if (!p || p.tipo !== 'medico' || p.esEquipo || !p.activo) throw new AppError('El médico de la cita no es un médico activo', 409, 'NO_ES_MEDICO');
+  const cmp = (p.colegiatura ?? '').trim();
+  if (!cmp) throw new AppError(`Falta registrar la colegiatura (CMP) de ${nombre} en su ficha`, 409, 'SIN_COLEGIATURA');
+  return { id: p.id, nombre, registro: cmp };
+}
+
+/**
+ * Firmante de una receta médica según el médico de la cita y quién emite (ver firmanteReceta).
+ * Quien no es médico solo puede emitir a nombre de otro si tiene `medico.asignar` (admin/coordinación).
+ */
+async function resolverFirmante(user: AuthPayload, citaId: string) {
+  const cita = await prisma.cita.findUnique({ where: { id: citaId }, select: { id: true, medicoId: true, slotGrupoId: true } });
+  if (!cita) throw new AppError('Cita no encontrada', 404);
+  let actorMedicoId: string | null = null;
+  if (user.profesionalId) {
+    const yo = await prisma.profesional.findFirst({ where: { id: user.profesionalId, deletedAt: null, tipo: 'medico', esEquipo: false }, select: { id: true } });
+    actorMedicoId = yo?.id ?? null;
+  }
+  if (!actorMedicoId && !user.permisos?.includes('medico.asignar')) {
+    // Tiene receta.emitir pero ni ficha de médico ni poder de coordinación: el candado de siempre.
+    await asegurarMedicoPrescriptor(user);
+  }
+  const f = firmanteReceta({ actorMedicoId, medicoCitaId: cita.medicoId });
+  if (!f.ok) throw new AppError(f.mensaje, f.status, f.code);
+  const emisor = await asegurarFirmanteReceta(f.medicoId);
+  return { emisor, autoasignar: f.autoasignar, cita, delegada: !actorMedicoId };
+}
+
 /** Emisor de INDICACIONES: un profesional persona ACTIVO (por defecto, quien atendió). */
 async function asegurarEmisorIndicaciones(profesionalId: string) {
   const p = await prisma.profesional.findFirst({
@@ -168,9 +207,8 @@ export async function emitirReceta(p: Ctx & {
   if (!p.items.length) throw new AppError('La receta necesita al menos un ítem', 400, 'RECETA_SIN_ITEMS');
 
   const esReceta = p.tipoDocumento === 'RECETA_MEDICA';
-  const emisor = esReceta
-    ? await asegurarMedicoPrescriptor(p.user)
-    : await asegurarEmisorIndicaciones(p.emisorProfesionalId ?? at.profesionalId);
+  const firmante = esReceta ? await resolverFirmante(p.user, at.citaId) : null;
+  const emisor = firmante ? firmante.emisor : await asegurarEmisorIndicaciones(p.emisorProfesionalId ?? at.profesionalId);
 
   // Resolver ítems: snapshots desde el catálogo + validaciones de tipo.
   const itemsData: Prisma.RecetaItemCreateWithoutRecetaInput[] = [];
@@ -219,7 +257,33 @@ export async function emitirReceta(p: Ctx & {
     });
   }
 
+  // Citas del bloque (profilaxis + extra comparten médico) por si hay que asignarlo al emitir.
+  const idsBloque = firmante?.autoasignar
+    ? (firmante.cita.slotGrupoId
+      ? (await prisma.cita.findMany({ where: { slotGrupoId: firmante.cita.slotGrupoId, deletedAt: null }, select: { id: true } })).map((c) => c.id)
+      : [firmante.cita.id])
+    : [];
+
   const receta = await prisma.$transaction(async (tx) => {
+    if (firmante?.autoasignar) {
+      // El médico que receta en una cita sin médico queda asignado a ella (con guarda: si otro
+      // médico la tomó en el mismo instante, esta receta no sale a nombre equivocado).
+      const u = await tx.cita.updateMany({
+        where: { id: firmante.cita.id, medicoId: null },
+        data: { medicoId: emisor.id, medicoAsignadoEn: new Date(), medicoAsignadoPorId: p.usuarioId ?? null },
+      });
+      if (u.count === 0) throw new AppError('Otro médico acaba de tomar esta cita: la receta debe salir a su nombre', 409, 'CITA_DE_OTRO_MEDICO');
+      await tx.cita.updateMany({
+        where: { id: { in: idsBloque.filter((id) => id !== firmante.cita.id) }, medicoId: null },
+        data: { medicoId: emisor.id, medicoAsignadoEn: new Date(), medicoAsignadoPorId: p.usuarioId ?? null },
+      });
+      for (const id of idsBloque) {
+        await auditEnTx(tx, {
+          ...ctxAudit(p), citaId: id, accion: 'tomar_cita_medico', entidad: 'cita', entidadId: id, sedeId: at.sedeId,
+          antes: { medicoId: null }, despues: { medicoId: emisor.id, medico: emisor.nombre, origen: 'al_emitir_receta' },
+        });
+      }
+    }
     const r = await tx.receta.create({
       data: {
         tipoDocumento: p.tipoDocumento, atencionId: at.id, historiaClinicaId: at.historiaClinicaId, pacienteId: at.pacienteId, sedeId: at.sedeId,
@@ -234,25 +298,37 @@ export async function emitirReceta(p: Ctx & {
       despues: {
         numero: r.numero, tipoDocumento: r.tipoDocumento, pacienteId: at.pacienteId, emisor: emisor.nombre, emisorProfesionalId: emisor.id,
         // Queda constancia cuando las indicaciones salen a nombre de alguien distinto de quien atendió.
-        ...(emisor.id !== at.profesionalId ? { emisorDistintoDelQueAtendio: true } : {}),
+        ...(!esReceta && emisor.id !== at.profesionalId ? { emisorDistintoDelQueAtendio: true } : {}),
+        // Receta médica registrada por admin/coordinación a nombre del médico de la cita.
+        ...(firmante?.delegada ? { registradaPorTerceroANombreDelMedico: true } : {}),
         items: itemsData.map((i) => ({ tipo: i.tipo, nombre: i.nombre })),
       },
     });
     return r;
   });
+  if (firmante?.autoasignar) {
+    const c = await prisma.cita.findUnique({ where: { id: firmante.cita.id }, select: { sedeId: true, fecha: true } });
+    if (c) {
+      for (const id of idsBloque) {
+        emitirEventoCita({ tipo: 'cita:actualizada', sedeId: c.sedeId, fecha: c.fecha.toISOString().slice(0, 10), cita: (await getCitaCompleta(id)) as never, cambiadoPor: p.usuarioId ?? 'sistema' });
+      }
+    }
+  }
   return getRecetaCompleta(receta.id);
 }
 
 // ─── Anulación ────────────────────────────────────────────────────────────────
 /** Anula (nunca borra). Puede: quien la emitió (mismo usuario) o quien tenga hc.anular. */
 export async function anularReceta(p: Ctx & { user: AuthPayload; recetaId: string; motivo: string }) {
-  const r = await prisma.receta.findUnique({ where: { id: p.recetaId }, select: { id: true, estado: true, emisorUsuarioId: true, sedeId: true, numero: true, atencion: { select: { citaId: true } } } });
+  const r = await prisma.receta.findUnique({ where: { id: p.recetaId }, select: { id: true, estado: true, emisorUsuarioId: true, emisorProfesionalId: true, tipoDocumento: true, sedeId: true, numero: true, atencion: { select: { citaId: true } } } });
   if (!r) throw new AppError('Receta no encontrada', 404);
   if (r.estado === 'anulada') throw new AppError('La receta ya está anulada', 409, 'YA_ANULADA');
   const motivo = p.motivo.trim();
   if (motivo.length < 5) throw new AppError('Indica el motivo de la anulación (mín. 5 caracteres)', 400, 'MOTIVO_REQUERIDO');
-  const puede = p.user.permisos.includes('hc.anular') || (!!r.emisorUsuarioId && r.emisorUsuarioId === p.user.userId);
-  if (!puede) throw new AppError('Solo quien la emitió o un usuario con permiso de anulación puede anularla', 403, 'SIN_PERMISO');
+  // Puede: hc.anular, quien la registró, o el médico a cuyo nombre salió (si la registró coordinación).
+  const esSuMedico = r.tipoDocumento === 'RECETA_MEDICA' && !!p.user.profesionalId && r.emisorProfesionalId === p.user.profesionalId && p.user.permisos.includes('receta.emitir');
+  const puede = p.user.permisos.includes('hc.anular') || (!!r.emisorUsuarioId && r.emisorUsuarioId === p.user.userId) || esSuMedico;
+  if (!puede) throw new AppError('Solo quien la emitió, el médico a cuyo nombre salió o un usuario con permiso de anulación puede anularla', 403, 'SIN_PERMISO');
   const etiqueta = await etiquetaUsuario(prisma, p.usuarioId);
   await prisma.$transaction(async (tx) => {
     // Con guarda: dos anulaciones a la vez → la segunda recibe 409 y no pisa el motivo de la primera.

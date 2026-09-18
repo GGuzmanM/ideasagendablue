@@ -9,6 +9,7 @@ import { Idea1DetalleCitaModal } from '../components/agenda/Idea1DetalleCitaModa
 import { Idea1ModalHorarioSemanal } from '../components/agenda/Idea1ModalHorarioSemanal';
 import { BuscadorPacientesModal } from '../components/agenda/BuscadorPacientesModal';
 import { citasApi } from '../api/citas';
+import { MarcaMedico } from '../components/agenda/MarcaMedico';
 import {
   useIdea1AgendaData,
   getDefaultAvatar,
@@ -1119,9 +1120,12 @@ export function Idea1AgendaPage() {
                                     <span className="truncate font-bold">
                                       {cita.horaInicio} - {cita.horaFin}
                                     </span>
-                                    {cita.esCombinada && (
-                                      <span className="text-[9px] font-sans font-bold text-indigo-700">2 Servicios</span>
-                                    )}
+                                    <span className="flex items-center gap-1 shrink-0">
+                                      {cita.esCombinada && (
+                                        <span className="text-[9px] font-sans font-bold text-indigo-700">2 Servicios</span>
+                                      )}
+                                      {cita.raw && <MarcaMedico cita={cita.raw} />}
+                                    </span>
                                   </div>
                                 )}
                               </div>

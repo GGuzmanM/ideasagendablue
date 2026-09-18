@@ -173,6 +173,8 @@ export function escribirHistoriaPdf(doc: Doc, h: HistoriaParaPdf, opts: { fotos?
       for (const r of a.recetas) {
         asegurar(34); // el título de la receta no queda solo al pie: baja con su primer ítem
         parrafo(`${DOC_RECETA[r.tipoDocumento]} N° ${String(r.numero).padStart(6, '0')} · ${fechaLima(r.fechaEmision)} · ${r.emisorNombre}${r.estado === 'anulada' ? ' · ANULADA' : ''}`, undefined, { tam: 8.5, color: r.estado === 'anulada' ? ROJO : GRIS });
+        // Quien exporta sin permiso de receta médica ve que existe, no su contenido.
+        if ((r as { reservada?: boolean }).reservada) parrafo('Contenido reservado: solo lo ven el médico, coordinación y administración.', undefined, { x: X + 8, ancho: ANCHO - 8, tam: 8.5, color: GRIS });
         for (const it of r.items) {
           const nombre = [it.nombre, it.concentracionSnapshot, it.formaSnapshot].filter(Boolean).join(' ') + (it.marcaImpresa ? ` (${it.marcaImpresa})` : '');
           const poso = [it.dosis, it.via, it.frecuencia, it.duracion, it.cantidad ? `cantidad ${it.cantidad}` : null].filter(Boolean).join(' · ');

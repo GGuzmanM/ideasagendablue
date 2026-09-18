@@ -1,6 +1,7 @@
 // Historia clínica — LÓGICA (hooks). Las vistas (.tsx) son puras y consumen estos hooks.
 // Un useState por campo, `puedeGuardar` derivado, useMutation → invalidar + toast (patrón de la casa).
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { miFirmaApi } from '../api/miFirma';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -682,12 +683,40 @@ export function useRecetasAtencion(atencion: AtencionCompleta | null) {
   });
   const ver = async (id: string) => { try { await verRecetaPdf(id); } catch (e) { toast.error((e as Error).message); } };
   const imprimir = async (id: string) => { try { await imprimirReceta(id); } catch (e) { toast.error((e as Error).message); } };
+  const imprimirConFirma = async (id: string) => { try { await imprimirReceta(id, undefined, true); } catch (e) { toast.error((e as Error).message); } };
   // «Anular» solo se muestra a quien el servidor le va a permitir: hc.anular, o quien la emitió con el permiso del tipo.
   const usuario = useAuthStore((s) => s.usuario);
   const tiene = useAuthStore((s) => s.tiene);
-  const puedeAnular = (r: { estado: string; emisorUsuarioId: string | null; tipoDocumento: string }) =>
-    r.estado === 'emitida' && (tiene('hc.anular') || (!!usuario && r.emisorUsuarioId === usuario.id && (r.tipoDocumento === 'RECETA_MEDICA' ? !!usuario.esMedicoPrescriptor : tiene('hc.registrar'))));
-  return { recetas: atencion?.recetas ?? [], anulando, setAnulando, anularMut, ver, imprimir, puedeAnular };
+  const puedeAnular = (r: { estado: string; emisorUsuarioId: string | null; emisorProfesionalId?: string; tipoDocumento: string; reservada?: boolean }) =>
+    r.estado === 'emitida' && !r.reservada && (tiene('hc.anular')
+      || (!!usuario && r.emisorUsuarioId === usuario.id && (r.tipoDocumento === 'RECETA_MEDICA' ? tiene('receta.emitir') : tiene('hc.registrar')))
+      || (r.tipoDocumento === 'RECETA_MEDICA' && !!usuario?.profesionalId && r.emisorProfesionalId === usuario.profesionalId && tiene('receta.emitir')));
+
+  // ¿Quién emite la RECETA MÉDICA de esta cita? Siempre sale a nombre del MÉDICO DE LA CITA.
+  //  · El médico: si la cita no tiene médico, al emitir queda asignada a él; si es de otro, no.
+  //  · Admin / coordinación: a nombre del médico asignado (que debe tener CMP).
+  const miFicha = usuario?.profesional?.tipo === 'medico' ? usuario.profesionalId ?? null : null;
+  const medicoCita = atencion?.cita.medico ?? null;
+  const nombreMedicoCita = medicoCita ? `${medicoCita.nombres} ${medicoCita.apellidos}`.trim() : '';
+  const emitirReceta: { puede: boolean; aNombreDe: string | null; aviso: string | null } = (() => {
+    if (usuario?.esMedicoPrescriptor) {
+      if (!medicoCita || medicoCita.id === miFicha) return { puede: true, aNombreDe: null, aviso: !medicoCita ? 'Al emitir, esta cita queda a tu nombre como su médico.' : null };
+      return { puede: false, aNombreDe: null, aviso: `Esta cita la tiene ${nombreMedicoCita}: la receta sale a su nombre. Si la atiendes tú, pide a coordinación que te la asigne.` };
+    }
+    if (tiene('receta.emitir') && tiene('medico.asignar')) {
+      if (!medicoCita) return { puede: false, aNombreDe: null, aviso: 'Para emitir la receta, asigna primero el médico de la cita: sale a su nombre y con su CMP.' };
+      if (!(medicoCita.colegiatura ?? '').trim()) return { puede: false, aNombreDe: null, aviso: `${nombreMedicoCita} no tiene su CMP cargado: complétalo en Administración › Profesionales.` };
+      return { puede: true, aNombreDe: nombreMedicoCita, aviso: null };
+    }
+    return { puede: false, aNombreDe: null, aviso: null };
+  })();
+
+  // Firma digitalizada: solo el médico, en recetas a SU nombre, si ya la subió.
+  const { data: miFirma } = useQuery({ queryKey: ['mi-firma'], queryFn: () => miFirmaApi.estado(), enabled: !!miFicha, staleTime: 300_000 });
+  const puedeFirmar = (r: { tipoDocumento: string; estado: string; emisorProfesionalId?: string }) =>
+    !!miFirma?.tieneFirma && r.tipoDocumento === 'RECETA_MEDICA' && r.estado === 'emitida' && !!miFicha && r.emisorProfesionalId === miFicha;
+
+  return { recetas: atencion?.recetas ?? [], anulando, setAnulando, anularMut, ver, imprimir, imprimirConFirma, puedeAnular, emitirReceta, puedeFirmar, soyMedico: !!miFicha };
 }
 
 // ─── Bloque 3 · Procedimientos (1.11 / 1.12) ─────────────────────────────────

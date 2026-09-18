@@ -80,9 +80,12 @@ export const recetasApi = {
   eliminarFavorita: (id: string) => api.delete<{ ok: boolean }>(`/recetas/favoritas/${id}`),
   // PDF en streaming (blob autenticado): el <iframe>/window.open no puede mandar Authorization.
   // `copias`: la receta médica sale por defecto con ORIGINAL + COPIA PARA FARMACIA (2); 1 = solo original.
-  descargarPdfBlob: async (id: string, copias?: 1 | 2): Promise<Blob> => {
+  descargarPdfBlob: async (id: string, copias?: 1 | 2, conFirma = false): Promise<Blob> => {
     const token = useAuthStore.getState().token;
-    const res = await fetch(`/api/v1/recetas/${id}/pdf${copias ? `?copias=${copias}` : ''}`, { headers: { Authorization: `Bearer ${token}` } });
+    const q = new URLSearchParams();
+    if (copias) q.set('copias', String(copias));
+    if (conFirma) q.set('firma', '1'); // solo el médico a cuyo nombre salió, con SU firma (lo exige el servidor)
+    const res = await fetch(`/api/v1/recetas/${id}/pdf${q.size ? `?${q}` : ''}`, { headers: { Authorization: `Bearer ${token}` } });
     if (!res.ok) {
       const e = await res.json().catch(() => ({}));
       throw new Error((e as { message?: string; error?: string }).message || (e as { error?: string }).error || 'No se pudo generar el PDF');
@@ -120,14 +123,14 @@ export async function abrirPdfEnPestana(cargar: () => Promise<Blob>): Promise<vo
 }
 
 /** Abre el PDF en una pestaña nueva. */
-export function verRecetaPdf(id: string, copias?: 1 | 2): Promise<void> {
-  return abrirPdfEnPestana(() => recetasApi.descargarPdfBlob(id, copias));
+export function verRecetaPdf(id: string, copias?: 1 | 2, conFirma = false): Promise<void> {
+  return abrirPdfEnPestana(() => recetasApi.descargarPdfBlob(id, copias, conFirma));
 }
 
 /** Genera el PDF y abre la ventana de IMPRESIÓN (iframe oculto → print; en iPad, pestaña con el PDF). */
-export async function imprimirReceta(id: string, copias?: 1 | 2): Promise<void> {
-  if (esIos()) return verRecetaPdf(id, copias); // el iframe oculto no imprime en Safari móvil: se abre y se imprime desde ahí
-  const blob = await recetasApi.descargarPdfBlob(id, copias);
+export async function imprimirReceta(id: string, copias?: 1 | 2, conFirma = false): Promise<void> {
+  if (esIos()) return verRecetaPdf(id, copias, conFirma); // el iframe oculto no imprime en Safari móvil: se abre y se imprime desde ahí
+  const blob = await recetasApi.descargarPdfBlob(id, copias, conFirma);
   const url = URL.createObjectURL(blob);
   const iframe = document.createElement('iframe');
   iframe.style.position = 'fixed'; iframe.style.right = '0'; iframe.style.bottom = '0';

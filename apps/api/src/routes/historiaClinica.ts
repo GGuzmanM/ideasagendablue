@@ -21,12 +21,15 @@ import { escribirConsentimientoPdf } from '../services/consentimientoPdf';
 import * as cons from '../services/constanciaService';
 import { escribirConstanciaPdf } from '../services/constanciaPdf';
 import { qrPng, urlVerificacionReceta } from '../services/pdfComun';
+import { filtroRecetaMedica, ocultarRecetasMedicas, puedeVerRecetaMedica } from '../services/recetaVisibilidad';
 
 // ─── Historia clínica (Fase 1) ────────────────────────────────────────────────
 // Todas las rutas exigen usuario + permiso (`requirePermiso`, nunca `requireAcceso`: las API keys
 // no alcanzan datos clínicos). Lecturas de contenido clínico se AUDITAN (`ver_hc`); el
 // `resumen` por cita no (no expone contenido). Escrituras devuelven la entidad completa.
 const router = Router();
+// La receta médica solo la ven admin, coordinación y médico: filtro en TODA respuesta del router.
+router.use(filtroRecetaMedica);
 
 const verHc = [requireAuth, requirePermiso('hc.ver')];
 const registrar = [requireAuth, requirePermiso('hc.registrar')];
@@ -43,7 +46,8 @@ const uuid = z.string().uuid();
 router.get('/paciente/:pacienteId/pdf', ...verHc, async (req, res) => {
   const pacienteId = uuid.parse(req.params.pacienteId);
   await hc.assertAccesoPaciente(user(req), pacienteId);
-  const datos = await hc.historiaParaPdf(pacienteId);
+  const crudo = await hc.historiaParaPdf(pacienteId);
+  const datos = puedeVerRecetaMedica(req) ? crudo : ocultarRecetasMedicas(crudo);
   await hc.auditarLecturaHC({ ...ctx(req), pacienteId, origen: 'hc_pdf' });
   const doc = nuevoPdf(`Historia clínica ${String(datos.historia.numero).padStart(6, '0')}`);
   res.setHeader('Content-Type', 'application/pdf');

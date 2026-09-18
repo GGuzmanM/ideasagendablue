@@ -35,15 +35,15 @@ const ROTULO_COPIA: Record<'original' | 'farmacia', { texto: string; fondo: stri
  * Escribe la receta. `copias`: una página por copia (`null` = sin rótulo). `qr`: PNG del código
  * de verificación (se genera antes, con `qrPng`).
  */
-export function escribirRecetaPdf(doc: Doc, r: RecetaCompleta, opts: { copias?: CopiaReceta[]; qr?: Buffer } = {}): void {
+export function escribirRecetaPdf(doc: Doc, r: RecetaCompleta, opts: { copias?: CopiaReceta[]; qr?: Buffer; firma?: Buffer | null } = {}): void {
   const copias = opts.copias?.length ? opts.copias : [null];
   copias.forEach((copia, i) => {
     if (i > 0) doc.addPage();
-    escribirCopia(doc, r, copia, opts.qr);
+    escribirCopia(doc, r, copia, opts.qr, opts.firma ?? null);
   });
 }
 
-function escribirCopia(doc: Doc, r: RecetaCompleta, copia: CopiaReceta, qr?: Buffer): void {
+function escribirCopia(doc: Doc, r: RecetaCompleta, copia: CopiaReceta, qr?: Buffer, firma: Buffer | null = null): void {
   const esReceta = r.tipoDocumento === 'RECETA_MEDICA';
   const titulo = esReceta ? 'RECETA MÉDICA' : 'INDICACIONES DE TRATAMIENTO';
   const numero = esReceta ? `N° ${String(r.numero).padStart(6, '0')}` : `Podológico · N° ${String(r.numero).padStart(6, '0')}`;
@@ -156,6 +156,10 @@ function escribirCopia(doc: Doc, r: RecetaCompleta, copia: CopiaReceta, qr?: Buf
       || (esReceta ? 'Siga las indicaciones de cada medicamento. Ante molestias intensas, suspenda y consulte.' : 'Los medicamentos de venta bajo receta se prescriben únicamente en la Receta Médica firmada por médico colegiado.');
     doc.font('Helvetica').fontSize(9).fillColor(INK).text(nota, M, yF + 19, { width: W - 2 * M - 210, height: 70, lineGap: 1.5, ellipsis: true });
     const xS = W - M - 190;
+    // Firma y sello digitalizados: solo si el médico la pidió al imprimir (y nunca en una anulada).
+    if (firma && r.estado !== 'anulada') {
+      try { doc.image(firma, xS + 20, yF + 6, { fit: [150, 54], align: 'center', valign: 'bottom' }); } catch { /* imagen ilegible: queda la línea para firmar a mano */ }
+    }
     doc.moveTo(xS, yF + 62).lineTo(W - M, yF + 62).lineWidth(0.7).strokeColor(INK).stroke();
     doc.font('Helvetica-Bold').fontSize(9.5).fillColor(INK).text(r.emisorNombre, xS, yF + 66, { width: 190, align: 'center', lineBreak: false, ellipsis: true });
     const cargo = esReceta ? 'Médico cirujano' : ({ podologa: 'Podóloga', fisioterapeuta: 'Fisioterapeuta', medico: 'Médico' } as Record<string, string>)[r.emisor.tipo] ?? 'Profesional';

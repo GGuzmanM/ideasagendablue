@@ -7,14 +7,18 @@ import * as hc from '../services/historiaClinicaService';
 import * as rx from '../services/recetaService';
 import { escribirRecetaPdf } from '../services/recetaPdf';
 import { nuevoPdf, qrPng, urlVerificacionReceta } from '../services/pdfComun';
+import { filtroRecetaMedica, puedeVerRecetaMedica } from '../services/recetaVisibilidad';
+import { registrarAudit } from '../services/audit';
 
 // ─── Recetas e indicaciones (Fase 2) ──────────────────────────────────────────
 // Permisos por TIPO de documento:
 //  · RECETA_MEDICA → `receta.emitir` (solo rol médico) + candado de médico en el servicio.
 //  · INDICACIONES_PODOLOGICAS → `hc.registrar` (recepción las registra a nombre de la podóloga).
 //  · Anular: quien lo emitió (con el permiso del tipo) o `hc.anular`.
-//  · Leer y PDF → `receta.ver` (auditado como ver_receta).
+//  · Leer y PDF → `receta.ver` (auditado como ver_receta); la RECETA MÉDICA además `receta_medica.ver`
+//    (solo admin, coordinación y médico — recepción ve las indicaciones, no la receta).
 const router = Router();
+router.use(filtroRecetaMedica);
 
 const ver = [requireAuth, requirePermiso('receta.ver')];
 
@@ -51,9 +55,12 @@ const emitirSchema = z.object({
 });
 const anularSchema = z.object({ motivo: z.string().trim().min(5).max(500) });
 
-async function recetaMeta(id: string) {
-  const r = await prisma.receta.findUnique({ where: { id }, select: { id: true, sedeId: true, pacienteId: true } });
+async function recetaMeta(id: string, req: Request) {
+  const r = await prisma.receta.findUnique({ where: { id }, select: { id: true, sedeId: true, pacienteId: true, tipoDocumento: true, emisorProfesionalId: true } });
   if (!r) throw new AppError('Receta no encontrada', 404);
+  if (r.tipoDocumento === 'RECETA_MEDICA' && !puedeVerRecetaMedica(req)) {
+    throw new AppError('La receta médica solo la ven e imprimen el médico, coordinación y administración', 403, 'RECETA_RESERVADA');
+  }
   return r;
 }
 
@@ -125,7 +132,7 @@ router.get('/paciente/:pacienteId', ...ver, async (req, res) => {
 
 // GET /recetas/:id
 router.get('/:id', ...ver, async (req, res) => {
-  const meta = await recetaMeta(req.params.id);
+  const meta = await recetaMeta(req.params.id, req);
   assertSede(req, meta.sedeId);
   const receta = await rx.getRecetaCompleta(meta.id);
   await hc.auditarLecturaHC({ ...ctx(req), pacienteId: meta.pacienteId, origen: 'receta', recetaId: meta.id, sedeId: meta.sedeId });
@@ -136,11 +143,25 @@ router.get('/:id', ...ver, async (req, res) => {
 // La receta médica sale con ORIGINAL (paciente) + COPIA (farmacia) en páginas separadas; ?copias=1
 // imprime solo el original. Las indicaciones salen en una sola copia.
 router.get('/:id/pdf', ...ver, async (req, res) => {
-  const meta = await recetaMeta(req.params.id);
+  const meta = await recetaMeta(req.params.id, req);
   assertSede(req, meta.sedeId);
   const receta = await rx.getRecetaCompleta(meta.id);
   await hc.auditarLecturaHC({ ...ctx(req), pacienteId: meta.pacienteId, origen: 'pdf', recetaId: meta.id, sedeId: meta.sedeId });
   const conCopia = receta.tipoDocumento === 'RECETA_MEDICA' && req.query.copias !== '1';
+  // ?firma=1 — estampar la firma digitalizada. SOLO el médico a cuyo nombre salió la receta, con la
+  // SUYA; nadie más puede ponerle la firma de otro. Sin ?firma=1 sale la línea para firmar a mano.
+  let firma: Buffer | null = null;
+  if (req.query.firma === '1') {
+    if (receta.tipoDocumento !== 'RECETA_MEDICA') throw new AppError('La firma digitalizada es solo para la receta médica', 400, 'FIRMA_SOLO_RECETA');
+    if (receta.estado !== 'emitida') throw new AppError('La receta está anulada: no se firma', 409, 'YA_ANULADA');
+    if (!user(req).profesionalId || user(req).profesionalId !== receta.emisorProfesionalId) {
+      throw new AppError('Solo el médico a cuyo nombre está la receta puede estampar su firma', 403, 'FIRMA_AJENA');
+    }
+    const f = await prisma.firmaProfesional.findUnique({ where: { profesionalId: receta.emisorProfesionalId } });
+    if (!f) throw new AppError('Aún no subiste tu firma: hazlo en «Mi firma y sello»', 409, 'SIN_FIRMA');
+    firma = Buffer.from(f.imagen);
+    await registrarAudit({ ...ctx(req), citaId: receta.atencion.citaId, accion: 'estampar_firma', entidad: 'receta', entidadId: receta.id, sedeId: meta.sedeId, despues: { numero: receta.numero } });
+  }
   const qr = await qrPng(urlVerificacionReceta(receta.codigoVerificacion));
   const doc = nuevoPdf(`Receta ${receta.numero}`);
   const prefijo = receta.tipoDocumento === 'RECETA_MEDICA' ? 'receta' : 'indicaciones';
@@ -148,7 +169,7 @@ router.get('/:id/pdf', ...ver, async (req, res) => {
   res.setHeader('Content-Disposition', `inline; filename="${prefijo}-${String(receta.numero).padStart(6, '0')}.pdf"`);
   res.setHeader('Cache-Control', 'private, no-store');
   doc.pipe(res);
-  escribirRecetaPdf(doc, receta, { qr, copias: conCopia ? ['original', 'farmacia'] : [null] });
+  escribirRecetaPdf(doc, receta, { qr, firma, copias: conCopia ? ['original', 'farmacia'] : [null] });
   doc.end();
 });
 

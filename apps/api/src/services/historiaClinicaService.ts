@@ -184,7 +184,7 @@ const recetasResumenInclude = {
   where: {},
   orderBy: { fechaEmision: 'desc' },
   select: {
-    id: true, numero: true, tipoDocumento: true, estado: true, fechaEmision: true, emisorNombre: true, emisorUsuarioId: true,
+    id: true, numero: true, tipoDocumento: true, estado: true, fechaEmision: true, emisorNombre: true, emisorUsuarioId: true, emisorProfesionalId: true,
     codigoVerificacion: true, _count: { select: { items: true } },
   },
 } as const;
@@ -193,7 +193,8 @@ const procedimientosInclude = { where: { deletedAt: null }, orderBy: { creadoEn:
 const escalasInclude = { where: { deletedAt: null }, orderBy: { creadoEn: 'asc' } } as const;
 const marcasInclude = { where: { deletedAt: null }, orderBy: { creadoEn: 'asc' } } as const;
 const atencionInclude = {
-  cita: { select: { id: true, horaInicio: true, estado: true, duracionMinutos: true } },
+  // medico: el médico de la cita (la receta médica sale a su nombre); sedeId/unidad para tomarla desde la HC.
+  cita: { select: { id: true, horaInicio: true, estado: true, duracionMinutos: true, sedeId: true, medicoId: true, medico: { select: { id: true, nombres: true, apellidos: true, colegiatura: true } }, unidadNegocio: { select: { id: true, nombre: true } } } },
   profesional: { select: { id: true, nombres: true, apellidos: true, tipo: true } },
   sede: { select: { id: true, nombre: true, color: true } },
   servicio: { select: { id: true, nombre: true, color: true } },

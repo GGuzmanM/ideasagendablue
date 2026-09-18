@@ -41,7 +41,9 @@ export interface DiagnosticoAtencion {
 
 export interface RecetaResumen {
   id: string; numero: number; tipoDocumento: 'RECETA_MEDICA' | 'INDICACIONES_PODOLOGICAS'; estado: 'emitida' | 'anulada';
-  fechaEmision: string; emisorNombre: string; emisorUsuarioId: string | null; codigoVerificacion: string; _count: { items: number };
+  fechaEmision: string; emisorNombre: string; emisorUsuarioId: string | null; emisorProfesionalId?: string;
+  // null y `reservada` cuando quien mira no tiene permiso de ver la receta médica (recepción).
+  codigoVerificacion: string | null; _count: { items: number }; reservada?: boolean;
 }
 
 export interface Alergia {
@@ -55,7 +57,13 @@ export interface AtencionClinica {
   id: string; historiaClinicaId: string; citaId: string; pacienteId: string; profesionalId: string; sedeId: string; servicioId: string;
   subcategoriaId: string | null; fecha: string; motivoConsulta: string; estado: EstadoAtencion;
   abiertaEtiqueta: string | null; cerradaEn: string | null; creadoEn: string;
-  cita: { id: string; horaInicio: string; estado: string; duracionMinutos: number };
+  cita: {
+    id: string; horaInicio: string; estado: string; duracionMinutos: number;
+    // Médico de la cita: la receta médica sale a su nombre.
+    sedeId?: string; medicoId?: string | null;
+    medico?: { id: string; nombres: string; apellidos: string; colegiatura: string | null } | null;
+    unidadNegocio?: { id: string; nombre: string };
+  };
   profesional: ProfesionalMini; sede: { id: string; nombre: string; color: string }; servicio: { id: string; nombre: string; color: string };
   notas: NotaEvolucion[]; diagnosticos: DiagnosticoAtencion[]; recetas: RecetaResumen[];
   _count?: { procedimientos: number; escalas: number; marcasPodograma: number };

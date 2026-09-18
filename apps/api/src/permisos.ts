@@ -1,5 +1,5 @@
 /**
- * Catálogo de permisos (41) y la matriz de los roles del sistema. ÚNICA fuente: la usan
+ * Catálogo de permisos (44) y la matriz de los roles del sistema. ÚNICA fuente: la usan
  * `routes/roles.ts` (validación al crear/editar roles) y `prisma/seed.ts` (base nueva). Cada permiso
  * es una acción cableada a su candado (`requirePermiso`): si agregas uno, cablea su endpoint o no
  * hace nada. Los permisos nuevos se otorgan a los roles existentes por MIGRACIÓN de datos (p. ej.
@@ -7,7 +7,10 @@
  */
 export const PERMISOS_VALIDOS = [
   // Historia clínica y receta
-  'hc.ver', 'hc.registrar', 'hc.anular', 'receta.ver', 'receta.emitir',
+  // receta.ver = indicaciones podológicas y el listado; receta_medica.ver = ver e imprimir la RECETA MÉDICA.
+  'hc.ver', 'hc.registrar', 'hc.anular', 'receta.ver', 'receta_medica.ver', 'receta.emitir',
+  // Médico de la cita: autoasignar = el médico se toma / suelta a sí mismo; asignar = a cualquiera.
+  'medico.autoasignar', 'medico.asignar',
   // Citas
   'citas.ver', 'citas.crear', 'citas.reprogramar', 'citas.cancelar', 'citas.estado', 'citas.revertir',
   // Pacientes
@@ -38,11 +41,16 @@ const CITAS = ['citas.ver', 'citas.crear', 'citas.reprogramar', 'citas.cancelar'
 const PACIENTES = ['pacientes.ver', 'pacientes.crear', 'pacientes.editar'] as const;
 const CLINICA = ['hc.ver', 'hc.registrar', 'receta.ver'] as const;
 
-/** Matriz real de los roles (la misma que tiene la base en producción). El admin NO emite recetas: eso es solo del médico. */
+/**
+ * Matriz real de los roles (la misma que tiene la base en producción).
+ * Receta médica (decisión 18-sep-2026): la VEN e IMPRIMEN solo admin, coordinación y médico; recepción
+ * se queda con las indicaciones podológicas. La EMITEN también admin y coordinación, pero siempre a
+ * nombre del médico de la cita (su CMP): el candado está en recetaService.emitirReceta.
+ */
 export const ROLES_SISTEMA: { nombre: string; label: string; descripcion: string; esSistema: boolean; permisos: Permiso[] }[] = [
   {
     nombre: 'admin', label: 'Administrador', descripcion: 'Acceso total al sistema', esSistema: true,
-    permisos: PERMISOS_VALIDOS.filter((p) => p !== 'receta.emitir'),
+    permisos: PERMISOS_VALIDOS.filter((p) => p !== 'medico.autoasignar'),
   },
   {
     nombre: 'coordinadora_sedes', label: 'Coordinadora de Sedes', descripcion: 'Gestión de agenda, pacientes y reportes', esSistema: true,
@@ -51,7 +59,7 @@ export const ROLES_SISTEMA: { nombre: string; label: string; descripcion: string
       'promociones.ver', 'promociones.gestionar', 'movimientos.ver', 'movimientos.editar', 'horarios.ver', 'horarios.editar',
       'profesionales.ver', 'profesionales.editar', 'competencias.editar', 'servicios.ver', 'servicios.editar',
       'analytics.ver', 'analytics.agentes', 'exportar.usar', 'comunicaciones.gestionar', 'canales.gestionar', 'notificaciones.ver', 'auditoria.ver',
-      ...CLINICA, 'hc.anular', 'dispositivos.gestionar',
+      ...CLINICA, 'hc.anular', 'receta_medica.ver', 'receta.emitir', 'medico.asignar', 'dispositivos.gestionar',
     ],
   },
   {
@@ -65,8 +73,8 @@ export const ROLES_SISTEMA: { nombre: string; label: string; descripcion: string
     permisos: [...CITAS, ...PACIENTES, 'membresias.ver', 'membresias.vender'],
   },
   {
-    // Médico colegiado: agenda y pacientes solo lectura, historia clínica completa y el ÚNICO rol que emite recetas.
+    // Médico colegiado: agenda y pacientes solo lectura, historia clínica completa, receta y se asigna a las citas.
     nombre: 'medico', label: 'Médico', descripcion: 'Médico colegiado: registra historia clínica y emite recetas', esSistema: false,
-    permisos: ['citas.ver', 'pacientes.ver', 'membresias.ver', ...CLINICA, 'receta.emitir'],
+    permisos: ['citas.ver', 'pacientes.ver', 'membresias.ver', ...CLINICA, 'receta_medica.ver', 'receta.emitir', 'medico.autoasignar'],
   },
 ];

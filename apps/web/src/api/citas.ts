@@ -36,6 +36,11 @@ export interface CitaResumen {
   profesionalId: string | null;
   profesional: { id: string; nombres: string; apellidos: string; colorAvatar: string } | null;
   solicitadoProfesional?: { id: string; nombres: string; apellidos: string; tipo: string } | null;
+  // Médico de la cita (podología): lo toma el propio médico o lo asigna coordinación. La receta
+  // médica de la atención sale a su nombre y con su CMP.
+  medicoId?: string | null;
+  medico?: { id: string; nombres: string; apellidos: string; colegiatura?: string | null } | null;
+  medicoAsignadoEn?: string | null;
   sedeId: string;
   // `consultorios`: nº de consultorios de la sede (selector C1..CN; 0 = no numera consultorios).
   sede: { id: string; nombre: string; color: string; consultorios?: number };

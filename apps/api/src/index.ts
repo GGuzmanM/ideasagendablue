@@ -4,6 +4,8 @@ import dispositivosRouter from './routes/dispositivos';
 import dispositivoApiRouter from './routes/dispositivoApi';
 import tiemposTratamientoRouter from './routes/tiemposTratamiento';
 import reportesClinicosRouter from './routes/reportesClinicos';
+import medicoCitaRouter from './routes/medicoCita';
+import firmaMedicoRouter from './routes/firmaMedico';
 import verificacionPublicaRouter from './routes/verificacionPublica';
 import { cerrarTiemposAbandonados } from './services/tiempoTratamientoService';
 
@@ -234,6 +236,8 @@ app.use(`${v1}/recetas`, recetasRouter); // Recetas médicas e indicaciones (rec
 app.use(`${v1}/dispositivos`, dispositivosRouter); // Administración de aparatos de consultorio (dispositivos.gestionar)
 app.use(`${v1}/dispositivo`, dispositivoApiRouter); // API del aparato (botones INICIO/FIN), clave propia
 app.use(`${v1}/tiempos-tratamiento`, tiemposTratamientoRouter); // Reporte de tiempos reales de tratamiento
+app.use(`${v1}/mi-firma`, firmaMedicoRouter); // Firma y sello digitalizados del médico (solo él la usa)
+app.use(`${v1}/medico-cita`, medicoCitaRouter); // Médico de la cita: el médico se toma/suelta; admin y coordinación asignan
 app.use(`${v1}/reportes-clinicos`, reportesClinicosRouter); // Diagnosticos, productividad y calidad del registro (conteos, sin datos del paciente)
 app.use(`${v1}/verificar`, verificacionPublicaRouter); // PÚBLICO (sin login): verificación de recetas por el QR
 

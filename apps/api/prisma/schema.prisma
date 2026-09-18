@@ -168,17 +168,17 @@ enum AreaAgente {
 // ─── Sede ─────────────────────────────────────────────────────────────────────
 
 model Sede {
-  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  nombre    String    @unique
-  direccion String
-  color     String    @default("#3B82F6")
-  activa    Boolean   @default(true)
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nombre       String    @unique
+  direccion    String
+  color        String    @default("#3B82F6")
+  activa       Boolean   @default(true)
   // Orden manual de las pestañas de sede en la agenda (0 = sin orden → alfabético).
-  orden     Int       @default(0)
+  orden        Int       @default(0)
   // Nº de consultorios físicos (el selector del detalle de la cita ofrece 1..N y el aparato del
   // consultorio se registra con uno de esos números). 0 = la sede no usa consultorios numerados.
-  consultorios Int    @default(0)
-  deletedAt DateTime?
+  consultorios Int       @default(0)
+  deletedAt    DateTime?
 
   // Horario por día de semana (JSON: {lunes: {apertura: "08:00", cierre: "20:00"}, ...})
   horario Json @default("{}")
@@ -236,12 +236,12 @@ model UnidadNegocio {
   activa      Boolean     @default(true)
   deletedAt   DateTime?
 
-  sedes         SedeUnidadNegocio[]
-  profesionales Profesional[]
-  servicios     Servicio[]
-  citas         Cita[]
-  agregados     AgregadoDiario[]
-  dispositivos  DispositivoConsultorio[]
+  sedes              SedeUnidadNegocio[]
+  profesionales      Profesional[]
+  servicios          Servicio[]
+  citas              Cita[]
+  agregados          AgregadoDiario[]
+  dispositivos       DispositivoConsultorio[]
   tiemposTratamiento TiempoTratamiento[]
 
   creadoPor     String?  @db.Uuid // Usuario que creó el registro (auditoría)
@@ -267,17 +267,17 @@ model SedeUnidadNegocio {
 // ─── Profesional ──────────────────────────────────────────────────────────────
 
 model Profesional {
-  id               String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id               String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   nombres          String
   apellidos        String
   tipo             TipoProfesional
-  unidadNegocioId  String          @db.Uuid
-  colorAvatar      String          @default("#6B7F9E")
-  activo           Boolean         @default(true)
+  unidadNegocioId  String            @db.Uuid
+  colorAvatar      String            @default("#6B7F9E")
+  activo           Boolean           @default(true)
   // "Solo por solicitud": nunca se auto-asigna ni aparece como columna fija en la agenda;
   // solo es seleccionable al reservar (médicos de baropodometría y Daniel Doy) y su columna
   // aparece únicamente el día que tiene citas. Puede atender en cualquier sede.
-  soloPorSolicitud Boolean         @default(false)
+  soloPorSolicitud Boolean           @default(false)
   // Orden manual de la columna en la agenda: null = alfabético normal; un valor mayor
   // empuja la columna a la DERECHA (después de las normales y de las "Adicional").
   ordenAgenda      Int?
@@ -292,7 +292,10 @@ model Profesional {
   colegiatura      String?
   // true = fila que representa un EQUIPO (ej. "Baro 1"), no una persona. Un equipo nunca puede
   // figurar como profesional de una atención clínica ni emitir recetas. Backfill en migración.
-  esEquipo         Boolean         @default(false)
+  esEquipo         Boolean           @default(false)
+  // Firma y sello digitalizados (opcional): tabla APARTE para que ninguna consulta del profesional
+  // arrastre la imagen sin querer.
+  firma            FirmaProfesional?
   deletedAt        DateTime?
 
   unidadNegocio      UnidadNegocio              @relation(fields: [unidadNegocioId], references: [id])
@@ -305,6 +308,7 @@ model Profesional {
   competencias       CompetenciaProfesional[]
   citas              Cita[]                     @relation("CitaProfesional")
   citasSolicitadas   Cita[]                     @relation("CitaSolicitado")
+  citasComoMedico    Cita[]                     @relation("CitaMedico")
   agregados          AgregadoDiario[]
   entradas           EntradaPodologa[]
   // Sedes donde este médico atiende baropodometría "por solicitud" (independiente de su
@@ -747,6 +751,11 @@ model Cita {
   pacienteId              String            @db.Uuid
   profesionalId           String?           @db.Uuid // null en Baropodometría hasta asignación
   solicitadoProfesionalId String?           @db.Uuid // médico pedido "Solo X" (baro): la cita va en una máquina
+  // Médico de la cita (podología: podóloga + médico). Lo toma el propio médico (a sí mismo) o lo
+  // asigna admin/coordinación; la receta médica de la atención sale a SU nombre y con su CMP.
+  medicoId                String?           @db.Uuid
+  medicoAsignadoEn        DateTime?
+  medicoAsignadoPorId     String?           @db.Uuid // usuario que lo asignó (el mismo médico si se autoasignó)
   sedeId                  String            @db.Uuid
   unidadNegocioId         String            @db.Uuid
   servicioId              String            @db.Uuid
@@ -836,6 +845,7 @@ model Cita {
   creadoPorUsuario      Usuario?              @relation("CitasCreadas", fields: [creadoPorUsuarioId], references: [id])
   profesional           Profesional?          @relation("CitaProfesional", fields: [profesionalId], references: [id])
   solicitadoProfesional Profesional?          @relation("CitaSolicitado", fields: [solicitadoProfesionalId], references: [id])
+  medico                Profesional?          @relation("CitaMedico", fields: [medicoId], references: [id], onDelete: Restrict)
   sede                  Sede                  @relation(fields: [sedeId], references: [id])
   unidadNegocio         UnidadNegocio         @relation(fields: [unidadNegocioId], references: [id])
   servicio              Servicio              @relation(fields: [servicioId], references: [id])
@@ -876,6 +886,7 @@ model Cita {
   @@index([subcategoriaId])
   // Desempeño de Agentes: consultas por autor de la reserva en un rango de fechas.
   @@index([creadoPorUsuarioId, fecha])
+  @@index([medicoId, fecha])
   @@map("citas")
 }
 
@@ -891,9 +902,9 @@ model Cita {
 //  • `tiempos_cita_vigente_unico`         : 1 tiempo vigente (no descartado) por cita.
 
 enum EstadoTiempoTratamiento {
-  en_curso   // INICIO presionado, falta FIN
+  en_curso // INICIO presionado, falta FIN
   finalizado // INICIO + FIN
-  sin_fin    // nadie presionó FIN: se cerró solo a las 3 h (o al día siguiente)
+  sin_fin // nadie presionó FIN: se cerró solo a las 3 h (o al día siguiente)
   descartado // FIN antes de 1 minuto, o recepción lo descartó
 }
 
@@ -1896,12 +1907,12 @@ model AtencionClinica {
   creadoEn            DateTime       @default(now())
   actualizadoEn       DateTime       @updatedAt
 
-  historiaClinica   HistoriaClinica         @relation(fields: [historiaClinicaId], references: [id], onDelete: Restrict)
-  cita              Cita                    @relation(fields: [citaId], references: [id], onDelete: Restrict)
-  paciente          Paciente                @relation(fields: [pacienteId], references: [id], onDelete: Restrict)
-  profesional       Profesional             @relation(fields: [profesionalId], references: [id], onDelete: Restrict)
-  sede              Sede                    @relation(fields: [sedeId], references: [id], onDelete: Restrict)
-  servicio          Servicio                @relation(fields: [servicioId], references: [id], onDelete: Restrict)
+  historiaClinica   HistoriaClinica           @relation(fields: [historiaClinicaId], references: [id], onDelete: Restrict)
+  cita              Cita                      @relation(fields: [citaId], references: [id], onDelete: Restrict)
+  paciente          Paciente                  @relation(fields: [pacienteId], references: [id], onDelete: Restrict)
+  profesional       Profesional               @relation(fields: [profesionalId], references: [id], onDelete: Restrict)
+  sede              Sede                      @relation(fields: [sedeId], references: [id], onDelete: Restrict)
+  servicio          Servicio                  @relation(fields: [servicioId], references: [id], onDelete: Restrict)
   notas             NotaEvolucion[]
   diagnosticos      DiagnosticoAtencion[]
   recetas           Receta[]
@@ -1912,7 +1923,7 @@ model AtencionClinica {
   fotos             FotoClinica[]
   dibujosSilueta    DibujoSilueta[]
   consentimientos   ConsentimientoInformado[]
-  constancias     ConstanciaClinica[]
+  constancias       ConstanciaClinica[]
   controles         ControlSugerido[]
   dictado           DictadoConsulta?
 
@@ -2422,4 +2433,18 @@ model DibujoSilueta {
 
   @@unique([atencionId, vista, pie])
   @@map("dibujos_silueta")
+}
+
+/// Firma y sello digitalizados de un médico. En la BASE, no en /uploads (que es público): solo se
+/// leen por endpoint autenticado y solo se estampan en el PDF cuando el MISMO médico lo genera.
+model FirmaProfesional {
+  profesionalId String   @id @db.Uuid
+  imagen        Bytes
+  mime          String
+  actualizadoEn DateTime @updatedAt
+  creadoEn      DateTime @default(now())
+
+  profesional Profesional @relation(fields: [profesionalId], references: [id], onDelete: Cascade)
+
+  @@map("firmas_profesional")
 }
