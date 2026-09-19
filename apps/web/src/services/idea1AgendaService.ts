@@ -1,3 +1,4 @@
+import { MOTIVO_LABELS } from '../api/movimientos';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
@@ -340,9 +341,12 @@ export function extraerEstadiaLabel(p: any): string | undefined {
 
   // 4. Movimiento o refuerzo sin fechaFin
   const esMovimiento = asgDirecta?.esMovimiento ?? p?.esMovimiento;
+  //    Motivo «Otro» = cambio de sede normal (p. ej. arrastrar la tarjeta en Movimientos): no dice
+  //    nada útil, así que no se pinta etiqueta. Los demás motivos salen con su nombre, no su código.
   if (esMovimiento) {
-    const motivoLabel = asgDirecta?.motivo || p?.motivo || 'Refuerzo';
-    return motivoLabel;
+    const motivo: string = asgDirecta?.motivo || p?.motivo || '';
+    if (motivo === 'OTRO') return undefined;
+    return MOTIVO_LABELS[motivo as keyof typeof MOTIVO_LABELS] ?? (motivo || 'Refuerzo');
   }
 
   return undefined;

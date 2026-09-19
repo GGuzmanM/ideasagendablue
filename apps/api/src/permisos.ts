@@ -77,4 +77,10 @@ export const ROLES_SISTEMA: { nombre: string; label: string; descripcion: string
     nombre: 'medico', label: 'Médico', descripcion: 'Médico colegiado: registra historia clínica y emite recetas', esSistema: false,
     permisos: ['citas.ver', 'pacientes.ver', 'membresias.ver', ...CLINICA, 'receta_medica.ver', 'receta.emitir', 'medico.autoasignar'],
   },
+  {
+    // Podóloga con login: ve la agenda de SU sede (la de Movimientos) en solo lectura. Sin historia
+    // clínica ni recetas por ahora; se le agregan permisos desde Administración › Roles cuando se decida.
+    nombre: 'podologa', label: 'Podóloga', descripcion: 'Ve la agenda de su sede (solo lectura)', esSistema: false,
+    permisos: ['citas.ver'],
+  },
 ];

@@ -12,6 +12,20 @@ export interface FormUsuarioState {
   sedeIds: string[]; // sedes de login
   recepcionistaId: string | null; // vínculo con ficha del roster (Movimientos)
   profesionalId: string | null; // vínculo con ficha de Profesional (médico con login → historia clínica / receta)
+  /** Crear (o vincular por nombre) su ficha —recepción, médico o podóloga— con la sede donde empieza. */
+  crearFicha?: { sedeId: string; colegiatura?: string };
+  /** CMP del médico ya vinculado (solo al editar): se guarda en su ficha. */
+  colegiatura?: string | null;
+}
+
+// Lo que cambia cuando se crea o vincula una ficha: Movimientos, Composición de sede, columnas de la agenda.
+const FICHA_KEYS = ['recepcionistas-todas', 'recepcionistas', 'composicion-sede', 'movimientos', 'profesionales-activos', 'profesionales-sede', 'profesionales'];
+/** Aviso tras guardar: dice si la ficha se CREÓ o si se VINCULÓ una que ya existía con ese nombre. */
+function mensajeFicha(u: { ficha?: { accion: 'creada' | 'vinculada'; nombreFicha: string } | null } | undefined, base: string): string {
+  if (!u?.ficha) return base;
+  return u.ficha.accion === 'vinculada'
+    ? `${base}. Se vinculó a la ficha que ya existía: ${u.ficha.nombreFicha}`
+    : `${base}. Se creó su ficha: ${u.ficha.nombreFicha} (ya aparece en Movimientos)`;
 }
 
 export const USER_ROLE_PALETTE = [
@@ -62,9 +76,11 @@ export function useUsersData() {
   // Mutations
   const crearMut = useMutation({
     mutationFn: (data: CrearUsuarioPayload) => usersApi.crear(data),
-    onSuccess: () => {
+    onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['users'] });
-      toast.success('Usuario creado exitosamente');
+      // La ficha nueva debe verse ya en Movimientos › recepción y en Composición de sede.
+      for (const k of FICHA_KEYS) qc.invalidateQueries({ queryKey: [k] });
+      toast.success(mensajeFicha(data, 'Usuario creado exitosamente'), { duration: 5000 });
       cerrarModal();
     },
     onError: (e: Error) => {
@@ -75,9 +91,11 @@ export function useUsersData() {
   const editarMut = useMutation({
     mutationFn: ({ id, data }: { id: string; data: EditarUsuarioPayload }) =>
       usersApi.actualizar(id, data),
-    onSuccess: () => {
+    onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['users'] });
-      toast.success('Usuario actualizado exitosamente');
+      for (const k of FICHA_KEYS) qc.invalidateQueries({ queryKey: [k] });
+      qc.invalidateQueries({ queryKey: ['profesionales-todos'] });
+      toast.success(mensajeFicha(data, 'Usuario actualizado exitosamente'), { duration: 5000 });
       cerrarModal();
     },
     onError: (e: Error) => {

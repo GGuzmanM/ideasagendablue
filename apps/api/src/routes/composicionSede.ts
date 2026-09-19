@@ -1,3 +1,4 @@
+import { nombreDeFichaAUsuarioEnTx } from '../services/fichaUsuarioService';
 import { Router } from 'express';
 import { z } from 'zod';
 import PDFDocument from 'pdfkit';
@@ -211,7 +212,14 @@ router.patch('/recepcionistas/:id', ...gestion, async (req, res) => {
   const data = z.object({ nombre: z.string().min(2).max(120).optional(), activo: z.boolean().optional() }).parse(req.body);
   const existe = await prisma.recepcionista.findFirst({ where: { id: req.params.id, deletedAt: null } });
   if (!existe) throw new AppError('Recepcionista no encontrada', 404);
-  const r = await prisma.recepcionista.update({ where: { id: req.params.id }, data: { ...(data.nombre ? { nombre: data.nombre.trim() } : {}), ...(data.activo !== undefined ? { activo: data.activo } : {}) } });
+  const r = await prisma.$transaction(async (tx) => {
+    const rec = await tx.recepcionista.update({ where: { id: req.params.id }, data: { ...(data.nombre ? { nombre: data.nombre.trim() } : {}), ...(data.activo !== undefined ? { activo: data.activo } : {}) } });
+    // Un solo nombre por persona: su usuario (si está vinculada) toma el mismo.
+    if (data.nombre && data.nombre.trim() !== existe.nombre.trim()) {
+      await nombreDeFichaAUsuarioEnTx(tx, { nombre: rec.nombre, recepcionistaId: rec.id, usuarioId: req.user?.userId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined });
+    }
+    return rec;
+  });
   res.json(r);
 });
 

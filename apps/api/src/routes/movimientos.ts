@@ -425,6 +425,10 @@ router.put('/:id', requireAuth, requirePermiso('movimientos.editar'), async (req
         // Era indefinido y ahora es TEMPORAL → crear el retorno a la sede matriz.
         const nuevoIni = addDays(nuevaFechaFin, 1);
         if (existente.cierraFechaFin === null || existente.cierraFechaFin >= nuevoIni) {
+          // Aquí el orden es al revés que al borrar: primero se le pone fin a ESTE movimiento y
+          // recién después nace el retorno. Si no, por un instante habría dos asignaciones sin fecha
+          // de fin y el índice «una sola abierta por profesional» rechazaba el guardado (409).
+          await tx.asignacionSede.update({ where: { id: existente.id }, data: { fechaFin: nuevaFechaFin } });
           const sedeMatriz = await tx.sede.findUnique({ where: { id: pred.predecesorSedeId }, select: { nombre: true } });
           const motivoRet = (data.motivo ?? existente.motivo) as MotivoMovimiento;
           await tx.asignacionSede.create({

@@ -76,7 +76,7 @@ function PodologaCard({ mov, canWrite, onEditar, onEliminar }: {
   const style = MOTIVO_STYLE[mov.motivo] ?? MOTIVO_STYLE.OTRO;
   const puedeEliminar = canWrite && mov.estadoCalc !== 'historial';
 
-  // Arrastrable: soltar en otra sede la MUEVE (crea un movimiento desde el día visto hasta fin de mes).
+  // Arrastrable: soltar en otra sede la MUEVE (crea un movimiento desde el día visto, SIN fecha de fin).
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `pod-${mov.sedeId}-${mov.id}`,
     data: { profesionalId: mov.profesionalId, fromSedeId: mov.sedeId, nombre: `${mov.profesional.nombres} ${mov.profesional.apellidos}` },
@@ -670,19 +670,21 @@ export function MovimientosPage() {
   });
   const onMover = (persona: PersonaGrupo, fromSedeId: string, toSedeId: string) => moverMut.mutate({ persona, fromSedeId, toSedeId });
 
-  // ── PODÓLOGAS: mover arrastrando (crea un movimiento [fechaVista → fin de mes]) ──
+  // ── PODÓLOGAS: mover arrastrando (crea un movimiento [fechaVista → SIN fecha de fin]) ──
   // El sistema de movimientos ya respeta el pasado y secuencia solo: nunca toca días anteriores
-  // a fechaVista; el cambio rige desde ese día hasta fin de mes (editable luego desde el modal).
+  // a fechaVista. El cambio SE QUEDA hasta que coordinación lo cambie (19-sep-2026): antes regía
+  // «hasta fin de mes» y el 1° del mes siguiente la podóloga volvía sola a su sede anterior (retorno
+  // automático), sin que nadie lo hubiera pedido. Un préstamo con fecha de regreso se registra con
+  // «Nuevo movimiento» poniendo su «hasta», o editando el movimiento.
   const moverPodologaMut = useMutation({
     mutationFn: async ({ profesionalId, toSedeId }: { profesionalId: string; toSedeId: string }) => {
-      const finMes = format(endOfMonth(parseISO(fechaVista)), 'yyyy-MM-dd');
-      await movimientosApi.crear({ profesionalId, sedeId: toSedeId, fechaInicio: fechaVista, fechaFin: finMes, motivo: 'OTRO' });
+      await movimientosApi.crear({ profesionalId, sedeId: toSedeId, fechaInicio: fechaVista, fechaFin: null, motivo: 'OTRO' });
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['movimientos'] });
       qc.invalidateQueries({ queryKey: ['profesionales-sede'] });
       qc.invalidateQueries({ queryKey: ['citas'] });
-      toast.success('Podóloga movida de sede');
+      toast.success('Podóloga movida de sede. Se queda ahí hasta que la cambies.');
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -912,7 +914,7 @@ export function MovimientosPage() {
             {canWrite && (
               <p className="text-xs text-on-surface-variant flex items-center gap-1.5">
                 <span className="material-symbols-outlined text-sm">info</span>
-                Arrastra una podóloga a otra sede para MOVERLA (rige desde el día visto hasta fin de mes; no toca el pasado). O usa el + / editar / ✕.
+                Arrastra una podóloga a otra sede para MOVERLA: rige desde el día visto y se queda ahí hasta que la cambies (no toca el pasado). Si es un préstamo con fecha de regreso, usa el + y ponle su «hasta».
               </p>
             )}
             <DndContext sensors={podSensors} collisionDetection={closestCenter} onDragEnd={handleDragEndPodologas}>

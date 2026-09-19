@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../db';
-import { signToken, requireAuth, getPermisosRol, sedesVigentesDeRecepcionista } from '../middleware/auth';
+import { signToken, requireAuth, getPermisosRol, sedesDerivadasDeFicha } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { registrarAudit } from '../services/audit';
 import { loginLimiter } from '../middleware/rateLimits';
@@ -72,8 +72,9 @@ router.post('/login', loginLimiter, async (req, res) => {
   // Acceso a sedes: recepcionista VINCULADA al roster → deriva de Movimientos (sede vigente hoy);
   // si no, sus UsuarioSede. Espeja la lógica de requireAuth para que token y respuesta coincidan.
   let sedesResp: { id: string; nombre: string }[];
-  if (usuario.recepcionistaId) {
-    const ids = await sedesVigentesDeRecepcionista(usuario.recepcionistaId);
+  const derivadasLogin = await sedesDerivadasDeFicha(usuario);
+  if (derivadasLogin) {
+    const ids = derivadasLogin;
     sedesResp = await prisma.sede.findMany({ where: { id: { in: ids } }, select: { id: true, nombre: true } });
   } else {
     sedesResp = usuario.sedes.map((us: { sedeId: string; sede: { nombre: string } }) => ({ id: us.sedeId, nombre: us.sede.nombre }));
@@ -116,9 +117,10 @@ router.get('/me', requireAuth, async (req, res) => {
   const permisos = await getPermisosRol(usuario.rol);
 
   // Igual que login: recepcionista vinculada → sedes derivadas del roster (Movimientos).
-  const sedes = usuario.recepcionistaId
+  const derivadas = await sedesDerivadasDeFicha(usuario);
+  const sedes = derivadas
     ? await prisma.sede.findMany({
-        where: { id: { in: await sedesVigentesDeRecepcionista(usuario.recepcionistaId) } },
+        where: { id: { in: derivadas } },
         select: { id: true, nombre: true, color: true },
       })
     : usuario.sedes.map((us: { sedeId: string; sede: { nombre: string; color: string } }) => ({

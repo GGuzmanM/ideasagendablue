@@ -1,4 +1,4 @@
-import { useCompetenciasData } from '../../services/competenciasService';
+import { useCompetenciasData, TIPOS_PROF } from '../../services/competenciasService';
 import { AdminHeaderNav } from './AdminHeaderNav';
 import { cn } from '../../utils/cn';
 
@@ -44,6 +44,9 @@ export function CompetenciasPage() {
     setSedeIdFiltro,
     unidadFiltro,
     setUnidadFiltro,
+    tipoFiltro,
+    setTipoFiltro,
+    conteoTipo,
     pendientes,
     toggle,
     tieneCompetencia,
@@ -63,6 +66,34 @@ export function CompetenciasPage() {
       <AdminHeaderNav />
 
       <div className="flex-1 overflow-y-auto p-6 space-y-4">
+        {/* Tipo de profesional: podólogas, fisioterapeutas o doctores */}
+        <div className="flex flex-wrap items-center gap-2" data-testid="filtro-tipo-profesional">
+          <span className="text-xs font-semibold text-slate-500 mr-1">Tipo de profesional</span>
+          {TIPOS_PROF.map(t => {
+            const activo = tipoFiltro === t.id;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setTipoFiltro(t.id)}
+                aria-pressed={activo}
+                data-testid={`tipo-${t.id}`}
+                className={cn(
+                  'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold transition-colors',
+                  activo ? 'bg-primary text-white border-primary shadow-sm' : 'bg-white text-slate-600 border-slate-200 hover:border-primary/50 hover:text-primary',
+                )}
+              >
+                <span className="material-symbols-outlined text-base">{t.icon}</span>
+                {t.label}
+                <span className={cn('px-1.5 rounded-full text-[10px]', activo ? 'bg-white/25' : 'bg-slate-100 text-slate-500')}>{conteoTipo[t.id]}</span>
+              </button>
+            );
+          })}
+          {tipoFiltro === 'medico' && (
+            <span className="text-[11px] text-slate-500 ml-1">Los doctores atienden baropodometría <b>por solicitud</b>: lo que marques aquí queda así (nunca como columna fija).</span>
+          )}
+        </div>
+
         {/* Filtros (como el original) */}
         <div className="flex flex-wrap gap-3 items-end">
           <div>

@@ -4,6 +4,8 @@ import { z } from 'zod';
 import { prisma } from '../db';
 import { requireAuth, requirePermiso, AuthPayload } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
+import { esRolConFicha, resolverFichaEnTx, FichaResuelta, nombreDeUsuarioAFichaEnTx } from '../services/fichaUsuarioService';
+import { auditEnTx } from '../services/audit';
 
 const router = Router();
 
@@ -19,6 +21,9 @@ const crearSchema = z.object({
   sedeIds: z.array(z.string().uuid()).optional(), // sedes de LOGIN (a qué sedes puede acceder)
   recepcionistaId: z.string().uuid().nullable().optional(), // vínculo con ficha del roster (Movimientos)
   profesionalId: z.string().uuid().nullable().optional(), // vínculo con ficha de Profesional (médico con login → HC/receta)
+  // Alta en UN paso (recepcionista, médico, podóloga): crea su ficha con la sede donde empieza —o
+  // vincula la que ya existía con ese nombre— y deja el usuario enlazado. Ver fichaUsuarioService.
+  crearFicha: z.object({ sedeId: z.string().uuid(), colegiatura: z.string().trim().max(30).nullable().optional() }).optional(),
 });
 
 const editarSchema = z.object({
@@ -30,6 +35,9 @@ const editarSchema = z.object({
   sedeIds: z.array(z.string().uuid()).optional(),
   recepcionistaId: z.string().uuid().nullable().optional(),
   profesionalId: z.string().uuid().nullable().optional(),
+  crearFicha: z.object({ sedeId: z.string().uuid(), colegiatura: z.string().trim().max(30).nullable().optional() }).optional(),
+  // CMP del médico: se guarda en SU ficha de profesional (la receta lo toma de ahí). '' o null = quitarlo.
+  colegiatura: z.string().trim().max(30).nullable().optional(),
 });
 
 // Selección estándar de un usuario (incluye sedes de login + vínculos con roster y profesional).
@@ -102,21 +110,28 @@ router.get('/:id', ...soloAdmins, async (req, res) => {
  * sin ese vínculo no hay a nombre de quién registrar la historia clínica ni emitir recetas (el
  * candado de receta exige Usuario.profesionalId → tipo=medico, !esEquipo, colegiatura cargada).
  */
-async function validarRolMedico(rol: string | undefined, profesionalId: string | null | undefined): Promise<void> {
-  if (rol !== 'medico') return;
+async function validarRolMedico(rol: string | undefined, profesionalId: string | null | undefined, creaFicha = false): Promise<void> {
+  if (rol !== 'medico' && rol !== 'podologa') return;
+  if (creaFicha) return; // la ficha se crea (o se vincula por nombre) en este mismo guardado
   if (!profesionalId) {
-    throw new AppError('Un usuario con rol médico debe vincularse a su ficha de profesional (médico)', 400, 'MEDICO_REQUIERE_PROFESIONAL');
+    if (rol === 'podologa') return; // una podóloga puede quedar sin ficha (no ve ninguna agenda hasta tenerla)
+    throw new AppError('Un usuario con rol médico necesita su ficha de médico: indica la sede donde empieza para crearla', 400, 'MEDICO_REQUIERE_PROFESIONAL');
   }
   const prof = await prisma.profesional.findFirst({ where: { id: profesionalId, deletedAt: null }, select: { tipo: true } });
-  if (prof?.tipo !== 'medico') {
+  if (rol === 'medico' && prof?.tipo !== 'medico') {
     throw new AppError('El profesional vinculado a un usuario médico debe ser de tipo médico', 400, 'MEDICO_REQUIERE_PROFESIONAL_MEDICO');
+  }
+  if (rol === 'podologa' && prof?.tipo === 'medico') {
+    throw new AppError('El profesional vinculado a un usuario podóloga no puede ser un médico', 400, 'PODOLOGA_REQUIERE_PROFESIONAL_PODOLOGA');
   }
 }
 
 // POST /api/v1/users
 router.post('/', ...editarAdmins, async (req, res) => {
   const data = crearSchema.parse(req.body);
-  await validarRolMedico(data.rol, data.profesionalId ?? null);
+  if (data.crearFicha && !esRolConFicha(data.rol)) throw new AppError('Ese rol no lleva ficha: su acceso lo da el rol', 400, 'ROL_SIN_FICHA');
+  if (data.crearFicha && (data.recepcionistaId || data.profesionalId)) throw new AppError('Elige vincular una ficha existente O crearla, no ambas', 400, 'FICHA_AMBIGUA');
+  await validarRolMedico(data.rol, data.profesionalId ?? null, !!data.crearFicha);
   // #7 · Solo un admin puede CREAR una cuenta admin (cierra la escalada: un rol con
   // `usuarios.editar` que no sea admin no puede fabricarse un admin nuevo).
   if (data.rol === 'admin' && (req.user as AuthPayload).rol !== 'admin') {
@@ -132,21 +147,28 @@ router.post('/', ...editarAdmins, async (req, res) => {
   if (data.recepcionistaId) await validarRecepcionistaLink(data.recepcionistaId);
   if (data.profesionalId) await validarProfesionalLink(data.profesionalId);
   const passwordHash = await bcrypt.hash(data.password, 12);
-  const usuario = await prisma.usuario.create({
-    data: {
-      nombre: data.nombre,
-      email: data.email.toLowerCase(),
-      passwordHash,
-      rol: data.rol,
-      activo: data.activo,
-      creadoPor: req.user?.userId,
-      recepcionistaId: data.recepcionistaId ?? null,
-      profesionalId: data.profesionalId ?? null,
-      sedes: { create: sedeIds.map((sedeId) => ({ sedeId })) },
-    },
-    select: usuarioSelect,
+  // Usuario + ficha en UNA transacción: o quedan los dos, o ninguno.
+  let ficha = null as FichaResuelta | null;
+  const usuario = await prisma.$transaction(async (tx) => {
+    ficha = data.crearFicha && esRolConFicha(data.rol)
+      ? await resolverFichaEnTx(tx, { rol: data.rol, nombre: data.nombre, sedeId: data.crearFicha.sedeId, colegiatura: data.crearFicha.colegiatura, creadoPor: req.user?.userId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined })
+      : null;
+    return tx.usuario.create({
+      data: {
+        nombre: data.nombre,
+        email: data.email.toLowerCase(),
+        passwordHash,
+        rol: data.rol,
+        activo: data.activo,
+        creadoPor: req.user?.userId,
+        recepcionistaId: ficha?.recepcionistaId ?? data.recepcionistaId ?? null,
+        profesionalId: ficha?.profesionalId ?? data.profesionalId ?? null,
+        sedes: { create: sedeIds.map((sedeId) => ({ sedeId })) },
+      },
+      select: usuarioSelect,
+    });
   });
-  res.status(201).json(serializarUsuario(usuario));
+  res.status(201).json({ ...serializarUsuario(usuario), ficha });
 });
 
 // PUT /api/v1/users/:id
@@ -170,7 +192,7 @@ router.put('/:id', ...editarAdmins, async (req, res) => {
   // permitía RESETEAR la contraseña del admin → tomar su cuenta.
   const objetivo = await prisma.usuario.findFirst({ where: { id, deletedAt: null }, select: { rol: true, profesionalId: true } });
   // Rol médico: se valida con los valores EFECTIVOS (lo que trae el payload o lo que ya tiene el usuario).
-  await validarRolMedico(data.rol ?? objetivo?.rol, data.profesionalId !== undefined ? data.profesionalId : objetivo?.profesionalId);
+  await validarRolMedico(data.rol ?? objetivo?.rol, data.profesionalId !== undefined ? data.profesionalId : objetivo?.profesionalId, !!data.crearFicha);
 
   // (a) Un NO-admin NO puede tocar a un usuario admin por NINGUNA vía (password/email/rol/sedes/…),
   //     ni asignar el rol admin a nadie. Solo un admin gestiona cuentas admin.
@@ -217,12 +239,51 @@ router.put('/:id', ...editarAdmins, async (req, res) => {
     update.profesionalId = data.profesionalId;
   }
 
-  const usuario = await prisma.usuario.update({
-    where: { id },
-    data: update,
-    select: usuarioSelect,
+  // Usuario que ya existía sin ficha: se le crea (o se le vincula la que coincide) en este guardado.
+  let ficha = null as FichaResuelta | null;
+  const rolFinal = data.rol ?? objetivo?.rol;
+  if (data.crearFicha) {
+    if (!esRolConFicha(rolFinal)) throw new AppError('Ese rol no lleva ficha: su acceso lo da el rol', 400, 'ROL_SIN_FICHA');
+    const actual = await prisma.usuario.findFirst({ where: { id, deletedAt: null }, select: { recepcionistaId: true, profesionalId: true } });
+    if (!actual) throw new AppError('Usuario no encontrado', 404);
+    const yaTiene = rolFinal === 'recepcionista' ? actual.recepcionistaId && data.recepcionistaId !== null : actual.profesionalId && data.profesionalId !== null;
+    if (yaTiene) throw new AppError('Este usuario ya tiene su ficha vinculada', 409, 'FICHA_YA_VINCULADA');
+  }
+  const usuario = await prisma.$transaction(async (tx) => {
+    if (data.crearFicha && esRolConFicha(rolFinal)) {
+      const nombre = data.nombre ?? (await tx.usuario.findUniqueOrThrow({ where: { id }, select: { nombre: true } })).nombre;
+      ficha = await resolverFichaEnTx(tx, { rol: rolFinal, nombre, sedeId: data.crearFicha.sedeId, colegiatura: data.crearFicha.colegiatura, creadoPor: caller.userId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined });
+      if (ficha.recepcionistaId) update.recepcionistaId = ficha.recepcionistaId;
+      if (ficha.profesionalId) update.profesionalId = ficha.profesionalId;
+    }
+    // Un solo nombre por persona: si cambió el del usuario, su ficha (recepción / profesional) lo toma
+    // también → Movimientos, agenda y reportes la muestran igual. No aplica si en este mismo guardado
+    // se creó o vinculó la ficha (ya nace con el nombre, o se respeta el de la ficha encontrada).
+    if (data.nombre && !ficha) {
+      const v = await tx.usuario.findUnique({ where: { id }, select: { nombre: true, recepcionistaId: true, profesionalId: true } });
+      if (v && v.nombre.trim() !== data.nombre.trim()) {
+        await nombreDeUsuarioAFichaEnTx(tx, {
+          nombre: data.nombre,
+          recepcionistaId: data.recepcionistaId !== undefined ? data.recepcionistaId : v.recepcionistaId,
+          profesionalId: data.profesionalId !== undefined ? data.profesionalId : v.profesionalId,
+          usuarioId: caller.userId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
+        });
+      }
+    }
+    // CMP desde «Editar usuario»: va a la ficha del médico vinculada (auditado con antes/después).
+    if (data.colegiatura !== undefined) {
+      const profId = (update.profesionalId as string | null | undefined) ?? objetivo?.profesionalId ?? null;
+      const prof = profId ? await tx.profesional.findFirst({ where: { id: profId, deletedAt: null }, select: { id: true, tipo: true, colegiatura: true } }) : null;
+      if (!prof || prof.tipo !== 'medico') throw new AppError('El CMP solo se registra en un usuario con ficha de médico', 400, 'CMP_SIN_FICHA_MEDICO');
+      const nuevo = data.colegiatura?.trim() || null;
+      if (nuevo !== (prof.colegiatura ?? null)) {
+        await tx.profesional.update({ where: { id: prof.id }, data: { colegiatura: nuevo } });
+        await auditEnTx(tx, { usuarioId: caller.userId, accion: 'editar_cmp', entidad: 'profesional', entidadId: prof.id, antes: { colegiatura: prof.colegiatura ?? null }, despues: { colegiatura: nuevo }, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined });
+      }
+    }
+    return tx.usuario.update({ where: { id }, data: update, select: usuarioSelect });
   });
-  res.json(serializarUsuario(usuario));
+  res.json({ ...serializarUsuario(usuario), ficha });
 });
 
 // DELETE /api/v1/users/:id — soft delete

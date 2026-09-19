@@ -54,6 +54,18 @@ export function esProfesionalFijo(nombres: string, tipo?: string, unidadNegocioN
 // completo por día). Un movimiento NO puede pisar días de vacación del profesional:
 // si el rango del movimiento solapa CUALQUIER día de vacación, se rechaza. Así
 // Movimientos deja de poder sacar a alguien de su vacación (o "cerrarla") en silencio.
+/**
+ * Hasta qué día se buscan vacaciones que choquen con un movimiento.
+ *  · PRÉSTAMO con fecha de fin → todo su rango (no tiene sentido prestar a alguien los días que no está).
+ *  · CAMBIO DE SEDE sin fecha de fin → solo el día en que empieza. Las vacaciones son de la PERSONA, no
+ *    de la sede: si se va de vacaciones en dos meses, igual queda bloqueada esos días en su sede nueva.
+ *    (Antes se revisaba un año entero y, desde que el arrastre es sin fecha de fin, una vacación lejana
+ *    impedía mover a la podóloga hoy.)
+ */
+export function finVentanaVacaciones(ini: Date, fin: Date | null): Date {
+  return fin ?? ini;
+}
+
 export async function vacacionesEnRango(
   db: Pick<Prisma.TransactionClient, 'bloqueoAgenda'>,
   profesionalId: string,
@@ -63,8 +75,7 @@ export async function vacacionesEnRango(
   const diaUtc = (d: Date, h: number, m: number, s: number) =>
     new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), h, m, s));
   const rangeStart = diaUtc(ini, 0, 0, 0);
-  // Movimiento sin fecha de fin (abierto): se revisa una ventana de 1 año hacia adelante.
-  const finBound = fin ?? addDays(ini, 365);
+  const finBound = finVentanaVacaciones(ini, fin);
   const rangeEnd = diaUtc(finBound, 23, 59, 59);
   const rows = await db.bloqueoAgenda.findMany({
     where: {

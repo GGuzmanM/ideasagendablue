@@ -17,6 +17,8 @@ export interface Usuario {
   recepcionista: { id: string; nombre: string } | null; // datos de la ficha vinculada
   profesionalId: string | null;                         // vínculo con la ficha de Profesional (médico con login → HC/receta)
   profesional: { id: string; nombres: string; apellidos: string; tipo: string; colegiatura: string | null; esEquipo: boolean } | null;
+  /** Solo en la respuesta de crear/editar: qué pasó con su ficha en ese guardado. */
+  ficha?: { accion: 'creada' | 'vinculada'; nombreFicha: string } | null;
 }
 
 export interface CrearUsuarioPayload {
@@ -28,6 +30,7 @@ export interface CrearUsuarioPayload {
   sedeIds?: string[];
   recepcionistaId?: string | null;
   profesionalId?: string | null;
+  crearFicha?: { sedeId: string; colegiatura?: string };
 }
 
 export interface EditarUsuarioPayload {
@@ -39,6 +42,9 @@ export interface EditarUsuarioPayload {
   sedeIds?: string[];
   recepcionistaId?: string | null;
   profesionalId?: string | null;
+  crearFicha?: { sedeId: string; colegiatura?: string };
+  /** CMP del médico (se guarda en su ficha). '' = quitarlo. */
+  colegiatura?: string | null;
 }
 
 export const usersApi = {

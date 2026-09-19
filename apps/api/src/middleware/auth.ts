@@ -63,6 +63,28 @@ export async function sedesVigentesDeRecepcionista(recepcionistaId: string): Pro
   return [...new Set(asigs.map((a) => a.sedeId))];
 }
 
+// Sedes donde MOVIMIENTOS tiene a esta podóloga HOY (su asignación de sede vigente).
+export async function sedesVigentesDePodologa(profesionalId: string): Promise<string[]> {
+  const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  const hoyD = new Date(hoy);
+  const asigs = await prisma.asignacionSede.findMany({
+    where: { profesionalId, fechaInicio: { lte: hoyD }, OR: [{ fechaFin: null }, { fechaFin: { gte: hoyD } }] },
+    select: { sedeId: true },
+  });
+  return [...new Set(asigs.map((a) => a.sedeId))];
+}
+
+/**
+ * Sedes que salen de la FICHA de la persona (una sola fuente de verdad: Movimientos), o `null` si
+ * este usuario usa sus sedes marcadas a mano. Recepcionista vinculada → su roster; podóloga con
+ * ficha → su asignación de sede. Moverlas en Movimientos cambia su acceso al instante.
+ */
+export async function sedesDerivadasDeFicha(u: { rol: string; recepcionistaId: string | null; profesionalId: string | null }): Promise<string[] | null> {
+  if (u.recepcionistaId) return sedesVigentesDeRecepcionista(u.recepcionistaId);
+  if (u.rol === 'podologa' && u.profesionalId) return sedesVigentesDePodologa(u.profesionalId);
+  return null;
+}
+
 // ─── Autorización por SEDE ─────────────────────────────────────────────────────
 // Roles que VEN/OPERAN TODAS las sedes (coordinación general + contact center, que atiende
 // llamadas de todas las sedes). Es SOLO acceso a sedes — NO otorga poderes de gestión (eso va
@@ -127,7 +149,7 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
     // muere al instante aunque el token siga vigente (no esperar a que caduque).
     const usuario = await prisma.usuario.findUnique({
       where: { id: payload.userId },
-      select: { activo: true, deletedAt: true, recepcionistaId: true, profesionalId: true, sedes: { select: { sedeId: true } } },
+      select: { rol: true, activo: true, deletedAt: true, recepcionistaId: true, profesionalId: true, sedes: { select: { sedeId: true } } },
     });
     if (!usuario || usuario.deletedAt || !usuario.activo) {
       throw new AppError('Sesión revocada: usuario inactivo o eliminado', 401, 'SESION_REVOCADA');
@@ -139,9 +161,7 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
     // Acceso a sedes: si el usuario está VINCULADO a una ficha del roster (Movimientos), su acceso se
     // DERIVA EN VIVO de la sede donde el roster lo tiene HOY (una sola fuente de verdad → moverlo en
     // Movimientos cambia su acceso al instante). Si no está vinculado, usa sus UsuarioSede.
-    payload.sedes = usuario.recepcionistaId
-      ? await sedesVigentesDeRecepcionista(usuario.recepcionistaId)
-      : usuario.sedes.map((s) => s.sedeId);
+    payload.sedes = (await sedesDerivadasDeFicha(usuario)) ?? usuario.sedes.map((s) => s.sedeId);
     req.user = payload;
     return next();
   }

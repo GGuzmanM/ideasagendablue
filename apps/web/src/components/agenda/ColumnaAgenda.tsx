@@ -249,7 +249,8 @@ export function ColumnaAgenda({ profesional, citas, bloqueos = [], permisos = []
       return { label: `Hasta el ${format(parseISO(asg.fechaFin), "d 'de' MMM", { locale: es })}`, tooltip };
     }
     // Indefinido: solo es badge si es un MOVIMIENTO (no la sede base de la podóloga).
-    if (asg.esMovimiento) {
+    // Motivo «Otro» = cambio de sede normal (arrastre en Movimientos): sin etiqueta.
+    if (asg.esMovimiento && asg.motivo !== 'OTRO') {
       return { label: motivoLabel ?? 'Refuerzo', tooltip: tooltip || 'Movimiento sin fecha de fin' };
     }
     return null;

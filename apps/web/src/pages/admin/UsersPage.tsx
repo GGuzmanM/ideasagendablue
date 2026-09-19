@@ -1,3 +1,4 @@
+import toast from 'react-hot-toast';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '../../stores/authStore';
@@ -70,12 +71,46 @@ function FormularioUsuarioModal({
     profesionalId: editing?.profesionalId ?? null,
   });
 
+  // Alta en un paso: recepcionista, médico y podóloga llevan FICHA (la tarjeta de Movimientos). Se crea
+  // junto con el usuario —o se vincula sola la que ya exista con ese nombre—; no hay que elegirla de
+  // ninguna lista. Coordinación, administración y contact center no llevan ficha: manda su rol.
+  const ROL_FICHA: Record<string, { titulo: string; donde: string }> = {
+    recepcionista: { titulo: 'Su ficha de recepción', donde: 'Movimientos › recepción' },
+    medico: { titulo: 'Su ficha de médico', donde: 'Movimientos › doctores' },
+    podologa: { titulo: 'Su ficha de podóloga', donde: 'Movimientos y la agenda de su sede' },
+  };
+  const infoFicha = ROL_FICHA[form.rol];
+  const fichaVinculada = form.rol === 'recepcionista'
+    ? (form.recepcionistaId ? (editing?.recepcionista?.nombre ?? 'ficha de recepción') : null)
+    : infoFicha && form.profesionalId
+      ? (editing?.profesional ? `${editing.profesional.nombres} ${editing.profesional.apellidos}`.trim() : 'ficha de profesional')
+      : null;
+  const esMedico = form.rol === 'medico';
+  const [crearFicha, setCrearFicha] = useState(!editing);
+  const [sedeFicha, setSedeFicha] = useState('');
+  const [cmp, setCmp] = useState('');
+  // CMP del médico que YA tiene ficha: se edita aquí mismo y se guarda en su ficha.
+  const cmpInicial = editing?.profesional?.tipo === 'medico' ? (editing.profesional.colegiatura ?? '') : '';
+  const [cmpFicha, setCmpFicha] = useState(cmpInicial);
+  const editaCmp = esMedico && !!fichaVinculada && !!editing;
+  const ofreceFicha = !!infoFicha && !fichaVinculada;
+  // El médico SIEMPRE necesita su ficha (sin ella no registra historia ni receta): no es opcional.
+  const conFichaNueva = ofreceFicha && (crearFicha || esMedico);
+  // Sus sedes salen de Movimientos (no se marcan a mano): recepcionista y podóloga con ficha.
+  const sedesPorMovimientos = (form.rol === 'recepcionista' || form.rol === 'podologa') && (!!fichaVinculada || conFichaNueva);
+
   const toggleSede = (id: string) =>
     setForm(f => ({ ...f, sedeIds: f.sedeIds.includes(id) ? f.sedeIds.filter(x => x !== id) : [...f.sedeIds, id] }));
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSave(form);
+    if (conFichaNueva && !sedeFicha) { toast.error('Elige la sede donde empieza a trabajar'); return; }
+    // Si cambió de rol, no arrastrar el vínculo del rol anterior (una recepcionista no lleva ficha de médico).
+    const limpio: FormUsuarioState = { ...form, recepcionistaId: form.rol === 'recepcionista' ? form.recepcionistaId : null, profesionalId: form.rol === 'medico' || form.rol === 'podologa' ? form.profesionalId : null };
+    if (editaCmp && cmpFicha.trim() !== cmpInicial.trim()) limpio.colegiatura = cmpFicha.trim();
+    onSave(conFichaNueva
+      ? { ...limpio, sedeIds: sedesPorMovimientos ? [] : limpio.sedeIds, crearFicha: { sedeId: sedeFicha, ...(esMedico && cmp.trim() ? { colegiatura: cmp.trim() } : {}) } }
+      : limpio);
   };
 
   return (
@@ -159,62 +194,67 @@ function FormularioUsuarioModal({
             </select>
           </div>
 
-          {/* Vínculo con la ficha del roster (Movimientos) */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1">
-              Vincular a ficha de recepción (Movimientos)
-              <span className="text-slate-400 font-normal"> — opcional</span>
-            </label>
-            <select
-              value={form.recepcionistaId ?? ''}
-              onChange={e => setForm(f => ({ ...f, recepcionistaId: e.target.value || null }))}
-              className="input w-full text-sm"
-            >
-              <option value="">Sin vincular (acceso por sedes manuales)</option>
-              {recepcionistas.map(r => <option key={r.id} value={r.id}>{r.nombre}</option>)}
-            </select>
-            <p className="text-[11px] text-slate-400 mt-1 leading-snug">
-              Si la vinculas, su acceso a la agenda se toma solo de la sede donde esté en Movimientos
-              (al moverla de sede, su acceso cambia al instante).
-            </p>
-          </div>
+          {/* FICHA de la persona (recepcionista, médico, podóloga): se crea o se vincula sola, en este mismo paso. */}
+          {infoFicha && fichaVinculada && (
+            <div className="rounded-xl bg-primary/5 border border-primary/20 px-3 py-2.5 text-xs text-primary space-y-2" data-testid="ficha-vinculada">
+              <div className="flex items-start gap-2">
+                <span className="material-symbols-outlined text-base shrink-0">badge</span>
+                <span>{infoFicha.titulo}: <b>{fichaVinculada}</b>. Aparece en {infoFicha.donde}.</span>
+              </div>
+              {editaCmp && (
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">Colegiatura (CMP) <span className="font-normal text-slate-500">— sale en sus recetas; sin CMP no puede emitirlas</span></label>
+                  <input value={cmpFicha} onChange={e => setCmpFicha(e.target.value)} maxLength={30} placeholder="Ej: 054321" className="input w-full text-sm" data-testid="cmp-usuario" />
+                  {!cmpFicha.trim() && <p className="text-[11px] text-amber-700 mt-1">Aún no tiene CMP: podrá registrar historia clínica pero no emitir recetas médicas.</p>}
+                </div>
+              )}
+            </div>
+          )}
+          {ofreceFicha && infoFicha && (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 px-3 py-2.5 space-y-2" data-testid="crear-ficha">
+              {esMedico ? (
+                <p className="text-xs font-semibold text-emerald-900">{infoFicha.titulo}
+                  <span className="block font-normal text-emerald-800/80">Se crea con este mismo nombre y aparecerá en {infoFicha.donde}. Si ya existe una ficha con ese nombre, se vincula esa (no se duplica).</span>
+                </p>
+              ) : (
+                <label className="flex items-start gap-2 text-xs font-semibold text-emerald-900 cursor-pointer">
+                  <input type="checkbox" className="mt-0.5" checked={crearFicha} onChange={e => setCrearFicha(e.target.checked)} />
+                  <span>Crear también {infoFicha.titulo.toLowerCase()}
+                    <span className="block font-normal text-emerald-800/80">Aparecerá en {infoFicha.donde} con este mismo nombre; no hay que registrarla en otro lado. Si ya existe una ficha con ese nombre, se vincula esa (no se duplica).</span>
+                  </span>
+                </label>
+              )}
+              {conFichaNueva && (
+                <div className="space-y-2">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-emerald-900 mb-1">Sede donde empieza a trabajar</label>
+                    <select value={sedeFicha} onChange={e => setSedeFicha(e.target.value)} className="input w-full text-sm" data-testid="sede-ficha">
+                      <option value="" disabled>Elige la sede…</option>
+                      {sedes.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+                    </select>
+                  </div>
+                  {esMedico && (
+                    <div>
+                      <label className="block text-[11px] font-semibold text-emerald-900 mb-1">Colegiatura (CMP) <span className="font-normal text-emerald-800/70">— opcional, necesaria para emitir recetas</span></label>
+                      <input value={cmp} onChange={e => setCmp(e.target.value)} maxLength={30} placeholder="Ej: 054321" className="input w-full text-sm" data-testid="cmp-ficha" />
+                    </div>
+                  )}
+                  <p className="text-[11px] text-emerald-800/80 leading-snug">
+                    {form.rol === 'podologa'
+                      ? 'Verá la agenda de esa sede (solo lectura) con horario lun–vie 8:00–20:00 y sáb 8:00–15:00. Para que reciba citas, habilita sus servicios en Administración › Competencias; para cambiarla de sede, Movimientos.'
+                      : esMedico
+                        ? 'Abajo marcas las sedes cuya agenda e historias puede ver. Para moverlo de sede después, Movimientos.'
+                        : 'Verá la agenda de esa sede. Para cambiarla después, se arrastra su tarjeta en Movimientos.'}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
-          {/* Vínculo con la ficha de PROFESIONAL (Historia clínica): médico con login → registra HC y emite recetas */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1">
-              Vincular a profesional (médico)
-              {form.rol === 'medico'
-                ? <span className="text-rose-600 font-semibold"> — obligatorio para el rol médico</span>
-                : <span className="text-slate-400 font-normal"> — necesario para emitir recetas</span>}
-            </label>
-            <select
-              value={form.profesionalId ?? ''}
-              onChange={e => setForm(f => ({ ...f, profesionalId: e.target.value || null }))}
-              className={`input w-full text-sm ${form.rol === 'medico' && !form.profesionalId ? 'border-rose-400' : ''}`}
-            >
-              <option value="">Sin vincular</option>
-              {medicos.map(m => (
-                <option key={m.id} value={m.id}>
-                  {m.apellidos}, {m.nombres} — {m.colegiatura?.trim() ? m.colegiatura : 'sin colegiatura'}
-                </option>
-              ))}
-            </select>
-            {(() => {
-              const sel = medicos.find(m => m.id === form.profesionalId);
-              if (form.rol === 'medico' && !form.profesionalId) {
-                return <p className="text-[11px] text-rose-600 mt-1 leading-snug">Elige la ficha del médico: sin este vínculo la cuenta no puede registrar historia clínica ni recetar.</p>;
-              }
-              if (sel && !sel.colegiatura?.trim()) {
-                return <p className="text-[11px] text-amber-700 mt-1 leading-snug">Este médico no tiene colegiatura (CMP) cargada: podrá registrar historia clínica pero NO emitir recetas hasta cargarla en Administración → Profesionales.</p>;
-              }
-              return <p className="text-[11px] text-slate-400 mt-1 leading-snug">La historia clínica y las recetas saldrán a nombre de este profesional. Para recetar, su ficha debe tener la colegiatura (CMP) cargada.</p>;
-            })()}
-          </div>
-
-          {form.recepcionistaId ? (
+          {sedesPorMovimientos ? (
             <div className="rounded-xl bg-primary/5 border border-primary/20 px-3 py-2.5 text-xs text-primary flex items-start gap-2">
               <span className="material-symbols-outlined text-base shrink-0">link</span>
-              <span>Sus sedes de acceso vienen de <b>Movimientos</b> (ficha vinculada). No hace falta elegirlas aquí.</span>
+              <span>Sus sedes de acceso vienen de <b>Movimientos</b> (su ficha). No hace falta elegirlas aquí.</span>
             </div>
           ) : (
             <div>
@@ -325,7 +365,7 @@ export function UsersPage() {
 
   const handleSaveUser = (formData: FormUsuarioState) => {
     if (usuarioEditando) {
-      const payload: { nombre: string; email: string; rol: string; activo: boolean; password?: string; sedeIds: string[]; recepcionistaId: string | null; profesionalId: string | null } = {
+      const payload: { nombre: string; email: string; rol: string; activo: boolean; password?: string; sedeIds: string[]; recepcionistaId: string | null; profesionalId: string | null; crearFicha?: { sedeId: string; colegiatura?: string }; colegiatura?: string | null } = {
         nombre: formData.nombre,
         email: formData.email,
         rol: formData.rol,
@@ -333,6 +373,8 @@ export function UsersPage() {
         sedeIds: formData.sedeIds,
         recepcionistaId: formData.recepcionistaId,
         profesionalId: formData.profesionalId,
+        ...(formData.crearFicha ? { crearFicha: formData.crearFicha } : {}),
+        ...(formData.colegiatura !== undefined ? { colegiatura: formData.colegiatura } : {}),
       };
       if (formData.password) payload.password = formData.password;
       editarMut.mutate({ id: usuarioEditando.id, data: payload });

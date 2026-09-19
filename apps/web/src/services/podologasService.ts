@@ -60,6 +60,7 @@ export function usePodologasData() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['profesionales'] });
       qc.invalidateQueries({ queryKey: ['profesionales-admin'] });
+      qc.invalidateQueries({ queryKey: ['users'] }); // si cambió el nombre de la ficha, su usuario también
       qc.invalidateQueries({ queryKey: ['profesionales-todos'] });
       setEditandoId(null);
       toast.success('Profesional actualizada');

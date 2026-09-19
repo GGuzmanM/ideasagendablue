@@ -62,6 +62,8 @@ export interface Profesional {
   nombres: string;
   apellidos: string;
   tipo: string;
+  /** Máquina (Baro 1, Baro 2…), no una persona. */
+  esEquipo?: boolean;
   colegiatura?: string | null;
   emailAgenda?: string | null;
   colorAvatar: string;

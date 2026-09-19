@@ -1,3 +1,4 @@
+import { nombreDeFichaAUsuarioEnTx } from '../services/fichaUsuarioService';
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db';
@@ -58,7 +59,11 @@ router.get('/', requireAuth, async (req, res) => {
             ? { unidadNegocioId }
             // Resto de unidades: columna fija = competencia NORMAL (no solo-por-solicitud) a la
             // unidad. Así Daniel sale como columna en Podología pero NO en Baro (allí es por-solicitud).
-            : { competencias: { some: { activa: true, soloPorSolicitud: false, servicio: { unidadNegocioId, activo: true, deletedAt: null } } } }
+            // Una MÁQUINA (Baro 1, Baro 2…) solo es columna fija en SU unidad: aunque tenga competencia
+            // en un servicio que el catálogo puso en otra unidad (Ortésicos figura en Podología), no
+            // se cuela como columna de Podología. Si de verdad opera una cita ahí ese día, entra por
+            // la vía «bajo demanda» de abajo.
+            : { esEquipo: false, competencias: { some: { activa: true, soloPorSolicitud: false, servicio: { unidadNegocioId, activo: true, deletedAt: null } } } }
         ) : {},
       },
       select: { profesionalId: true },
@@ -129,6 +134,20 @@ router.get('/', requireAuth, async (req, res) => {
     : null;
   const esDiaExcepcionAbierta = !!(excep && excep.abierto && excep.horaApertura && excep.horaCierre);
 
+  // Los MÉDICOS no tienen asignación de sede de podología: su sede vigente es la del roster de baro
+  // (Movimientos › Doctores). Se usa como `sedeActual` para poder filtrarlos por sede (Competencias).
+  const idsMedicos = profesionales.filter((p) => p.tipo === 'medico' && !p.esEquipo).map((p) => p.id);
+  const finDia = new Date(fechaParaAsignacion); finDia.setHours(23, 59, 59, 999);
+  const baroVigente = idsMedicos.length
+    ? await prisma.baroMedicoSede.findMany({
+        where: { profesionalId: { in: idsMedicos }, activa: true, fechaInicio: { lte: finDia }, OR: [{ fechaFin: null }, { fechaFin: { gte: fechaParaAsignacion } }] },
+        select: { profesionalId: true, sede: { select: { id: true, nombre: true, color: true } } },
+        orderBy: { fechaInicio: 'desc' },
+      })
+    : [];
+  const sedeBaroDe = new Map<string, { id: string; nombre: string; color: string }>();
+  for (const b of baroVigente) if (!sedeBaroDe.has(b.profesionalId)) sedeBaroDe.set(b.profesionalId, b.sede);
+
   let lista = profesionales.map((p: typeof profesionales[number]) => {
     const turno = turnos.get(p.id);
     return {
@@ -136,6 +155,7 @@ router.get('/', requireAuth, async (req, res) => {
     nombres: p.nombres,
     apellidos: p.apellidos,
     tipo: p.tipo,
+    esEquipo: p.esEquipo, // máquina (Baro 1, Baro 2…), no una persona
     colegiatura: p.colegiatura ?? null,
     emailAgenda: p.emailAgenda ?? null,
     colorAvatar: p.colorAvatar,
@@ -151,7 +171,7 @@ router.get('/', requireAuth, async (req, res) => {
         ? (p.asignaciones.find((a) => a.sedeId !== asg!.sedeId && !esCoberturaUnDia(a))?.sede.nombre ?? null)
         : null;
       return {
-        sedeActual: asg?.sede ?? null,
+        sedeActual: asg?.sede ?? sedeBaroDe.get(p.id) ?? null,
         asignacionActual: asg
           ? {
               id: asg.id,
@@ -321,10 +341,17 @@ router.patch('/:id', requireAuth, requirePermiso('profesionales.editar'), async 
   const antes = await prisma.profesional.findUnique({
     where: { id: req.params.id, deletedAt: null },
   });
-  const profesional = await prisma.profesional.update({
-    where: { id: req.params.id, deletedAt: null },
-    data,
-    include: { unidadNegocio: { select: { id: true, nombre: true, color: true, modoReserva: true } } },
+  const profesional = await prisma.$transaction(async (tx) => {
+    const p = await tx.profesional.update({
+      where: { id: req.params.id, deletedAt: null },
+      data,
+      include: { unidadNegocio: { select: { id: true, nombre: true, color: true, modoReserva: true } } },
+    });
+    // Un solo nombre por persona: si cambió el de la ficha, su usuario (si tiene) toma el mismo.
+    if (antes && !p.esEquipo && (antes.nombres !== p.nombres || antes.apellidos !== p.apellidos)) {
+      await nombreDeFichaAUsuarioEnTx(tx, { nombre: `${p.nombres} ${p.apellidos}`, profesionalId: p.id, usuarioId: req.user?.userId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined });
+    }
+    return p;
   });
   void registrarAudit({
     usuarioId: req.user?.userId, accion: 'editar', entidad: 'profesional', entidadId: profesional.id,

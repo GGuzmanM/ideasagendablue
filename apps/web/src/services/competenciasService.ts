@@ -16,11 +16,26 @@ function catDeTipo(tipo: string): 'podo' | 'baro' | 'fisio' | null {
   return tipo === 'podologa' ? 'podo' : tipo === 'fisioterapeuta' ? 'fisio' : tipo === 'medico' ? 'baro' : null;
 }
 
+// Filtro por TIPO de profesional (además del área de los servicios).
+export type TipoProfFiltro = 'todos' | 'podologa' | 'fisioterapeuta' | 'medico';
+export const TIPOS_PROF: { id: TipoProfFiltro; label: string; icon: string }[] = [
+  { id: 'todos', label: 'Todos', icon: 'groups' },
+  { id: 'podologa', label: 'Podólogas', icon: 'footprint' },
+  { id: 'fisioterapeuta', label: 'Fisioterapeutas', icon: 'self_improvement' },
+  { id: 'medico', label: 'Doctores', icon: 'stethoscope' },
+];
+// Área de servicios que le corresponde a cada tipo (para enfocar las columnas al elegir el tipo).
+const AREA_DE_TIPO: Record<string, 'podo' | 'fisio' | 'baro'> = { podologa: 'podo', fisioterapeuta: 'fisio', medico: 'baro' };
+/** Una máquina de baro no es una persona: no lleva competencias en la matriz. */
+const esMaquina = (p: { esEquipo?: boolean; nombres: string; apellidos: string }) =>
+  !!p.esEquipo || /^baro\s*\d+$/i.test(`${p.nombres} ${p.apellidos}`.trim());
+
 export function useCompetenciasData() {
   const qc = useQueryClient();
   const [filtroProf, setFiltroProf]     = useState('');
   const [sedeIdFiltro, setSedeIdFiltro] = useState<string>('todas');
   const [unidadFiltro, setUnidadFiltro] = useState<string>('todas');
+  const [tipoFiltro, setTipoFiltro]     = useState<TipoProfFiltro>('todos');
   const [pendientes, setPendientes]      = useState<Record<string, boolean>>({});
 
   const { data: sedes }         = useQuery({ queryKey: ['sedes'], queryFn: sedesApi.listar });
@@ -59,16 +74,27 @@ export function useCompetenciasData() {
   };
 
   // Profesionales asignados a la sede seleccionada
-  const profsFiltrados = (profesionales ?? [])
-    .filter(p => p.tipo !== 'medico') // excluir Baros (no tienen competencias)
+  // Personas (sin las máquinas Baro 1/2). Los doctores SÍ entran: sus servicios de baro quedan «por solicitud».
+  const personas = (profesionales ?? []).filter(p => !esMaquina(p));
+  const conteoTipo: Record<TipoProfFiltro, number> = {
+    todos: personas.length,
+    podologa: personas.filter(p => p.tipo === 'podologa').length,
+    fisioterapeuta: personas.filter(p => p.tipo === 'fisioterapeuta').length,
+    medico: personas.filter(p => p.tipo === 'medico').length,
+  };
+  const profsFiltrados = personas
+    .filter(p => tipoFiltro === 'todos' || p.tipo === tipoFiltro)
     .filter(p => sedeIdFiltro === 'todas' || p.sedeActual?.id === sedeIdFiltro)
     .filter(p => filtroProf === '' || `${p.nombres} ${p.apellidos}`.toLowerCase().includes(filtroProf.toLowerCase()));
 
   // Unidades de negocio disponibles
   const unidades = [...new Set((servicios ?? []).map(s => s.unidadNegocio.nombre))];
 
+  // Al elegir un tipo, con «Todas las áreas» se muestran solo los servicios que ese tipo puede atender
+  // (las demás columnas saldrían bloqueadas). Si se elige un área a mano, manda el área.
   const servsFiltrados = (servicios ?? [])
-    .filter(s => unidadFiltro === 'todas' || s.unidadNegocio.nombre === unidadFiltro);
+    .filter(s => unidadFiltro === 'todas' || s.unidadNegocio.nombre === unidadFiltro)
+    .filter(s => tipoFiltro === 'todos' || unidadFiltro !== 'todas' || catDeUnidad(s.unidadNegocio.nombre) === AREA_DE_TIPO[tipoFiltro]);
 
   // Bulk: activar/desactivar toda una fila o columna
   const toggleFila = (profId: string, activar: boolean, nombreProf: string) => {
@@ -117,6 +143,9 @@ export function useCompetenciasData() {
     setSedeIdFiltro,
     unidadFiltro,
     setUnidadFiltro,
+    tipoFiltro,
+    setTipoFiltro,
+    conteoTipo,
     pendientes,
     toggle,
     tieneCompetencia,

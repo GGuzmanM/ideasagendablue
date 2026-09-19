@@ -85,11 +85,16 @@ router.post('/toggle', requireAuth, requirePermiso('competencias.editar'), async
   const existing = await prisma.competenciaProfesional.findUnique({
     where: { profesionalId_servicioId: { profesionalId, servicioId } },
   });
+  // Un doctor (persona, no máquina) atiende baro SOLO por solicitud: al habilitarle un servicio desde
+  // la matriz queda así, igual que cuando se le registra desde Movimientos. Nunca es columna fija ni
+  // entra a la asignación automática.
+  const profTipo = await prisma.profesional.findUnique({ where: { id: profesionalId }, select: { tipo: true, esEquipo: true } });
+  const porSolicitud = profTipo?.tipo === 'medico' && !profTipo.esEquipo;
 
   if (existing) {
     const updated = await prisma.competenciaProfesional.update({
       where: { id: existing.id },
-      data: { activa },
+      data: { activa, ...(activa && porSolicitud ? { soloPorSolicitud: true } : {}) },
     });
     await registrarAudit({
       usuarioId: req.user?.userId,
@@ -103,7 +108,7 @@ router.post('/toggle', requireAuth, requirePermiso('competencias.editar'), async
     res.json(updated);
   } else {
     const created = await prisma.competenciaProfesional.create({
-      data: { profesionalId, servicioId, habilitadoDesde: new Date(), activa, creadoPor: req.user?.userId },
+      data: { profesionalId, servicioId, habilitadoDesde: new Date(), activa, ...(porSolicitud ? { soloPorSolicitud: true } : {}), creadoPor: req.user?.userId },
     });
     await registrarAudit({
       usuarioId: req.user?.userId,
