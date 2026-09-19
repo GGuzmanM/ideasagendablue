@@ -16,6 +16,36 @@ import { useResumenAtencionCita, useFichaPrevia } from '../api/historiaClinica';
 const SLOTS = generarSlotsDelDia('08:00', '20:00', 30);
 const ESTADOS_FINALES = ['completada', 'no_show', 'cancelada'];
 
+// Máquina de estados de la cita (copia de services/estadoCitaService.ts del API): la pantalla solo
+// ofrece los pasos que el servidor acepta, así no salen errores «Transición inválida».
+export const TRANSICIONES_VALIDAS: Record<string, string[]> = {
+  agendada:    ['confirmada', 'llego', 'no_show', 'cancelada'],
+  confirmada:  ['llego', 'no_show', 'cancelada'],
+  llego:       ['en_atencion', 'cancelada'],
+  en_atencion: ['completada', 'no_show'],
+  completada:  ['en_atencion'],
+  no_show:     [],
+  cancelada:   [],
+  reprogramada: [],
+};
+
+/** Estados a los que puede pasar una cita desde `estado` (incluido el propio, para comentar). */
+export function estadosPermitidos(estado: string): string[] {
+  return [estado, ...(TRANSICIONES_VALIDAS[estado] ?? [])];
+}
+
+/**
+ * Refresca TODO lo que depende de las citas del día tras un cambio hecho desde el modal:
+ * la grilla, los contadores de cabecera, la ocupación de otras unidades, la disponibilidad de
+ * horas y las listas del propio modal. (Antes se invalidaba `idea1-citas`, una clave que no existe,
+ * y los contadores/disponibilidad quedaban viejos hasta el siguiente poll.)
+ */
+export function invalidarAgenda(qc: ReturnType<typeof useQueryClient>): void {
+  for (const k of ['citas', 'stats', 'ocupacion-externa', 'ocupacion-dia', 'disponibilidad', 'citas-reprog', 'seleccionables', 'combo-sibling']) {
+    qc.invalidateQueries({ queryKey: [k] });
+  }
+}
+
 function formatFechaCorta(d: Date) {
   return format(d, 'yyyy-MM-dd');
 }
@@ -163,10 +193,7 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
     onSuccess: (updatedCita, variables) => {
       const targetId = variables.citaId ?? cita.id;
       const esActiva = targetId === cita.id;
-      qc.invalidateQueries({ queryKey: ['citas'] });
-      qc.invalidateQueries({ queryKey: ['idea1-citas'] });
-      // Refresca la otra mitad del bloque combinado (para que el flujo secuencial vea el nuevo estado).
-      qc.invalidateQueries({ queryKey: ['combo-sibling'] });
+      invalidarAgenda(qc);
       // Invalida el detalle cacheado de la cita afectada: sin esto, al reabrir el modal se mergeaba el
       // estado viejo ('agendada') encima del fresco y volvía a ofrecer "llegó" (no avanzaba el flujo).
       qc.invalidateQueries({ queryKey: ['cita-detalle', targetId] });
@@ -185,7 +212,10 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
           setCitaActiva((prev) => ({ ...prev, estado: variables.estado }));
         }
       }
-      if (esActiva && variables.estado === 'llego' && elegiblesConsumo.length > 0) {
+      // Diálogo de sesión al marcar «Llegó»: también cuando el bloque combinado se marca desde la
+      // mitad PRINCIPAL (el modal puede estar abierto en la secundaria y `esActiva` ser false).
+      const marcoLlegada = variables.estado === 'llego' && (esActiva || variables.citaId === bloquePrincipal?.id);
+      if (marcoLlegada && elegiblesConsumo.length > 0) {
         setDialogoConsumo(true);
       } else if (esActiva && variables.estado === 'cancelada' && !esCombo) {
         // Cita suelta: al cancelar se cierra el modal. En un BLOQUE combinado NO se cierra
@@ -200,9 +230,7 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
     mutationFn: ({ exonerar, motivo }: { exonerar: boolean; motivo?: string }) =>
       paquetesSesionesApi.exonerarSesion(cita.id, exonerar, motivo),
     onSuccess: (r) => {
-      qc.invalidateQueries({ queryKey: ['citas'] });
-      qc.invalidateQueries({ queryKey: ['idea1-citas'] });
-      qc.invalidateQueries({ queryKey: ['combo-sibling'] });
+      invalidarAgenda(qc);
       qc.invalidateQueries({ queryKey: ['paquetes-sesiones', cita.paciente.id] });
       toast.success(
         r.exonerada
@@ -220,8 +248,7 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
   const canalMutation = useMutation({
     mutationFn: (canal: string) => citasApi.actualizarCanal(cita.id, canal),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['citas'] });
-      qc.invalidateQueries({ queryKey: ['idea1-citas'] });
+      invalidarAgenda(qc);
       toast.success('Canal actualizado');
     },
     onError: (e: Error) => {
@@ -238,8 +265,7 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
   const promoMutation = useMutation({
     mutationFn: (promocionId: string | null) => citasApi.actualizarPromocion(cita.id, promocionId),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['citas'] });
-      qc.invalidateQueries({ queryKey: ['idea1-citas'] });
+      invalidarAgenda(qc);
       toast.success('Promoción actualizada');
     },
     onError: (e: Error) => {
@@ -251,8 +277,7 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
   const comentarioMutation = useMutation({
     mutationFn: (texto: string) => citasApi.actualizarComentario(cita.id, texto),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['citas'] });
-      qc.invalidateQueries({ queryKey: ['idea1-citas'] });
+      invalidarAgenda(qc);
       setEditandoComentario(false);
       setNuevoComentario('');
       toast.success('Comentario agregado');
@@ -270,17 +295,16 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
       minute: '2-digit',
     });
 
+  // Bloque combinado: se mueve COMPLETO (las dos citas comparten el slot); antes el lápiz del
+  // profesional movía solo una mitad y la hermana quedaba huérfana en el horario viejo.
   const moverMutation = useMutation({
     mutationFn: () =>
-      citasApi.mover(cita.id, {
-        profesionalId: profSel,
-        fecha: fechaSelStr,
-        horaInicio: horaSel,
-      }),
+      cita.slotGrupoId
+        ? citasApi.moverGrupo(cita.slotGrupoId, { profesionalId: profSel, fecha: fechaSelStr, horaInicio: horaSel })
+        : citasApi.mover(cita.id, { profesionalId: profSel, fecha: fechaSelStr, horaInicio: horaSel }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['citas'] });
-      qc.invalidateQueries({ queryKey: ['idea1-citas'] });
-      toast.success('Cita reprogramada');
+      invalidarAgenda(qc);
+      toast.success(cita.slotGrupoId ? 'Bloque combinado reprogramado' : 'Cita reprogramada');
       onClose();
     },
     onError: (e: Error) => toast.error(e.message),
@@ -289,8 +313,7 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
   const consultorioMutation = useMutation({
     mutationFn: (num: number | null) => citasApi.actualizarConsultorio(cita.id, num),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['citas'] });
-      qc.invalidateQueries({ queryKey: ['idea1-citas'] });
+      invalidarAgenda(qc);
       toast.success('Consultorio actualizado');
     },
     onError: (e: Error) => {
@@ -305,8 +328,7 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
       // Marca inmediata en el modal (sin esperar el refetch): el badge pasa a
       // "Correo enviado" al instante.
       setCitaActiva(prev => ({ ...prev, confirmacionEnviadaEn: new Date().toISOString() }));
-      qc.invalidateQueries({ queryKey: ['citas'] });
-      qc.invalidateQueries({ queryKey: ['idea1-citas'] });
+      invalidarAgenda(qc);
       qc.invalidateQueries({ queryKey: ['cita-detalle', cita.id] });
       toast.success(`Correo de confirmación enviado a ${to}`);
     },
@@ -349,7 +371,14 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
     slotsAgendables.add(cita.horaInicio);
   }
 
-  const diasRapidos = Array.from({ length: 7 }, (_, i) => addDays(new Date(), i));
+  const diasRapidos = (() => {
+    const semana = Array.from({ length: 7 }, (_, i) => addDays(new Date(), i));
+    const fechaCita = cita.fecha ? new Date(cita.fecha.slice(0, 10) + 'T12:00:00') : null;
+    // La fecha de la propia cita siempre aparece (si es de otra semana, va primero) para que el
+    // panel no quede sin ningún día marcado al abrirse.
+    if (fechaCita && !semana.some((d) => formatFechaCorta(d) === formatFechaCorta(fechaCita))) return [fechaCita, ...semana];
+    return semana;
+  })();
 
   // Baro: la columna de la cita es una MÁQUINA (Baro 1/2) y el médico que atiende va en
   // `solicitadoProfesional`. En ese caso el "Profesional" mostrado debe ser el médico, y la
@@ -374,7 +403,7 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
       const fullCita = await citasApi.obtener(historialCitaId);
       if (fullCita) setCitaActiva(fullCita);
     } catch (err) {
-      console.warn('No se pudo cargar cita del historial:', err);
+      toast.error(err instanceof Error ? err.message : 'No se pudo abrir esa cita del historial');
     }
   };
 

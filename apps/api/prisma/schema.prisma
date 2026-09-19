@@ -2130,7 +2130,10 @@ model RecetaFavorita {
 model ConsentimientoInformado {
   id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   numero                 Int       @unique @default(autoincrement())
-  atencionId             String    @db.Uuid
+  // Se firma EN CUALQUIER MOMENTO (18-sep-2026): desde la cita en la agenda (antes de que exista la
+  // atención), dentro de la atención o desde la historia. atencionId/citaId pueden faltar.
+  atencionId             String?   @db.Uuid
+  citaId                 String?   @db.Uuid
   pacienteId             String    @db.Uuid
   sedeId                 String    @db.Uuid // copiado de la atención; sin relación
   procedimiento          String // qué se autoriza (ej. «Matricectomía parcial del hallux derecho»)
@@ -2142,6 +2145,15 @@ model ConsentimientoInformado {
   // [{ puntos: [[x,y],...], grosor }]. El PDF la redibuja como vector (nítida al imprimir).
   firma                  Json
   firmaAspecto           Float     @default(3)
+  // Formato 2 = documento oficial por secciones (plantilla estructurada). 1 = texto plano (antiguo).
+  formato                Int       @default(1)
+  plantillaId            String?   @db.Uuid
+  plantillaClave         String? // procedimiento de la plantilla (ej. «matricectomia»): para saber si ya firmó
+  contenido              Json? // snapshot de la plantilla por secciones tal como se leyó
+  datos                  Json? // lo llenado al firmar: dedos, alcance, riesgos, domicilio, representante, testigo
+  firmaProfesional       Json? // trazos del profesional tratante (opcional: si no, firma y sella el impreso)
+  firmaTestigo           Json? // trazos del testigo (opcional)
+  profesionalRegistro    String? // colegiatura del profesional al firmar (snapshot)
   profesionalId          String?   @db.Uuid // quien informó (el profesional de la atención)
   profesionalEtiqueta    String?
   registradoPorUsuarioId String?   @db.Uuid
@@ -2153,10 +2165,12 @@ model ConsentimientoInformado {
   motivoRevocacion       String?
   creadoEn               DateTime  @default(now())
 
-  atencion AtencionClinica @relation(fields: [atencionId], references: [id], onDelete: Restrict)
+  atencion AtencionClinica? @relation(fields: [atencionId], references: [id], onDelete: Restrict)
 
   @@index([atencionId])
   @@index([pacienteId])
+  @@index([pacienteId, plantillaClave])
+  @@index([citaId])
   @@map("consentimientos_informados")
 }
 

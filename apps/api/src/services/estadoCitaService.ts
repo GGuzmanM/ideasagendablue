@@ -57,6 +57,11 @@ export interface ActorCambio {
   userAgent?: string;
   /** Se suma al `despues` del audit (p. ej. `{ origen: 'dispositivo', dispositivo: 'C3 Lince' }`). */
   auditExtra?: Record<string, unknown>;
+  /**
+   * Acción con la que se audita en vez de `cambiar_estado` (p. ej. `cancelar_por_paciente` desde el
+   * enlace del correo): la auditoría distingue el ORIGEN sin duplicar la lógica del cambio.
+   */
+  accion?: string;
 }
 
 export interface SolicitudCambio {
@@ -188,11 +193,11 @@ export async function transicionarEnTx(tx: Prisma.TransactionClient, plan: PlanT
   await auditEnTx(tx, {
     citaId: cita.id,
     usuarioId: actor.usuarioId ?? undefined,
-    accion: 'cambiar_estado',
+    accion: actor.accion ?? 'cambiar_estado',
     entidad: 'cita',
     entidadId: cita.id,
-    antes: { estado: cita.estado },
-    despues: { estado, ...actor.auditExtra },
+    antes: { estado: cita.estado, ...(plan.esCancelacion && cita.motivoCancelacion ? { motivoCancelacion: cita.motivoCancelacion } : {}) },
+    despues: { estado, ...(plan.esCancelacion && plan.motivoCancelacion ? { motivoCancelacion: plan.motivoCancelacion } : {}), ...actor.auditExtra },
     sedeId: cita.sedeId,
     ip: actor.ip, userAgent: actor.userAgent,
   });
@@ -210,8 +215,8 @@ export async function transicionarEnTx(tx: Prisma.TransactionClient, plan: PlanT
     });
     if (rh.count === 0) continue;
     await auditEnTx(tx, {
-      citaId: h.id, usuarioId: actor.usuarioId ?? undefined, accion: 'cambiar_estado', entidad: 'cita', entidadId: h.id,
-      antes: { estado: h.estado }, despues: { estado, slotGrupoId: cita.slotGrupoId, cascada: true, ...actor.auditExtra },
+      citaId: h.id, usuarioId: actor.usuarioId ?? undefined, accion: actor.accion ?? 'cambiar_estado', entidad: 'cita', entidadId: h.id,
+      antes: { estado: h.estado }, despues: { estado, ...(plan.esCancelacion && plan.motivoCancelacion ? { motivoCancelacion: plan.motivoCancelacion } : {}), slotGrupoId: cita.slotGrupoId, cascada: true, ...actor.auditExtra },
       sedeId: h.sedeId, ip: actor.ip, userAgent: actor.userAgent,
     });
     aplicadas.push(h);

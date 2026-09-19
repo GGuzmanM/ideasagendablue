@@ -1,6 +1,8 @@
 // Historia clínica — LÓGICA (hooks). Las vistas (.tsx) son puras y consumen estos hooks.
 // Un useState por campo, `puedeGuardar` derivado, useMutation → invalidar + toast (patrón de la casa).
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { consentimientoVacio, limpiarConsentimiento } from '../utils/consentimientoOficial';
+import type { ContenidoConsentimiento } from '../api/consentimientos';
 import { miFirmaApi } from '../api/miFirma';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
@@ -1497,24 +1499,38 @@ export function usePlantillasAdmin() {
   const [apreciacion, setApreciacion] = useState('');
   const [plan, setPlan] = useState('');
   const [texto, setTexto] = useState('');
-  const limpiar = () => { setClave(''); setNombre(''); setSubjetivo(''); setObjetivo(''); setApreciacion(''); setPlan(''); setTexto(''); };
-  const nueva = (t: TipoPlantilla) => { limpiar(); setTipo(t); setEditando('nueva'); };
+  // Consentimiento OFICIAL por secciones (formato de la clínica, 18-sep-2026). null = texto libre (antiguo).
+  const [oficial, setOficial] = useState<ContenidoConsentimiento | null>(null);
+  const limpiar = () => { setClave(''); setNombre(''); setSubjetivo(''); setObjetivo(''); setApreciacion(''); setPlan(''); setTexto(''); setOficial(null); };
+  // Un consentimiento NUEVO siempre nace en el formato oficial.
+  const nueva = (t: TipoPlantilla) => { limpiar(); setTipo(t); setEditando('nueva'); if (t === 'consentimiento') setOficial(consentimientoVacio()); };
   const cargar = (p: PlantillaClinica) => {
     limpiar(); setTipo(p.tipo); setEditando(p.id); setClave(p.clave ?? ''); setNombre(p.nombre);
+    const c = p.contenido as unknown as { version?: number };
     if (p.tipo === 'nota') { setSubjetivo(p.contenido.subjetivo ?? ''); setObjetivo(p.contenido.objetivo ?? ''); setApreciacion(p.contenido.apreciacion ?? ''); setPlan(p.contenido.plan ?? ''); }
+    // Ojo: la oficial NO se carga como texto (se guardaría vacía y se perdería el documento).
+    else if (p.tipo === 'consentimiento' && c?.version === 2) setOficial(p.contenido as unknown as ContenidoConsentimiento);
     else setTexto(p.contenido.texto ?? '');
   };
   const cancelar = () => { limpiar(); setEditando(null); };
-  const contenido = (): Record<string, string> => (tipo === 'nota' ? { subjetivo, objetivo, apreciacion, plan } : { texto });
+  const contenido = (): Record<string, unknown> => (
+    tipo === 'nota' ? { subjetivo, objetivo, apreciacion, plan }
+      : tipo === 'consentimiento' && oficial ? (limpiarConsentimiento(oficial) as unknown as Record<string, unknown>)
+        : { texto });
+  const oficialCompleto = !!oficial && !!oficial.titulo.trim() && !!oficial.nombreCorto.trim() && !!oficial.procedimiento.trim()
+    && oficial.alternativas.some((x) => x.trim()) && [...oficial.riesgos.frecuentes, ...oficial.riesgos.pocoFrecuentes, ...oficial.riesgos.raros].some((x) => x.trim());
   // El consentimiento pide procedimiento (clave) y un texto que de verdad informe: el servidor exige 120.
   const puedeGuardar = nombre.trim().length >= 2 && (
     tipo === 'nota' ? [subjetivo, objetivo, apreciacion, plan].some((x) => x.trim())
-      : tipo === 'consentimiento' ? !!clave.trim() && texto.trim().length >= 120
+      : tipo === 'consentimiento' ? !!clave.trim() && (oficial ? oficialCompleto : texto.trim().length >= 120)
         : !!clave.trim() && !!texto.trim());
+  // Servicios para elegir a qué tratamientos aplica un consentimiento oficial.
+  const { data: serviciosRaw = [] } = useQuery({ queryKey: ['servicios-consentimiento'], queryFn: () => serviciosApi.listar({ activo: true }), enabled: tipo === 'consentimiento' && !!oficial, staleTime: 300_000 });
+  const servicios = serviciosRaw.map((s) => ({ id: s.id, nombre: s.nombre, unidad: s.unidadNegocio?.nombre ?? 'Otros' })).sort((a, b) => a.unidad.localeCompare(b.unidad) || a.nombre.localeCompare(b.nombre));
   const invalidar = () => qc.invalidateQueries({ queryKey: ['plantillas'] });
   const guardarMut = useMutation({
     mutationFn: () => {
-      const data = { tipo, clave: clave.trim() || null, nombre: nombre.trim(), contenido: contenido() };
+      const data = { tipo, clave: clave.trim().toLowerCase() || null, nombre: nombre.trim(), contenido: contenido() as Record<string, string> };
       return editando && editando !== 'nueva' ? historiaClinicaApi.editarPlantilla(editando, data) : historiaClinicaApi.crearPlantilla(data);
     },
     onSuccess: () => { invalidar(); toast.success(editando === 'nueva' ? 'Plantilla creada' : 'Plantilla actualizada'); cancelar(); },
@@ -1527,6 +1543,7 @@ export function usePlantillasAdmin() {
   });
   return {
     plantillas, cargando, editando, tipo, clave, setClave, nombre, setNombre, subjetivo, setSubjetivo, objetivo, setObjetivo, apreciacion, setApreciacion, plan, setPlan, texto, setTexto,
+    oficial, setOficial, servicios,
     nueva, cargar, cancelar, puedeGuardar, guardarMut, eliminarMut,
   };
 }

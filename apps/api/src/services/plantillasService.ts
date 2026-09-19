@@ -7,6 +7,7 @@
 // Contenido editable por administración y médicos; borrado suave y auditado. El contenido clínico y
 // legal real lo carga el doctor (las de muestra vienen en la migración y se pueden editar o quitar).
 import { prisma } from '../db';
+import { esFormatoOficial, normalizarContenido, ErrorConsentimiento } from './consentimientoFormal';
 import { AppError } from '../middleware/errorHandler';
 import { auditEnTx } from './audit';
 import { Ctx, ctxAudit, etiquetaUsuario } from './historiaClinicaService';
@@ -28,6 +29,17 @@ function normalizar(tipo: TipoPlantilla, clave: string | null | undefined, conte
   if (tipo === 'consentimiento') {
     const proc = (clave ?? '').trim().toLowerCase();
     if (!proc) throw new AppError('Elige para qué procedimiento es este consentimiento', 400, 'CONSENTIMIENTO_SIN_PROCEDIMIENTO');
+    // Formato OFICIAL por secciones (18-sep-2026): la clave identifica el procedimiento (puede ser
+    // uno nuevo, como rodetoplastia o espiculectomía) y el contenido se valida entero.
+    if (esFormatoOficial(contenido)) {
+      if (!/^[a-z0-9_-]{2,40}$/.test(proc)) throw new AppError('La clave del procedimiento solo lleva minúsculas, números y guiones (ej. «rodetoplastia»)', 400, 'PROCEDIMIENTO_INVALIDO');
+      try {
+        return { clave: proc, contenido: normalizarContenido(contenido) as unknown as Record<string, string> };
+      } catch (e) {
+        if (e instanceof ErrorConsentimiento) throw new AppError(e.message, 400, e.code);
+        throw e;
+      }
+    }
     if (!(TIPOS_PROCEDIMIENTO as readonly string[]).includes(proc)) throw new AppError('Ese procedimiento no existe en la lista', 400, 'PROCEDIMIENTO_INVALIDO');
     const texto = typeof contenido.texto === 'string' ? contenido.texto.trim() : '';
     if (texto.length < MIN_CONSENTIMIENTO) throw new AppError(`El consentimiento necesita al menos ${MIN_CONSENTIMIENTO} caracteres: tiene que explicar en qué consiste, los riesgos y los cuidados`, 400, 'CONSENTIMIENTO_CORTO');

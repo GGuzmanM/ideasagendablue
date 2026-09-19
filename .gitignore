@@ -40,3 +40,6 @@ sync-nightly.log
 
 # Aparato del consultorio: configuración local con la clave del aparato (no va a git)
 hardware/esp32-consultorio/config.h
+
+# Relación de usuarios con contraseñas (scripts/alta-usuarios-produccion.ts): nunca al repositorio
+apps/api/scripts/*.xlsx

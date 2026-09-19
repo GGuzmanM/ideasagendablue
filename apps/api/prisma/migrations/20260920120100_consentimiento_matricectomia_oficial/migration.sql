@@ -1,0 +1,128 @@
+-- Migración de DATOS — Consentimiento OFICIAL de matricectomía (18-sep-2026).
+-- El texto llegó de la clínica (PDF «consentimiento-matricectomia-paz-soldan», 16-sep-2026) y se carga
+-- tal cual, por secciones (formato 2). Reemplaza al texto de muestra de 20260918120000. Se asocia a los
+-- servicios «Uñero» y «Matrisectomía»: al agendar uno de ellos, el sistema avisa si falta firmarlo.
+-- Idempotente: solo toca la plantilla «matricectomia» mientras siga en el formato de muestra.
+
+UPDATE plantillas_clinicas
+   SET nombre = 'Matricectomía química con fenol (uñero)',
+       contenido = jsonb_set(
+         $j${
+ "version": 2,
+ "titulo": "Matricectomía química con fenol de uña del pie (tratamiento definitivo del uñero)",
+ "nombreCorto": "matricectomía química con fenol de uña del pie",
+ "procedimiento": "Matricectomía química con fenol: destrucción controlada de la porción de raíz (matriz) que origina el borde de uña que se clava, para que ese borde no vuelva a crecer.",
+ "explicaciones": [
+  {
+   "titulo": "Qué es la matriz de la uña",
+   "texto": "es la raíz, la zona que se encuentra oculta bajo la piel en la base del dedo y que fabrica la lámina de la uña. Todo lo que crece hacia afuera nace ahí. Por eso, mientras la matriz que origina un borde siga intacta, ese borde volverá a crecer una y otra vez, aunque se retire la uña completa."
+  },
+  {
+   "titulo": "En qué consiste, explicado en términos sencillos",
+   "texto": "se limpia y desinfecta el dedo. Se aplica **anestesia local** mediante una inyección en la base del dedo y se coloca una banda para controlar el sangrado. Se retira la porción de uña que corresponda —el borde que se clava o, si está indicada la matricectomía total, la uña completa— y se aplica **fenol** sobre la matriz durante unos minutos. El fenol es una sustancia cauterizante que destruye esa porción de raíz. Después se lava la zona y se coloca un vendaje. El procedimiento dura entre 30 y 45 minutos, usted permanece despierto y sale caminando."
+  }
+ ],
+ "aclaracion": {
+  "titulo": "Aclaración importante sobre el alcance de este procedimiento",
+  "parrafos": [
+   "**Este es un procedimiento definitivo e irreversible.** La porción de raíz destruida no se regenera: la parte de uña que dependía de ella **no volverá a crecer nunca**. Si la matricectomía es parcial, su uña quedará de forma permanente **más estrecha** que la del otro pie; si es total, el dedo quedará **sin uña**. Es un cambio permanente en el aspecto del dedo, que usted acepta a cambio de que el uñero no vuelva a presentarse.",
+   "Debe saber además que **la recuperación es larga**: es normal que la zona supure durante dos a cuatro semanas y que el alta se otorgue entre las cuatro y las ocho semanas. Esa supuración forma parte del efecto del fenol y no significa, por sí sola, que haya una infección."
+  ]
+ },
+ "beneficios": [
+  "**Solución definitiva del uñero** en la gran mayoría de los casos: al eliminar la raíz que origina el borde, este no vuelve a crecer ni a clavarse.",
+  "Desaparición del dolor, la inflamación y la supuración crónica del borde del dedo.",
+  "Eliminación del tejido de granulación y cierre de la herida que se mantenía abierta.",
+  "Fin de las curaciones y los tratamientos repetidos por el mismo problema.",
+  "**No requiere cortes ni puntos** y se realiza con anestesia local, sin hospitalización.",
+  "Puede caminar el mismo día y retomar su actividad habitual con las precauciones indicadas."
+ ],
+ "notaBeneficios": "Se le informa que ningún procedimiento garantiza un resultado al 100 %. En un pequeño porcentaje de casos la destrucción de la matriz resulta incompleta y puede volver a crecer una porción del borde, que requeriría repetir el procedimiento. La posibilidad de recaída y el resto de complicaciones se detallan en la sección siguiente.",
+ "riesgos": {
+  "frecuentes": [
+   "**Supuración de la zona durante dos a cuatro semanas**, con salida de líquido claro o amarillento, a veces con olor. Es la respuesta esperada al fenol y obliga a curaciones periódicas.",
+   "Dolor al pasar el efecto de la anestesia durante las primeras 24 a 72 horas, que se controla con los analgésicos indicados.",
+   "Hinchazón y enrojecimiento del borde del dedo los primeros días.",
+   "Sangrado escaso en las primeras horas.",
+   "**Uña permanentemente más estrecha** —o ausencia de uña si la matricectomía fue total—, con un cambio visible en el aspecto del dedo.",
+   "Molestia al roce del calzado durante los primeros días, que mejora usando calzado amplio o abierto.",
+   "Necesidad de acudir a varias curaciones hasta el alta, que habitualmente se otorga entre las cuatro y las ocho semanas."
+  ],
+  "pocoFrecuentes": [
+   "**Destrucción incompleta de la matriz**, con crecimiento posterior de una espícula o de un borde residual que vuelva a clavarse. Es la causa más frecuente de tener que repetir el procedimiento.",
+   "**Infección de la zona tratada**, que habitualmente se resuelve con curaciones y antibiótico, pero puede prolongar la recuperación varias semanas.",
+   "Retraso en la cicatrización más allá de las ocho semanas, sobre todo si se interrumpen las curaciones.",
+   "**Quemadura química de la piel que rodea la uña** por el contacto del fenol, que puede dejar una zona irritada, decolorada o una pequeña cicatriz.",
+   "Persistencia o reaparición del tejido de granulación en el pliegue, que puede requerir curaciones adicionales o un tratamiento específico.",
+   "**Deformidad de la uña restante**: engrosamiento, estrías, surcos longitudinales o borde irregular.",
+   "Sangrado que empape los apósitos y requiera curación adicional.",
+   "Punzadas, pinchazos o «hincones» intermitentes en el dedo tratado — sensaciones breves tipo corrientazo, hormigueo o hipersensibilidad al roce del calzado o al frío. Se deben a la irritación de las terminaciones nerviosas del pliegue lateral, tanto por el uñero previo como por la manipulación y la acción del fenol, y a la recuperación de esas terminaciones durante la cicatrización. No son una lesión producida durante el procedimiento, sino un fenómeno esperable en algunos pacientes, que va disminuyendo conforme avanza la recuperación y habitualmente cede en pocas semanas. Solo de manera excepcional persisten de forma prolongada; en ese caso corresponde reevaluar (véase el apartado C)."
+  ],
+  "raros": [
+   "**Alteración permanente de la sensibilidad del dedo**: hormigueo, adormecimiento o sensibilidad aumentada al roce del calzado, y excepcionalmente dolor crónico de difícil tratamiento.",
+   "**Infección profunda que alcance el hueso del dedo** (osteomielitis), que requeriría hospitalización, antibióticos por vía endovenosa y, excepcionalmente, un procedimiento adicional para retirar hueso afectado.",
+   "**Falta de riego sanguíneo en el dedo**, con muerte del tejido (necrosis), que en el peor de los casos puede llevar a la pérdida parcial o total del dedo (amputación).",
+   "Pérdida completa de la lámina de la uña cuando estaba prevista una matricectomía parcial, por extensión del efecto del fenol más allá de lo previsto.",
+   "Reacción alérgica grave al anestésico local o al fenol, que puede requerir atención de emergencia."
+  ]
+ },
+ "riesgosParticulares": [
+  "Diabetes",
+  "Tratamiento anticoagulante o antiagregante",
+  "Mala circulación en las piernas o los pies",
+  "Trastorno de la coagulación",
+  "Pérdida de sensibilidad en los pies (neuropatía)",
+  "Alergia a anestésicos, al fenol o a algún medicamento",
+  "Antecedente de úlcera en el pie",
+  "Embarazo o lactancia",
+  "Defensas bajas o tratamiento inmunosupresor",
+  "Tabaquismo",
+  "Antecedente de cicatriz queloide o hipertrófica"
+ ],
+ "medicamentos": [
+  "Se empleará un **anestésico local** inyectado en la base del dedo. Sus posibles efectos adversos incluyen: dolor y hematoma en el punto de la inyección, adormecimiento del dedo durante varias horas después del procedimiento, mareo o palpitaciones pasajeras y, de forma rara, reacción alérgica que puede llegar a ser grave.",
+  "Se empleará además **fenol**, una sustancia cauterizante que destruye por contacto el tejido sobre el que se aplica. Se utiliza de forma controlada, protegiendo la piel de alrededor y lavando la zona al terminar; aun así, puede producir irritación o quemadura química de la piel vecina y es la causa de la supuración prolongada descrita en la sección IV. Se utilizarán también antisépticos de uso tópico y apósitos, que en casos aislados pueden producir irritación o alergia de contacto. Según el caso se le indicarán analgésicos y, si corresponde, antibiótico.",
+  "Es indispensable que informe si ha tenido alguna reacción previa a anestésicos locales, al fenol o a cualquier medicamento."
+ ],
+ "alternativas": [
+  "**Espiculectomía parcial:** retiro del fragmento de uña clavado. Es breve y de recuperación rápida y conserva la uña completa, pero **no es definitiva**: como la raíz se mantiene intacta, el borde puede volver a clavarse en semanas o meses.",
+  "**Rodetoplastia:** corrige el exceso de piel del pliegue que comprime la uña, conservando el ancho de la lámina. Es la alternativa indicada cuando la causa principal es la piel y no la raíz.",
+  "**Ortesis o dispositivos correctores de la uña:** no invasivos y conservan la uña, pero requieren tratamiento prolongado y no siempre resuelven el caso.",
+  "**Matricectomía quirúrgica** (con corte y sutura en lugar de fenol): también definitiva, con cicatrización más rápida y sin supuración prolongada, pero con más dolor posterior y una cicatriz en el borde del dedo.",
+  "**Tratamiento conservador** (corte correcto de la uña, curaciones, cambio de calzado, antibiótico si hay infección): menos invasivo, pero no corrige la causa y con alta probabilidad de que el problema continúe.",
+  "**No realizar ningún tratamiento:** es una opción válida que usted puede elegir. En ese caso, el dolor y la inflamación probablemente continúen, y existe riesgo de infecciones repetidas del dedo."
+ ],
+ "cuidados": [
+  "Mantener el pie elevado y en reposo relativo durante las primeras 24 horas.",
+  "**Acudir a todas las curaciones y controles en las fechas indicadas.** En este procedimiento las curaciones no son opcionales: de ellas depende que la zona cierre en el plazo previsto.",
+  "**No mojar el vendaje.** Mantener la zona limpia y seca y seguir las indicaciones de curación entregadas.",
+  "Entender que la supuración de las primeras semanas es esperable y no suspender por ello las curaciones ni la actividad indicada.",
+  "Usar calzado amplio o abierto y evitar esfuerzos con el pie los primeros días.",
+  "No realizar deporte ni exponer el pie a piscina, mar o arena hasta que el profesional le indique el alta.",
+  "No cortar, recortar ni manipular el borde de la uña por su cuenta.",
+  "Acudir de inmediato si presenta: dolor que aumenta a partir del tercer o cuarto día, fiebre, enrojecimiento que se extiende por el pie, mal olor intenso, salida de pus abundante, sangrado que no cede, o si el dedo se pone frío, pálido u oscuro."
+ ],
+ "campos": {
+  "dedos": true,
+  "alcance": [
+   "Parcial, un borde",
+   "Parcial, ambos bordes",
+   "Total"
+  ]
+ },
+ "servicioIds": [],
+ "vigenciaDias": 180
+}$j$::jsonb,
+         '{servicioIds}',
+         COALESCE((SELECT jsonb_agg(s.id::text ORDER BY s.nombre) FROM servicios s
+                    WHERE s."deletedAt" IS NULL AND s.nombre IN ('Uñero', 'Matrisectomía')), '[]'::jsonb)
+       ),
+       "actualizadoEn" = now()
+ WHERE tipo = 'consentimiento' AND clave = 'matricectomia' AND "deletedAt" IS NULL
+   AND NOT (contenido ? 'version');
+
+-- Consentimientos firmados antes de hoy: su cita es la de su atención.
+UPDATE consentimientos_informados c
+   SET "citaId" = a."citaId"
+  FROM atenciones_clinicas a
+ WHERE a.id = c."atencionId" AND c."citaId" IS NULL;

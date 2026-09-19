@@ -143,9 +143,6 @@ export async function calcularDisponibilidad(params: DisponibilidadParams): Prom
   if (!servicio) return [];
 
   const duracion = servicio.duracionMinutos;
-  const fechaObj = new Date(fecha + 'T12:00:00');
-  const diaSemana = fechaObj.getDay(); // 0=Dom, 1=Lun...
-
   // Obtener unidad de negocio para saber el modo de reserva
   const unidad = await prisma.unidadNegocio.findUnique({ where: { id: unidadNegocioId } });
   if (!unidad) return [];
@@ -162,7 +159,7 @@ export async function calcularDisponibilidad(params: DisponibilidadParams): Prom
     if (prof) profesionalesElegibles = [prof];
   } else {
     // Buscar todos los profesionales de esa unidad asignados a la sede en esa fecha
-    const fechaDate = new Date(fecha + 'T12:00:00');
+    const fechaDate = fechaDb(fecha);
     const asignaciones = await prisma.asignacionSede.findMany({
       where: {
         sedeId,
@@ -203,22 +200,21 @@ export async function calcularDisponibilidad(params: DisponibilidadParams): Prom
     const horario = turnos.get(prof.id);
     if (!horario) continue;
 
-    // Verificar bloqueos puntuales (no recurrentes) — usan fechaInicio/fechaFin como horarios exactos
-    const fechaInicio = new Date(`${fecha}T${horario.horaInicio}:00`);
-    const fechaFin = new Date(`${fecha}T${horario.horaFin}:00`);
+    // Bloqueos puntuales (no recurrentes) del DÍA: se traen por día (límites UTC, sin depender de la
+    // TZ del proceso) y el solape por hora se decide abajo con los campos civiles horaInicio/horaFin.
     const bloqueos = await prisma.bloqueoAgenda.findMany({
       where: {
         profesionalId: prof.id,
         deletedAt: null,
         esRecurrente: false,
-        fechaInicio: { lt: fechaFin },
-        fechaFin: { gt: fechaInicio },
+        fechaInicio: { lt: new Date(`${fecha}T23:59:59.999Z`) },
+        fechaFin: { gt: new Date(`${fecha}T00:00:00.000Z`) },
       },
     });
 
     // Bloqueos de almuerzo — vigentes en la fecha (en fin de semana solo aplican los almuerzos
     // puntuales de esa fecha: sábado se trabaja hasta 14:00 sin almuerzo, domingo cerrado).
-    const fechaConsultada = new Date(fecha + 'T12:00:00Z');
+    const fechaConsultada = fechaDb(fecha);
     const esFinde1 = [0, 6].includes(fechaConsultada.getUTCDay());
     const bloqueosAlmuerzo = await prisma.bloqueoAgenda.findMany({
       where: {
@@ -238,7 +234,7 @@ export async function calcularDisponibilidad(params: DisponibilidadParams): Prom
     const citasExistentes = await prisma.cita.findMany({
       where: {
         OR: [{ profesionalId: prof.id }, { solicitadoProfesionalId: prof.id }],
-        fecha: new Date(fecha + 'T12:00:00'),
+        fecha: fechaDb(fecha),
         deletedAt: null,
         // 'reprogramada' LIBERA el slot (la cita se movió a otro lado): alinear con el índice único
         // y validarProfesionalLibre, que también la excluyen. Si no, el slot se mostraría ocupado
@@ -340,9 +336,7 @@ export async function seleccionarProfesionalOptimo(
   fecha: string,
   horaInicio: string
 ): Promise<string | null> {
-  const fechaDate = new Date(fecha + 'T12:00:00');
-  const diaSemana = fechaDate.getDay();
-
+  const fechaDate = fechaDb(fecha);
   // Obtener candidatos válidos. NO se exige `horarios` del día de semana en el filtro:
   // un día EXCEPCIONAL habilitado (excepción de sede abierta + EntradaPodologa) también
   // es válido. El turno real lo resuelve `turnosDelDia` (los que no atienden se descartan).
@@ -411,7 +405,7 @@ export async function seleccionarProfesionalOptimo(
     if (bloqueado) continue;
 
     // Verificar bloqueos de almuerzo (en fin de semana solo aplican los almuerzos puntuales de esa fecha)
-    const fechaDate2 = new Date(fecha + 'T12:00:00Z');
+    const fechaDate2 = fechaDb(fecha);
     const esFinde2 = [0, 6].includes(fechaDate2.getUTCDay());
     const almuerzosProf = await prisma.bloqueoAgenda.findMany({
       where: {

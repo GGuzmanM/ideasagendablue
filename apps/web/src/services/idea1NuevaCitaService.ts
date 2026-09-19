@@ -26,6 +26,7 @@ import { usePaquetesPaciente } from '../api/paquetesSesiones';
 import { useCanales } from '../hooks/useCanales';
 import { promocionesApi, calcularConPromo, type PromocionElegible } from '../api/promociones';
 import { useAuthStore } from '../stores/authStore';
+import { invalidarAgenda } from './idea1DetalleCitaService';
 import { canalDefaultPorRol } from '../utils/canalDefault';
 
 const toTitleCase = (str: string) =>
@@ -181,10 +182,12 @@ export function useIdea1NuevaCitaForm({
   }, [profInicial, horaInicial, fecha]);
 
   // ── Selector de Sede / Especialidad (solo cuando se abre desde la ficha) ──
+  // Siempre se cargan (están en caché de la agenda): de aquí sale también la UNIDAD de la cita para
+  // saber si es Baropodometría. Antes solo se cargaban al abrir desde la ficha, y desde la agenda el
+  // modal nunca detectaba baro → no pedía el médico y la cita salía sin él.
   const { data: sedesDisponibles = [] } = useQuery({
     queryKey: ['sedes'],
     queryFn: () => sedesApi.listar(),
-    enabled: permitirCambiarSede,
   });
 
   // Auto-seleccionar la primera sede si no hay ninguna (mismo criterio que la agenda).
@@ -884,8 +887,7 @@ export function useIdea1NuevaCitaForm({
           ? 'Sesión de membresía agendada'
           : 'Cita agendada exitosamente',
       );
-      qc.invalidateQueries({ queryKey: ['idea1-citas'] });
-      qc.invalidateQueries({ queryKey: ['citas'] });
+      invalidarAgenda(qc);
       qc.invalidateQueries({ queryKey: ['paquetes-paciente'] });
       qc.invalidateQueries({ queryKey: ['paquetes-sesiones'] });
       // Auto-imprimir el contrato de la membresía recién vendida (si tiene uno configurado).

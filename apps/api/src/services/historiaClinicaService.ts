@@ -372,6 +372,12 @@ export async function abrirAtencion(p: Ctx & { citaId: string; motivoConsulta: s
       ...ctxAudit(p), citaId: cita.id, accion: 'abrir_atencion', entidad: 'atencion_clinica', entidadId: a.id, sedeId: cita.sedeId,
       despues: { pacienteId: cita.pacienteId, profesionalId, motivoConsulta: motivo },
     });
+    // Consentimientos firmados ANTES desde la cita (o la otra cita del bloque) pasan a esta atención:
+    // así salen con ella en la historia y en su PDF.
+    const citasVisita = cita.slotGrupoId
+      ? (await tx.cita.findMany({ where: { slotGrupoId: cita.slotGrupoId }, select: { id: true } })).map((c) => c.id)
+      : [cita.id];
+    await tx.consentimientoInformado.updateMany({ where: { citaId: { in: citasVisita }, atencionId: null }, data: { atencionId: a.id } });
     // Una HC pasiva (archivo) vuelve sola a activa cuando el paciente regresa.
     if (hc.estado === 'pasiva') {
       await tx.historiaClinica.update({ where: { id: hc.id }, data: { estado: 'activa' } });

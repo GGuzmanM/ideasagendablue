@@ -45,6 +45,7 @@ import { historiaClinicaApi, ORIGEN_CONTROL_LABEL } from '../api/historiaClinica
 import toast from 'react-hot-toast';
 import { useConfirmarQuitar } from '../components/historiaClinica/DialogoConfirmar';
 import { faltantesAtencion } from '../utils/faltantesAtencion';
+import { usePendientesConsentimiento } from '../services/firmarConsentimientoService';
 import { fmtFechaLima } from '../utils/fechas';
 
 const ESTADO_CITA_LABEL: Record<string, string> = { llego: 'Llegó', en_atencion: 'En atención', completada: 'Completada', agendada: 'Agendada', confirmada: 'Confirmada' };
@@ -313,8 +314,10 @@ function CabeceraAtencion({ h, a }: { h: H; a: AtencionCompleta }) {
     // Lo dictado está guardado, pero si no se repartió a los campos no queda en la nota.
     ...(h.dictadoSinAplicar ? ['Dictado sin repartir a los campos: toca «Revisar lo dictado» antes de cerrar'] : []),
   ];
+  // Consentimiento que el tratamiento exige y aún no se firmó (se puede firmar en cualquier momento).
+  const sinConsentimiento = usePendientesConsentimiento(a.citaId);
   // Cierre inteligente (misma regla y textos que la Bandeja clínica): avisa, no bloquea.
-  const faltantes = [...sinGuardar, ...faltantesAtencion(a)];
+  const faltantes = [...sinGuardar, ...sinConsentimiento.map((p) => `Falta firmar el consentimiento «${p.nombre}» (pestaña Consentimientos)`), ...faltantesAtencion(a)];
   const cerrada = a.estado === 'cerrada';
   const invalidarControles = useInvalidarControles();
   // Siempre pasa por el diálogo: además de lo que falta, propone los próximos controles (4.1).

@@ -249,23 +249,70 @@ router.patch('/atenciones/:id/reabrir', ...registrar, async (req, res) => {
   res.json(await hc.reabrirAtencion({ ...ctx(req), atencionId: req.params.id, user: user(req) }));
 });
 
-// ─── Consentimiento informado (5.1) ───────────────────────────────────────────
-// Se firma en la tablet con la atención abierta; inmutable (se corrige REVOCANDO con motivo, que es
-// un derecho del paciente: lo registra el mismo profesional, no hace falta hc.anular).
+// ─── Consentimiento informado (5.1 + formato oficial 18-sep) ─────────────────
+// Se firma EN CUALQUIER MOMENTO (desde la cita, la atención o el paciente); inmutable: se corrige
+// REVOCANDO, que es un derecho del paciente (sin motivo obligatorio; no hace falta hc.anular).
 const consentimientoSchema = z.object({
-  procedimiento: z.string().trim().min(3).max(300),
-  texto: z.string().trim().min(40).max(20000),
+  plantillaId: uuid.nullable().optional(),
+  procedimiento: z.string().trim().max(300).nullable().optional(),
+  texto: z.string().trim().max(20000).nullable().optional(),
   firmanteNombre: z.string().trim().min(3).max(200),
   firmanteDocumento: z.string().trim().max(20).nullable().optional(),
   firmanteRelacion: z.enum(['paciente', 'apoderado']),
   firma: z.array(z.unknown()).max(300),
   firmaAspecto: z.number().min(0.5).max(8),
+  datos: z.record(z.unknown()).nullable().optional(),
+  firmaProfesional: z.array(z.unknown()).max(300).nullable().optional(),
+  firmaTestigo: z.array(z.unknown()).max(300).nullable().optional(),
 });
+const origenSchema = z.object({ citaId: uuid.nullable().optional(), pacienteId: uuid.nullable().optional(), sedeId: uuid.nullable().optional(), atencionId: uuid.nullable().optional() });
+
+/** Sede y paciente del origen (cita, atención o paciente + sede) para el candado de sede. */
+async function autorizarOrigen(req: Request, o: z.infer<typeof origenSchema>) {
+  if (o.atencionId) { const { sedeId } = await sedeDeAtencion(o.atencionId); assertSede(req, sedeId); return; }
+  if (o.citaId) {
+    const c = await prisma.cita.findFirst({ where: { id: o.citaId, deletedAt: null }, select: { sedeId: true } });
+    if (!c) throw new AppError('Cita no encontrada', 404);
+    assertSede(req, c.sedeId); return;
+  }
+  if (!o.pacienteId || !o.sedeId) throw new AppError('Indica la cita, la atención o el paciente y la sede', 400, 'FALTA_ORIGEN');
+  assertSede(req, o.sedeId);
+  await hc.assertAccesoPaciente(user(req), o.pacienteId);
+}
+
 router.post('/atenciones/:id/consentimientos', ...registrar, async (req, res) => {
   const data = consentimientoSchema.parse(req.body);
   const { sedeId } = await sedeDeAtencion(req.params.id);
   assertSede(req, sedeId);
   res.status(201).json(await cs.crearConsentimiento({ ...ctx(req), atencionId: req.params.id, ...data }));
+});
+
+// Firmar desde la cita (antes de que exista la atención) o solo con paciente + sede.
+router.post('/consentimientos', ...registrar, async (req, res) => {
+  const data = consentimientoSchema.merge(origenSchema).parse(req.body);
+  await autorizarOrigen(req, data);
+  res.status(201).json(await cs.crearConsentimiento({ ...ctx(req), ...data }));
+});
+
+// Lo que la pantalla necesita para firmar (plantillas que exige el servicio primero, riesgos sugeridos).
+router.get('/consentimientos/contexto', ...verHc, async (req, res) => {
+  const o = origenSchema.parse(req.query);
+  await autorizarOrigen(req, o);
+  res.json(await cs.contextoFirma(o));
+});
+
+// Consentimientos que FALTAN para una cita (aviso en el detalle de la cita y en la atención).
+router.get('/citas/:citaId/consentimientos-pendientes', ...verHc, async (req, res) => {
+  const citaId = uuid.parse(req.params.citaId);
+  await autorizarOrigen(req, { citaId });
+  res.json(await cs.pendientesDeCita(citaId));
+});
+
+// Todos los consentimientos del paciente (de cualquier atención o firmados antes de ella).
+router.get('/pacientes/:pacienteId/consentimientos', ...verHc, async (req, res) => {
+  const pacienteId = uuid.parse(req.params.pacienteId);
+  await hc.assertAccesoPaciente(user(req), pacienteId);
+  res.json(await cs.consentimientosDelPaciente(pacienteId));
 });
 
 // ── Resumen de la atención PARA EL PACIENTE (4.4) ────────────────────────────
@@ -308,13 +355,14 @@ router.post('/atenciones/:id/resumen-paciente/enviar', ...registrar, async (req,
 router.get('/consentimientos/:id/pdf', ...verHc, async (req, res) => {
   const c = await cs.consentimientoParaPdf(uuid.parse(req.params.id));
   assertSede(req, c.sedeId);
-  await hc.auditarLecturaHC({ ...ctx(req), pacienteId: c.pacienteId, origen: 'consentimiento', atencionId: c.atencionId, sedeId: c.sedeId });
+  await hc.auditarLecturaHC({ ...ctx(req), pacienteId: c.pacienteId, origen: 'consentimiento', atencionId: c.atencionId ?? undefined, sedeId: c.sedeId });
   const doc = nuevoPdf(`Consentimiento informado ${String(c.numero).padStart(5, '0')}`);
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `inline; filename="consentimiento-${String(c.numero).padStart(5, '0')}.pdf"`);
   res.setHeader('Cache-Control', 'private, no-store');
   doc.pipe(res);
-  escribirConsentimientoPdf(doc, c);
+  // Formato oficial: por duplicado (historia clínica y paciente); ?copias=1 → solo el de la historia.
+  escribirConsentimientoPdf(doc, c, { copias: req.query.copias === '1' ? 1 : 2 });
   doc.end();
 });
 
@@ -373,8 +421,9 @@ router.patch('/constancias/:id/anular', ...registrar, async (req, res) => {
   res.json({ ok: true });
 });
 
+// Revocar: el paciente NO está obligado a expresar el motivo (queda «sin expresar motivo»).
 router.patch('/consentimientos/:id/revocar', ...registrar, async (req, res) => {
-  const { motivo } = z.object({ motivo: z.string().trim().min(5).max(500) }).parse(req.body);
+  const { motivo } = z.object({ motivo: z.string().trim().max(500).nullable().optional() }).parse(req.body ?? {});
   const c = await prisma.consentimientoInformado.findUnique({ where: { id: uuid.parse(req.params.id) }, select: { sedeId: true } });
   if (!c) throw new AppError('Consentimiento no encontrado', 404);
   assertSede(req, c.sedeId);

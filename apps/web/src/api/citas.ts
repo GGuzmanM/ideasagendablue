@@ -41,6 +41,8 @@ export interface CitaResumen {
   medicoId?: string | null;
   medico?: { id: string; nombres: string; apellidos: string; colegiatura?: string | null } | null;
   medicoAsignadoEn?: string | null;
+  // Consentimientos que el tratamiento exige y el paciente aún no firmó (aviso en la tarjeta).
+  consentimientosPendientes?: { id: string; clave: string | null; nombre: string }[];
   sedeId: string;
   // `consultorios`: nº de consultorios de la sede (selector C1..CN; 0 = no numera consultorios).
   sede: { id: string; nombre: string; color: string; consultorios?: number };

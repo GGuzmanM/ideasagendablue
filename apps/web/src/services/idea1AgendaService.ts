@@ -6,6 +6,7 @@ import { almuerzosApi } from '../api/almuerzos';
 import { permisosApi } from '../api/permisos';
 import { useAgendaStore } from '../stores/agendaStore';
 import { useAuthStore } from '../stores/authStore';
+import { invalidarAgenda } from './idea1DetalleCitaService';
 
 export interface SlotHorario {
   hora: string; // "09:00", "09:30", etc.
@@ -880,8 +881,7 @@ export function useIdea1AgendaData() {
         ? citasApi.moverGrupo(slotGrupoId, { profesionalId, fecha, horaInicio, origenAsignacion })
         : citasApi.mover(citaId, { profesionalId, fecha, horaInicio, origenAsignacion }),
     onSuccess: (citaActualizada) => {
-      qc.invalidateQueries({ queryKey: ['idea1-citas'] });
-      qc.invalidateQueries({ queryKey: ['citas'] });
+      invalidarAgenda(qc);
       const pNombre = citaActualizada.paciente
         ? `${citaActualizada.paciente.nombres} ${citaActualizada.paciente.apellidoPaterno || ''}`
         : 'Cita';

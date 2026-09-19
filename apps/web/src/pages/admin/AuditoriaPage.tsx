@@ -16,6 +16,7 @@ import {
   etiquetaCampo,
   formatIp,
   type AuditLog,
+  type ValoresLegibles,
 } from '../../services/auditoriaService';
 
 // ── Página ───────────────────────────────────────────────────────────────────
@@ -27,7 +28,7 @@ export function AuditoriaPage() {
     q, setQ, page, setPage,
     logs, total, totalPages, limit,
     isLoading, stats, facetas, sedes,
-    nombresPorId, resetFiltros, hayFiltroActivo,
+    nombresPorId, valoresLegibles, opcionesAccion, opcionesEntidad, resetFiltros, hayFiltroActivo,
   } = useAuditoriaData();
 
   const [logSeleccionado, setLogSeleccionado] = useState<AuditLog | null>(null);
@@ -108,14 +109,14 @@ export function AuditoriaPage() {
             <label className="block text-xs font-semibold text-slate-500 mb-1">Entidad</label>
             <select className="input text-sm" value={entidad} onChange={e => setEntidad(e.target.value)}>
               <option value="">Todas</option>
-              {facetas?.entidades.map(e => <option key={e} value={e}>{e}</option>)}
+              {opcionesEntidad.map(e => <option key={e.valor} value={e.valor}>{e.label}</option>)}
             </select>
           </div>
           <div>
             <label className="block text-xs font-semibold text-slate-500 mb-1">Acción</label>
             <select className="input text-sm" value={accion} onChange={e => setAccion(e.target.value)}>
               <option value="">Todas</option>
-              {facetas?.acciones.map(a => <option key={a} value={a}>{a.replace(/_/g, ' ')}</option>)}
+              {opcionesAccion.map(a => <option key={a.valor} value={a.valor}>{a.label}</option>)}
             </select>
           </div>
           <div>
@@ -123,7 +124,7 @@ export function AuditoriaPage() {
             <select className="input text-sm" value={usuarioId} onChange={e => setUsuarioId(e.target.value)}>
               <option value="">Todos</option>
               <option value="sistema">Sistema (automático)</option>
-              {facetas?.usuarios.map(u => <option key={u.id} value={u.id}>{u.nombre}</option>)}
+              {facetas?.usuarios.map(u => <option key={u.id} value={u.id}>{u.nombre}{u.activo === false ? ' (inactivo)' : ''}</option>)}
             </select>
           </div>
           <div>
@@ -137,7 +138,7 @@ export function AuditoriaPage() {
             <label className="block text-xs font-semibold text-slate-500 mb-1">Buscar</label>
             <div className="relative">
               <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-lg pointer-events-none">search</span>
-              <input className="input text-sm pl-10" placeholder="Acción, entidad, IP, usuario…" value={q} onChange={e => setQ(e.target.value)} />
+              <input className="input text-sm pl-10" placeholder="Paciente, usuario, IP…" value={q} onChange={e => setQ(e.target.value)} />
             </div>
           </div>
         </div>
@@ -180,7 +181,7 @@ export function AuditoriaPage() {
                     </td>
                   </tr>
                 ) : (
-                  logs.map(log => <LogRow key={log.id} log={log} nombresPorId={nombresPorId} onVer={() => setLogSeleccionado(log)} />)
+                  logs.map(log => <LogRow key={log.id} log={log} nombresPorId={nombresPorId} valoresLegibles={valoresLegibles} onVer={() => setLogSeleccionado(log)} />)
                 )}
               </tbody>
             </table>
@@ -217,7 +218,7 @@ export function AuditoriaPage() {
       </div>
 
       {logSeleccionado && (
-        <ModalDiff log={logSeleccionado} nombresPorId={nombresPorId} onClose={() => setLogSeleccionado(null)} />
+        <ModalDiff log={logSeleccionado} nombresPorId={nombresPorId} valoresLegibles={valoresLegibles} onClose={() => setLogSeleccionado(null)} />
       )}
     </div>
   );
@@ -247,10 +248,10 @@ function KpiCard({ icon, label, value, tint, iconColor }: { icon: string; label:
   );
 }
 
-function LogRow({ log, nombresPorId, onVer }: { log: AuditLog; nombresPorId: Record<string, string>; onVer: () => void }) {
-  const style = estiloDeAccion(log.accion);
+function LogRow({ log, nombresPorId, valoresLegibles, onVer }: { log: AuditLog; nombresPorId: Record<string, string>; valoresLegibles: ValoresLegibles; onVer: () => void }) {
+  const style = estiloDeAccion(log.accion, log.entidad);
   const av = avatarDeUsuario(log.usuario?.nombre);
-  const res = resumenLog(log, nombresPorId);
+  const res = resumenLog(log, nombresPorId, valoresLegibles);
   const esSistema = !log.usuarioId;
   const uaFmt = parseUserAgent(log.userAgent);
 
@@ -273,12 +274,12 @@ function LogRow({ log, nombresPorId, onVer }: { log: AuditLog; nombresPorId: Rec
             {av.iniciales}
           </span>
           <span className={cn('text-[12px] font-semibold truncate', esSistema ? 'text-on-surface-variant italic' : 'text-on-surface')}>
-            {log.usuario?.nombre ?? 'Sistema'}
+            {log.usuario?.nombre ?? (log.accion.includes('por_paciente') || log.accion === 'confirmar_recordatorio' || log.accion === 'click_reprogramar' ? 'Paciente (desde el correo)' : 'Sistema')}
           </span>
         </div>
       </td>
       <td className="px-3 py-3 whitespace-nowrap">
-        <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border', style.bg, style.text, style.border)}>
+        <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide border', style.bg, style.text, style.border)} title={`Clave técnica: ${log.accion}`}>
           <span className="material-symbols-outlined text-sm">{style.icon}</span>
           {style.label}
         </span>
@@ -343,10 +344,10 @@ function LogRow({ log, nombresPorId, onVer }: { log: AuditLog; nombresPorId: Rec
 }
 
 // ── Modal de diff ────────────────────────────────────────────────────────────
-function ModalDiff({ log, nombresPorId, onClose }: { log: AuditLog; nombresPorId: Record<string, string>; onClose: () => void }) {
-  const style = estiloDeAccion(log.accion);
+function ModalDiff({ log, nombresPorId, valoresLegibles, onClose }: { log: AuditLog; nombresPorId: Record<string, string>; valoresLegibles: ValoresLegibles; onClose: () => void }) {
+  const style = estiloDeAccion(log.accion, log.entidad);
   const diff = calcularDiff(log.antes, log.despues);
-  const res = resumenLog(log, nombresPorId);
+  const res = resumenLog(log, nombresPorId, valoresLegibles);
   const cuando = format(new Date(log.creadoEn), "d 'de' MMMM yyyy · HH:mm:ss", { locale: es });
 
   return (
@@ -360,8 +361,8 @@ function ModalDiff({ log, nombresPorId, onClose }: { log: AuditLog; nombresPorId
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined">{style.icon}</span>
-              <h2 className="text-lg font-bold tracking-tight capitalize truncate">
-                {style.label} · {etiquetaEntidad(log.entidad)}
+              <h2 className="text-lg font-bold tracking-tight truncate" title={`Clave técnica: ${log.accion}`}>
+                {style.label}
               </h2>
             </div>
             <p className="text-sm text-white/85 mt-1">
@@ -380,7 +381,7 @@ function ModalDiff({ log, nombresPorId, onClose }: { log: AuditLog; nombresPorId
           <section>
             <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-2">Contexto</p>
             <div className="grid grid-cols-2 gap-2">
-              <MetaCell icon="person" label="Usuario" value={log.usuario?.nombre ?? 'Sistema (automático)'} italic={!log.usuarioId} />
+              <MetaCell icon="person" label="Usuario" value={log.usuario?.nombre ?? (log.accion.includes('por_paciente') || log.accion === 'confirmar_recordatorio' || log.accion === 'click_reprogramar' ? 'El paciente, desde el correo' : 'Sistema (automático)')} italic={!log.usuarioId} />
               <MetaCell icon="location_on" label="Sede" value={log.sede?.nombre ?? '—'} />
               <MetaCell icon="router" label="IP" value={formatIp(log.ip).texto} mono={!formatIp(log.ip).esLocal} />
               <MetaCell icon="devices" label="Dispositivo" value={parseUserAgent(log.userAgent)} />
@@ -390,22 +391,27 @@ function ModalDiff({ log, nombresPorId, onClose }: { log: AuditLog; nombresPorId
           {/* Entidad */}
           <section>
             <div className="flex items-center justify-between mb-2">
-              <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider">Entidad</p>
+              <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider">{etiquetaEntidad(log.entidad)}</p>
             </div>
-            <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
+            <div className="p-3 rounded-lg bg-primary/5 border border-primary/20" title={`Registro: ${log.entidadId}`}>
               <p className="text-sm font-bold text-on-surface">{res.titulo}</p>
               {res.subtitulo && <p className="text-xs text-on-surface-variant mt-0.5">{res.subtitulo}</p>}
-              <p className="text-[10px] font-mono text-on-surface-variant/70 mt-1 truncate">{log.entidadId}</p>
             </div>
           </section>
 
           {/* Diff */}
           <section>
             <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-2">Cambios</p>
-            {diff.length === 0 ? (
+            {log.contenidoReservado ? (
+              <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-center">
+                <p className="text-xs text-amber-800 font-semibold">
+                  Contenido clínico reservado: solo quien puede ver la historia clínica ve el detalle.
+                </p>
+              </div>
+            ) : diff.length === 0 ? (
               <div className="p-4 rounded-xl bg-surface-container-low border border-outline-variant/30 text-center">
                 <p className="text-xs text-on-surface-variant italic">
-                  Sin campos con diferencias registradas.
+                  {res.subtitulo ? 'Todo lo registrado está en la descripción de arriba.' : 'Sin campos con diferencias registradas.'}
                 </p>
               </div>
             ) : (
@@ -418,9 +424,9 @@ function ModalDiff({ log, nombresPorId, onClose }: { log: AuditLog; nombresPorId
                       <th className="text-left px-3 py-2 font-bold text-[10px] text-on-surface-variant uppercase tracking-wider">Después</th>
                     </tr>
                   </thead>
-                  <tbody className="font-mono text-[11px]">
+                  <tbody className="text-[12px]">
                     {diff.map(d => (
-                      <DiffRow key={d.campo} row={d} nombresPorId={nombresPorId} />
+                      <DiffRow key={d.campo} row={d} nombresPorId={nombresPorId} valoresLegibles={valoresLegibles} />
                     ))}
                   </tbody>
                 </table>
@@ -431,8 +437,8 @@ function ModalDiff({ log, nombresPorId, onClose }: { log: AuditLog; nombresPorId
 
         {/* Footer */}
         <div className="p-4 border-t border-outline-variant/30 flex items-center justify-between shrink-0 bg-surface-container-low">
-          <span className="text-[10px] font-mono text-on-surface-variant/70 truncate max-w-[60%]">
-            log_id: {log.id}
+          <span className="text-[10px] text-on-surface-variant/70 truncate max-w-[60%]" title={`Registro de auditoría ${log.id}`}>
+            {cuando}
           </span>
           <button
             onClick={onClose}
@@ -460,10 +466,10 @@ function MetaCell({ icon, label, value, mono, italic }: { icon: string; label: s
   );
 }
 
-function DiffRow({ row, nombresPorId }: { row: import('../../services/auditoriaService').DiffRow; nombresPorId: Record<string, string> }) {
+function DiffRow({ row, nombresPorId, valoresLegibles }: { row: import('../../services/auditoriaService').DiffRow; nombresPorId: Record<string, string>; valoresLegibles: ValoresLegibles }) {
   const cls = row.tipo === 'add' ? 'diff-row add' : row.tipo === 'remove' ? 'diff-row remove' : 'diff-row change';
-  const antesTxt = renderValor(row.antes, nombresPorId);
-  const despuesTxt = renderValor(row.despues, nombresPorId);
+  const antesTxt = renderValor(row.antes, nombresPorId, row.campo, valoresLegibles);
+  const despuesTxt = renderValor(row.despues, nombresPorId, row.campo, valoresLegibles);
   // Si el valor original era un UUID y se reemplazó por un nombre, mostrar el
   // UUID en tooltip por si el usuario necesita identificar el registro exacto.
   const antesTitle = typeof row.antes === 'string' && /^[0-9a-f-]{36}$/i.test(row.antes) ? row.antes : undefined;

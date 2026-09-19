@@ -5,6 +5,7 @@
 import { TIPO_PROCEDIMIENTO_LABEL, type TipoProcedimiento } from '../../api/historiaClinica';
 import { usePlantillasAdmin } from '../../services/historiaClinicaService';
 import { BuscadorCie10 } from './Buscadores';
+import { EditorConsentimientoOficial } from '../consentimientos/EditorConsentimientoOficial';
 
 /** Procedimientos que pueden tener consentimiento propio (mismos slugs que el bloque 3 y el API). */
 const PROCEDIMIENTOS: TipoProcedimiento[] = ['matricectomia', 'onicotomia', 'laser', 'curacion', 'debridacion', 'infiltracion', 'quiropodia', 'otro'];
@@ -77,6 +78,9 @@ export function PlantillasDialog({ onClose }: { onClose: () => void }) {
                   <div key={x.id} className={`flex items-center gap-2 rounded-xl border px-3 py-2 ${p.editando === x.id ? 'border-primary bg-primary/5' : 'border-outline-variant/20'}`}>
                     <span className="text-[10px] font-bold uppercase tracking-wide text-primary bg-primary/10 px-1.5 py-0.5 rounded shrink-0">{TIPO_PROCEDIMIENTO_LABEL[(x.clave ?? 'otro') as TipoProcedimiento] ?? x.clave}</span>
                     <span className="text-sm text-on-surface flex-1 min-w-0 truncate">{x.nombre}</span>
+                    {(x.contenido as unknown as { version?: number }).version === 2
+                      ? <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 shrink-0">Oficial</span>
+                      : <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-surface-container text-on-surface-variant shrink-0">Muestra</span>}
                     <button onClick={() => p.cargar(x)} className="text-primary text-xs font-semibold hover:underline">Editar</button>
                     <button onClick={() => p.eliminarMut.mutate(x.id)} disabled={p.eliminarMut.isPending} className="material-symbols-outlined text-on-surface-variant/60 hover:text-rose-600 text-lg">delete</button>
                   </div>
@@ -89,7 +93,18 @@ export function PlantillasDialog({ onClose }: { onClose: () => void }) {
             {p.editando ? (
               <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-low/40 p-4 space-y-3">
                 <h4 className="text-sm font-semibold text-on-surface">{p.editando === 'nueva' ? (p.tipo === 'nota' ? 'Nueva plantilla de nota' : p.tipo === 'consentimiento' ? 'Nuevo consentimiento' : 'Nuevo autotexto') : 'Editar'}</h4>
-                {p.tipo === 'consentimiento' ? (
+                {p.tipo === 'consentimiento' && p.oficial ? (
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div><label className={LBL}>Procedimiento (clave)</label>
+                        <input list="procedimientos-consentimiento" value={p.clave} onChange={(ev) => p.setClave(ev.target.value)} placeholder="matricectomia, rodetoplastia…" className={INPUT} data-testid="plantilla-procedimiento" />
+                        <datalist id="procedimientos-consentimiento">{PROCEDIMIENTOS.map((t) => <option key={t} value={t}>{TIPO_PROCEDIMIENTO_LABEL[t]}</option>)}</datalist>
+                      </div>
+                      <div><label className={LBL}>Nombre en la lista</label><input value={p.nombre} onChange={(ev) => p.setNombre(ev.target.value)} placeholder="Ej. Matricectomía química con fenol (uñero)" className={INPUT} /></div>
+                    </div>
+                    <EditorConsentimientoOficial valor={p.oficial} onChange={p.setOficial} servicios={p.servicios} />
+                  </>
+                ) : p.tipo === 'consentimiento' ? (
                   <>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div><label className={LBL}>Procedimiento</label>

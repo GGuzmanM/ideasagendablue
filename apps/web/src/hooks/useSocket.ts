@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useQueryClient } from '@tanstack/react-query';
-import { addDays, format } from 'date-fns';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../stores/authStore';
 
@@ -30,6 +29,9 @@ export function useSocket(sedeId: string | null) {
 
     const citaHandler = (event: { tipo: string; sedeId: string; fecha: string; cita: unknown; cambiadoPor: string }) => {
       if (event.sedeId !== sedeId) return;
+      // El detalle abierto de esa cita se refresca al instante (no espera su poll de 10 s).
+      const citaId = (event.cita as { id?: string } | null)?.id;
+      if (citaId) qc.invalidateQueries({ queryKey: ['cita-detalle', citaId] });
       // Refresca TODO lo que depende de las citas de esa sede+fecha:
       // la grilla (citas), los contadores de cabecera (stats), la
       // disponibilidad de horarios y los bloqueos/permisos. Así cualquier
@@ -54,7 +56,9 @@ export function useSocket(sedeId: string | null) {
         'cita:cancelada': 'Cita cancelada',
       };
       const msg = mensajes[event.tipo];
-      if (msg) toast(msg, { icon: '🔄', duration: 3000 });
+      // Al autor del cambio no se le repite el aviso (ya vio el toast de su propia acción).
+      const yo = useAuthStore.getState().usuario?.id;
+      if (msg && event.cambiadoPor !== yo) toast(msg, { icon: '🔄', duration: 3000 });
     };
 
     const movimientoHandler = (event: {
@@ -64,21 +68,10 @@ export function useSocket(sedeId: string | null) {
       fechaInicio: string;
       fechaFin: string | null;
     }) => {
-      const inicio = new Date(event.fechaInicio + 'T12:00:00');
-      const fin = event.fechaFin ? new Date(event.fechaFin + 'T12:00:00') : addDays(inicio, 90);
-      for (let d = new Date(inicio); d <= fin; d = addDays(d, 1)) {
-        const f = format(d, 'yyyy-MM-dd');
-        qc.invalidateQueries({ queryKey: ['profesionales-sede', event.sedeId] });
-        qc.invalidateQueries({ queryKey: ['profesionales-sede'] });
-        if (event.sedeAnteriorId) {
-          qc.invalidateQueries({ queryKey: ['profesionales-sede', event.sedeAnteriorId] });
-        }
-        // También invalida keys específicas de fecha
-        qc.invalidateQueries({ predicate: (q) => {
-          const k = q.queryKey;
-          return Array.isArray(k) && k[0] === 'profesionales-sede' && k.includes(f);
-        }});
-      }
+      // Una sola invalidación por prefijo cubre todas las sedes y fechas (antes se repetía la misma
+      // invalidación hasta 90 veces, una por día del rango, y disparaba cientos de refetch).
+      qc.invalidateQueries({ queryKey: ['profesionales-sede'] });
+      qc.invalidateQueries({ queryKey: ['seleccionables'] });
       qc.invalidateQueries({ queryKey: ['movimientos'] });
       toast('Asignación de sede actualizada', { icon: '🔄', duration: 3000 });
     };

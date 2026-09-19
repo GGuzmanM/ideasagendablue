@@ -1,3 +1,4 @@
+import { toast } from 'react-hot-toast';
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
@@ -10,6 +11,7 @@ import { Idea1ModalHorarioSemanal } from '../components/agenda/Idea1ModalHorario
 import { BuscadorPacientesModal } from '../components/agenda/BuscadorPacientesModal';
 import { citasApi } from '../api/citas';
 import { MarcaMedico } from '../components/agenda/MarcaMedico';
+import { MarcaConsentimiento } from '../components/consentimientos/ConsentimientoDeLaCita';
 import {
   useIdea1AgendaData,
   getDefaultAvatar,
@@ -104,8 +106,8 @@ export function Idea1AgendaPage() {
     try {
       const cita = await citasApi.obtener(citaId);
       setCitaSeleccionada(cita);
-    } catch {
-      /* si falla la carga, no rompe la agenda */
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'No se pudo abrir esa cita');
     }
   };
 
@@ -113,6 +115,9 @@ export function Idea1AgendaPage() {
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        // No robar el atajo mientras se escribe en un campo (comentario, nueva cita, buscador).
+        const t = e.target as HTMLElement | null;
+        if (t && (['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName) || t.isContentEditable)) return;
         e.preventDefault();
         setBuscadorOpen((prev) => !prev);
       }
@@ -619,7 +624,11 @@ export function Idea1AgendaPage() {
                                     profesionalId: doc.id,
                                     fecha: fechaStr(),
                                     horaInicio: slot.hora,
-                                    origenAsignacion: payload.origenAsignacion,
+                                    // Si cambia de profesional, la cita deja de ser «elegida por el paciente»
+                                    // (eligió a la otra persona): queda como asignada por recepción.
+                                    origenAsignacion: payload.profesionalId !== doc.id && payload.origenAsignacion === 'elegida_por_paciente'
+                                      ? 'asignada_automaticamente'
+                                      : payload.origenAsignacion,
                                   });
                                 } catch (err) {
                                   console.error('Error al soltar la cita:', err);
@@ -1067,7 +1076,7 @@ export function Idea1AgendaPage() {
                                       <div
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          setCitaSeleccionada(cita.raw);
+                                          if (!esCancelada) setCitaSeleccionada(cita.raw);
                                         }}
                                         className="px-2 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 transition-all flex items-center justify-between gap-1 border border-primary/30 text-[11px] font-bold text-primary cursor-pointer shadow-xs"
                                         title="Clic para ver detalle del Servicio 1 (Ancla)"
@@ -1083,7 +1092,7 @@ export function Idea1AgendaPage() {
                                         onClick={(e) => {
                                           if (cita.secundarioRaw) {
                                             e.stopPropagation();
-                                            setCitaSeleccionada(cita.secundarioRaw);
+                                            if (!esCancelada) setCitaSeleccionada(cita.secundarioRaw);
                                           }
                                         }}
                                         className="px-2 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 transition-all flex items-center justify-between gap-1 border border-amber-500/40 text-[11px] font-bold text-amber-900 cursor-pointer shadow-xs"
@@ -1124,6 +1133,7 @@ export function Idea1AgendaPage() {
                                       {cita.esCombinada && (
                                         <span className="text-[9px] font-sans font-bold text-indigo-700">2 Servicios</span>
                                       )}
+                                      {cita.raw && <MarcaConsentimiento pendientes={cita.raw.consentimientosPendientes} />}
                                       {cita.raw && <MarcaMedico cita={cita.raw} />}
                                     </span>
                                   </div>

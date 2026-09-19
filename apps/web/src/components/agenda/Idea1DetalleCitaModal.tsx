@@ -4,6 +4,7 @@ import { es } from 'date-fns/locale';
 import {
   useIdea1DetalleCita,
   type UseIdea1DetalleCitaProps,
+  estadosPermitidos,
 } from '../../services/idea1DetalleCitaService';
 import { DialogoConsumo, SaldoPaquetes } from '../pacientes/SaldoPaquetes';
 import { BotonHistorialGenexis } from '../pacientes/HistorialGenexis';
@@ -13,6 +14,7 @@ import { ToggleDatosPaciente } from '../pacientes/ToggleDatosPaciente';
 import { BadgeAsistencia } from '../pacientes/BadgeAsistencia';
 import { FichaPreviaCard } from '../historiaClinica/FichaPrevia';
 import { MedicoDeLaCita } from './MedicoDeLaCita';
+import { ConsentimientoDeLaCita } from '../consentimientos/ConsentimientoDeLaCita';
 import { formatPromoValor } from '../../api/promociones';
 import { horaLima, fmtMinutos } from '../../api/tiemposTratamiento';
 import { horaInicioValidaParaDuracion } from '@limablue/shared';
@@ -189,11 +191,11 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                     : 'bg-primary/10 text-primary border-primary/20'
                 }`}
               >
-                {estadoNorm === 'llego' ? 'LLEGÓ' : cita.estado}
+                {ESTADO_LABEL[estadoNorm] ?? cita.estado}
               </span>
 
               {/* En bloque combinado, la llegada se marca en el flujo secuencial de abajo (no aquí). */}
-              {puedeEstado && !esCombo && estadoNorm !== 'llego' && estadoNorm !== 'completada' && (
+              {puedeEstado && !esCombo && (estadoNorm === 'agendada' || estadoNorm === 'confirmada') && (
                 <button
                   type="button"
                   data-testid="popover-cita-btn-llego"
@@ -400,13 +402,10 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                     disabled={estadoMutation.isPending}
                     className="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-xl px-3 py-1.5 text-xs font-bold text-on-surface outline-none focus:ring-2 focus:ring-primary/20 appearance-none hover:border-primary/40 transition-colors uppercase"
                   >
-                    <option value="agendada">AGENDADA</option>
-                    <option value="confirmada">CONFIRMADA</option>
-                    <option value="llego">LLEGÓ</option>
-                    <option value="en_atencion">EN ATENCIÓN</option>
-                    <option value="completada">COMPLETADA</option>
-                    <option value="no_show">NO SHOW</option>
-                    <option value="cancelada">CANCELADA</option>
+                    {/* Solo los pasos que el servidor acepta desde el estado actual (nada de «Transición inválida»). */}
+                    {estadosPermitidos(estadoNorm).map((e) => (
+                      <option key={e} value={e}>{(ESTADO_LABEL[e] ?? e).toUpperCase()}</option>
+                    ))}
                   </select>
                   <span className="material-symbols-outlined absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-on-surface-variant/60 text-base">
                     expand_more
@@ -459,7 +458,8 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
 
               <div className="font-label-caps text-label-caps text-on-surface-variant/70 uppercase tracking-wider">Profesional</div>
               <div className="flex items-center gap-2 font-body-lg text-primary font-semibold">
-                {!esFinal ? (
+                {/* Cambiar de profesional/hora solo mientras la cita aún no está en atención. */}
+                {puedeReprogramar && !esFinal && estadoNorm !== 'en_atencion' ? (
                   <button
                     onClick={() => setReprogramando((prev) => !prev)}
                     className="flex items-center gap-1.5 hover:underline transition-all text-left"
@@ -723,7 +723,14 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                         ✅ 1º tratamiento completado. ¿Continuar con el 2º?
                       </p>
                       <div className="grid grid-cols-2 gap-4">
-                        <button disabled={pend} onClick={() => estadoMutation.mutate({ estado: 'en_atencion', citaId: S, soloEsta: true })}
+                        <button disabled={pend} onClick={async () => {
+                          // El 2º tratamiento solo entra «En atención» desde «Llegó»: si la secundaria quedó
+                          // en agendada/confirmada (p. ej. el 1º se marcó solo), primero se marca su llegada.
+                          if (sE !== 'llego') {
+                            try { await estadoMutation.mutateAsync({ estado: 'llego', citaId: S, soloEsta: true }); } catch { return; }
+                          }
+                          estadoMutation.mutate({ estado: 'en_atencion', citaId: S, soloEsta: true });
+                        }}
                           className="flex items-center justify-center gap-2.5 p-3.5 border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-2xl transition-all font-bold text-sm shadow-xs cursor-pointer disabled:opacity-50">
                           <span className="material-symbols-outlined text-xl">play_arrow</span>
                           <span>Continuar con 2º</span>
@@ -763,8 +770,11 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
             {/* MÉDICO DE LA CITA — el médico se la toma; admin/coordinación asignan */}
             <MedicoDeLaCita cita={cita} />
 
-            {/* SELECCIÓN DE CONSULTORIO */}
-            {totalConsultorios > 0 && (
+            {/* CONSENTIMIENTO — avisa antes del tratamiento y se firma aquí mismo */}
+            <ConsentimientoDeLaCita cita={cita} />
+
+            {/* SELECCIÓN DE CONSULTORIO (no aplica a citas canceladas o no asistidas) */}
+            {totalConsultorios > 0 && estadoNorm !== 'cancelada' && estadoNorm !== 'no_show' && (
               <div className="space-y-3">
                 <div className="flex justify-between items-end">
                   <p className="font-headline-sm text-headline-sm text-on-surface text-sm font-bold">
@@ -1142,7 +1152,8 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
 
           {/* FOOTER ACTION */}
           <div className="p-6 border-t border-outline-variant/20 space-y-3 bg-surface-container-lowest rounded-b-2xl">
-            {puedeCancelar && !esFinal && (
+            {/* Cancelar solo mientras el servidor lo acepta (agendada, confirmada o llegó); en atención ya no. */}
+            {puedeCancelar && ['agendada', 'confirmada', 'llego'].includes(estadoNorm) && (
               <>
                 {!cancelando ? (
                   <button
