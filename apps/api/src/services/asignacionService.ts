@@ -4,7 +4,8 @@ import { prisma } from '../db';
 import { invalidateDisponibilidadSede } from '../redis';
 import { getIO } from '../socket';
 import { AppError, CitasPendientesError } from '../middleware/errorHandler';
-import { fechaDb } from '../utils/fechaLima';
+import { fechaDb, hoyLimaStr } from '../utils/fechaLima';
+import { esFichaAdicional } from '../utils/fichaAdicional';
 import { auditEnTx } from './audit';
 
 export interface CrearMovimientoInput {
@@ -40,9 +41,11 @@ function fechaLabel(d: Date): string {
   return d.toLocaleDateString('es-PE', { timeZone: 'UTC', day: '2-digit', month: 'short', year: 'numeric' });
 }
 
+export { esFichaAdicional };
+
 // Los profesionales "Adicional" y los de Baropodometría son fijos de cada sede y NUNCA se mueven.
 export function esProfesionalFijo(nombres: string, tipo?: string, unidadNegocioNombre?: string): boolean {
-  if (nombres.trim().toLowerCase() === 'adicional') return true;
+  if (esFichaAdicional(nombres)) return true;
   if (tipo === 'medico') return true;
   if (unidadNegocioNombre?.toLowerCase().includes('baro')) return true;
   if (nombres.toLowerCase().includes('baro')) return true;
@@ -281,6 +284,51 @@ export async function crearMovimientoEnTx(tx: Prisma.TransactionClient, data: Cr
 
     return { asignacion, sedeAnteriorId };
   }
+}
+
+/**
+ * Fija la SEDE BASE de una ficha desde Administración › Podólogas (alta o edición), desde HOY y sin fecha de fin.
+ *  · Persona normal que YA tiene sede → pasa por `crearMovimientoEnTx` (respeta citas pendientes y vacaciones).
+ *  · Sin sede todavía, o ficha FIJA («Adicional», Baro, médico, que Movimientos rechaza a propósito) → se asigna directo:
+ *    se cierra la vigente al día anterior (o se corrige si empezó hoy) y se crea la nueva.
+ * Devuelve la sede anterior (null si no tenía) o `undefined` si no hubo cambio.
+ */
+export async function fijarSedeBaseEnTx(
+  tx: Prisma.TransactionClient,
+  data: { profesionalId: string; sedeId: string; creadoPor?: string; ip?: string; userAgent?: string },
+): Promise<{ sedeAnteriorId: string | null } | undefined> {
+  const hoyStr = hoyLimaStr();
+  const hoy = toDate(hoyStr);
+  const prof = await tx.profesional.findUnique({
+    where: { id: data.profesionalId },
+    select: { nombres: true, tipo: true, unidadNegocio: { select: { nombre: true } } },
+  });
+  if (!prof) throw new AppError('Profesional no encontrado', 404, 'PROFESIONAL_INVALIDO');
+  const vigente = await tx.asignacionSede.findFirst({
+    where: { profesionalId: data.profesionalId, fechaInicio: { lte: hoy }, OR: [{ fechaFin: null }, { fechaFin: { gte: hoy } }] },
+    orderBy: { fechaInicio: 'desc' },
+  });
+  if (vigente?.sedeId === data.sedeId) return undefined;
+
+  if (vigente && !esProfesionalFijo(prof.nombres, prof.tipo, prof.unidadNegocio?.nombre)) {
+    const r = await crearMovimientoEnTx(tx, { profesionalId: data.profesionalId, sedeId: data.sedeId, fechaInicio: hoyStr, fechaFin: null, motivo: 'OTRO', notas: 'Sede cambiada desde la ficha de la profesional', creadoPor: data.creadoPor ?? '', ip: data.ip, userAgent: data.userAgent });
+    return { sedeAnteriorId: r.sedeAnteriorId ?? null };
+  }
+  if (vigente) {
+    // @db.Date llega a medianoche UTC y `hoy` va anclado a mediodía: se comparan como AAAA-MM-DD.
+    if (vigente.fechaInicio.toISOString().slice(0, 10) < hoyStr) await tx.asignacionSede.update({ where: { id: vigente.id }, data: { activa: false, fechaFin: addDays(hoy, -1) } });
+    else await tx.asignacionSede.delete({ where: { id: vigente.id } }); // empezó hoy: se reemplaza, no queda una fila de 0 días
+  }
+  const nueva = await tx.asignacionSede.create({
+    data: { profesionalId: data.profesionalId, sedeId: data.sedeId, fechaInicio: hoy, fechaFin: null, activa: true, motivo: 'OTRO', notas: 'Sede asignada desde la ficha de la profesional', creadoPor: data.creadoPor || null },
+  });
+  await auditEnTx(tx, {
+    usuarioId: data.creadoPor, accion: 'crear_movimiento', entidad: 'asignacion_sede', entidadId: nueva.id,
+    antes: { sedeAnterior: vigente?.sedeId ?? null },
+    despues: { profesionalId: data.profesionalId, sedeId: data.sedeId, fechaInicio: hoyStr, fechaFin: null, motivo: 'OTRO', origen: 'ficha' },
+    sedeId: data.sedeId, ip: data.ip, userAgent: data.userAgent,
+  });
+  return { sedeAnteriorId: vigente?.sedeId ?? null };
 }
 
 export async function crearMovimiento(data: CrearMovimientoInput) {

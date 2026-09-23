@@ -349,6 +349,28 @@ router.put('/:id', requireAuth, requirePermiso('movimientos.editar'), async (req
   const cambiaFechaFin = data.fechaFin !== undefined
     && (nuevaFechaFin?.getTime() ?? null) !== (existente.fechaFin?.getTime() ?? null);
 
+  if (nuevaFechaFin && nuevaFechaFin < existente.fechaInicio) {
+    throw new AppError('La fecha «hasta» no puede ser anterior al inicio del movimiento.', 400, 'RANGO_INVERTIDO');
+  }
+  // Acortar el movimiento: las citas ya agendadas en ESTA sede después del nuevo «hasta» se quedarían
+  // en una sede donde la profesional ya no está (al crear y al cambiar de sede sí se revisaba; aquí no).
+  if (cambiaFechaFin && nuevaFechaFin && (!existente.fechaFin || nuevaFechaFin < existente.fechaFin)) {
+    const huerfanas = await prisma.cita.count({
+      where: {
+        profesionalId: existente.profesionalId, sedeId: existente.sedeId, deletedAt: null,
+        estado: { in: ['agendada', 'confirmada', 'llego', 'en_atencion'] },
+        fecha: { gt: nuevaFechaFin, ...(existente.fechaFin ? { lte: existente.fechaFin } : {}) },
+      },
+    });
+    if (huerfanas > 0) {
+      return res.status(409).json({
+        error: 'CITAS_PENDIENTES',
+        message: `Hay ${huerfanas} cita(s) agendada(s) en esta sede después de la nueva fecha «hasta»; muévelas o cancélalas antes de acortar el movimiento.`,
+        totalCitas: huerfanas, sedeOrigenId: existente.sedeId,
+      });
+    }
+  }
+
   if (cambiaSede) {
     const totalCitas = await prisma.cita.count({
       where: {

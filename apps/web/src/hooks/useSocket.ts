@@ -5,6 +5,8 @@ import toast from 'react-hot-toast';
 import { useAuthStore } from '../stores/authStore';
 
 let socket: Socket | null = null;
+// Sede a la que ESTA pestaña está suscrita. Vive fuera del hook para poder re-suscribir al reconectar.
+let sedeSuscrita: string | null = null;
 
 export function useSocket(sedeId: string | null) {
   const qc = useQueryClient();
@@ -19,12 +21,25 @@ export function useSocket(sedeId: string | null) {
         transports: ['websocket'],
         auth: (cb) => cb({ token: useAuthStore.getState().token ?? '' }),
       });
+      // RECONEXIÓN (se cae el wifi de la tablet, se reinicia el API): el servidor crea un socket NUEVO sin
+      // ninguna sala. Antes la suscripción solo se enviaba al cambiar de sede → tras un corte la agenda
+      // dejaba de recibir avisos en silencio hasta recargar la página.
+      socket.on('connect', () => { if (sedeSuscrita) socket?.emit('suscribir:sede', sedeSuscrita); });
+      // CAMBIO DE USUARIO sin recargar (turno de la tarde en la misma tablet): el socket seguía autenticado
+      // como la persona anterior y el servidor validaba la sede contra ELLA. Se corta y se vuelve a abrir
+      // con el token nuevo (o se queda cerrado si nadie inició sesión).
+      useAuthStore.subscribe((s, prev) => {
+        if (s.token === prev.token || !socket) return;
+        socket.disconnect();
+        if (s.token) socket.connect();
+      });
     }
 
     if (sedeId && sedeId !== sedeRef.current) {
       if (sedeRef.current) socket.emit('desuscribir:sede', sedeRef.current);
       socket.emit('suscribir:sede', sedeId);
       sedeRef.current = sedeId;
+      sedeSuscrita = sedeId;
     }
 
     const citaHandler = (event: { tipo: string; sedeId: string; fecha: string; cita: unknown; cambiadoPor: string }) => {
@@ -80,7 +95,9 @@ export function useSocket(sedeId: string | null) {
     // emite de forma centralizada (horarioService) — aquí basta refrescar todo lo que
     // depende del turno: columnas de agenda, slots y las pantallas de gestión de horarios.
     const horarioHandler = () => {
-      const claves = ['profesionales-sede', 'disponibilidad', 'horarios-entrada', 'personal-excepcion', 'horario-semanal', 'dia-especial'];
+      // 'turnos-profesionales' es la que PINTA «No labora» en la grilla: sin ella, un turno extendido por
+      // coordinación seguía bloqueado en la agenda abierta de recepción hasta recargar.
+      const claves = ['profesionales-sede', 'turnos-profesionales', 'bloqueos-almuerzo', 'permisos-agenda', 'disponibilidad', 'horarios-entrada', 'personal-excepcion', 'horario-semanal', 'dia-especial'];
       qc.invalidateQueries({
         predicate: (q) => Array.isArray(q.queryKey) && typeof q.queryKey[0] === 'string' && claves.includes(q.queryKey[0]),
       });

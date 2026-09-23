@@ -1,6 +1,7 @@
 import { prisma } from '../db';
 import { redis } from '../redis';
 import { fechaDb } from '../utils/fechaLima';
+import { esFichaAdicional } from '../utils/fichaAdicional';
 import { timeToMinutes, minutesToTime, generarSlotsDelDia, horaInicioValidaParaDuracion } from '@limablue/shared';
 
 export interface TurnoDia { horaInicio: string; horaFin: string }
@@ -74,8 +75,21 @@ export async function turnosDelDia(sedeId: string, fecha: string, profIds: strin
   });
   const ovMap = new Map(overrides.map((o) => [o.profesionalId, o]));
 
+  // DÍA ESPECIAL EN UN DÍA QUE LA SEDE NO ABRE (23-sep-2026; p.ej. Los Olivos cierra los domingos y se
+  // abre uno por excepción): la presencia es SOLO la que marcó la coordinadora en «Personal» (fila de
+  // EntradaPodologa) o las traídas de otra sede ese día. Un horario base de ese día de la semana NO
+  // cuenta: antes, una podóloga con horario de domingo cargado (Jenny, 09–20) salía en la agenda y la
+  // asignación automática la elegía aunque en el panel no estuviera marcada. Las «Adicional» sí
+  // conservan su base (son columnas de emergencia, siempre disponibles).
+  const diaNormalCerrado = !!excAbierta && !!dia && !dia.abierto;
+  const adicionales = new Set<string>();
+  if (diaNormalCerrado) {
+    const fichas = await prisma.profesional.findMany({ where: { id: { in: profIds } }, select: { id: true, nombres: true } });
+    for (const f of fichas) if (esFichaAdicional(f.nombres)) adicionales.add(f.id);
+  }
+
   for (const id of profIds) {
-    const base = baseMap.get(id);
+    const base = diaNormalCerrado && !adicionales.has(id) ? undefined : baseMap.get(id);
     const ov = ovMap.get(id);
     let turno: TurnoDia | null = null;
     if (base) {
@@ -91,6 +105,20 @@ export async function turnosDelDia(sedeId: string, fecha: string, profIds: strin
       turno = recortar(ov.horaInicio, ov.horaFin ?? excAbierta.horaCierre!);
     }
     if (turno) out.set(id, turno);
+  }
+
+  // EXCEPCIÓN abierta: las MÁQUINAS de baropodometría (Baro 1 / Baro 2, `esEquipo`) atienden el día especial con la
+  // ventana de la excepción aunque no tengan horario de ese día (23-sep-2026: un domingo especial salía sin baro).
+  // Son equipos de la sede, no personas: no hace falta marcarlas en «Personal».
+  if (excAbierta) {
+    const sinTurno = profIds.filter((id) => !out.has(id));
+    if (sinTurno.length > 0) {
+      const equipos = await prisma.profesional.findMany({ where: { id: { in: sinTurno }, esEquipo: true }, select: { id: true } });
+      for (const { id } of equipos) {
+        const t = recortar(excAbierta.horaApertura!, excAbierta.horaCierre!);
+        if (t) out.set(id, t);
+      }
+    }
   }
 
   // EXCEPCIÓN abierta: una podóloga ASIGNADA SOLO ESE DÍA (movimiento de un día, fechaInicio ==
@@ -178,7 +206,10 @@ export async function calcularDisponibilidad(params: DisponibilidadParams): Prom
       },
       include: { profesional: { select: { id: true, nombres: true, apellidos: true } } },
     });
-    profesionalesElegibles = asignaciones.map((a: { profesional: { id: string; nombres: string; apellidos: string } }) => a.profesional);
+    profesionalesElegibles = asignaciones
+      .map((a: { profesional: { id: string; nombres: string; apellidos: string } }) => a.profesional)
+      // Sin preferencia: las «Adicional» no cuentan como disponibilidad (solo entran si se eligen expresamente).
+      .filter((p) => !esFichaAdicional(p.nombres));
   }
 
   if (profesionalesElegibles.length === 0) return [];
@@ -385,6 +416,8 @@ export async function seleccionarProfesionalOptimo(
 
   for (const asig of asignaciones) {
     const prof = asig.profesional;
+    // «Adicional <sede>» es capacidad de emergencia: NUNCA se asigna sola («sin preferencia»); solo si recepción la elige.
+    if (esFichaAdicional(prof.nombres)) continue;
     const horario = turnos.get(prof.id);
     if (!horario) continue;
 

@@ -20,6 +20,7 @@ import { PodologasPage } from './pages/admin/PodologasPage';
 import { ServiciosPage } from './pages/admin/ServiciosPage';
 import { AuditoriaPage } from './pages/admin/AuditoriaPage';
 import { DispositivosPage } from './pages/admin/DispositivosPage';
+import { ConsultoriosPage } from './pages/admin/ConsultoriosPage';
 import { NotificacionesAdminPage } from './pages/NotificacionesAdminPage';
 import { AlmuerzosPage } from './pages/herramientas/AlmuerzosPage';
 import { ConfirmacionMailPage } from './pages/herramientas/ConfirmacionMailPage';
@@ -47,6 +48,7 @@ import { Idea1AgendaPage } from './pages/Idea1AgendaPage';
 import { HorariosRestriccionesPage } from './pages/HorariosRestriccionesPage';
 import { HistoriaClinicaPage } from './pages/HistoriaClinicaPage';
 import { BandejaClinicaPage } from './pages/BandejaClinicaPage';
+import { VisorPacientesPage } from './pages/VisorPacientesPage';
 
 // Guard de SESIÓN: sin token → directo a /login. Está suscrito al store, así que al cerrar sesión
 // (logout pone token=null) redirige AL INSTANTE — no se queda la vista/sidebar hasta el próximo clic.
@@ -104,6 +106,7 @@ export default function App() {
         <Route path="/pacientes/:id" element={<RequirePermiso permiso="pacientes.ver"><FichaPacientePage /></RequirePermiso>} />
         {/* Historia clínica: módulo aparte (dos paneles), solo con hc.ver */}
         <Route path="/historia-clinica/bandeja" element={<RequirePermiso permiso="hc.ver"><BandejaClinicaPage /></RequirePermiso>} />
+        <Route path="/pacientes-del-dia" element={<RequirePermiso permiso={['medico.autoasignar', 'medico.asignar']}><VisorPacientesPage /></RequirePermiso>} />
         <Route path="/historia-clinica/:pacienteId" element={<RequirePermiso permiso="hc.ver"><HistoriaClinicaPage /></RequirePermiso>} />
         <Route path="/horarios" element={<RequirePermiso permiso="horarios.ver"><HorariosRestriccionesPage /></RequirePermiso>} />
         <Route path="/herramientas" element={<RequirePermiso permiso={['exportar.usar', 'comunicaciones.gestionar', 'promociones.ver', 'promociones.gestionar', 'canales.gestionar', 'membresias.gestionar', 'config.editar']}><HerramientasPage /></RequirePermiso>} />
@@ -112,7 +115,7 @@ export default function App() {
         <Route path="/herramientas/horarios" element={<RequirePermiso permiso="horarios.editar"><HorariosPage /></RequirePermiso>} />
         {/* Rutas viejas → herramienta unificada (enlaces guardados siguen funcionando) */}
         <Route path="/herramientas/horarios-entrada" element={<Navigate to="/herramientas/horarios?tab=fechas" replace />} />
-        <Route path="/herramientas/permisos" element={<RequirePermiso permiso="horarios.editar"><PermisosPage /></RequirePermiso>} />
+        <Route path="/herramientas/permisos" element={<RequirePermiso permiso={['horarios.editar', 'ausencias.gestionar']}><PermisosPage /></RequirePermiso>} />
         <Route path="/herramientas/canales" element={<RequirePermiso permiso="canales.gestionar"><CanalesPage /></RequirePermiso>} />
         <Route path="/herramientas/promociones" element={<RequirePermiso permiso="promociones.ver"><PromocionesPage /></RequirePermiso>} />
         <Route path="/herramientas/membresias" element={<RequirePermiso permiso="membresias.gestionar"><MembresiasPage /></RequirePermiso>} />
@@ -131,6 +134,7 @@ export default function App() {
         <Route path="/movimientos" element={<RequirePermiso permiso="movimientos.ver"><MovimientosPage /></RequirePermiso>} />
         <Route path="/admin" element={<RequirePermiso permiso={['profesionales.ver', 'servicios.ver', 'competencias.editar', 'auditoria.ver', 'membresias.gestionar', 'usuarios.ver', 'roles.editar', 'notificaciones.ver', 'dispositivos.gestionar']}><AdminPage /></RequirePermiso>} />
         <Route path="/admin/dispositivos" element={<RequirePermiso permiso="dispositivos.gestionar"><DispositivosPage /></RequirePermiso>} />
+        <Route path="/admin/consultorios" element={<RequirePermiso permiso={['horarios.editar', 'horarios.ver']}><ConsultoriosPage /></RequirePermiso>} />
         <Route path="/admin/competencias" element={<RequirePermiso permiso="competencias.editar"><CompetenciasPage /></RequirePermiso>} />
         <Route path="/admin/paquetes" element={<RequirePermiso permiso="membresias.gestionar"><PaquetesPage /></RequirePermiso>} />
         <Route path="/admin/podologas" element={<RequirePermiso permiso="profesionales.ver"><PodologasPage /></RequirePermiso>} />

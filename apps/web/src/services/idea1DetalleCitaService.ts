@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import { format, addDays } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { citasApi, type CitaResumen } from '../api/citas';
-import { profesionalesApi, pacientesApi, disponibilidadApi, type Profesional, type HistorialCita } from '../api';
+import { profesionalesApi, pacientesApi, disponibilidadApi, competenciasApi, type Profesional, type HistorialCita } from '../api';
 import { useCanales } from '../hooks/useCanales';
 import { usePromociones } from '../hooks/usePromociones';
 import { usePaquetesPaciente, paquetesElegibles, paquetesOtraSede, paquetesSesionesApi } from '../api/paquetesSesiones';
@@ -126,6 +126,16 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
     enabled: reprogramando && !!sedeId && !!unidadNegocioId,
   });
 
+  // Baropodometría: la columna de la cita es una MÁQUINA (Baro 1 / Baro 2). Solo cuando la sede tiene 2 o más
+  // máquinas ese día se deja elegir en cuál queda al reprogramar; con una sola, el servidor la pone como siempre.
+  const esBaro = /baropodometr/i.test(cita.unidadNegocio?.nombre ?? '');
+  const maquinasBaro = esBaro ? (profesionales ?? []).filter((p) => p.tipo === 'medico' && p.nombres.startsWith('Baro')) : [];
+  const elegirMaquina = maquinasBaro.length >= 2;
+  // Si la máquina marcada no está en la lista de ese día, se marca la primera.
+  useEffect(() => {
+    if (elegirMaquina && !maquinasBaro.some((m) => m.id === profSel)) setProfSel(maquinasBaro[0]!.id);
+  }, [elegirMaquina, maquinasBaro, profSel]);
+
   const { data: citasDia } = useQuery({
     queryKey: ['citas-reprog', sedeId, fechaSelStr, unidadNegocioId],
     queryFn: () => citasApi.listar({ sedeId: sedeId!, fecha: fechaSelStr, unidadNegocioId: unidadNegocioId! }),
@@ -182,6 +192,15 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
     : null;
 
   const citaExon = bloqueSecundaria ?? cita;
+
+  // Reprogramar un BLOQUE (cita doble): se mueve completo (/citas/grupo/:id/mover). Solo si ninguna de las dos mitades
+  // avanzó (ambas «agendada»); ocupa la duración del bloque y su disponibilidad se mide con el servicio principal.
+  const bloqueReprogramable = esCombo
+    && grupoBloque.length >= 2
+    && grupoBloque.every((c) => (c.estado ?? '').toLowerCase() === 'agendada');
+  const duracionBloque = esCombo && grupoBloque.length ? Math.max(...grupoBloque.map((c) => c.duracionMinutos)) : cita.duracionMinutos;
+  const idsBloque = new Set(esCombo ? grupoBloque.map((c) => c.id) : [cita.id]);
+  const servicioReprog = (esCombo ? bloquePrincipal?.servicio?.id : null) ?? cita.servicio?.id;
 
   // Mutations
   // `citaId` opcional: en un bloque combinado permite avanzar la mitad SECUNDARIA (el 2º
@@ -301,11 +320,52 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
     mutationFn: () =>
       cita.slotGrupoId
         ? citasApi.moverGrupo(cita.slotGrupoId, { profesionalId: profSel, fecha: fechaSelStr, horaInicio: horaSel })
-        : citasApi.mover(cita.id, { profesionalId: profSel, fecha: fechaSelStr, horaInicio: horaSel }),
+        : citasApi.mover(cita.id, { profesionalId: profSel, fecha: fechaSelStr, horaInicio: horaSel, ...(elegirMaquina ? { elegirEquipo: true } : {}) }),
     onSuccess: () => {
       invalidarAgenda(qc);
       toast.success(cita.slotGrupoId ? 'Bloque combinado reprogramado' : 'Cita reprogramada');
       onClose();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // Columna «Adicional» (de emergencia, no es una persona): se indica qué podóloga REALMENTE atendió. Informativo:
+  // la cita no cambia de columna ni ocupa la agenda de esa podóloga. Opciones = podólogas reales de la sede ese día.
+  const esAdicional = /^adicional/i.test((cita.profesional?.nombres ?? '').trim());
+  const { data: podologasDia = [] } = useQuery({
+    queryKey: ['profesionales-sede', cita.sedeId, cita.unidadNegocio?.id, (cita.fecha ?? '').slice(0, 10), 'atendido-por'],
+    queryFn: () => profesionalesApi.listar({ sedeId: cita.sedeId, unidadNegocioId: cita.unidadNegocio!.id, fecha: (cita.fecha ?? '').slice(0, 10), activo: true }),
+    enabled: esAdicional && !!cita.unidadNegocio?.id,
+    select: (ps) => ps.filter((p) => p.tipo === 'podologa' && !/^(adicional|baro)/i.test(p.nombres.trim())),
+  });
+  // Solo quienes HACEN el servicio de la cita (competencia activa). Primero las de la sede ese día; luego las de otras
+  // sedes (una podóloga de Lince pudo cubrir en Paz Soldán). Si el servicio no tiene competencias cargadas, todas las del día.
+  const { data: competenciasUnidad = [] } = useQuery({
+    queryKey: ['competencias', cita.unidadNegocio?.id],
+    queryFn: () => competenciasApi.listar({ unidadNegocioId: cita.unidadNegocio!.id }),
+    enabled: esAdicional && !!cita.unidadNegocio?.id,
+    staleTime: 10 * 60_000,
+  });
+  const atendioOpciones = (() => {
+    const hacen = new Map<string, { id: string; nombres: string; apellidos: string }>();
+    for (const c of competenciasUnidad) {
+      const p = c.profesional;
+      if (!c.activa || c.servicio?.id !== cita.servicio?.id || !p || p.tipo !== 'podologa' || p.activo === false) continue;
+      if (/^(adicional|baro)/i.test(p.nombres.trim())) continue;
+      hacen.set(p.id, { id: p.id, nombres: p.nombres, apellidos: p.apellidos });
+    }
+    if (hacen.size === 0) return { deLaSede: podologasDia, otras: [] as { id: string; nombres: string; apellidos: string }[] };
+    const deLaSede = podologasDia.filter((p) => hacen.has(p.id));
+    const otras = [...hacen.values()].filter((p) => !podologasDia.some((d) => d.id === p.id))
+      .sort((a, b) => `${a.nombres} ${a.apellidos}`.localeCompare(`${b.nombres} ${b.apellidos}`));
+    return { deLaSede, otras };
+  })();
+  const atendidoPorMutation = useMutation({
+    mutationFn: (profesionalId: string | null) => citasApi.asignarAtendidoPor(cita.id, profesionalId),
+    onSuccess: (c) => {
+      setCitaActiva((prev) => ({ ...prev, atendidoPor: c.atendidoPor ?? null }));
+      invalidarAgenda(qc);
+      toast.success(c.atendidoPor ? `Atendió: ${c.atendidoPor.nombres} ${c.atendidoPor.apellidos}` : 'Quitado: sin podóloga indicada');
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -342,7 +402,8 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
   const slotsOcupados = new Set<string>();
   if (citasDia && profSel) {
     for (const c of citasDia) {
-      if (c.profesionalId === profSel && c.id !== cita.id && !esCitaInactiva(c.estado)) {
+      // La propia cita (y su hermana del bloque) no ocupan: se van a mover juntas.
+      if (c.profesionalId === profSel && !idsBloque.has(c.id) && !esCitaInactiva(c.estado)) {
         const [hh, mm] = c.horaInicio.split(':').map(Number);
         const start = (hh ?? 0) * 60 + (mm ?? 0);
         for (let m = start; m < start + c.duracionMinutos; m += 30) {
@@ -354,16 +415,16 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
   }
 
   const { data: dispoReprog, isFetching: dispoReprogCargando } = useQuery({
-    queryKey: ['disponibilidad', cita.sedeId, cita.unidadNegocio?.id, cita.servicio?.id, fechaSelStr, profSel],
+    queryKey: ['disponibilidad', cita.sedeId, cita.unidadNegocio?.id, servicioReprog, fechaSelStr, profSel],
     queryFn: () =>
       disponibilidadApi.consultar({
         sede: cita.sedeId,
         unidadNegocio: cita.unidadNegocio!.id,
-        servicio: cita.servicio!.id,
+        servicio: servicioReprog!,
         fecha: fechaSelStr,
         profesional: profSel || undefined,
       }),
-    enabled: reprogramando && !!profSel && !!cita.unidadNegocio?.id && !!cita.servicio?.id,
+    enabled: reprogramando && !!profSel && !!cita.unidadNegocio?.id && !!servicioReprog,
   });
 
   const slotsAgendables = new Set((dispoReprog?.slots ?? []).filter((s) => s.disponible).map((s) => s.horaInicio));
@@ -446,6 +507,14 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
     setHoraSel,
     profSel,
     setProfSel,
+    esBaro,
+    maquinasBaro,
+    elegirMaquina,
+    bloqueReprogramable,
+    duracionBloque,
+    esAdicional,
+    atendioOpciones,
+    atendidoPorMutation,
     fechaSelStr,
     profesionales,
     datosPaciente,

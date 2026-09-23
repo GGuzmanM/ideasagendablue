@@ -20,7 +20,7 @@ import {
   type ControlEntrada,
 } from '../api/historiaClinica';
 import { recetasApi, verRecetaPdf, imprimirReceta, useRecetasPaciente, favoritasKey, type ItemEntrada, type TipoDocumentoReceta, type RecetaCompleta, type TipoItemReceta } from '../api/recetas';
-import type { Cie10Item, MedicamentoItem } from '../api/catalogos';
+import { useTratamientosDiagnostico, type Cie10Item, type MedicamentoItem, type TratamientoDiagnostico } from '../api/catalogos';
 import { useDictado, anexarDictado } from '../hooks/useDictado';
 import { useDictadoConsulta } from '../hooks/useDictadoConsulta';
 import {
@@ -86,7 +86,10 @@ export function useHistoriaClinicaPage() {
   // Si la atención cambió en otra tablet (p. ej. la cerraron), el servidor responde 409: se recarga sola.
   const refrescarSi409 = (e: Error) => { if (ERROR_TIENE_409(e) && atencionSel) void qc.invalidateQueries({ queryKey: atencionKey(atencionSel) }); toast.error(e.message); };
 
-  const [tab, setTab] = useState<TabHc>('evolucion');
+  // ?tab=receta (desde «Pacientes del día») abre directo en esa pestaña.
+  const TABS_HC: TabHc[] = ['evolucion', 'receta', 'antecedentes', 'procedimientos', 'escalas', 'podograma', 'fotos', 'consentimientos'];
+  const tabParam = params.get('tab') as TabHc | null;
+  const [tab, setTab] = useState<TabHc>(tabParam && TABS_HC.includes(tabParam) ? tabParam : 'evolucion');
   // La vista del podograma (planta / dorso) y su modo (punto, pintar, historial) viven AQUÍ y no en el
   // panel: al cambiar de atención el panel se desmonta un instante mientras carga (esqueleto), y si el
   // estado viviera ahí se volvería a la planta cada vez. Así, si estás mirando el dorso de una visita y
@@ -95,6 +98,8 @@ export function useHistoriaClinicaPage() {
   const [modoSilueta, setModoSilueta] = useState<ModoSilueta>('punto');
   const [citaARegistrar, setCitaARegistrar] = useState<CitaResumen | null>(null);
   const [recetaModal, setRecetaModal] = useState<TipoDocumentoReceta | null>(null);
+  // «Editar» una receta emitida: se abre el mismo formulario con ella cargada; al emitir, la reemplaza (la anterior queda anulada).
+  const [recetaEditar, setRecetaEditar] = useState<RecetaCompleta | null>(null);
   const [mostrarCandidatas, setMostrarCandidatas] = useState(false);
 
   // Citas atendidas del paciente que aún NO tienen atención clínica (candidatas para "Nueva atención").
@@ -339,7 +344,7 @@ export function useHistoriaClinicaPage() {
     puedeRegistrar, puedeAnular, puedeVerRecetas, esMedicoPrescriptor, usuario,
     citasCandidatas, mostrarCandidatas, setMostrarCandidatas,
     citaARegistrar, setCitaARegistrar, onAtencionCreada,
-    recetaModal, setRecetaModal,
+    recetaModal, setRecetaModal, recetaEditar, setRecetaEditar,
     cerrarMut, reabrirMut,
     invalidar,
     evolucion, procedimientos, dictado, consulta, dxDictado, limpiarDxDictado, gestionaPlantillas,
@@ -521,9 +526,10 @@ export function useAntecedentesAlergias(pacienteId: string | undefined) {
 // ─── Emitir receta médica / indicaciones ─────────────────────────────────────
 export interface ItemBorrador extends ItemEntrada { key: string; etiqueta: string; requiereReceta?: boolean }
 
-export function useEmitirRecetaForm(atencion: AtencionCompleta, tipoDocumento: TipoDocumentoReceta) {
+export function useEmitirRecetaForm(atencion: AtencionCompleta, tipoDocumento: TipoDocumentoReceta, recetaAEditar: RecetaCompleta | null = null) {
   const invalidar = useInvalidarHistoriaClinica();
   const esReceta = tipoDocumento === 'RECETA_MEDICA';
+  const editando = recetaAEditar;
   const dxPrincipal = atencion.diagnosticos.find((d) => d.principal) ?? atencion.diagnosticos[0] ?? null;
   // Diagnósticos de la atención = el "para qué" del documento. Todo lo que se agrega (servicio,
   // medicamento o producto) queda BAJO el diagnóstico activo; en el documento se imprime agrupado.
@@ -558,6 +564,31 @@ export function useEmitirRecetaForm(atencion: AtencionCompleta, tipoDocumento: T
     const s = servicios.find((x) => x.id === servicioId); if (!s) return;
     setItems((xs) => [...xs, { key: nuevaKey(), etiqueta: s.nombre, tipo: 'SERVICIO', servicioId: s.id, nombre: s.nombre, diagnosticoCie10Codigo: dxActivo }]);
   };
+  // ── Tratamientos habituales del diagnóstico activo (lista del ERP): se eligen con checks y se agregan de una vez ──
+  // Presentación → Cantidad («Cápsulas #28»); dosis / vía / frecuencia / duración salen LLENAS con la posología por defecto del
+  // tratamiento (el médico solo valida) y lo demás de la aplicación va a Indicaciones. Si el tratamiento está vinculado al vademécum
+  // se agrega como ese fármaco (receta / venta libre, alergias); si es un servicio, como servicio; si no, como texto.
+  const { data: tratamientosDx = [], isLoading: cargandoTratamientosDx } = useTratamientosDiagnostico(dxActivo);
+  /** En Indicaciones podológicas no van fármacos de receta (el servidor también lo rechaza). */
+  const tratamientoPermitido = (t: TratamientoDiagnostico) => esReceta || t.tipo !== 'MEDICAMENTO_RX';
+  const agregarTratamientos = (lista: TratamientoDiagnostico[]) => {
+    const validos = lista.filter(tratamientoPermitido);
+    if (validos.length < lista.length) toast.error(`${lista.length - validos.length} de receta no se agregaron: van en una Receta Médica firmada por médico`);
+    if (!validos.length) return;
+    setItems((xs) => [...xs, ...validos.map((t): ItemBorrador => {
+      // Con posología leída, Indicaciones = solo lo que sobra; sin posología, la aplicación completa (no se pierde nada).
+      const conPosologia = !!(t.dosis || t.via || t.frecuencia || t.duracion);
+      const base = { key: nuevaKey(), diagnosticoCie10Codigo: dxActivo, cantidad: t.presentacion ?? null,
+        indicaciones: conPosologia ? t.indicaciones : (t.indicaciones ?? t.aplicacion ?? null), dosis: t.dosis, frecuencia: t.frecuencia, duracion: t.duracion };
+      const m = t.medicamento;
+      if (m) return { ...base, etiqueta: [m.dci, m.concentracion, m.formaFarmaceutica].filter(Boolean).join(' '), requiereReceta: m.requiereReceta,
+        tipo: t.tipo, medicamentoId: m.id, nombre: m.dci, marcaImpresa: m.esProducto ? null : (t.marca ?? null),
+        concentracion: m.concentracion, formaFarmaceutica: m.formaFarmaceutica, via: t.via ?? m.viaAdministracion };
+      if (t.servicio) return { ...base, etiqueta: t.tratamiento, tipo: 'SERVICIO', servicioId: t.servicio.id, nombre: t.tratamiento };
+      return { ...base, etiqueta: t.tratamiento, tipo: t.tipo, nombre: t.tratamiento, requiereReceta: t.tipo === 'MEDICAMENTO_RX', marcaImpresa: t.marca ?? null, via: t.via };
+    })]);
+    toast.success(validos.length === 1 ? 'Tratamiento agregado' : `${validos.length} tratamientos agregados`);
+  };
   const actualizarItem = (key: string, cambios: Partial<ItemBorrador>) => setItems((xs) => xs.map((x) => (x.key === key ? { ...x, ...cambios } : x)));
   const quitarItem = (key: string) => setItems((xs) => xs.filter((x) => x.key !== key));
 
@@ -588,17 +619,39 @@ export function useEmitirRecetaForm(atencion: AtencionCompleta, tipoDocumento: T
     toast.success(`${permitidos.length} ítem(s) cargados de ${origen}: revísalos y emite`);
     return true;
   };
+  const itemsDeReceta = (r: RecetaCompleta): ItemEntrada[] => r.items.map((it) => ({
+    tipo: it.tipo, diagnosticoCie10Codigo: it.diagnosticoCie10Codigo, medicamentoId: it.medicamentoId, servicioId: it.servicioId,
+    nombre: it.nombre, marcaImpresa: it.marcaImpresa, concentracion: it.concentracionSnapshot, formaFarmaceutica: it.formaSnapshot,
+    dosis: it.dosis, via: it.via, frecuencia: it.frecuencia, duracion: it.duracion, cantidad: it.cantidad, indicaciones: it.indicaciones,
+  }));
   const repetirMut = useMutation({
     mutationFn: (id: string) => recetasApi.obtener(id),
-    onSuccess: (r) => cargarItems(
-      r.items.map((it) => ({
-        tipo: it.tipo, diagnosticoCie10Codigo: it.diagnosticoCie10Codigo, medicamentoId: it.medicamentoId, servicioId: it.servicioId,
-        nombre: it.nombre, marcaImpresa: it.marcaImpresa, concentracion: it.concentracionSnapshot, formaFarmaceutica: it.formaSnapshot,
-        dosis: it.dosis, via: it.via, frecuencia: it.frecuencia, duracion: it.duracion, cantidad: it.cantidad, indicaciones: it.indicaciones,
-      })),
-      { indicacionesGenerales: r.indicacionesGenerales, vigenciaDias: r.vigenciaDias },
-      `la N° ${String(r.numero).padStart(6, '0')}`,
-    ),
+    onSuccess: (r) => cargarItems(itemsDeReceta(r), { indicacionesGenerales: r.indicacionesGenerales, vigenciaDias: r.vigenciaDias }, `la N° ${String(r.numero).padStart(6, '0')}`),
+    onError: (e: Error) => toast.error(e.message),
+  });
+  // EDITAR: al abrir, la receta a corregir se carga completa (ítems, indicaciones generales, vigencia) una sola vez.
+  const edicionCargada = useRef(false);
+  useEffect(() => {
+    if (!editando || edicionCargada.current) return;
+    edicionCargada.current = true;
+    cargarItems(itemsDeReceta(editando), { indicacionesGenerales: editando.indicacionesGenerales, vigenciaDias: editando.vigenciaDias }, `la N° ${String(editando.numero).padStart(6, '0')} para corregir`);
+    const dx = editando.items.find((i) => i.diagnosticoCie10Codigo)?.diagnosticoCie10Codigo;
+    if (dx) setDxActivo(dx);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editando]);
+
+  // AGREGAR DIAGNÓSTICO desde la misma receta (sin volver a Evolución): queda en la atención y pasa a ser el activo.
+  const [dxNuevo, setDxNuevo] = useState<Cie10Item | null>(null);
+  const [dxNuevoTipo, setDxNuevoTipo] = useState<TipoDiagnostico>('presuntivo');
+  const agregarDxMut = useMutation({
+    mutationFn: (c: Cie10Item) => historiaClinicaApi.agregarDiagnostico(atencion.id, {
+      cie10Codigo: c.codigo, tipo: dxNuevoTipo, principal: diagnosticos.length === 0, observacion: null,
+    }),
+    onSuccess: (_r, c) => {
+      invalidar({ pacienteId: atencion.pacienteId, atencionId: atencion.id });
+      setDxActivo(c.codigo); setDxNuevo(null);
+      toast.success(`Diagnóstico ${c.codigo} agregado a la atención`);
+    },
     onError: (e: Error) => toast.error(e.message),
   });
   const usarFavorita = (id: string): boolean => {
@@ -636,11 +689,13 @@ export function useEmitirRecetaForm(atencion: AtencionCompleta, tipoDocumento: T
       atencionId: atencion.id, tipoDocumento, emisorProfesionalId: esReceta ? undefined : emisorProfesionalId || null,
       indicacionesGenerales: indicacionesGenerales.trim() || null, vigenciaDias: esReceta ? vigenciaDias : null,
       items: items.map(({ key: _k, etiqueta: _e, requiereReceta: _r, ...it }) => it),
+      reemplazaRecetaId: editando?.id ?? null,
     }),
     onSuccess: (r) => {
       setEmitida(r);
       invalidar({ pacienteId: atencion.pacienteId, atencionId: atencion.id, citaId: atencion.citaId });
-      toast.success(esReceta ? `Receta N° ${r.numero} emitida` : `Indicaciones N° ${r.numero} emitidas`);
+      if (editando) toast.success(`Corregida: N° ${r.numero} emitida y la N° ${editando.numero} quedó anulada`, { duration: 6000 });
+      else toast.success(esReceta ? `Receta N° ${r.numero} emitida` : `Indicaciones N° ${r.numero} emitidas`);
       if (r.advertencias?.length) r.advertencias.forEach((a) => toast(`⚠️ Alergia registrada a ${a.sustancia} (${a.item})`, { duration: 8000 }));
     },
     onError: (e: Error) => toast.error(e.message),
@@ -668,9 +723,11 @@ export function useEmitirRecetaForm(atencion: AtencionCompleta, tipoDocumento: T
 
   return {
     esReceta, dxPrincipal, diagnosticos, dxActivo, setDxActivo, grupos, items, agregarMedicamento, agregarManual, agregarServicio, actualizarItem, quitarItem, servicios,
+    tratamientosDx, cargandoTratamientosDx, tratamientoPermitido, agregarTratamientos,
     indicacionesGenerales, setIndicacionesGenerales, vigenciaDias, setVigenciaDias, vigenciaTexto, setVigenciaTexto, confirmarVigencia, emisorProfesionalId, setEmisorProfesionalId, opcionesEmisor,
     puedeGuardar, emitirMut, emitir, chequeando, emitida, abrirPdf, imprimir, alergias: atencion.historiaClinica.alergias,
     anteriores, repetirMut, favoritas, usarFavorita, puedeQuitarFavorita, guardarFavoritaMut, eliminarFavoritaMut,
+    editando, dxNuevo, setDxNuevo, dxNuevoTipo, setDxNuevoTipo, agregarDxMut,
   };
 }
 
@@ -684,6 +741,12 @@ export function useRecetasAtencion(atencion: AtencionCompleta | null) {
     onError: (e: Error) => toast.error(e.message),
   });
   const ver = async (id: string) => { try { await verRecetaPdf(id); } catch (e) { toast.error((e as Error).message); } };
+  // «Editar»: trae la receta completa (ítems) y la entrega al formulario, que la abre cargada para corregir.
+  const [abriendoEdicion, setAbriendoEdicion] = useState<string | null>(null);
+  const editar = async (id: string, abrir: (r: RecetaCompleta) => void) => {
+    setAbriendoEdicion(id);
+    try { abrir(await recetasApi.obtener(id)); } catch (e) { toast.error((e as Error).message); } finally { setAbriendoEdicion(null); }
+  };
   const imprimir = async (id: string) => { try { await imprimirReceta(id); } catch (e) { toast.error((e as Error).message); } };
   const imprimirConFirma = async (id: string) => { try { await imprimirReceta(id, undefined, true); } catch (e) { toast.error((e as Error).message); } };
   // «Anular» solo se muestra a quien el servidor le va a permitir: hc.anular, o quien la emitió con el permiso del tipo.
@@ -718,7 +781,7 @@ export function useRecetasAtencion(atencion: AtencionCompleta | null) {
   const puedeFirmar = (r: { tipoDocumento: string; estado: string; emisorProfesionalId?: string }) =>
     !!miFirma?.tieneFirma && r.tipoDocumento === 'RECETA_MEDICA' && r.estado === 'emitida' && !!miFicha && r.emisorProfesionalId === miFicha;
 
-  return { recetas: atencion?.recetas ?? [], anulando, setAnulando, anularMut, ver, imprimir, imprimirConFirma, puedeAnular, emitirReceta, puedeFirmar, soyMedico: !!miFicha };
+  return { recetas: atencion?.recetas ?? [], anulando, setAnulando, anularMut, ver, imprimir, imprimirConFirma, puedeAnular, emitirReceta, puedeFirmar, soyMedico: !!miFicha, editar, abriendoEdicion };
 }
 
 // ─── Bloque 3 · Procedimientos (1.11 / 1.12) ─────────────────────────────────

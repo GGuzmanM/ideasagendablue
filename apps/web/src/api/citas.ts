@@ -36,6 +36,8 @@ export interface CitaResumen {
   profesionalId: string | null;
   profesional: { id: string; nombres: string; apellidos: string; colorAvatar: string } | null;
   solicitadoProfesional?: { id: string; nombres: string; apellidos: string; tipo: string } | null;
+  // Columna «Adicional»: podóloga que realmente atendió (informativo; no ocupa su agenda).
+  atendidoPor?: { id: string; nombres: string; apellidos: string } | null;
   // Médico de la cita (podología): lo toma el propio médico o lo asigna coordinación. La receta
   // médica de la atención sale a su nombre y con su CMP.
   medicoId?: string | null;
@@ -139,6 +141,7 @@ export interface CrearCitaCombinadaInput {
   motivoRetroactivo?: string; // obligatorio si `fecha` es anterior a hoy (bloque retroactivo)
   extra: {
     servicioId: string;
+    subcategoriaId?: string; // obligatoria si el servicio extra tiene subcategorías (p. ej. Extracción de Uñero)
     profesionalId?: string; // default: misma profesional del ancla
     paquetePacienteId?: string;
     comentarioRecepcion?: string;
@@ -203,7 +206,8 @@ export const citasApi = {
   cambiarEstado: (id: string, estado: string, comentario?: string, motivoCancelacion?: string, soloEsta?: boolean) =>
     api.patch<CitaResumen>(`/citas/${id}/estado`, { estado, comentario, motivoCancelacion, soloEsta }),
 
-  mover: (id: string, data: { profesionalId?: string | null; fecha: string; horaInicio: string; origenAsignacion?: string }) =>
+  // elegirEquipo: baro en sede con 2+ máquinas → respetar la máquina elegida (si no, el servidor elige una libre).
+  mover: (id: string, data: { profesionalId?: string | null; fecha: string; horaInicio: string; origenAsignacion?: string; elegirEquipo?: boolean }) =>
     api.patch<CitaResumen>(`/citas/${id}/mover`, data),
 
   // Mueve un bloque combinado COMPLETO (ambas citas) atómicamente a otro horario/profesional.
@@ -212,6 +216,9 @@ export const citasApi = {
 
   actualizarConsultorio: (id: string, consultorioNumero: number | null) =>
     api.patch<CitaResumen>(`/citas/${id}/consultorio`, { consultorioNumero }),
+  // Solo citas de una columna «Adicional»: qué podóloga la atendió de verdad (null = sin especificar).
+  asignarAtendidoPor: (id: string, profesionalId: string | null) =>
+    api.patch<CitaResumen>(`/citas/${id}/atendido-por`, { profesionalId }),
 
   // Agregar/editar el comentario de recepción en cualquier estado (antes, durante o después).
   actualizarComentario: (id: string, comentario: string) =>

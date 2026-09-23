@@ -4,7 +4,7 @@
 // solo las iniciales.
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { verificarDocumento, TIPO_DOC_LABEL, TIPO_ITEM_LABEL } from '../api/recetas';
+import { verificarDocumento, TIPO_DOC_LABEL } from '../api/recetas';
 
 const fecha = (iso: string) => new Date(iso).toLocaleDateString('es-PE', { timeZone: 'America/Lima', day: '2-digit', month: 'long', year: 'numeric' });
 const dia = (iso: string) => iso.slice(0, 10).split('-').reverse().join('/');
@@ -81,7 +81,6 @@ export function VerificarRecetaPage() {
                     <li key={i} className="px-3 py-2 flex items-start gap-2 text-sm">
                       <span className="text-slate-400 w-5 text-right">{i + 1}</span>
                       <span className="flex-1 text-slate-800">{it.nombre}{it.marca ? <span className="text-slate-500"> ({it.marca})</span> : null}{it.cantidad ? <span className="text-slate-500"> · {it.cantidad}</span> : null}</span>
-                      <span className="text-[10px] font-bold uppercase text-slate-500 bg-slate-100 rounded px-1.5 py-0.5">{TIPO_ITEM_LABEL[it.tipo]}</span>
                     </li>
                   ))}
                 </ul>

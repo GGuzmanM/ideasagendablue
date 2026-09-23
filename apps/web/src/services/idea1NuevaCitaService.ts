@@ -104,6 +104,7 @@ export function useIdea1NuevaCitaForm({
   const { canales, canalesPaciente } = useCanales();
 
   const idempotencyKeyRef = useRef(uuidv4());
+  const pacienteCreadoRef = useRef<string | null>(null); // paciente nuevo ya creado en ESTE formulario (ver handleAgendar)
   const contratoImprimirRef = useRef<{ promoId: string; pacienteId: string } | null>(null);
 
   // Sede / Unidad de negocio: estado interno (inicializado desde props). Cuando se abre
@@ -164,6 +165,7 @@ export function useIdea1NuevaCitaForm({
   // Servicios combinados (Profilaxis + Extra)
   const [combinar, setCombinar] = useState(false);
   const [extraServicioId, setExtraServicioId] = useState('');
+  const [extraSubcategoriaId, setExtraSubcategoriaId] = useState('');
   const [extraProfesionalId, setExtraProfesionalId] = useState('');
 
   // Visor Genexis
@@ -370,6 +372,21 @@ export function useIdea1NuevaCitaForm({
     staleTime: STALE_CONFIG,
   });
 
+  // Subcategorías del servicio EXTRA del bloque combinado. El servidor la exige igual que en el servicio principal
+  // (p. ej. «Extracción de Uñero» → Simple / Complejo / Dermojet / Infantil); antes el formulario no la pedía y el
+  // bloque no se podía guardar: «Este servicio requiere elegir una subcategoría».
+  const { data: extraSubcategorias = [] } = useQuery({
+    queryKey: ['subcategorias', extraServicioId],
+    queryFn: async () => {
+      if (!extraServicioId) return [];
+      const res = await api.get<any[]>(`/servicios/${extraServicioId}/subcategorias`);
+      return res.filter((sc) => sc.activo);
+    },
+    enabled: Boolean(combinar && extraServicioId),
+    staleTime: STALE_CONFIG,
+  });
+  useEffect(() => { setExtraSubcategoriaId(''); }, [extraServicioId]); // otro extra → su subcategoría se vuelve a elegir
+
   // Competencias activas entre profesionales y servicios de esta unidad de negocio
   const { data: competencias = [] } = useQuery({
     queryKey: ['competencias', unidadNegocioId],
@@ -425,6 +442,16 @@ export function useIdea1NuevaCitaForm({
     if (serviciosPermitidos.size === 0) return serviciosData;
     return serviciosData.filter((s) => serviciosPermitidos.has(s.id));
   }, [serviciosData, profesionalId, competencias]);
+
+  // Servicio «fantasma»: si se elige un servicio y luego un profesional que NO lo hace, el desplegable
+  // quedaba en blanco pero el servicio seguía elegido por dentro (precio y subcategoría incluidos) y al
+  // agendar el servidor respondía «sin competencia», un error que no correspondía a lo que se veía.
+  useEffect(() => {
+    if (servicioId && servicios.length > 0 && !servicios.some((s) => s.id === servicioId)) {
+      setServicioId('');
+      toast('Ese profesional no realiza el servicio elegido: vuelve a elegir el servicio.', { icon: 'ℹ️' });
+    }
+  }, [servicios, servicioId]);
 
   const { data: resultadosPacientes = [], isFetching: buscandoPacientes } = useQuery({
     queryKey: ['pacientes-busqueda', pacienteQuery],
@@ -580,16 +607,16 @@ export function useIdea1NuevaCitaForm({
     if (!servicioId) return null;
     const precio = (servId: string, subcatId?: string | null): number => {
       if (subcatId) {
-        const sc = (subcategorias as any[]).find((s) => s.id === subcatId);
+        const sc = [...(subcategorias as any[]), ...(extraSubcategorias as any[])].find((s) => s.id === subcatId);
         if (sc?.precioReferencial != null) return Number(sc.precioReferencial) || 0;
       }
       const s = (serviciosData as any[]).find((x) => x.id === servId);
       return s?.precioReferencial != null ? Number(s.precioReferencial) || 0 : 0;
     };
     let t = precio(servicioId, subcategoriaId);
-    if (combinar && extraServicioId) t += precio(extraServicioId, null);
+    if (combinar && extraServicioId) t += precio(extraServicioId, extraSubcategoriaId || null);
     return t;
-  }, [servicioId, subcategoriaId, combinar, extraServicioId, subcategorias, serviciosData]);
+  }, [servicioId, subcategoriaId, combinar, extraServicioId, extraSubcategoriaId, subcategorias, extraSubcategorias, serviciosData]);
 
   // ─── Promociones (motor automático) ──────────────────────────────────────────────
   // Una promo NUNCA se combina con una membresía (regla de negocio).
@@ -849,6 +876,7 @@ export function useIdea1NuevaCitaForm({
           motivoRetroactivo: esRetroactiva ? motivoRetroactivo.trim() : undefined,
           extra: {
             servicioId: extraServicioId,
+            subcategoriaId: extraSubcategoriaId || undefined,
             profesionalId: extraProfesionalId || undefined,
             comentarioRecepcion: comentarioRecepcion.trim() || undefined,
           },
@@ -907,6 +935,11 @@ export function useIdea1NuevaCitaForm({
       if (!npNombres.trim() || !npApellidoPaterno.trim() || !npTelefono.trim()) {
         throw new Error('Completa los campos obligatorios del paciente (Nombres, Apellidos, Teléfono)');
       }
+      // Lo mismo que exige el servidor, dicho en claro ANTES de enviar (antes llegaba un error en inglés
+      // sobre un campo que la pantalla no marcaba como obligatorio).
+      if (npApellidoMaterno.trim().length < 2) throw new Error('Falta el apellido materno del paciente (si no tiene, repite el paterno).');
+      if (npNumDoc.trim().length < 8) throw new Error('El número de documento debe tener al menos 8 caracteres.');
+      if (npTelefono.trim().length < 9) throw new Error('El teléfono debe tener al menos 9 dígitos.');
       return pacientesApi.crear({
         nombres: npNombres.trim(),
         apellidoPaterno: npApellidoPaterno.trim(),
@@ -939,6 +972,10 @@ export function useIdea1NuevaCitaForm({
     // que se guarde como cita suelta en silencio (antes se perdía el 2º servicio sin avisar).
     if (combinar && !extraServicioId) {
       toast.error('Marcaste "servicio extra combinado" pero no elegiste el servicio extra: selecciónalo o desmarca la opción.');
+      return;
+    }
+    if (combinar && extraServicioId && extraSubcategorias.length > 0 && !extraSubcategoriaId) {
+      toast.error('Elige la opción del servicio extra (por ejemplo: Simple, Complejo…).');
       return;
     }
     if (!fechaCita || !horaCita) {
@@ -981,8 +1018,14 @@ export function useIdea1NuevaCitaForm({
         }
         finalPacienteId = pacienteSeleccionado.id;
       } else {
-        const nuevoPac = await mutationCrearPaciente.mutateAsync();
-        finalPacienteId = nuevoPac.id;
+        // El paciente se crea ANTES que la cita. Si la cita falla (p. ej. otro usuario ganó esa hora) y se
+        // reintenta, NO se vuelve a crear: antes el 2º intento chocaba con «ya existe un paciente con este
+        // documento» y la cita no se podía agendar nunca desde este formulario.
+        if (!pacienteCreadoRef.current) {
+          const nuevoPac = await mutationCrearPaciente.mutateAsync();
+          pacienteCreadoRef.current = nuevoPac.id;
+        }
+        finalPacienteId = pacienteCreadoRef.current;
       }
 
       mutationCrear.mutate({ pacienteId: finalPacienteId });
@@ -1087,6 +1130,9 @@ export function useIdea1NuevaCitaForm({
     combinar,
     setCombinar,
     extraServicioId,
+    extraSubcategoriaId,
+    setExtraSubcategoriaId,
+    extraSubcategorias,
     setExtraServicioId,
     extraProfesionalId,
     setExtraProfesionalId,

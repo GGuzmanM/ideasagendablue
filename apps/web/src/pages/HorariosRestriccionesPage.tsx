@@ -662,7 +662,7 @@ function PanelPersonalExcepcion({ sedeId, sedeName, fecha, apertura, puedeEditar
       )}
       <p className="text-xxs text-on-surface-variant/60">
         {puedeEditar
-          ? 'Baropodometría no cambia aquí: su médico es permanente por clínica.'
+          ? 'Baropodometría: las máquinas (Baro 1 / Baro 2) de la sede atienden solas este día con el horario de la excepción; su médico es el de siempre.'
           : 'Solo lectura — se requiere permiso de edición de horarios.'}
       </p>
     </div>

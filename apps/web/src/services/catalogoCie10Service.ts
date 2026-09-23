@@ -6,8 +6,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { catalogosApi, useDebounce, type Cie10Admin } from '../api/catalogos';
 
-/** Formato CIE-10: letra + 2 dígitos, y opcionalmente punto + subcategoría (L84, B35.1, M20.10). */
-export const RE_CIE10 = /^[A-Z][0-9]{2}(\.[0-9A-Z]{1,4})?$/;
+/** Formato CIE-10: letra + 2 dígitos, y opcionalmente punto + subcategoría (L84, B35.1, M20.10). También los propios
+ *  de la clínica que vienen del ERP: 3 dígitos («000» Otros, «000.1» Tratamiento preventivo). */
+export const RE_CIE10 = /^([A-Z][0-9]{2}|[0-9]{3})(\.[0-9A-Z]{1,4})?$/;
 
 export function useCatalogoCie10() {
   const qc = useQueryClient();
@@ -39,10 +40,12 @@ export function useCatalogoCie10() {
   const [editCat, setEditCat] = useState('');
   const empezarEdicion = (c: Cie10Admin) => { setEditando(c.codigo); setEditDesc(c.descripcion); setEditCat(c.categoria ?? ''); };
   const editarMut = useMutation({
-    mutationFn: (v: { codigo: string; cambios: { descripcion?: string; categoria?: string | null; activo?: boolean } }) => catalogosApi.editarCie10(v.codigo, v.cambios),
+    mutationFn: (v: { codigo: string; cambios: { descripcion?: string; categoria?: string | null; activo?: boolean; frecuente?: boolean } }) => catalogosApi.editarCie10(v.codigo, v.cambios),
     onSuccess: (c, v) => {
       refrescar(); setEditando(null);
-      toast.success(v.cambios.activo === false ? `${c.codigo} desactivado: ya no sale al buscar` : v.cambios.activo === true ? `${c.codigo} activado` : `${c.codigo} actualizado`);
+      void qc.invalidateQueries({ queryKey: ['catalogo-cie10-frecuentes'] });
+      toast.success(v.cambios.activo === false ? `${c.codigo} desactivado: ya no sale al buscar` : v.cambios.activo === true ? `${c.codigo} activado`
+        : v.cambios.frecuente === true ? `${c.codigo} ahora está en la lista de frecuentes` : v.cambios.frecuente === false ? `${c.codigo} salió de la lista de frecuentes` : `${c.codigo} actualizado`);
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -51,10 +54,14 @@ export function useCatalogoCie10() {
     editarMut.mutate({ codigo: editando, cambios: { descripcion: editDesc.trim(), categoria: editCat.trim() || null } });
   };
   const alternarActivo = (c: Cie10Admin) => editarMut.mutate({ codigo: c.codigo, cambios: { activo: !c.activo } });
+  const alternarFrecuente = (c: Cie10Admin) => editarMut.mutate({ codigo: c.codigo, cambios: { frecuente: !c.frecuente } });
+  // Diagnóstico cuyos tratamientos habituales se están gestionando (abre el diálogo)
+  const [tratamientosDe, setTratamientosDe] = useState<Cie10Admin | null>(null);
 
   return {
     q, setQ, verInactivos, setVerInactivos, items: lista.data?.items ?? [], categorias: lista.data?.categorias ?? [], cargando: lista.isLoading,
     codigo, setCodigo, descripcion, setDescripcion, categoria, setCategoria, codigoNorm, codigoValido, puedeCrear, crearMut,
-    editando, setEditando, editDesc, setEditDesc, editCat, setEditCat, empezarEdicion, guardarEdicion, alternarActivo, editarMut,
+    editando, setEditando, editDesc, setEditDesc, editCat, setEditCat, empezarEdicion, guardarEdicion, alternarActivo, alternarFrecuente, editarMut,
+    tratamientosDe, setTratamientosDe,
   };
 }

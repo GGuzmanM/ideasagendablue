@@ -82,9 +82,14 @@ describe('Cascada del bloque combinado', () => {
     expect(hermanasQueAcompanan(hs, 'completada').map((h) => h.id)).toEqual(['a']);
     expect(hermanasQueAcompanan(hs, 'cancelada').map((h) => h.id)).toEqual(['a', 'c']);
   });
-  it('revertir el bloque arrastra a la hermana completada (completada → en_atencion es válida)', () => {
+  it('revertir un bloque COMPLETADO arrastra a la hermana completada (la principal ya pasó por el permiso)', () => {
     const hs = [{ id: 'a', estado: 'completada' }, { id: 'b', estado: 'no_show' }];
-    expect(hermanasQueAcompanan(hs, 'en_atencion').map((h) => h.id)).toEqual(['a']);
+    expect(hermanasQueAcompanan(hs, 'en_atencion', 'completada').map((h) => h.id)).toEqual(['a']);
+  });
+  it('flujo de 2 tratamientos: poner «En atención» el 2º NO devuelve a atención el 1º ya completado', () => {
+    const hs = [{ id: 'a', estado: 'completada' }];
+    expect(hermanasQueAcompanan(hs, 'en_atencion', 'llego')).toEqual([]);
+    expect(hermanasQueAcompanan(hs, 'en_atencion')).toEqual([]);
   });
 });
 

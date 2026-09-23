@@ -54,7 +54,8 @@ async function construirComposicion(mes: string) {
       profesional: {
         tipo: { in: ['podologa', 'fisioterapeuta'] },
         activo: true, deletedAt: null,
-        NOT: { nombres: { equals: 'Adicional', mode: 'insensitive' } },
+        // Las columnas «Adicional» no son personal (ver utils/fichaAdicional.ts; tolera «Adiconal»).
+        NOT: { OR: [{ nombres: { startsWith: 'Adicional', mode: 'insensitive' } }, { nombres: { startsWith: 'Adiconal', mode: 'insensitive' } }] },
       },
     },
     select: {

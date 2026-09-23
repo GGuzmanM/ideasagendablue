@@ -30,16 +30,24 @@ function useRelojLima() {
   });
   return { hora, fecha };
 }
-//Sacar para salida a produccion
-const CUENTAS_DEMO = [
-  { label: 'Admin', email: 'admin@limablue.pe', pass: 'Admin1234!' },
-  { label: 'Coordinadora', email: 'coordinadora@limablue.pe', pass: 'Admin1234!' },
-  { label: 'Recepción Los Olivos', email: 'recepcion.losolivos@limablue.pe', pass: 'Recepcion2025!' },
-];
 
+
+// ── Cuentas recordadas en ESTE equipo (solo el correo y el nombre; nunca la contraseña) ──
+// El navegador de la clínica no ofrece guardar contraseñas mientras el sitio salga «No es seguro», así que
+// el sistema recuerda por su cuenta quién entra desde cada PC: un clic en la cuenta y solo se teclea la clave.
+const CLAVE_RECIENTES = 'limablue-cuentas-recientes';
+interface CuentaReciente { email: string; nombre: string; ultimoIngreso: string }
+const leerRecientes = (): CuentaReciente[] => { try { const v = JSON.parse(localStorage.getItem(CLAVE_RECIENTES) ?? '[]'); return Array.isArray(v) ? v : []; } catch { return []; } };
+const guardarRecientes = (l: CuentaReciente[]) => { try { localStorage.setItem(CLAVE_RECIENTES, JSON.stringify(l.slice(0, 6))); } catch { /* sin almacenamiento */ } };
+export const recordarCuenta = (email: string, nombre: string) => {
+  const e = email.trim().toLowerCase();
+  guardarRecientes([{ email: e, nombre, ultimoIngreso: new Date().toISOString() }, ...leerRecientes().filter((c) => c.email !== e)]);
+};
+const olvidarCuenta = (email: string) => guardarRecientes(leerRecientes().filter((c) => c.email !== email));
 
 export function LoginPage() {
-  const [email, setEmail] = useState('');
+  const [recientes, setRecientes] = useState<CuentaReciente[]>(leerRecientes);
+  const [email, setEmail] = useState(() => leerRecientes()[0]?.email ?? '');
   const [password, setPassword] = useState('');
   const [showPwd, setShowPwd] = useState(false);
   const [error, setError] = useState('');
@@ -56,6 +64,8 @@ export function LoginPage() {
     setLoading(true);
     try {
       await login(email, password);
+      // Queda recordada en este equipo (correo y nombre; la clave nunca se guarda).
+      recordarCuenta(email, useAuthStore.getState().usuario?.nombre ?? email);
       // Fetch notificaciones y guardar en store global antes de navegar.
       // El banner se mostrará desde Layout, evitando la race condition con el
       // guard de ruta que redirige en cuanto el token está disponible.
@@ -71,12 +81,6 @@ export function LoginPage() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const fillDemo = (demoEmail: string, demoPass: string) => {
-    setEmail(demoEmail);
-    setPassword(demoPass);
-    setError('');
   };
 
   return (
@@ -178,6 +182,42 @@ export function LoginPage() {
             </p>
           </div>
 
+          {/* Cuentas usadas en este equipo: un clic pone el correo y deja el cursor en la clave */}
+          {recientes.length > 0 && (
+            <div className="px-8 pb-4" data-testid="cuentas-recientes">
+              <p className="font-mono text-[10px] tracking-[0.25em] uppercase text-slate-500 mb-2">Cuentas en este equipo</p>
+              <div className="flex flex-wrap gap-2">
+                {recientes.map((c) => {
+                  const activa = c.email === email.trim().toLowerCase();
+                  const iniciales = c.nombre.split(' ').filter(Boolean).map((n) => n[0]).slice(0, 2).join('').toUpperCase() || c.email[0]!.toUpperCase();
+                  return (
+                    <div key={c.email} className={`group/chip flex items-center gap-2 rounded-full border pl-1 pr-2 py-1 text-xs transition-colors ${activa ? 'border-cyan-400/60 bg-cyan-400/10 text-white' : 'border-white/10 bg-white/[0.04] text-slate-300 hover:border-cyan-400/40 hover:text-white'}`}>
+                      <button
+                        type="button"
+                        onClick={() => { setEmail(c.email); setError(''); document.getElementById('login-password')?.focus(); }}
+                        className="flex items-center gap-2"
+                        title={c.email}
+                        data-testid={`cuenta-${c.email}`}
+                      >
+                        <span className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-600 to-cyan-500 text-white text-[10px] font-bold flex items-center justify-center">{iniciales}</span>
+                        <span className="max-w-[140px] truncate">{c.nombre.split(' ').slice(0, 2).join(' ')}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { olvidarCuenta(c.email); const l = leerRecientes(); setRecientes(l); if (activa) setEmail(l[0]?.email ?? ''); }}
+                        title="Quitar de este equipo"
+                        aria-label={`Quitar ${c.email} de este equipo`}
+                        className="text-slate-500 hover:text-red-300 opacity-60 group-hover/chip:opacity-100 transition-opacity"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Formulario */}
           <form onSubmit={handleSubmit} className="px-8 pb-6 space-y-4">
             <div className="relative group">
@@ -190,8 +230,9 @@ export function LoginPage() {
                 onChange={e => setEmail(e.target.value)}
                 placeholder="Correo electrónico"
                 required
-                autoComplete="email"
-                autoFocus
+                autoComplete="username"
+                name="username"
+                autoFocus={recientes.length === 0}
                 className="w-full bg-white/[0.04] border border-white/10 rounded-lg pl-10 pr-4 py-3 text-white placeholder-slate-500 text-sm focus:outline-none focus:border-cyan-400/60 focus:shadow-[0_0_0_1px_rgba(62,224,240,0.4),0_0_20px_-6px_rgba(62,224,240,0.5)] transition-all"
               />
             </div>
@@ -207,6 +248,9 @@ export function LoginPage() {
                 placeholder="Contraseña"
                 required
                 autoComplete="current-password"
+                name="password"
+                id="login-password"
+                autoFocus={recientes.length > 0}
                 className="w-full bg-white/[0.04] border border-white/10 rounded-lg pl-10 pr-16 py-3 text-white placeholder-slate-500 text-sm focus:outline-none focus:border-cyan-400/60 focus:shadow-[0_0_0_1px_rgba(62,224,240,0.4),0_0_20px_-6px_rgba(62,224,240,0.5)] transition-all"
               />
               <button
@@ -238,27 +282,6 @@ export function LoginPage() {
             </button>
           </form>
 
-          {/* Cuentas de demo */}
-          <div className="px-8 pb-6">
-            <div className="border-t border-white/5 pt-4">
-              <p className="font-mono text-[10px] tracking-[0.25em] uppercase text-slate-600 mb-2">
-                Acceso rápido · demo
-              </p>
-              <div className="space-y-1">
-                {CUENTAS_DEMO.map(c => (
-                  <button
-                    key={c.email}
-                    type="button"
-                    onClick={() => fillDemo(c.email, c.pass)}
-                    className="w-full flex items-center justify-between gap-3 text-left px-3 py-2 rounded-lg text-xs border border-transparent text-slate-400 hover:bg-cyan-400/[0.06] hover:border-cyan-400/20 hover:text-slate-200 transition-colors"
-                  >
-                    <span className="font-medium text-slate-300 whitespace-nowrap">{c.label}</span>
-                    <span className="font-mono text-[11px] text-slate-500 truncate">{c.email}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
         </div>
 
         <p className="text-center font-mono text-[10px] tracking-[0.25em] uppercase text-slate-600 mt-6">

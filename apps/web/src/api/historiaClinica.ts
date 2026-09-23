@@ -6,7 +6,7 @@ import { useAuthStore } from '../stores/authStore';
 import { api } from './client';
 
 export type EstadoAtencion = 'abierta' | 'cerrada';
-export type TipoNota = 'evolucion' | 'procedimiento' | 'indicacion' | 'observacion';
+export type TipoNota = 'evolucion' | 'procedimiento' | 'indicacion' | 'observacion' | 'procedimiento_preventivo';
 export type TipoDiagnostico = 'presuntivo' | 'definitivo';
 export type TipoAntecedente = 'patologico' | 'quirurgico' | 'familiar' | 'farmacologico' | 'habito' | 'otro';
 export type SeveridadAlergia = 'leve' | 'moderada' | 'severa';
@@ -15,7 +15,7 @@ export const TIPO_ANTECEDENTE_LABEL: Record<TipoAntecedente, string> = {
   patologico: 'Patológico', quirurgico: 'Quirúrgico', familiar: 'Familiar', farmacologico: 'Farmacológico', habito: 'Hábito', otro: 'Otro',
 };
 export const TIPO_NOTA_LABEL: Record<TipoNota, string> = {
-  evolucion: 'Evolución', procedimiento: 'Procedimiento', indicacion: 'Indicación', observacion: 'Observación',
+  evolucion: 'Evolución', procedimiento: 'Procedimiento', procedimiento_preventivo: 'Procedimiento preventivo', indicacion: 'Indicación', observacion: 'Observación',
 };
 
 export interface ProfesionalMini { id: string; nombres: string; apellidos: string; tipo: string }

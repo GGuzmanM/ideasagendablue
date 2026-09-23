@@ -13,7 +13,7 @@
  */
 import { prisma } from '../src/db';
 import jwt from 'jsonwebtoken';
-import { esEmailEnviable } from '../src/services/mailService';
+import { esEmailEnviable } from '../src/services/emailTemplates';
 
 const API = process.env.API_URL || 'http://localhost:3099';
 const N = Number(process.env.N || 200);
@@ -24,7 +24,7 @@ const H = () => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${
 
 async function login(email = 'admin@limablue.pe', password = 'Admin1234!') {
   const r = await fetch(`${API}/api/v1/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
-  const j = await r.json();
+  const j: any = await r.json();
   return j.token as string;
 }
 function firmarToken(citaId: string, opts: { secret?: string; expiresIn?: string; tipo?: string } = {}) {
@@ -39,7 +39,7 @@ function bad(r: Res, msg: string) { r.ejecutados++; r.fallidos++; if (r.ejemplos
 
 async function crearCita(body: any) {
   const r = await fetch(`${API}/api/v1/citas`, { method: 'POST', headers: H(), body: JSON.stringify(body) });
-  return { status: r.status, json: await r.json().catch(() => ({})) };
+  const json: any = await r.json().catch(() => ({})); return { status: r.status, json };
 }
 
 async function main() {
@@ -66,7 +66,7 @@ async function main() {
   // Paciente de prueba con email enviable (para no depender de datos demo)
   const docBase = Date.now().toString().slice(-9);
   const pacResp = await fetch(`${API}/api/v1/pacientes`, { method: 'POST', headers: H(), body: JSON.stringify({ nombres: 'Test', apellidoPaterno: 'Auditoria', apellidoMaterno: 'QA', numeroDocumento: 'A' + docBase, telefono: '999000111', email: 'qa.real@gmail.com' }) });
-  const pacJson = await pacResp.json();
+  const pacJson: any = await pacResp.json();
   const pacienteId: string = pacJson.id ?? (await prisma.paciente.findFirst({ where: { deletedAt: null } }))!.id;
 
   // Pool de slots únicos (prof, fecha, hora entera 08-16 evitando almuerzo 12-14) sobre 2 fechas

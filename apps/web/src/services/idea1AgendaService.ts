@@ -30,9 +30,14 @@ export interface DoctorAgenda {
   sedeId: string;
   avatarUrl?: string;
   enVacaciones?: boolean;
+  /** Ficha «Adicional <sede>»: columna extra fija de la sede; va al final, antes de las vacaciones. */
+  esAdicional?: boolean;
   citasCount?: number;
   estadiaLabel?: string;
 }
+
+// Misma regla que el API (utils/fichaAdicional.ts): tolera «Adiconal» (error de tipeo de una ficha real).
+export const esColumnaAdicional = (p?: { nombres?: string } | null) => /^adici?onal\b|^adiconal\b/i.test((p?.nombres ?? '').trim());
 
 export interface CitaAgenda {
   id: string;
@@ -165,6 +170,8 @@ export function mapearCitasDbACitaAgenda(citasDb: any[] = []): CitaAgenda[] {
         '';
       if (primerNombre) etiquetaAsignacion = `Solo ${primerNombre}`;
     }
+    // Columna «Adicional»: si ya se indicó qué podóloga atendió, la tarjeta lo dice en vez de «Solo Adicional».
+    if (c.atendidoPor) etiquetaAsignacion = `Atendió ${c.atendidoPor.nombres.split(' ')[0]}`;
 
     const pacienteNombre = c.paciente
       ? `${c.paciente.nombres} ${c.paciente.apellidoPaterno || ''} ${c.paciente.apellidoMaterno || ''}`.trim()
@@ -431,16 +438,15 @@ export function procesarYOrdenarDoctores(params: {
       return {
         ...doc,
         enVacaciones: tieneVacaciones,
+        esAdicional: esColumnaAdicional(doc),
         citasCount: count,
       };
     })
     .sort((a, b) => {
-      // Regla 1: Doctores en vacaciones pasan AL FINAL (derecha)
-      if (a.enVacaciones && !b.enVacaciones) return 1;
-      if (!a.enVacaciones && b.enVacaciones) return -1;
-
-      // Regla 2: Mantener el orden original de llegada de la lista (sin orden por citas)
-      return 0;
+      // Orden (izq → der): 1º las personas en su orden de llegada (el API ya las trae alfabéticas),
+      // 2º las columnas «Adicional» de la sede, 3º quienes están de vacaciones (al final, a la derecha).
+      const grupo = (d: DoctorAgenda) => (d.enVacaciones ? 2 : d.esAdicional ? 1 : 0);
+      return grupo(a) - grupo(b); // sort estable: dentro de cada grupo se conserva el orden original
     });
 }
 

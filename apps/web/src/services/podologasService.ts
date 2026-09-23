@@ -22,6 +22,7 @@ export interface FormProfesional {
   colegiatura?: string;
   emailAgenda?: string;
   colorAvatar: string;
+  sedeId?: string; // sede base de la ficha; '' = sin cambio (se asigna después en Movimientos)
 }
 
 export function usePodologasData() {
@@ -43,25 +44,28 @@ export function usePodologasData() {
   ).values()];
 
   const crearMut = useMutation({
-    mutationFn: (data: FormProfesional) => profesionalesApi.crear(data),
-    onSuccess: (p) => {
+    mutationFn: (data: FormProfesional) => profesionalesApi.crear({ ...data, sedeId: data.sedeId || undefined }),
+    onSuccess: (p, data) => {
       qc.invalidateQueries({ queryKey: ['profesionales'] });
       qc.invalidateQueries({ queryKey: ['profesionales-admin'] });
       qc.invalidateQueries({ queryKey: ['profesionales-todos'] });
+      qc.invalidateQueries({ queryKey: ['movimientos'] });
       setCreando(false);
-      toast.success(`${p.nombres} ${p.apellidos} agregada al sistema`);
+      const sede = sedes?.find((s) => s.id === data.sedeId);
+      toast.success(`${p.nombres} ${p.apellidos} agregada al sistema${sede ? ` · sede ${sede.nombre}` : ''}`);
     },
     onError: (e: Error) => toast.error(e.message),
   });
 
   const editarMut = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<FormProfesional & { activo: boolean }> }) =>
-      profesionalesApi.editar(id, data),
+      profesionalesApi.editar(id, { ...data, sedeId: data.sedeId || undefined }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['profesionales'] });
       qc.invalidateQueries({ queryKey: ['profesionales-admin'] });
       qc.invalidateQueries({ queryKey: ['users'] }); // si cambió el nombre de la ficha, su usuario también
       qc.invalidateQueries({ queryKey: ['profesionales-todos'] });
+      qc.invalidateQueries({ queryKey: ['movimientos'] }); // si cambió la sede base
       setEditandoId(null);
       toast.success('Profesional actualizada');
     },

@@ -108,14 +108,19 @@ export function validarTransicion(actual: string, destino: string, permisos?: st
 //  - Para otros estados, la hermana solo se sincroniza si SU transición es válida en la
 //    máquina de estados (una hermana en no_show NO se resucita a completada; una desfasada
 //    no salta pasos — se queda como está en vez de forzarla).
-export function hermanasQueAcompanan<T extends { estado: string }>(hermanas: T[], estado: string): T[] {
-  const esCancelacion = estado === 'cancelada';
+//  - Una hermana ya FINALIZADA (completada / no vino) nunca se mueve por cascada (21-sep-2026). La
+//    máquina permite completada → en_atencion, pero eso es REVERTIR y exige permiso, que solo se
+//    valida sobre la cita principal: en el flujo de 2 tratamientos, poner «En atención» el 2º
+//    devolvía a «En atención» el 1º ya terminado (sin permiso, con su hora de cierre puesta y un
+//    segundo aviso de «completada» a las integraciones). La ÚNICA excepción: cuando la principal
+//    también estaba completada y se está REVIRTIENDO (eso sí pasó por el permiso): ahí el bloque,
+//    que se completó junto, vuelve junto.
+export function hermanasQueAcompanan<T extends { estado: string }>(hermanas: T[], estado: string, estadoPrincipal?: string): T[] {
+  const revierteBloque = estadoPrincipal === 'completada' && estado === 'en_atencion';
   return hermanas.filter((c) =>
     c.estado !== estado &&
-    c.estado !== 'cancelada' &&
-    (esCancelacion
-      ? !ESTADOS_FINALES.includes(c.estado)
-      : (TRANSICIONES_VALIDAS[c.estado] ?? []).includes(estado)));
+    (!ESTADOS_FINALES.includes(c.estado) || (revierteBloque && c.estado === 'completada')) &&
+    (estado === 'cancelada' || (TRANSICIONES_VALIDAS[c.estado] ?? []).includes(estado)));
 }
 
 // Anclas del auto-completado y de la medición de tiempos (solo en cambios REALES; comentar sin
@@ -157,6 +162,7 @@ export async function prepararTransicion(
     ? hermanasQueAcompanan(
         await client.cita.findMany({ where: { slotGrupoId: cita.slotGrupoId, id: { not: cita.id }, deletedAt: null } }),
         sol.estado,
+        cita.estado,
       )
     : [];
 
@@ -211,7 +217,9 @@ export async function transicionarEnTx(tx: Prisma.TransactionClient, plan: PlanT
   for (const h of plan.hermanas) {
     const rh = await tx.cita.updateMany({
       where: { id: h.id, estado: h.estado, deletedAt: null },
-      data: { estado, ...anclas, ...(plan.esCancelacion ? { motivoCancelacion: plan.motivoCancelacion ?? h.motivoCancelacion } : {}) },
+      // Las horas se calculan desde el estado de ESTA hermana (no el de la principal): si ya había
+      // llegado, conserva su hora de llegada real.
+      data: { estado, ...anclasDeTiempo(h.estado, estado, plan.hora), ...(plan.esCancelacion ? { motivoCancelacion: plan.motivoCancelacion ?? h.motivoCancelacion } : {}) },
     });
     if (rh.count === 0) continue;
     await auditEnTx(tx, {

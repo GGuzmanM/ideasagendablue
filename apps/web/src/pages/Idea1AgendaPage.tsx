@@ -93,6 +93,10 @@ export function Idea1AgendaPage() {
   // backend lo exige igual (403); aquí se evita ofrecer la acción.
   const puedeCrearCita = useAuthStore((s) => s.tiene('citas.crear'));
   const puedeArrastrarCita = useAuthStore((s) => s.tiene('citas.reprogramar'));
+  // Horario de la sede en la cabecera: contact center no lo ve (pedido 22-sep); el lápiz y el enlace a
+  // Horarios solo para quien puede entrar ahí (horarios.ver); los demás lo ven como dato, sin clic.
+  const esContactCenter = useAuthStore((s) => s.usuario?.rol === 'contact_center');
+  const puedeVerHorarios = useAuthStore((s) => s.tiene('horarios.ver'));
 
   const handleAbrirNuevaCita = (params?: { horaInicio?: string; profesionalId?: string }) => {
     if (!puedeCrearCita) return;
@@ -352,11 +356,13 @@ export function Idea1AgendaPage() {
                 </div>
 
                 {/* Horario efectivo de la sede — clic para ver y gestionar horarios */}
-                {sedeId && horarioEfectivo && (
+                {sedeId && horarioEfectivo && !esContactCenter && (
                   <button
-                    onClick={() => navigate('/horarios')}
-                    className="group flex items-center gap-2 bg-surface-container-lowest border border-outline-variant/50 rounded-xl px-3 py-1.5 shadow-sm hover:bg-surface-container transition-colors"
-                    title="Ver y gestionar horarios de la sede"
+                    onClick={() => { if (puedeVerHorarios) navigate('/horarios'); }}
+                    disabled={!puedeVerHorarios}
+                    data-testid="horario-sede"
+                    className={`group flex items-center gap-2 bg-surface-container-lowest border border-outline-variant/50 rounded-xl px-3 py-1.5 shadow-sm transition-colors ${puedeVerHorarios ? 'hover:bg-surface-container' : 'cursor-default'}`}
+                    title={puedeVerHorarios ? 'Ver y gestionar horarios de la sede' : 'Horario de atención de la sede'}
                   >
                     {horarioEfectivo.abierto ? (
                       <>
@@ -376,9 +382,11 @@ export function Idea1AgendaPage() {
                         EXC
                       </span>
                     )}
-                    <span className="material-symbols-outlined text-sm text-on-surface-variant group-hover:text-primary transition-colors">
-                      edit
-                    </span>
+                    {puedeVerHorarios && (
+                      <span className="material-symbols-outlined text-sm text-on-surface-variant group-hover:text-primary transition-colors">
+                        edit
+                      </span>
+                    )}
                   </button>
                 )}
               </div>
@@ -465,15 +473,19 @@ export function Idea1AgendaPage() {
 
                   {doctores.length > 0 ? (
                     doctores.map((doc, idx) => {
-                      const nombreCorto = formatearNombreDoctor(doc.nombres, doc.apellidos);
+                      // Columna «Adicional <sede>»: capacidad extra fija de la sede; se muestra con su nombre completo y
+                      // un fondo distinto para que se note que no es una persona. Va al final, antes de las vacaciones.
+                      const nombreCorto = doc.esAdicional ? `${doc.nombres} ${doc.apellidos}`.trim() : formatearNombreDoctor(doc.nombres, doc.apellidos);
+                      const primeraAdicional = doc.esAdicional && !doc.enVacaciones && (idx === 0 || !doctores[idx - 1]!.esAdicional);
 
                       return (
                         <div
                           key={doc.id}
                           data-testid={`agenda-columna-${doc.id}`}
+                          data-adicional={doc.esAdicional ? '1' : undefined}
                           className={`py-2 px-1 md:py-3 md:px-1.5 text-center min-w-0 transition-all ${
-                            doc.enVacaciones ? 'bg-amber-500/5' : 'bg-surface-container-lowest'
-                          } ${idx < doctores.length - 1 ? 'border-r border-outline-variant/20' : ''}`}
+                            doc.enVacaciones ? 'bg-amber-500/5' : doc.esAdicional ? 'bg-slate-100/80' : 'bg-surface-container-lowest'
+                          } ${idx < doctores.length - 1 ? 'border-r border-outline-variant/20' : ''} ${primeraAdicional ? 'border-l-2 border-l-slate-300' : ''}`}
                         >
                           <div className="relative inline-block mx-auto mb-1">
                             <img
@@ -498,14 +510,20 @@ export function Idea1AgendaPage() {
                             {nombreCorto}
                           </p>
                           <p className="hidden md:block font-label-caps text-[9px] md:text-[10px] text-on-surface-variant tracking-wider uppercase truncate">
-                            {doc.especialidad}
+                            {doc.esAdicional ? 'Columna extra' : doc.especialidad}
                           </p>
 
-                          {/* Insignias de Estadía o Vacaciones */}
+                          {/* Insignias de Estadía, Adicional o Vacaciones */}
                           {doc.enVacaciones ? (
                             <div className="mt-1 flex items-center justify-center max-w-full">
                               <span className="inline-flex items-center gap-0.5 px-1.5 md:px-2 py-0.5 rounded-md text-[9px] md:text-[10px] font-bold bg-amber-500/15 text-amber-700 border border-amber-500/30 truncate max-w-full">
                                 🌴 Vacaciones
+                              </span>
+                            </div>
+                          ) : doc.esAdicional ? (
+                            <div className="mt-1 flex items-center justify-center max-w-full">
+                              <span className="inline-flex items-center gap-0.5 px-1.5 md:px-2 py-0.5 rounded-md text-[9px] md:text-[10px] font-bold bg-slate-200/70 text-slate-700 border border-dashed border-slate-400/70 truncate max-w-full" title="Columna adicional de la sede (capacidad extra, no es una persona)">
+                                <span className="material-symbols-outlined text-[11px]">add_box</span> Adicional
                               </span>
                             </div>
                           ) : doc.estadiaLabel ? (
@@ -601,6 +619,9 @@ export function Idea1AgendaPage() {
                                 e.preventDefault();
                                 setDragOverSlot(null);
                                 if (isBloqueado) return;
+                                // Mientras un movimiento está viajando al servidor no se acepta otro: la tarjeta aún no
+                                // se ha movido en pantalla y un segundo arrastre encadenaba dos «mover» de la misma cita.
+                                if (isMoving) { toast('Espera: se está moviendo una cita…', { icon: '⏳' }); return; }
                                 try {
                                   const rawData = e.dataTransfer.getData('text/plain');
                                   if (!rawData) return;
@@ -632,6 +653,8 @@ export function Idea1AgendaPage() {
                                   });
                                 } catch (err) {
                                   console.error('Error al soltar la cita:', err);
+                                  // El error del servidor ya lo muestra la mutación (onError); aquí solo lo que falla ANTES de llamarla.
+                                  if (err instanceof SyntaxError) toast.error('No se pudo leer la cita arrastrada. Vuelve a intentarlo.');
                                 }
                               }}
                               title={
@@ -1117,6 +1140,12 @@ export function Idea1AgendaPage() {
                                       {!isCompact && cita.etiquetaAsignacion && (
                                         <p className="text-[11px] text-primary font-semibold truncate leading-tight">
                                           {cita.etiquetaAsignacion}
+                                        </p>
+                                      )}
+                                      {/* Columna Adicional: «Atendió X» es dato clave → también en tarjetas de 30 min. */}
+                                      {isCompact && cita.raw?.atendidoPor && (
+                                        <p className="text-[10px] text-primary font-bold truncate leading-tight" data-campo="atendio-tarjeta">
+                                          Atendió {cita.raw.atendidoPor.nombres.split(' ')[0]}
                                         </p>
                                       )}
                                     </>

@@ -7,12 +7,20 @@
  *    que NUNCA se desplace de día por la zona horaria del servidor.
  *  - `Cita.horaInicio` es "HH:mm" en hora local de Lima.
  */
+import { AppError } from '../middleware/errorHandler';
+
 export const LIMA_OFFSET_H = 5;
 export const TZ_LIMA = 'America/Lima';
 
 /** Parsea "YYYY-MM-DD" a un Date seguro para columnas @db.Date (mediodía UTC). */
 export function fechaDb(fechaStr: string): Date {
-  return new Date(`${fechaStr}T12:00:00.000Z`);
+  const d = new Date(`${fechaStr}T12:00:00.000Z`);
+  // «ayer», «2026-13-01» o «2026-02-30» (JS lo corre al 2-mar) → 400 claro en vez de un 500 de Prisma
+  // o, peor, una cita guardada en un día distinto al que se escribió.
+  if (typeof fechaStr !== 'string' || Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== fechaStr) {
+    throw new AppError('La fecha no es válida (se espera AAAA-MM-DD de un día que exista)', 400, 'FECHA_INVALIDA');
+  }
+  return d;
 }
 
 /** Devuelve "YYYY-MM-DD" de un Date (usa getters UTC para no desfasar el día). */

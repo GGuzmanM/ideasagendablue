@@ -1,3 +1,4 @@
+import { urlArchivo } from '../../utils/urlArchivo';
 import { useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -11,9 +12,7 @@ function hoyISO() { return format(new Date(), 'yyyy-MM-dd'); }
 const esImagen = (mime: string | null) => !mime || mime.startsWith('image/');
 // La URL guardada es absoluta (http://…:3002/uploads/…). La volvemos RELATIVA para servirla
 // same-origin por el proxy /uploads → funciona en localhost y en la nube por igual.
-function urlRelativa(u: string): string {
-  try { const p = new URL(u, window.location.origin); return p.pathname + p.search; } catch { return u; }
-}
+const urlRelativa = urlArchivo; // helper compartido (utils/urlArchivo)
 
 const CSS = `
 :root { --ink:#0E2233; --muted:#7A8794; --line:#E4EAEF; --jade:#0E9C88; }

@@ -90,7 +90,7 @@ export async function sedesDerivadasDeFicha(u: { rol: string; recepcionistaId: s
 // llamadas de todas las sedes). Es SOLO acceso a sedes — NO otorga poderes de gestión (eso va
 // por `permisos`/requireRol; contact_center NO es coordinadora). El resto (recepción) solo
 // opera/lee las sedes de su token. Espeja authStore.puedeAccederSede en el frontend.
-const ROLES_TODAS_SEDES = ['admin', 'coordinadora_sedes', 'contact_center'];
+const ROLES_TODAS_SEDES = ['admin', 'coordinadora_sedes', 'contact_center', 'especial_contact', 'recursos_humanos'];
 
 export function puedeTodasLasSedes(user: AuthPayload): boolean {
   return ROLES_TODAS_SEDES.includes(user.rol);
@@ -197,6 +197,15 @@ export function requireRol(...roles: string[]) {
     if (!roles.includes(req.user.rol)) {
       throw new AppError('Sin permisos para esta acción', 403, 'FORBIDDEN');
     }
+    next();
+  };
+}
+
+/** Pasa si el usuario tiene AL MENOS UNO de los permisos (p. ej. ausencias: `horarios.editar` o `ausencias.gestionar`). */
+export function requireAlgunPermiso(...permisos: string[]) {
+  return (req: Request, _res: Response, next: NextFunction) => {
+    if (!req.user) throw new AppError('No autenticado', 401, 'UNAUTHORIZED');
+    if (!permisos.some((p) => req.user!.permisos?.includes(p))) throw new AppError('Sin permisos para esta acción', 403, 'FORBIDDEN');
     next();
   };
 }

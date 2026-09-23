@@ -55,9 +55,13 @@ export function esProfesionalBaro(p?: { tipo?: string; unidadNegocio?: { nombre:
   return false;
 }
 
-/** Profesionales que NO se pueden mover ni deben figurar en el tablero de movimientos (Adicional o Baropodometría). */
+/** Fichas «Adicional <sede>»: columna extra fija de cada sede. Se VEN en el tablero (como fijas) pero no se mueven. */
+// Tolera el error de tipeo con que se creó alguna («Adiconal Paz Soldan 2»). Misma regla que el API (utils/fichaAdicional.ts).
+export const esFichaAdicional = (p?: { nombres?: string } | null) => /^adici?onal\b|^adiconal\b/i.test((p?.nombres ?? '').trim());
+
+/** Profesionales que NO se pueden mover (Adicional o Baropodometría): no van en el modal ni en próximos/historial. */
 export const esProfesionalNoMovible = (p?: { tipo?: string; unidadNegocio?: { nombre: string } | null; nombres?: string; apellidos?: string } | null) =>
-  !p || !p.nombres || p.nombres.trim().toLowerCase() === 'adicional' || esProfesionalBaro(p);
+  !p || !p.nombres || esFichaAdicional(p) || esProfesionalBaro(p);
 
 // ── Hook principal: agrupa data + mutations + filtros + estado de vista ──────
 export function useMovimientosData() {
@@ -165,7 +169,8 @@ export function useMovimientosData() {
 
   const tableroMovs = useMemo(
     () => {
-      const cubren = todas.filter(enFecha).filter(m => !esProfesionalNoMovible(m.profesional)).filter(coincide);
+      // Las fichas «Adicional» SÍ se muestran (el usuario las creó y no las veía); Baro no (tiene su propio grupo).
+      const cubren = todas.filter(enFecha).filter(m => esFichaAdicional(m.profesional) || !esProfesionalNoMovible(m.profesional)).filter(coincide);
       const porProf = new Map<string, Movimiento>();
       for (const m of cubren) {
         const prev = porProf.get(m.profesionalId);

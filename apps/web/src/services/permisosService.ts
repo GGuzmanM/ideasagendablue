@@ -31,7 +31,10 @@ export const tipoLabel = (t: string) =>
 export function usePermisosData(overrideSedeId?: string) {
   const qc = useQueryClient();
   const { usuario, puedeAccederSede, tiene } = useAuthStore();
-  const puedeGestionar = tiene('horarios.editar');
+  // Coordinación/administración (horarios.editar) o Recursos Humanos (ausencias.gestionar).
+  const puedeGestionar = tiene('horarios.editar') || tiene('ausencias.gestionar');
+  // «Enfermedad» CANCELA las citas del día y «Reunión» es de los dueños: solo quien gestiona la operación.
+  const puedeOperacion = tiene('horarios.editar');
 
   const [sedeSelId, setSedeSelId] = useState(overrideSedeId ?? '');
 
@@ -408,6 +411,7 @@ export function usePermisosData(overrideSedeId?: string) {
 
   return {
     puedeGestionar,
+    puedeOperacion,
     sedes,
     sedeId,
     setSedeSelId,

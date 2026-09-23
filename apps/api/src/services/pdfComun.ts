@@ -27,9 +27,9 @@ export const CLINICA = {
 
 export const SEXO: Record<string, string> = { masculino: 'Masculino', femenino: 'Femenino', otro: 'Otro' };
 
-/** Documento A4 sin márgenes automáticos (cada PDF pagina a mano, midiendo). */
-export function nuevoPdf(titulo: string): Doc {
-  return new PDFDocument({ size: 'A4', margin: 0, bufferPages: true, info: { Title: titulo, Author: CLINICA.nombre } });
+/** Documento A4 (o A5 = media hoja A4, para la receta) sin márgenes automáticos (cada PDF pagina a mano, midiendo). */
+export function nuevoPdf(titulo: string, tamano: 'A4' | 'A5' = 'A4'): Doc {
+  return new PDFDocument({ size: tamano, margin: 0, bufferPages: true, info: { Title: titulo, Author: CLINICA.nombre } });
 }
 
 /**

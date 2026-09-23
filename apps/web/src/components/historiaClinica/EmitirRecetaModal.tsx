@@ -1,20 +1,24 @@
 import { useState } from 'react';
 import type { AtencionCompleta } from '../../api/historiaClinica';
-import { TIPO_DOC_LABEL, TIPO_ITEM_LABEL, type TipoDocumentoReceta } from '../../api/recetas';
+import { TIPO_DOC_LABEL, type TipoDocumentoReceta, type RecetaCompleta } from '../../api/recetas';
 import { useEmitirRecetaForm, type ItemBorrador } from '../../services/historiaClinicaService';
 import { AlergiasBanner } from './AlergiasBanner';
-import { BuscadorMedicamento } from './Buscadores';
+import { BuscadorMedicamento, BuscadorCie10, FrecuentesCie10 } from './Buscadores';
+import { lineaPosologia, textoCantidad } from '../../utils/posologiaTexto';
+import { TratamientosDiagnosticoPanel } from './TratamientosDiagnosticoPanel';
 
 const INPUT = 'w-full bg-surface-container-low border border-outline-variant rounded-lg px-2.5 py-2 text-sm text-on-surface outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all';
 const LBL = 'block text-[10px] font-semibold uppercase tracking-wide text-on-surface-variant mb-0.5';
-const ETIQ: Record<string, string> = { MEDICAMENTO_RX: 'bg-rose-100 text-rose-700', MEDICAMENTO_OTC: 'bg-emerald-100 text-emerald-700', PRODUCTO: 'bg-amber-100 text-amber-800', SERVICIO: 'bg-primary/10 text-primary' };
 const ICONO: Record<string, string> = { MEDICAMENTO_RX: 'pill', MEDICAMENTO_OTC: 'pill', PRODUCTO: 'inventory_2', SERVICIO: 'medical_services' };
 
 // Emitir RECETA MÉDICA (solo médico) o INDICACIONES PODOLÓGICAS (a nombre del profesional que atendió).
 // Modelo: el DIAGNÓSTICO es el ancla. Se elige "para qué diagnóstico" y todo lo que se agrega
 // (servicio, medicamento o producto) queda agrupado bajo él, igual que en el documento impreso.
-export function EmitirRecetaModal({ atencion, tipoDocumento, onClose }: { atencion: AtencionCompleta; tipoDocumento: TipoDocumentoReceta; onClose: () => void }) {
-  const f = useEmitirRecetaForm(atencion, tipoDocumento);
+// `recetaAEditar`: «Editar» una ya emitida — se abre cargada; al emitir sale una nueva y la anterior queda anulada.
+export function EmitirRecetaModal({ atencion, tipoDocumento, recetaAEditar = null, onClose }: { atencion: AtencionCompleta; tipoDocumento: TipoDocumentoReceta; recetaAEditar?: RecetaCompleta | null; onClose: () => void }) {
+  const f = useEmitirRecetaForm(atencion, tipoDocumento, recetaAEditar);
+  const numEditando = f.editando ? String(f.editando.numero).padStart(6, '0') : '';
+  const [agregandoDx, setAgregandoDx] = useState(false);
   const [servicioSel, setServicioSel] = useState('');
   const [productoManual, setProductoManual] = useState('');
   const [favSel, setFavSel] = useState('');
@@ -37,7 +41,7 @@ export function EmitirRecetaModal({ atencion, tipoDocumento, onClose }: { atenci
       <div className="bg-surface-container-lowest w-full max-w-[900px] max-h-[92vh] rounded-2xl flex flex-col overflow-hidden custom-shadow animate-in zoom-in-95 duration-200">
         <div className="bg-[#0044ab] text-white px-6 py-5 flex justify-between items-start shrink-0 shadow-md">
           <div>
-            <h3 className="font-headline-md text-headline-md font-bold flex items-center gap-2"><span className="material-symbols-outlined">{f.esReceta ? 'prescriptions' : 'clinical_notes'}</span>{TIPO_DOC_LABEL[tipoDocumento]}</h3>
+            <h3 className="font-headline-md text-headline-md font-bold flex items-center gap-2"><span className="material-symbols-outlined">{f.editando ? 'edit_note' : f.esReceta ? 'prescriptions' : 'clinical_notes'}</span>{f.editando ? `Editar ${TIPO_DOC_LABEL[tipoDocumento].toLowerCase()} N° ${numEditando}` : TIPO_DOC_LABEL[tipoDocumento]}</h3>
             <p className="text-sm text-white/80 mt-1">{atencion.paciente.apellidoPaterno} {atencion.paciente.apellidoMaterno}, {atencion.paciente.nombres} · {atencion.servicio.nombre} · {atencion.sede.nombre}</p>
           </div>
           <button onClick={() => { if (f.emitida || !f.items.length || window.confirm('¿Salir sin emitir? Se perderán los ítems agregados.')) onClose(); }} aria-label="Cerrar" className="material-symbols-outlined text-white/80 hover:text-white text-2xl min-w-[44px] min-h-[44px] flex items-center justify-center">close</button>
@@ -48,7 +52,8 @@ export function EmitirRecetaModal({ atencion, tipoDocumento, onClose }: { atenci
             <span className="material-symbols-outlined text-6xl text-emerald-600" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
             <h4 className="font-headline-sm text-headline-sm font-bold text-on-surface">{TIPO_DOC_LABEL[tipoDocumento]} N° {String(f.emitida.numero).padStart(6, '0')} emitida</h4>
             <p className="text-sm text-on-surface-variant">Código de verificación <b className="font-mono-label">{f.emitida.codigoVerificacion}</b> · {f.emitida.items.length} ítem(s)</p>
-            {f.esReceta && <p className="text-xs text-on-surface-variant -mt-2">El PDF trae el original para el paciente y una copia para la farmacia, con QR de verificación.</p>}
+            {f.editando && <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 -mt-1" data-testid="receta-corregida">Reemplaza a la N° {numEditando}, que quedó anulada (se conserva en la historia).</p>}
+            {f.esReceta && <p className="text-xs text-on-surface-variant -mt-2">El PDF sale en la mitad superior de una hoja A4 (para cortar), una sola copia, con QR de verificación.</p>}
             {!!f.emitida.advertencias?.length && (
               <div className="w-full max-w-md rounded-xl border border-error/30 bg-error-container text-on-error-container text-xs px-4 py-3 text-left">
                 <b>Advertencia de alergia:</b> {f.emitida.advertencias.map((a) => `${a.item} ↔ ${a.sustancia}`).join('; ')}
@@ -64,6 +69,11 @@ export function EmitirRecetaModal({ atencion, tipoDocumento, onClose }: { atenci
           <>
             <div className="flex-1 overflow-y-auto p-6 space-y-5 custom-scrollbar">
               <AlergiasBanner alergias={f.alergias} />
+              {f.editando && (
+                <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2" data-testid="aviso-editando-receta">
+                  Estás corrigiendo la <b>N° {numEditando}</b>. Cambia lo que haga falta y emite: sale una nueva con su propio número y QR, y la <b>N° {numEditando}</b> queda anulada (no se borra).
+                </p>
+              )}
               {f.esReceta && atencion.cita.medico && (
                 <p className="text-xs text-sky-900 bg-sky-50 border border-sky-200 rounded-xl px-3 py-2" data-testid="receta-a-nombre-de">
                   Sale a nombre de <b>{atencion.cita.medico.nombres} {atencion.cita.medico.apellidos}</b>{atencion.cita.medico.colegiatura ? <> · {atencion.cita.medico.colegiatura}</> : null}, el médico de la cita.
@@ -114,7 +124,7 @@ export function EmitirRecetaModal({ atencion, tipoDocumento, onClose }: { atenci
                 </div>
                 {sinDx ? (
                   <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                    Esta atención aún no tiene diagnósticos. Agrega uno en la pestaña <b>Evolución</b> para que el tratamiento quede agrupado por diagnóstico. Puedes continuar sin diagnóstico, pero es preferible registrarlo.
+                    Esta atención aún no tiene diagnósticos. Agrégalo aquí abajo para que el tratamiento quede agrupado por diagnóstico. Puedes continuar sin diagnóstico, pero es preferible registrarlo.
                   </p>
                 ) : (
                   <>
@@ -133,7 +143,43 @@ export function EmitirRecetaModal({ atencion, tipoDocumento, onClose }: { atenci
                     <p className="text-[11px] text-on-surface-variant mt-2">Lo que agregues abajo se guarda bajo <b>{f.dxActivo ? `${f.dxActivo} · ${dxActivoDesc?.cie10.descripcion ?? ''}` : 'sin diagnóstico'}</b>. Para prescribir por otro diagnóstico, cámbialo aquí y sigue agregando.</p>
                   </>
                 )}
+
+                {/* Agregar diagnóstico aquí mismo: queda en la atención (igual que en Evolución) y pasa a ser el activo. */}
+                {!agregandoDx ? (
+                  <button type="button" onClick={() => setAgregandoDx(true)} data-accion="agregar-dx-receta"
+                    className="mt-3 text-xs font-semibold text-primary hover:underline flex items-center gap-1">
+                    <span className="material-symbols-outlined text-base">add_circle</span>Agregar diagnóstico
+                  </button>
+                ) : (
+                  <div className="mt-3 rounded-xl border border-outline-variant/30 bg-surface-container-lowest p-3 space-y-2" data-testid="agregar-dx-receta">
+                    <div className="flex items-center justify-between">
+                      <span className={LBL}>Agregar diagnóstico a la atención</span>
+                      <button type="button" onClick={() => { setAgregandoDx(false); f.setDxNuevo(null); }} className="material-symbols-outlined text-on-surface-variant/70 hover:text-on-surface text-lg" aria-label="Cerrar">close</button>
+                    </div>
+                    <FrecuentesCie10 onSeleccionar={(c) => f.setDxNuevo(c)} />
+                    <BuscadorCie10 onSeleccionar={(c) => f.setDxNuevo(c)} />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="flex-1 min-w-[180px] text-xs text-on-surface">
+                        {f.dxNuevo ? <><b className="text-primary">{f.dxNuevo.codigo}</b> · {f.dxNuevo.descripcion}</> : <span className="text-on-surface-variant">Elige de la lista o búscalo por código o nombre.</span>}
+                      </span>
+                      <select value={f.dxNuevoTipo} onChange={(e) => f.setDxNuevoTipo(e.target.value as typeof f.dxNuevoTipo)} className="bg-surface-container-low border border-outline-variant rounded-lg px-2.5 py-2 text-sm">
+                        <option value="presuntivo">Presuntivo</option>
+                        <option value="definitivo">Definitivo</option>
+                      </select>
+                      <button type="button" disabled={!f.dxNuevo || f.agregarDxMut.isPending} onClick={() => f.dxNuevo && f.agregarDxMut.mutate(f.dxNuevo)}
+                        className="px-4 py-2 bg-primary text-on-primary rounded-lg text-sm font-bold disabled:opacity-40" data-accion="confirmar-dx-receta">
+                        {f.agregarDxMut.isPending ? 'Agregando…' : 'Agregar'}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
+
+              {/* Tratamientos habituales del diagnóstico activo (lista del ERP), con checks */}
+              {f.dxActivo && (
+                <TratamientosDiagnosticoPanel codigo={f.dxActivo} descripcion={dxActivoDesc?.cie10.descripcion ?? ''}
+                  tratamientos={f.tratamientosDx} cargando={f.cargandoTratamientosDx} permitido={f.tratamientoPermitido} onAgregar={f.agregarTratamientos} />
+              )}
 
               {/* Paso 2 · Agregar medicamento / servicio / producto (bajo el diagnóstico activo) */}
               <div className="rounded-2xl border border-outline-variant/30 p-4">
@@ -142,19 +188,19 @@ export function EmitirRecetaModal({ atencion, tipoDocumento, onClose }: { atenci
                   <span className="font-semibold text-on-surface text-sm">Agregar medicamentos, servicios y productos</span>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <div className="md:col-span-2">
+                  <div className={f.esReceta ? 'md:col-span-3' : 'md:col-span-2'}>
                     <label className={LBL}>Medicamento (genérico o marca)</label>
                     <BuscadorMedicamento onSeleccionar={f.agregarMedicamento} onManual={(n) => f.agregarManual(n)} soloVentaLibre={!f.esReceta} />
                   </div>
-                  {!f.esReceta ? (
-                    <div>
-                      <label className={LBL}>Servicio de la clínica</label>
-                      <select value={servicioSel} onChange={(e) => { f.agregarServicio(e.target.value); setServicioSel(''); }} className={INPUT}>
-                        <option value="">— Elegir —</option>
-                        {f.servicios.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
-                      </select>
-                    </div>
-                  ) : (
+                  {/* Servicios de la clínica: también en la receta médica (22-sep-2026), igual que en las indicaciones. */}
+                  <div className={f.esReceta ? 'md:col-span-2' : ''}>
+                    <label className={LBL}>Servicio de la clínica</label>
+                    <select value={servicioSel} onChange={(e) => { f.agregarServicio(e.target.value); setServicioSel(''); }} className={INPUT} data-testid="receta-servicio">
+                      <option value="">— Elegir —</option>
+                      {f.servicios.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+                    </select>
+                  </div>
+                  {f.esReceta && (
                     <div>
                       <label className={LBL}>Vigencia (días)</label>
                       {/* Texto libre mientras se escribe (se puede borrar y volver a teclear); se acota a 1–365 al salir del campo. */}
@@ -173,7 +219,7 @@ export function EmitirRecetaModal({ atencion, tipoDocumento, onClose }: { atenci
 
               {/* Paso 3 · Revisión — ítems agrupados por diagnóstico (como se imprimen) */}
               {f.items.length === 0 ? (
-                <div className="text-center text-sm text-on-surface-variant py-8 border border-dashed border-outline-variant/40 rounded-xl">Aún no hay ítems. Elige el diagnóstico y agrega un medicamento{f.esReceta ? '' : ', un servicio o un producto'}.</div>
+                <div className="text-center text-sm text-on-surface-variant py-8 border border-dashed border-outline-variant/40 rounded-xl">Aún no hay ítems. Elige el diagnóstico y agrega un medicamento{f.esReceta ? ' o un servicio' : ', un servicio o un producto'}.</div>
               ) : (
                 <div className="space-y-4">
                   {f.grupos.map((g) => (
@@ -190,7 +236,6 @@ export function EmitirRecetaModal({ atencion, tipoDocumento, onClose }: { atenci
                               <span className="font-bold text-primary text-sm w-5">{idx + 1}</span>
                               <span className="material-symbols-outlined text-base text-on-surface-variant/70">{ICONO[it.tipo ?? 'MEDICAMENTO_OTC']}</span>
                               <span className="font-semibold text-on-surface text-sm flex-1 truncate">{it.etiqueta}</span>
-                              <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${ETIQ[it.tipo ?? 'MEDICAMENTO_OTC']}`}>{TIPO_ITEM_LABEL[it.tipo ?? 'MEDICAMENTO_OTC']}</span>
                               {f.diagnosticos.length > 1 && (
                                 <select title="Mover a otro diagnóstico" value={it.diagnosticoCie10Codigo ?? ''} onChange={(e) => f.actualizarItem(it.key, { diagnosticoCie10Codigo: e.target.value || null })} className="text-[11px] bg-surface-container-low border border-outline-variant/40 rounded-md px-1.5 py-1 max-w-[130px]">
                                   {opcionesDx()}
@@ -200,14 +245,20 @@ export function EmitirRecetaModal({ atencion, tipoDocumento, onClose }: { atenci
                             </div>
                             <div className="grid grid-cols-2 md:grid-cols-6 gap-2 pl-7">
                               {it.tipo !== 'SERVICIO' && <div><label className={LBL}>Marca (se imprime)</label><input value={it.marcaImpresa ?? ''} onChange={(e) => f.actualizarItem(it.key, { marcaImpresa: e.target.value })} className={INPUT} /></div>}
-                              <div><label className={LBL}>Cantidad</label><input value={it.cantidad ?? ''} onChange={(e) => f.actualizarItem(it.key, { cantidad: e.target.value })} placeholder={it.tipo === 'SERVICIO' ? '12 sesiones' : '1 frasco'} className={INPUT} /></div>
-                              {it.tipo !== 'SERVICIO' && it.tipo !== 'PRODUCTO' && <div><label className={LBL}>Dosis</label><input value={it.dosis ?? ''} onChange={(e) => f.actualizarItem(it.key, { dosis: e.target.value })} placeholder="1 cápsula" className={INPUT} /></div>}
+                              <div><label className={LBL}>Cantidad</label><input value={it.cantidad ?? ''} onChange={(e) => f.actualizarItem(it.key, { cantidad: e.target.value })} placeholder={it.tipo === 'SERVICIO' ? '12 (sesiones)' : /crema|gel|ung/i.test(it.formaFarmaceutica ?? '') ? '1 (tubo)' : '14 (tabletas)'} className={INPUT} /></div>
+                              {it.tipo !== 'SERVICIO' && it.tipo !== 'PRODUCTO' && <div><label className={LBL}>Dosis</label><input value={it.dosis ?? ''} onChange={(e) => f.actualizarItem(it.key, { dosis: e.target.value })} placeholder={/crema|gel|ung|soluc|laca|spray/i.test(it.formaFarmaceutica ?? '') ? '1 (aplicación)' : '1 (cápsula)'} className={INPUT} /></div>}
                               {it.tipo !== 'SERVICIO' && it.tipo !== 'PRODUCTO' && <div><label className={LBL}>Vía</label><input value={it.via ?? ''} onChange={(e) => f.actualizarItem(it.key, { via: e.target.value })} placeholder="oral" className={INPUT} /></div>}
-                              <div><label className={LBL}>Frecuencia</label><input value={it.frecuencia ?? ''} onChange={(e) => f.actualizarItem(it.key, { frecuencia: e.target.value })} placeholder={it.tipo === 'SERVICIO' ? '1 vez por semana' : 'cada 12 h'} className={INPUT} /></div>
-                              <div><label className={LBL}>Duración</label><input value={it.duracion ?? ''} onChange={(e) => f.actualizarItem(it.key, { duracion: e.target.value })} placeholder={it.tipo === 'SERVICIO' ? '12 semanas' : '14 días'} className={INPUT} /></div>
+                              <div><label className={LBL}>Frecuencia</label><input value={it.frecuencia ?? ''} onChange={(e) => f.actualizarItem(it.key, { frecuencia: e.target.value })} placeholder={it.tipo === 'SERVICIO' ? '1 vez por semana' : '12 (= cada 12 h) · 2 (= 2 veces al día)'} className={INPUT} /></div>
+                              <div><label className={LBL}>Duración</label><input value={it.duracion ?? ''} onChange={(e) => f.actualizarItem(it.key, { duracion: e.target.value })} placeholder={it.tipo === 'SERVICIO' ? '12 semanas' : '7 (= 7 días) · 2 sem'} className={INPUT} /></div>
                               <div className="col-span-2 md:col-span-6"><label className={LBL}>Indicaciones {it.tipo === 'SERVICIO' ? 'del servicio' : ''}</label>
                                 <input value={it.indicaciones ?? ''} onChange={(e) => f.actualizarItem(it.key, { indicaciones: e.target.value })} placeholder={it.tipo === 'SERVICIO' ? 'Ej. Aplicar 1 vez por semana; evaluar respuesta al mes.' : 'Ej. Tomar con el desayuno y la cena.'} className={INPUT} />
                               </div>
+                              {/* Así se imprime: los números sueltos reciben su unidad (1 → 1 cápsula; 12 → cada 12 horas; 7 → 7 días) */}
+                              {(() => { const linea = lineaPosologia(it); const cant = textoCantidad(it.cantidad, it.formaFarmaceutica ?? '', it.tipo ?? ''); return (linea || cant) ? (
+                                <p className="col-span-2 md:col-span-6 text-[11px] text-on-surface-variant bg-surface-container-low/60 border border-outline-variant/20 rounded-lg px-2.5 py-1.5" data-testid="posologia-preview">
+                                  <span className="font-semibold text-on-surface">Así saldrá en la receta:</span> {[cant ? `Cantidad: ${cant}` : '', linea].filter(Boolean).join('  ·  ')}{it.indicaciones ? ` — ${it.indicaciones}` : ''}
+                                </p>
+                              ) : null; })()}
                             </div>
                           </div>
                         ))}
@@ -240,7 +291,7 @@ export function EmitirRecetaModal({ atencion, tipoDocumento, onClose }: { atenci
               <button type="button" onClick={onClose} className="flex-1 px-5 py-2.5 border border-outline-variant rounded-xl font-bold text-sm text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer">Cancelar</button>
               <button type="button" onClick={() => void f.emitir()} disabled={!f.puedeGuardar || f.emitirMut.isPending || f.chequeando}
                 className="flex-1 px-5 py-2.5 bg-primary text-on-primary rounded-xl font-bold text-sm shadow-md shadow-primary/20 hover:opacity-90 active:scale-[0.98] transition-all disabled:opacity-50 disabled:pointer-events-none cursor-pointer">
-                {f.chequeando ? 'Revisando alergias…' : f.emitirMut.isPending ? 'Emitiendo…' : f.esReceta ? 'Emitir receta médica' : 'Emitir indicaciones'}
+                {f.chequeando ? 'Revisando alergias…' : f.emitirMut.isPending ? 'Emitiendo…' : f.editando ? `Emitir corrección (anula la N° ${numEditando})` : f.esReceta ? 'Emitir receta médica' : 'Emitir indicaciones'}
               </button>
             </div>
           </>

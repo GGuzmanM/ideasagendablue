@@ -115,7 +115,7 @@ export const useAuthStore = create<AuthState>()(
         if (!u) return false;
         // Roles que ven TODAS las sedes (espeja ROLES_TODAS_SEDES del backend). Es solo acceso a
         // sedes; contact_center NO es coordinadora (no gestiona). Recepción NO entra aquí.
-        if (['admin', 'coordinadora_sedes', 'contact_center'].includes(u.rol)) return true;
+        if (['admin', 'coordinadora_sedes', 'contact_center', 'especial_contact', 'recursos_humanos'].includes(u.rol)) return true;
         return u.sedes.some(s => s.id === sedeId);
       },
     }),

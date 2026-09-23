@@ -51,8 +51,20 @@ export interface UnidadNegocio {
   color: string;
 }
 
+export interface SedeConsultorios {
+  id: string; nombre: string; color: string; activa: boolean;
+  consultorios: number;
+  /** Hasta qué número hay citas futuras o un aparato activo: no se puede bajar de ahí. */
+  enUsoHasta: number;
+  citasFuturasConConsultorio: number;
+  aparatosActivos: number;
+}
+
 export const sedesApi = {
   listar: () => api.get<Sede[]>('/sedes'),
+  consultorios: () => api.get<SedeConsultorios[]>('/sedes/consultorios'),
+  setConsultorios: (id: string, consultorios: number) =>
+    api.patch<{ id: string; nombre: string; consultorios: number }>(`/sedes/${id}/consultorios`, { consultorios }),
 };
 
 // ─── Profesionales ────────────────────────────────────────────────────────────
@@ -177,10 +189,11 @@ export const profesionalesApi = {
   setDiaEspecial: (data: { profesionalId: string; sedeId: string; fechas: string[]; viene: boolean; horaInicio?: '08:00' | '09:00' }) =>
     api.post<{ resultados: { fecha: string; accion: string }[]; errores: { fecha: string; error: string }[] }>('/profesionales/dia-especial/set', data),
 
-  crear: (data: { nombres: string; apellidos: string; tipo: string; unidadNegocioId: string; colorAvatar?: string; colegiatura?: string; emailAgenda?: string }) =>
+  // sedeId = sede base de la ficha (desde hoy, sin fin); vacío = no cambiar.
+  crear: (data: { nombres: string; apellidos: string; tipo: string; unidadNegocioId: string; colorAvatar?: string; colegiatura?: string; emailAgenda?: string; sedeId?: string }) =>
     api.post<Profesional>('/profesionales', data),
 
-  editar: (id: string, data: Partial<{ nombres: string; apellidos: string; tipo: string; unidadNegocioId: string; colorAvatar: string; activo: boolean; colegiatura: string; emailAgenda: string }>) =>
+  editar: (id: string, data: Partial<{ nombres: string; apellidos: string; tipo: string; unidadNegocioId: string; colorAvatar: string; activo: boolean; colegiatura: string; emailAgenda: string; sedeId: string }>) =>
     api.patch<Profesional>(`/profesionales/${id}`, data),
 };
 

@@ -8,12 +8,14 @@ import { cn } from '../../utils/cn';
 function FormularioProfesional({
   inicial,
   unidades,
+  sedes,
   onGuardar,
   onCancelar,
   guardando,
 }: {
   inicial?: Partial<FormProfesional>;
   unidades: { id: string; nombre: string }[];
+  sedes: { id: string; nombre: string }[];
   onGuardar: (data: FormProfesional) => void;
   onCancelar: () => void;
   guardando: boolean;
@@ -22,6 +24,7 @@ function FormularioProfesional({
   const [apellidos, setApellidos] = useState(inicial?.apellidos ?? '');
   const [tipo, setTipo] = useState(inicial?.tipo ?? 'podologa');
   const [unidadNegocioId, setUnidadNegocioId] = useState(inicial?.unidadNegocioId ?? '');
+  const [sedeId, setSedeId] = useState(inicial?.sedeId ?? '');
   const [colegiatura, setColegiatura] = useState(inicial?.colegiatura ?? '');
   const [emailAgenda, setEmailAgenda] = useState(inicial?.emailAgenda ?? '');
   const [colorAvatar, setColorAvatar] = useState(inicial?.colorAvatar ?? AVATAR_COLORES[0]);
@@ -44,6 +47,7 @@ function FormularioProfesional({
       colegiatura: colegiatura.trim() || undefined,
       emailAgenda: correo, // '' → el backend lo normaliza a null (quita la sincronización)
       colorAvatar,
+      sedeId: sedeId !== (inicial?.sedeId ?? '') ? sedeId : '', // solo se manda si cambió
     });
   };
 
@@ -83,6 +87,16 @@ function FormularioProfesional({
                 <option value="">Seleccionar área…</option>
                 {unidades.map(u => <option key={u.id} value={u.id}>{u.nombre}</option>)}
               </select>
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-semibold text-slate-500 mb-1">Sede {inicial?.nombres ? '' : '(Opcional)'}</label>
+              <select className="input w-full text-sm" value={sedeId} onChange={e => setSedeId(e.target.value)} data-testid="sede-profesional">
+                <option value="">{inicial?.nombres ? 'Sin sede asignada' : 'Asignar después en Movimientos…'}</option>
+                {sedes.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+              </select>
+              <p className="text-[11px] text-slate-400 mt-1 leading-snug">
+                Sede en la que atiende desde hoy, sin fecha de fin. Los cambios temporales (préstamos, coberturas) van por Movimientos.
+              </p>
             </div>
             <div className="col-span-2">
               <label className="block text-xs font-semibold text-slate-500 mb-1">N° Colegiatura (Opcional)</label>
@@ -241,6 +255,7 @@ export function PodologasPage() {
   const {
     isLoading,
     unidades,
+    sedes,
     filtro,
     setFiltro,
     busqueda,
@@ -372,7 +387,7 @@ export function PodologasPage() {
 
         <p className="text-xs text-slate-400 max-w-5xl pt-1">
           Las profesionales desactivadas no aparecen en la agenda ni en la lista de movimientos.
-          Para asignar una profesional a una sede, usa el módulo de <strong>Movimientos</strong>.
+          La sede base se elige al crear o editar la ficha; los préstamos y coberturas temporales van por <strong>Movimientos</strong>.
         </p>
       </div>
 
@@ -387,8 +402,10 @@ export function PodologasPage() {
             colegiatura: profEditando.colegiatura ?? '',
             emailAgenda: profEditando.emailAgenda ?? '',
             colorAvatar: profEditando.colorAvatar,
+            sedeId: profEditando.sedeActual?.id ?? '',
           } : undefined}
           unidades={unidades}
+          sedes={(sedes ?? []).filter((s) => s.activa !== false).map((s) => ({ id: s.id, nombre: s.nombre }))}
           onGuardar={(data) => {
             if (profEditando) {
               editarMut.mutate({ id: profEditando.id, data });

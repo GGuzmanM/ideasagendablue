@@ -22,6 +22,7 @@ export function PermisosPage({
   const navigate = useNavigate();
   const {
     puedeGestionar,
+    puedeOperacion,
     sedes,
     sedeId,
     setSedeSelId,
@@ -179,8 +180,8 @@ export function PermisosPage({
                         { id: 'individual', label: '🚫 Permiso', icon: 'block' },
                         { id: 'enfermedad', label: '🤒 Enfermedad', icon: 'sick' },
                         { id: 'reunion', label: '🤝 Reunión', icon: 'groups' },
-                        { id: 'vacaciones', label: '🌴 Vacaciones', icon: 'beach_access' },
-                      ].map((opt) => {
+                        { id: 'vacaciones', label: puedeOperacion ? '🌴 Vacaciones' : '🌴 Vacaciones / descanso médico (por días)', icon: 'beach_access' },
+                      ].filter((opt) => puedeOperacion || (opt.id !== 'enfermedad' && opt.id !== 'reunion')).map((opt) => {
                         const isSelected = modo === opt.id;
                         return (
                           <button

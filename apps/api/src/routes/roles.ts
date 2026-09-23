@@ -92,6 +92,7 @@ router.get('/permisos', requireAuth, async (_req, res) => {
     'Horarios y almuerzos': [
       { id: 'horarios.ver', label: 'Ver horarios de sede, ausencias y restricciones' },
       { id: 'horarios.editar', label: 'Gestionar horarios base, excepciones, almuerzos y permisos/ausencias' },
+      { id: 'ausencias.gestionar', label: 'Registrar SOLO ausencias del personal: permisos, vacaciones y descansos médicos (Recursos Humanos)' },
     ],
     'Profesionales y servicios': [
       { id: 'profesionales.ver', label: 'Ver profesionales' },

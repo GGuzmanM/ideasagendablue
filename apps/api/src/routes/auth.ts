@@ -10,7 +10,7 @@ import { loginLimiter } from '../middleware/rateLimits';
 const router = Router();
 
 const loginSchema = z.object({
-  email: z.string().email(),
+  email: z.string().trim().toLowerCase().email(), // el correo no distingue mayúsculas: «DA.SANTOS@…» con Bloq Mayús daba «usuario inexistente»
   password: z.string().min(6),
 });
 

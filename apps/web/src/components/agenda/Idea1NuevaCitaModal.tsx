@@ -101,6 +101,9 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
     setCombinar,
     extraServicioId,
     setExtraServicioId,
+    extraSubcategoriaId,
+    setExtraSubcategoriaId,
+    extraSubcategorias,
     extraProfesionalId,
     setExtraProfesionalId,
     verVisorGenexis,
@@ -451,7 +454,7 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
                   </div>
                   <div>
                     <label className="text-xs font-bold text-on-surface-variant block mb-1">
-                      N° Documento {npTipoDoc === 'DNI' && '(RENIEC)'}
+                      N° Documento * {npTipoDoc === 'DNI' && '(RENIEC)'}
                     </label>
                     <input
                       type="text"
@@ -508,7 +511,7 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs font-bold text-on-surface-variant block mb-1">Apellido Materno</label>
+                    <label className="text-xs font-bold text-on-surface-variant block mb-1">Apellido Materno *</label>
                     <input
                       type="text"
                       value={npApellidoMaterno}
@@ -804,6 +807,24 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
                         </option>
                       ))}
                     </select>
+                    {extraSubcategorias.length > 0 && (
+                      <>
+                        <label className="text-[11px] font-bold text-indigo-900 block mt-2 mb-1">Opción del extra *</label>
+                        <select
+                          value={extraSubcategoriaId}
+                          onChange={(e) => setExtraSubcategoriaId(e.target.value)}
+                          data-testid="extra-subcategoria"
+                          className="w-full bg-white border border-indigo-300 rounded-lg px-3 py-2 text-xs font-semibold text-indigo-950 outline-none"
+                        >
+                          <option value="">Seleccionar opción...</option>
+                          {(extraSubcategorias as any[]).map((sc) => (
+                            <option key={sc.id} value={sc.id}>
+                              {sc.nombre}{sc.precioReferencial != null ? ` (S/ ${Number(sc.precioReferencial)})` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </>
+                    )}
                   </div>
 
                   <div>

@@ -36,7 +36,9 @@ async function enviar(ruta: string, cuerpo: unknown) {
     headers: { 'Content-Type': 'application/json', Authorization: `Dispositivo ${token}` },
     body: JSON.stringify(cuerpo),
   });
-  const json = await r.json().catch(() => ({}));
+  // `res.json()` devuelve `unknown`; este script consume su propia API en desarrollo, así que se
+  // tipa en el borde y no en cada acceso.
+  const json: any = await r.json().catch(() => ({}));
   return { status: r.status, json };
 }
 

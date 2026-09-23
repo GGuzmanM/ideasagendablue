@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useBuscarCie10, useBuscarMedicamentos, type Cie10Item, type MedicamentoItem } from '../../api/catalogos';
+import { useBuscarCie10, useBuscarMedicamentos, useCie10Frecuentes, type Cie10Item, type MedicamentoItem } from '../../api/catalogos';
 
 const INPUT = 'w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2 text-sm text-on-surface outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all';
 
@@ -26,13 +26,27 @@ export function BuscadorCie10({ onSeleccionar, placeholder = 'Buscar diagnóstic
           {data.map((c) => (
             <button key={c.codigo} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => elegir(c)}
               className="w-full text-left px-3 py-2 hover:bg-primary/5 flex items-start gap-3 border-b border-outline-variant/15 last:border-0">
-              <span className="font-mono-label text-mono-label font-bold text-primary shrink-0 w-14">{c.codigo}</span>
+              <span className="font-mono-label text-mono-label font-bold text-primary shrink-0 w-14">{c.codigo}{c.frecuente && <span title="Diagnóstico frecuente de la clínica" className="text-amber-500"> ★</span>}</span>
               <span className="min-w-0"><span className="text-sm text-on-surface">{c.descripcion}</span>{c.categoria && <span className="block text-[11px] text-on-surface-variant">{c.categoria}</span>}</span>
             </button>
           ))}
         </div>
       )}
     </div>
+  );
+}
+
+// ─── Lista de diagnósticos frecuentes (los del ERP de la clínica) ──────────────
+// Para no tener que escribir: se elige de la lista y queda seleccionado igual que desde el buscador.
+export function FrecuentesCie10({ onSeleccionar }: { onSeleccionar: (c: Cie10Item) => void }) {
+  const { data = [] } = useCie10Frecuentes();
+  if (!data.length) return null;
+  return (
+    <select value="" onChange={(e) => { const c = data.find((x) => x.codigo === e.target.value); if (c) onSeleccionar(c); }}
+      className={`${INPUT} mb-1.5`} data-testid="dx-frecuentes" aria-label="Diagnósticos frecuentes">
+      <option value="">★ Diagnósticos frecuentes ({data.length})…</option>
+      {data.map((c) => <option key={c.codigo} value={c.codigo}>{c.codigo} · {c.descripcion}{c.tratamientos ? `  (${c.tratamientos} tratamientos)` : ''}</option>)}
+    </select>
   );
 }
 

@@ -5,7 +5,8 @@ import { prisma } from '../db';
 import { requireAuth, requirePermiso } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { turnosDelDia } from '../services/disponibilidad';
-import { fechaDb } from '../utils/fechaLima';
+import { fechaDb, hoyLimaStr } from '../utils/fechaLima';
+import { esFichaAdicional, fijarSedeBaseEnTx, notificarCambioMovimiento } from '../services/asignacionService';
 import { auditEnTx, registrarAudit } from '../services/audit';
 import { setOverrideTurnoFecha, setPresenciaExcepcion, setHorarioBase, efectosCambioHorario } from '../services/horarioService';
 
@@ -214,7 +215,7 @@ router.get('/', requireAuth, async (req, res) => {
   // derecho). El sort de V8 es estable → dentro de cada grupo se conserva el alfabético.
   const ordenMap = new Map(profesionales.map((p) => [p.id, p.ordenAgenda]));
   const peso = (row: { id: string; nombres: string }) =>
-    ordenMap.get(row.id) ?? (row.nombres === 'Adicional' ? 500 : 0);
+    ordenMap.get(row.id) ?? (esFichaAdicional(row.nombres) ? 500 : 0);
   lista.sort((a, b) => peso(a) - peso(b));
 
   res.json(lista);
@@ -317,15 +318,29 @@ const profesionalSchema = z.object({
   emailAgenda: z.string().email('Correo de agenda inválido').or(z.literal('')).nullable().optional(),
   colorAvatar: z.string().optional(),
   activo: z.boolean().optional(),
+  // Sede BASE de la ficha (desde hoy, sin fecha de fin). Vacío/null = no cambiar. Es la única vía para dar sede a las
+  // fichas fijas («Adicional», Baro), que Movimientos rechaza a propósito; a las demás les aplica las mismas reglas.
+  sedeId: z.string().uuid().nullable().optional(),
 });
 
 router.post('/', requireAuth, requirePermiso('profesionales.editar'), async (req, res) => {
-  const data = profesionalSchema.parse(req.body);
+  const { sedeId, ...data } = profesionalSchema.parse(req.body);
   if (data.emailAgenda === '') data.emailAgenda = null; // vacío = sin sincronización de calendario
-  const profesional = await prisma.profesional.create({
-    data: { ...data, creadoPor: req.user?.userId },
-    include: { unidadNegocio: { select: { id: true, nombre: true, color: true, modoReserva: true } } },
+  const { profesional, cambioSede } = await prisma.$transaction(async (tx) => {
+    const p = await tx.profesional.create({
+      data: { ...data, creadoPor: req.user?.userId },
+      include: { unidadNegocio: { select: { id: true, nombre: true, color: true, modoReserva: true } } },
+    });
+    const c = sedeId ? await fijarSedeBaseEnTx(tx, { profesionalId: p.id, sedeId, creadoPor: req.user?.userId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined }) : undefined;
+    // Una ficha «Adicional» es capacidad extra de la sede, no una persona: acepta cualquier tratamiento de su área.
+    // Sin competencias la agenda ni siquiera la muestra como columna, así que se habilita todo su catálogo de una vez.
+    if (esFichaAdicional(p.nombres)) {
+      const servicios = await tx.servicio.findMany({ where: { unidadNegocioId: p.unidadNegocioId, activo: true, deletedAt: null }, select: { id: true } });
+      if (servicios.length) await tx.competenciaProfesional.createMany({ data: servicios.map((s) => ({ profesionalId: p.id, servicioId: s.id, activa: true, habilitadoDesde: new Date() })), skipDuplicates: true });
+    }
+    return { profesional: p, cambioSede: c };
   });
+  if (sedeId && cambioSede) await notificarCambioMovimiento({ profesionalId: profesional.id, sedeId, sedeAnteriorId: cambioSede.sedeAnteriorId, fechaInicio: fechaDb(hoyLimaStr()), fechaFin: null });
   void registrarAudit({
     usuarioId: req.user?.userId, accion: 'crear', entidad: 'profesional', entidadId: profesional.id,
     despues: profesional as unknown as Record<string, unknown>,
@@ -335,13 +350,13 @@ router.post('/', requireAuth, requirePermiso('profesionales.editar'), async (req
 });
 
 router.patch('/:id', requireAuth, requirePermiso('profesionales.editar'), async (req, res) => {
-  const data = profesionalSchema.partial().parse(req.body);
+  const { sedeId, ...data } = profesionalSchema.partial().parse(req.body);
   if (data.emailAgenda === '') data.emailAgenda = null; // vacío = quitar la sincronización
   // Capturar el estado ANTES para diffear en auditoría.
   const antes = await prisma.profesional.findUnique({
     where: { id: req.params.id, deletedAt: null },
   });
-  const profesional = await prisma.$transaction(async (tx) => {
+  const { profesional, cambioSede } = await prisma.$transaction(async (tx) => {
     const p = await tx.profesional.update({
       where: { id: req.params.id, deletedAt: null },
       data,
@@ -351,8 +366,10 @@ router.patch('/:id', requireAuth, requirePermiso('profesionales.editar'), async 
     if (antes && !p.esEquipo && (antes.nombres !== p.nombres || antes.apellidos !== p.apellidos)) {
       await nombreDeFichaAUsuarioEnTx(tx, { nombre: `${p.nombres} ${p.apellidos}`, profesionalId: p.id, usuarioId: req.user?.userId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined });
     }
-    return p;
+    const c = sedeId ? await fijarSedeBaseEnTx(tx, { profesionalId: p.id, sedeId, creadoPor: req.user?.userId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined }) : undefined;
+    return { profesional: p, cambioSede: c };
   });
+  if (sedeId && cambioSede) await notificarCambioMovimiento({ profesionalId: profesional.id, sedeId, sedeAnteriorId: cambioSede.sedeAnteriorId, fechaInicio: fechaDb(hoyLimaStr()), fechaFin: null });
   void registrarAudit({
     usuarioId: req.user?.userId, accion: 'editar', entidad: 'profesional', entidadId: profesional.id,
     antes: antes as unknown as Record<string, unknown>,
@@ -723,8 +740,20 @@ router.post('/:id/bloqueos', requireAuth, requirePermiso('horarios.editar'), asy
   const prof = await prisma.profesional.findFirst({ where: { id: req.params.id, deletedAt: null }, select: { id: true } });
   if (!prof) throw new AppError('Profesional no encontrado', 404);
 
+  // La disponibilidad, la auto-asignación y el alta de citas leen la franja de `horaInicio`/`horaFin`
+  // («HH:mm»). Sin ellas el bloqueo quedaba guardado pero NO bloqueaba nada. Fecha sola = día completo.
+  const soloFecha = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v.trim());
+  const dia = (d: Date) => d.toISOString().slice(0, 10);
+  if (dia(ini) !== dia(fin)) throw new AppError('Un bloqueo es de un solo día. Para varios días usa Permisos › Vacaciones.', 400, 'BLOQUEO_VARIOS_DIAS');
+  const hhmm = (d: Date) => d.toISOString().slice(11, 16);
+  const horaInicio = soloFecha(fechaInicio) ? '08:00' : hhmm(ini);
+  const horaFin = soloFecha(fechaFin) ? '20:00' : hhmm(fin);
+  if (horaFin <= horaInicio) throw new AppError('La hora de fin debe ser posterior a la de inicio', 400);
   const bloqueo = await prisma.bloqueoAgenda.create({
-    data: { profesionalId: req.params.id, fechaInicio: ini, fechaFin: fin, motivo },
+    data: {
+      profesionalId: req.params.id, motivo, horaInicio, horaFin, creadoPor: req.user?.userId,
+      fechaInicio: new Date(`${dia(ini)}T${horaInicio}:00`), fechaFin: new Date(`${dia(ini)}T${horaFin}:00`),
+    },
   });
   res.status(201).json(bloqueo);
 });

@@ -12,7 +12,7 @@ import { TextareaDictado } from '../components/historiaClinica/BotonDictado';
 import { BarraDictadoConsulta } from '../components/historiaClinica/DictadoConsulta';
 import type { SeccionDictado } from '../utils/dictadoEstructurado';
 import { AlergiasBanner } from '../components/historiaClinica/AlergiasBanner';
-import { BuscadorCie10 } from '../components/historiaClinica/Buscadores';
+import { BuscadorCie10, FrecuentesCie10 } from '../components/historiaClinica/Buscadores';
 import { FormItb, FormOsi, FormManchester, FormExamenPie } from '../components/historiaClinica/EscalasPie';
 import { CatalogoCie10Dialog } from '../components/historiaClinica/CatalogoCie10Dialog';
 import { CamaraFantasma } from '../components/historiaClinica/CamaraFantasma';
@@ -254,7 +254,7 @@ export function HistoriaClinicaPage() {
       </div>
 
       {h.citaARegistrar && <RegistrarAtencionModal cita={h.citaARegistrar} nombrePaciente={nombre} onClose={() => h.setCitaARegistrar(null)} onCreada={h.onAtencionCreada} />}
-      {h.recetaModal && h.atencion && <EmitirRecetaModal atencion={h.atencion} tipoDocumento={h.recetaModal} onClose={() => h.setRecetaModal(null)} />}
+      {h.recetaModal && h.atencion && <EmitirRecetaModal atencion={h.atencion} tipoDocumento={h.recetaModal} recetaAEditar={h.recetaEditar} onClose={() => { h.setRecetaModal(null); h.setRecetaEditar(null); }} />}
       {h.revisarDictado && h.propuestaDictado && (
         <RevisarDictadoDialog
           propuesta={h.propuestaDictado}
@@ -437,6 +437,8 @@ function PanelEvolucion({ h, a }: { h: H; a: AtencionCompleta }) {
               {e.dxSel ? (
                 <div className="flex items-center gap-2 rounded-lg bg-primary/5 border border-primary/30 px-3 py-2 text-sm"><b className="text-primary">{e.dxSel.codigo}</b><span className="truncate flex-1">{e.dxSel.descripcion}</span><button onClick={() => e.setDxSel(null)} className="material-symbols-outlined text-base">close</button></div>
               ) : (
+                <>
+                <FrecuentesCie10 onSeleccionar={(cie) => e.setDxSel(cie)} />
                 <BuscadorCie10 consulta={h.dxDictado} onSeleccionar={(cie) => {
                   const d = h.dxDictado;
                   h.limpiarDxDictado();
@@ -446,6 +448,7 @@ function PanelEvolucion({ h, a }: { h: H; a: AtencionCompleta }) {
                   if (d?.tipo) e.setDxTipo(d.tipo);
                   if (d?.principal !== undefined) e.setDxPrincipal(d.principal);
                 }} />
+                </>
               )}
             </div>
             <div><label className={LBL}>Tipo</label><select value={e.dxTipo} onChange={(ev) => e.setDxTipo(ev.target.value as 'presuntivo' | 'definitivo')} className={INPUT}><option value="presuntivo">Presuntivo</option><option value="definitivo">Definitivo</option></select></div>
@@ -607,6 +610,14 @@ function PanelReceta({ h, a }: { h: H; a: AtencionCompleta }) {
               <button onClick={() => r.imprimir(x.id)} className="min-h-[44px] lg:min-h-0 px-3 py-1.5 border border-outline-variant rounded-lg text-xs font-semibold hover:bg-surface-container-high flex items-center gap-1"><span className="material-symbols-outlined text-base">print</span>Imprimir</button>
               {r.puedeFirmar(x) && <button data-testid="imprimir-con-firma" onClick={() => r.imprimirConFirma(x.id)} className="min-h-[44px] lg:min-h-0 px-3 py-1.5 border border-sky-300 text-sky-800 bg-sky-50 rounded-lg text-xs font-semibold hover:bg-sky-100 flex items-center gap-1"><span className="material-symbols-outlined text-base">signature</span>Imprimir con mi firma</button>}
               </>}
+              {/* Editar = corregir: se abre cargada y, al emitir, sale una nueva y esta queda anulada. Requiere la atención abierta
+                  y poder emitir ese tipo (receta médica: el médico de la cita, o admin/coordinación a su nombre). */}
+              {!cerrada && r.puedeAnular(x) && (x.tipoDocumento === 'RECETA_MEDICA' ? r.emitirReceta.puede : h.puedeRegistrar) && (
+                <button data-testid={`editar-receta-${x.numero}`} disabled={r.abriendoEdicion === x.id} onClick={() => r.editar(x.id, (rc) => { h.setRecetaEditar(rc); h.setRecetaModal(rc.tipoDocumento); })}
+                  className="min-h-[44px] lg:min-h-0 px-3 py-1.5 border border-primary/40 text-primary bg-primary/5 rounded-lg text-xs font-semibold hover:bg-primary/10 flex items-center gap-1 disabled:opacity-50">
+                  <span className="material-symbols-outlined text-base">edit_note</span>{r.abriendoEdicion === x.id ? 'Abriendo…' : 'Editar'}
+                </button>
+              )}
               {r.puedeAnular(x) && <button onClick={() => r.setAnulando(x.id)} className="min-h-[44px] lg:min-h-0 px-3 py-1.5 text-rose-600 text-xs font-semibold hover:underline">Anular</button>}
             </div>
           ))}

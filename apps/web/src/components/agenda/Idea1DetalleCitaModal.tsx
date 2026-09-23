@@ -1,3 +1,4 @@
+import { urlArchivo } from '../../utils/urlArchivo';
 import React from 'react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -61,6 +62,14 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
     setHoraSel,
     profSel,
     setProfSel,
+    esBaro,
+    maquinasBaro,
+    elegirMaquina,
+    bloqueReprogramable,
+    duracionBloque,
+    esAdicional,
+    atendioOpciones,
+    atendidoPorMutation,
     fechaSelStr,
     profesionales,
     datosPaciente,
@@ -218,7 +227,7 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
 
               {cita.comprobanteUrl && (
                 <a
-                  href={cita.comprobanteUrl}
+                  href={urlArchivo(cita.comprobanteUrl)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 flex items-center gap-1.5 transition-colors cursor-pointer"
@@ -472,6 +481,38 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                 )}
               </div>
 
+              {/* Columna «Adicional»: qué podóloga la atendió de verdad (informativo; no ocupa su agenda). */}
+              {esAdicional && (
+                <>
+                  <div className="font-label-caps text-label-caps text-on-surface-variant/70 uppercase tracking-wider">Atendió</div>
+                  <div className="relative" data-campo="atendido-por">
+                    <select
+                      value={cita.atendidoPor?.id ?? ''}
+                      disabled={atendidoPorMutation.isPending || estadoNorm === 'cancelada'}
+                      onChange={(e) => atendidoPorMutation.mutate(e.target.value || null)}
+                      className="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-xl px-3 py-1.5 text-xs font-medium text-on-surface outline-none focus:ring-2 focus:ring-primary/20 appearance-none hover:border-primary/40 transition-colors"
+                    >
+                      <option value="">— Sin especificar (¿quién la atendió?) —</option>
+                      {/* La ya elegida siempre aparece, aunque ya no esté en la lista. */}
+                      {cita.atendidoPor && ![...atendioOpciones.deLaSede, ...atendioOpciones.otras].some((p) => p.id === cita.atendidoPor!.id) && (
+                        <option value={cita.atendidoPor.id}>{cita.atendidoPor.nombres} {cita.atendidoPor.apellidos}</option>
+                      )}
+                      {atendioOpciones.deLaSede.length > 0 && (
+                        <optgroup label="Hoy en esta sede">
+                          {atendioOpciones.deLaSede.map((p) => <option key={p.id} value={p.id}>{p.nombres} {p.apellidos}</option>)}
+                        </optgroup>
+                      )}
+                      {atendioOpciones.otras.length > 0 && (
+                        <optgroup label="De otras sedes (hacen este servicio)">
+                          {atendioOpciones.otras.map((p) => <option key={p.id} value={p.id}>{p.nombres} {p.apellidos}</option>)}
+                        </optgroup>
+                      )}
+                    </select>
+                    <span className="material-symbols-outlined absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-on-surface-variant/60 text-base">expand_more</span>
+                  </div>
+                </>
+              )}
+
               {equipoBaro && (
                 <>
                   <div className="font-label-caps text-label-caps text-on-surface-variant/70 uppercase tracking-wider">Equipo</div>
@@ -529,6 +570,13 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                   {canalesOpts.find((c) => c.value === canalSel)?.label ?? canalSel ?? '—'}
                 </div>
               )}
+
+              {/* Quién registró la cita (usuario del sistema). Sin usuario = reserva en línea del paciente o carga masiva. */}
+              <div className="font-label-caps text-label-caps text-on-surface-variant/70 uppercase tracking-wider">Agendó</div>
+              <div className="flex items-center gap-2 text-xs font-medium text-on-surface px-3 py-1.5 rounded-xl bg-surface-container border border-outline-variant/20" data-campo="agendo">
+                <span className="material-symbols-outlined text-primary text-base">badge</span>
+                <span className="truncate">{cita.creadoPorUsuario?.nombre ?? 'Sin usuario registrado'}</span>
+              </div>
 
               <div className="font-label-caps text-label-caps text-on-surface-variant/70 uppercase tracking-wider">Promoción</div>
               <div className="relative">
@@ -756,14 +804,16 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
               );
             })()}
 
-            {/* REPROGRAMAR — solo AGENDADAS: enviar a otro día/hora con validación de disponibilidad */}
-            {puedeReprogramar && !esCombo && estadoNorm === 'agendada' && !reprogramando && (
+            {/* REPROGRAMAR — solo AGENDADAS: enviar a otro día/hora con validación de disponibilidad.
+                Cita doble (bloque): se reprograma el bloque COMPLETO, si ninguna de las dos mitades avanzó. */}
+            {puedeReprogramar && (esCombo ? bloqueReprogramable : estadoNorm === 'agendada') && !reprogramando && (
               <button
                 onClick={() => setReprogramando(true)}
+                data-testid="btn-reprogramar"
                 className="w-full flex items-center justify-center gap-2 p-3 border border-primary/40 text-primary bg-primary/5 hover:bg-primary/10 rounded-2xl transition-all font-bold text-sm cursor-pointer"
               >
                 <span className="material-symbols-outlined text-lg">event_repeat</span>
-                Reprogramar cita (otro día)
+                {esCombo ? 'Reprogramar cita doble (otro día)' : 'Reprogramar cita (otro día)'}
               </button>
             )}
 
@@ -820,7 +870,8 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                   <p className="text-xs font-bold text-on-surface mb-2">Fecha</p>
                   <div className="flex gap-1.5 flex-wrap">
                     {diasRapidos.map((d, i) => {
-                      const isHoy = i === 0;
+                      // «Hoy» solo si ES hoy: cuando la cita es de otra semana su propio día va primero y antes salía rotulado «Hoy».
+                      const isHoy = format(d, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
                       const sel = format(d, 'yyyy-MM-dd') === fechaSelStr;
                       return (
                         <button
@@ -836,9 +887,54 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                         </button>
                       );
                     })}
+                    {/* Cualquier otra fecha (los atajos son solo los días cercanos) */}
+                    <label className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+                      !diasRapidos.some((d) => format(d, 'yyyy-MM-dd') === fechaSelStr)
+                        ? 'bg-primary text-white border-primary shadow-xs'
+                        : 'bg-surface-container-lowest text-on-surface border-outline-variant/30 hover:border-primary'
+                    }`} title="Elegir otra fecha">
+                      <span className="material-symbols-outlined text-[15px]">calendar_month</span>
+                      <input
+                        type="date"
+                        value={fechaSelStr}
+                        min={format(new Date(), 'yyyy-MM-dd')}
+                        onChange={(e) => { if (e.target.value) setFechaSel(new Date(e.target.value + 'T12:00:00')); }}
+                        data-testid="reprogramar-fecha"
+                        className="bg-transparent outline-none text-xs font-semibold w-[118px] [color-scheme:light] text-inherit"
+                      />
+                    </label>
                   </div>
                 </div>
 
+                {/* Baropodometría con 2+ máquinas en la sede: se elige la MÁQUINA (Baro 1 / Baro 2), no un profesional. */}
+                {elegirMaquina && (
+                  <div data-testid="reprogramar-maquina-baro">
+                    <p className="text-xs font-bold text-on-surface mb-2">Baro (máquina)</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {maquinasBaro.map((m) => {
+                        const sel = profSel === m.id;
+                        return (
+                          <button
+                            key={m.id}
+                            onClick={() => setProfSel(m.id)}
+                            data-maquina={`${m.nombres} ${m.apellidos}`.trim()}
+                            className={`flex items-center gap-2 px-2.5 py-1.5 rounded-xl text-xs font-semibold border transition-all text-left ${
+                              sel
+                                ? 'bg-primary text-white border-primary shadow-xs'
+                                : 'bg-surface-container-lowest text-on-surface border-outline-variant/30 hover:border-primary'
+                            }`}
+                          >
+                            <span className={`material-symbols-outlined text-base ${sel ? 'text-white' : 'text-primary'}`}>monitor_heart</span>
+                            <span className="truncate">{`${m.nombres} ${m.apellidos}`.trim()}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* En baro con una sola máquina no hay nada que elegir: el servidor la pone como siempre. */}
+                {!esBaro && (
                 <div>
                   <p className="text-xs font-bold text-on-surface mb-2">Profesional</p>
                   {profesionales ? (
@@ -874,11 +970,12 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                     <p className="text-xs text-on-surface-variant">Cargando profesionales...</p>
                   )}
                 </div>
+                )}
 
                 <div>
                   <p className="text-xs font-bold text-on-surface mb-2">Hora</p>
                   <div className="grid grid-cols-5 gap-1.5 max-h-36 overflow-y-auto custom-scrollbar">
-                    {SLOTS.filter((slot) => horaInicioValidaParaDuracion(slot, cita.duracionMinutos)).map((slot) => {
+                    {SLOTS.filter((slot) => horaInicioValidaParaDuracion(slot, duracionBloque)).map((slot) => {
                       const ocupado = slotsOcupados.has(slot) || dispoReprogCargando || !slotsAgendables.has(slot);
                       const sel = horaSel === slot;
                       return (
@@ -904,7 +1001,10 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                 <div className="flex gap-2 pt-2">
                   <button
                     onClick={() => moverMutation.mutate()}
-                    disabled={moverMutation.isPending || !profSel || !horaSel}
+                    // La hora elegida debe seguir LIBRE para el día y profesional marcados: al cambiar de día la hora
+                    // anterior quedaba seleccionada aunque saliera tachada, y se enviaba igual.
+                    disabled={moverMutation.isPending || !profSel || !horaSel || dispoReprogCargando || slotsOcupados.has(horaSel) || !slotsAgendables.has(horaSel)}
+                    title={!dispoReprogCargando && horaSel && (slotsOcupados.has(horaSel) || !slotsAgendables.has(horaSel)) ? 'Esa hora no está libre ese día: elige otra' : undefined}
                     className="flex-1 bg-primary text-white py-2 rounded-xl text-xs font-bold shadow-md shadow-primary/20 hover:opacity-90 disabled:opacity-50 transition-all cursor-pointer"
                   >
                     {moverMutation.isPending ? 'Guardando...' : 'Confirmar cambio'}
@@ -931,7 +1031,7 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                     {cita.comprobanteNombre || 'Comprobante adjuntado'}
                   </span>
                   <button
-                    onClick={() => window.open(cita.comprobanteUrl!, '_blank')}
+                    onClick={() => window.open(urlArchivo(cita.comprobanteUrl!), '_blank')}
                     className="text-xs font-bold text-primary hover:underline shrink-0 flex items-center gap-1"
                   >
                     <span>Abrir</span>
@@ -1038,6 +1138,25 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                   Registrar atención clínica
                 </button>
               ) : null
+            )}
+
+            {/* Antes de «Llegó» no había NINGÚN acceso a la historia desde la cita: el médico (que no cambia estados)
+                abría una cita «Agendada» y creía que no tenía acceso, mientras recepción sí lo veía al marcar «Llegó».
+                Ver la historia del paciente no depende del estado; REGISTRAR la atención sí (el paciente debe haber llegado). */}
+            {puedeVerHc && !['llego', 'en_atencion', 'completada'].includes(estadoNorm) && (
+              <div>
+                <button
+                  onClick={() => { onClose(); navigate(`/historia-clinica/${cita.pacienteId}`); }}
+                  data-testid="ver-hc-paciente"
+                  className="w-full flex items-center justify-center gap-2 p-3 border border-outline-variant text-on-surface bg-surface-container-low hover:bg-surface-container rounded-2xl transition-all font-bold text-sm cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-lg">clinical_notes</span>
+                  Ver historia clínica del paciente
+                </button>
+                {puedeRegistrarHc && !['cancelada', 'no_show', 'reprogramada'].includes(estadoNorm) && (
+                  <p className="text-[11px] text-on-surface-variant text-center mt-1.5">Para registrar la atención de esta cita, recepción debe marcar primero «Llegó».</p>
+                )}
+              </div>
             )}
 
             {/* BOTÓN GENEXIS (SI APLICA) */}
@@ -1191,9 +1310,10 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
               </>
             )}
 
-            <p className="text-center font-mono text-[10px] uppercase tracking-tighter text-on-surface-variant/40">
+            {/* En negro y negrita para que se lea (antes era gris muy tenue). */}
+            <p className="text-center font-mono text-[11px] uppercase tracking-tight text-on-surface font-semibold" data-campo="creada-por">
               Creada: {format(new Date(cita.creadoEn ?? Date.now()), "dd/MM/yyyy 'a las' HH:mm", { locale: es })}
-              {cita.creadoPorUsuario && ` · por ${cita.creadoPorUsuario.nombre}`}
+              {cita.creadoPorUsuario && <> · por <b className="font-extrabold">{cita.creadoPorUsuario.nombre}</b></>}
             </p>
           </div>
         </div>

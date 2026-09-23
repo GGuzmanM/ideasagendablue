@@ -68,7 +68,7 @@ const editarAtencionSchema = z.object({
   profesionalId: uuid.nullable().optional(),
 });
 const notaSchema = z.object({
-  tipo: z.enum(['evolucion', 'procedimiento', 'indicacion', 'observacion']).optional(),
+  tipo: z.enum(['evolucion', 'procedimiento', 'indicacion', 'observacion', 'procedimiento_preventivo']).optional(),
   subjetivo: texto(5000), objetivo: texto(5000), apreciacion: texto(5000), plan: texto(5000), texto: texto(5000),
   profesionalId: uuid.nullable().optional(),
 });

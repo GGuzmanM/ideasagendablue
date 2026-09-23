@@ -27,7 +27,7 @@ function esFinDeMes(ymdStr: string): boolean {
 
 const esMaquinaBaro = (nombres: string, apellidos: string) => /^baro\s*\d+$/i.test(`${nombres} ${apellidos}`.trim());
 
-export async function renovarAsignacionesMensuales(): Promise<{ renovadosBaro: number; renovadosRecep: number; mes: string }> {
+export async function renovarAsignacionesMensuales(): Promise<{ renovadosBaro: number; renovadosRecep: number; renovadosAlmuerzo: number; mes: string }> {
   const hoyStr = ymdLima(new Date());
   const [Y, M] = hoyStr.split('-').map(Number);
   const mesIniStr = `${Y}-${pad(M)}-01`;
@@ -100,18 +100,56 @@ export async function renovarAsignacionesMensuales(): Promise<{ renovadosBaro: n
     renovadosRecep++;
   }
 
-  return { renovadosBaro, renovadosRecep, mes: `${Y}-${pad(M)}` };
+  // ── ALMUERZOS (bloqueos_agenda tipo ALMUERZO recurrente, vigentes «hasta fin de mes») ──
+  // Sin esto, el día 1 TODAS las podólogas amanecían sin almuerzo y la franja quedaba agendable.
+  // Mismo criterio: manda el ÚLTIMO almuerzo recurrente de cada profesional (incluidos los borrados:
+  // si lo quitaron, no resucita); solo se renueva el que terminó justo a fin de mes, y en la sede
+  // donde la persona está HOY (si la movieron de sede, el almuerzo la acompaña).
+  let renovadosAlmuerzo = 0;
+  const almIni = new Date(`${mesIniStr}T00:00:00.000Z`);
+  const almFin = new Date(`${mesFinStr}T23:59:59.999Z`);
+  const hoyDb = new Date(`${hoyStr}T12:00:00.000Z`);
+  const almuerzos = await prisma.bloqueoAgenda.findMany({
+    where: { tipo: 'ALMUERZO', esRecurrente: true, profesional: { activo: true, deletedAt: null } },
+    select: { profesionalId: true, deletedAt: true, fechaFin: true, horaInicio: true, horaFin: true, duracionMin: true, motivo: true },
+    orderBy: [{ fechaInicio: 'desc' }, { creadoEn: 'desc' }],
+  });
+  const ultimoAlm = new Map<string, (typeof almuerzos)[number]>();
+  for (const a of almuerzos) if (!ultimoAlm.has(a.profesionalId)) ultimoAlm.set(a.profesionalId, a);
+  for (const [profId, ult] of ultimoAlm) {
+    if (ult.deletedAt || !ult.horaInicio || !ult.horaFin) continue;
+    const finStr = ymd(ult.fechaFin);
+    if (finStr >= mesIniStr || !esFinDeMes(finStr)) continue;
+    const cubre = await prisma.bloqueoAgenda.count({ where: { profesionalId: profId, tipo: 'ALMUERZO', deletedAt: null, fechaFin: { gte: almIni } } });
+    if (cubre > 0) continue;
+    const sedeHoy = await prisma.asignacionSede.findFirst({
+      where: { profesionalId: profId, fechaInicio: { lte: hoyDb }, OR: [{ fechaFin: null }, { fechaFin: { gte: hoyDb } }] },
+      orderBy: { fechaInicio: 'desc' }, select: { sedeId: true },
+    });
+    if (!sedeHoy) continue;
+    await prisma.bloqueoAgenda.create({
+      data: {
+        profesionalId: profId, sedeId: sedeHoy.sedeId, tipo: 'ALMUERZO', esRecurrente: true, horaInicio: ult.horaInicio, horaFin: ult.horaFin,
+        duracionMin: ult.duracionMin, motivo: ult.motivo, fechaInicio: almIni, fechaFin: almFin,
+      },
+    });
+    renovadosAlmuerzo++;
+  }
+
+  return { renovadosBaro, renovadosRecep, renovadosAlmuerzo, mes: `${Y}-${pad(M)}` };
 }
 
-// Arranca el job: corre ahora (catch-up) y luego cada 12 h (idempotente; cubre el cambio de mes).
+// Arranca el job: corre ahora (catch-up) y luego cada 15 min (idempotente; cubre el cambio de mes).
 export function iniciarRenovacionMensual() {
   const correr = () =>
     renovarAsignacionesMensuales()
       .then((r) => {
-        if (r.renovadosBaro || r.renovadosRecep)
-          console.log(`[renovacion-mensual] ${r.mes}: baro=${r.renovadosBaro}, recepción=${r.renovadosRecep} renovados`);
+        if (r.renovadosBaro || r.renovadosRecep || r.renovadosAlmuerzo)
+          console.log(`[renovacion-mensual] ${r.mes}: baro=${r.renovadosBaro}, recepción=${r.renovadosRecep}, almuerzos=${r.renovadosAlmuerzo} renovados`);
       })
       .catch((e) => console.error('[renovacion-mensual] error:', e?.message ?? e));
   correr();
-  setInterval(correr, 12 * 60 * 60 * 1000);
+  // Cada 15 min (antes 12 h): el día 1 a las 00:00 nadie debe quedarse horas sin sede. Las recepcionistas
+  // derivan su ACCESO de esta asignación: con 12 h de espera podían no poder entrar la mañana del 1°.
+  setInterval(correr, 15 * 60 * 1000);
 }

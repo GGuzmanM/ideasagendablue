@@ -67,7 +67,8 @@ export const recetasPacienteKey = (pacienteId: string) => ['recetas-paciente', p
 export const favoritasKey = (tipo: TipoDocumentoReceta) => ['recetas-favoritas', tipo] as const;
 
 export const recetasApi = {
-  emitir: (data: { atencionId: string; tipoDocumento: TipoDocumentoReceta; emisorProfesionalId?: string | null; indicacionesGenerales?: string | null; vigenciaDias?: number | null; items: ItemEntrada[] }) =>
+  // reemplazaRecetaId: «Editar» — la receta que esta corrige (el servidor la anula en la misma operación).
+  emitir: (data: { atencionId: string; tipoDocumento: TipoDocumentoReceta; emisorProfesionalId?: string | null; indicacionesGenerales?: string | null; vigenciaDias?: number | null; items: ItemEntrada[]; reemplazaRecetaId?: string | null }) =>
     api.post<RecetaCompleta>('/recetas', data),
   advertencias: (atencionId: string, items: { nombre: string; marcaImpresa?: string | null; medicamentoId?: string | null; via?: string | null; formaFarmaceutica?: string | null }[]) =>
     api.post<AvisosReceta>('/recetas/advertencias', { atencionId, items }),
@@ -79,7 +80,7 @@ export const recetasApi = {
     api.post<RecetaFavorita>('/recetas/favoritas', data),
   eliminarFavorita: (id: string) => api.delete<{ ok: boolean }>(`/recetas/favoritas/${id}`),
   // PDF en streaming (blob autenticado): el <iframe>/window.open no puede mandar Authorization.
-  // `copias`: la receta médica sale por defecto con ORIGINAL + COPIA PARA FARMACIA (2); 1 = solo original.
+  // `copias`: por defecto UNA sola (media hoja A4); 2 = agrega la copia para la farmacia (solo receta médica).
   descargarPdfBlob: async (id: string, copias?: 1 | 2, conFirma = false): Promise<Blob> => {
     const token = useAuthStore.getState().token;
     const q = new URLSearchParams();

@@ -25,7 +25,7 @@ const ESCALA: Record<string, string> = {
 const ANTECEDENTE: Record<string, string> = {
   patologico: 'Patológicos', quirurgico: 'Quirúrgicos', familiar: 'Familiares', farmacologico: 'Farmacológicos', habito: 'Hábitos', otro: 'Otros',
 };
-const NOTA: Record<string, string> = { evolucion: 'Nota de evolución', procedimiento: 'Nota de procedimiento', indicacion: 'Indicación', observacion: 'Observación' };
+const NOTA: Record<string, string> = { evolucion: 'Nota de evolución', procedimiento: 'Nota de procedimiento', indicacion: 'Indicación', observacion: 'Observación', procedimiento_preventivo: 'Procedimiento preventivo' };
 const PROFESION: Record<string, string> = { podologa: 'Podóloga', medico: 'Médico', fisioterapeuta: 'Fisioterapeuta' };
 const PIE_LABEL: Record<string, string> = { izquierdo: 'pie izquierdo', derecho: 'pie derecho', ambos: 'ambos pies' };
 const DOC_RECETA: Record<string, string> = { RECETA_MEDICA: 'Receta médica', INDICACIONES_PODOLOGICAS: 'Indicaciones podológicas' };

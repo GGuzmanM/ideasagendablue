@@ -20,6 +20,7 @@ import {
   rangoFechas,
   cuentaRegresiva,
   iniciales,
+  esFichaAdicional,
 } from '../services/movimientosService';
 
 // ─── Piezas visuales ──────────────────────────────────────────────────────────
@@ -75,12 +76,16 @@ function PodologaCard({ mov, canWrite, onEditar, onEliminar }: {
   const cobertura = esCobertura(mov);
   const style = MOTIVO_STYLE[mov.motivo] ?? MOTIVO_STYLE.OTRO;
   const puedeEliminar = canWrite && mov.estadoCalc !== 'historial';
+  // «Adicional <sede>»: columna extra fija de la sede. Se ve, pero no se arrastra ni se edita desde aquí
+  // (su sede se cambia en Administración › Podólogas › Editar).
+  const fija = esFichaAdicional(mov.profesional);
+  const movible = canWrite && !fija;
 
   // Arrastrable: soltar en otra sede la MUEVE (crea un movimiento desde el día visto, SIN fecha de fin).
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `pod-${mov.sedeId}-${mov.id}`,
     data: { profesionalId: mov.profesionalId, fromSedeId: mov.sedeId, nombre: `${mov.profesional.nombres} ${mov.profesional.apellidos}` },
-    disabled: !canWrite,
+    disabled: !movible,
   });
   const dragStyle = { transform: CSS.Translate.toString(transform), opacity: isDragging ? 0.4 : 1, zIndex: isDragging ? 50 : undefined };
 
@@ -88,10 +93,13 @@ function PodologaCard({ mov, canWrite, onEditar, onEliminar }: {
     <div
       ref={setNodeRef}
       style={dragStyle}
-      {...(canWrite ? { ...attributes, ...listeners } : {})}
+      {...(movible ? { ...attributes, ...listeners } : {})}
+      data-testid={fija ? 'card-adicional' : undefined}
+      title={fija ? 'Columna adicional fija de la sede. Su sede se cambia en Administración › Podólogas.' : undefined}
       className={cn(
       'group relative bg-surface-container-lowest rounded-xl border border-outline-variant/40 py-3 pl-3 pr-1.5 flex items-start gap-2.5 transition-all hover:shadow-md hover:border-outline-variant',
-      canWrite && 'cursor-grab active:cursor-grabbing',
+      movible && 'cursor-grab active:cursor-grabbing',
+      fija && 'border-dashed bg-surface-container-low/60',
       cobertura && cn('border-l-[3px]', style.accent),
     )}>
       <Avatar prof={mov.profesional} size="sm" />
@@ -99,7 +107,12 @@ function PodologaCard({ mov, canWrite, onEditar, onEliminar }: {
         <p className="font-semibold text-[13px] text-on-surface leading-tight truncate">
           {mov.profesional.nombres} {mov.profesional.apellidos}
         </p>
-        {mov.esRetorno ? (
+        {fija ? (
+          <p className="text-[11px] text-on-surface-variant/80 mt-0.5 flex items-center gap-1">
+            <span className="material-symbols-outlined text-xs">push_pin</span>
+            Columna adicional · fija en {mov.sede.nombre}
+          </p>
+        ) : mov.esRetorno ? (
           <p className="text-[11px] text-sky-700 mt-0.5 flex items-center gap-1">
             <span className="material-symbols-outlined text-xs">undo</span>
             Retorno a sede matriz · {rangoFechas(mov)}
@@ -118,7 +131,7 @@ function PodologaCard({ mov, canWrite, onEditar, onEliminar }: {
           </p>
         )}
       </div>
-      {canWrite && (
+      {movible && (
         <div onPointerDown={(e) => e.stopPropagation()} className="flex shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
           <IconBtn label="Editar" onClick={() => onEditar(mov)} icon="edit" />
           {puedeEliminar && <IconBtn label="Eliminar" danger onClick={() => onEliminar(mov)} icon="delete" />}
@@ -140,10 +153,10 @@ function SedeColumn({ sede, movs, proximos, canWrite, onNuevo, onEditar, onElimi
   onEliminar: (m: Movimiento) => void;
   onVerProximos: () => void;
 }) {
-  // Coberturas temporales arriba (lo que hay que vigilar), luego las fijas; ambas alfabéticas.
+  // Coberturas temporales arriba (lo que hay que vigilar), luego las fijas, y las «Adicional» al final; alfabéticas.
   const ordenados = [...movs].sort((a, b) => {
-    const ca = esCobertura(a) ? 0 : 1;
-    const cb = esCobertura(b) ? 0 : 1;
+    const ca = esFichaAdicional(a.profesional) ? 2 : esCobertura(a) ? 0 : 1;
+    const cb = esFichaAdicional(b.profesional) ? 2 : esCobertura(b) ? 0 : 1;
     if (ca !== cb) return ca - cb;
     return a.profesional.nombres.localeCompare(b.profesional.nombres);
   });

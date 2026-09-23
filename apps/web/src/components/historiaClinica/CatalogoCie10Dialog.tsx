@@ -1,6 +1,7 @@
 // Catálogo CIE-10 de la clínica (D3). Vista pura; la lógica vive en useCatalogoCie10
 // (services/catalogoCie10Service.ts). Solo administración, coordinación y médicos.
 import { useCatalogoCie10 } from '../../services/catalogoCie10Service';
+import { TratamientosDiagnosticoDialog } from './TratamientosDiagnosticoDialog';
 
 const INPUT = 'w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2.5 lg:py-2 text-base lg:text-sm text-on-surface outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all';
 const LBL = 'block text-[10px] font-semibold uppercase tracking-wide text-on-surface-variant mb-1';
@@ -43,6 +44,13 @@ export function CatalogoCie10Dialog({ onClose }: { onClose: () => void }) {
                         {x.descripcion}
                         <span className="block text-[11px] text-on-surface-variant">{x.categoria ?? 'Sin categoría'}{x.usos ? ` · usado en ${x.usos} diagnóstico${x.usos === 1 ? '' : 's'}` : ''}</span>
                       </span>
+                      <button onClick={() => c.alternarFrecuente(x)} disabled={c.editarMut.isPending} data-accion="alternar-frecuente"
+                        title={x.frecuente ? 'Quitar de la lista de diagnósticos frecuentes' : 'Poner en la lista de diagnósticos frecuentes'}
+                        className={`material-symbols-outlined text-lg ${x.frecuente ? 'text-amber-500' : 'text-on-surface-variant/40 hover:text-amber-500'}`}
+                        style={x.frecuente ? { fontVariationSettings: "'FILL' 1" } : undefined}>star</button>
+                      <button onClick={() => c.setTratamientosDe(x)} className="text-xs font-semibold text-on-surface-variant hover:text-primary hover:underline whitespace-nowrap" data-accion="tratamientos">
+                        Tratamientos{x.tratamientos ? ` (${x.tratamientos})` : ''}
+                      </button>
                       <button onClick={() => c.empezarEdicion(x)} className="text-primary text-xs font-semibold hover:underline">Editar</button>
                       <button onClick={() => c.alternarActivo(x)} disabled={c.editarMut.isPending} data-accion="alternar-activo"
                         className={`text-[10px] font-bold uppercase px-2 py-1 rounded ${x.activo ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-surface-container text-on-surface-variant hover:bg-surface-container-high'}`}
@@ -59,7 +67,7 @@ export function CatalogoCie10Dialog({ onClose }: { onClose: () => void }) {
             <h4 className="text-sm font-semibold text-on-surface flex items-center gap-1.5"><span className="material-symbols-outlined text-base text-primary">add_circle</span>Agregar código</h4>
             <div><label className={LBL}>Código</label>
               <input value={c.codigo} onChange={(ev) => c.setCodigo(ev.target.value)} placeholder="Ej. L84 o B35.1" className={`${INPUT} font-mono uppercase`} data-campo="cie10-codigo" />
-              {c.codigo.trim() && !c.codigoValido && <p className="text-[11px] text-amber-700 mt-1">Formato: una letra y dos números, y si hace falta un punto y la subcategoría (L84, B35.1).</p>}
+              {c.codigo.trim() && !c.codigoValido && <p className="text-[11px] text-amber-700 mt-1">Formato: una letra y dos números (o tres números para los propios de la clínica), y si hace falta un punto y la subcategoría (L84, B35.1, 000.1).</p>}
             </div>
             <div><label className={LBL}>Descripción</label><input value={c.descripcion} onChange={(ev) => c.setDescripcion(ev.target.value)} placeholder="Ej. Callos y callosidades" className={INPUT} data-campo="cie10-descripcion" /></div>
             <div><label className={LBL}>Categoría</label><input value={c.categoria} onChange={(ev) => c.setCategoria(ev.target.value)} list="cie10-categorias" placeholder="Opcional (agrupa en la lista)" className={INPUT} /></div>
@@ -70,6 +78,11 @@ export function CatalogoCie10Dialog({ onClose }: { onClose: () => void }) {
           </section>
         </div>
       </div>
+      {c.tratamientosDe && (
+        <div onClick={(ev) => ev.stopPropagation()}>
+          <TratamientosDiagnosticoDialog codigo={c.tratamientosDe.codigo} descripcion={c.tratamientosDe.descripcion} onClose={() => c.setTratamientosDe(null)} />
+        </div>
+      )}
     </div>
   );
 }

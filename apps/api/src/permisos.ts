@@ -23,6 +23,9 @@ export const PERMISOS_VALIDOS = [
   'movimientos.ver', 'movimientos.editar',
   // Horarios / almuerzos
   'horarios.ver', 'horarios.editar',
+  // Solo AUSENCIAS del personal (permisos, vacaciones, descansos médicos): lo que usa Recursos Humanos.
+  // `horarios.editar` lo incluye de hecho (las rutas aceptan cualquiera de los dos).
+  'ausencias.gestionar',
   // Profesionales y servicios
   'profesionales.ver', 'profesionales.editar', 'competencias.editar', 'servicios.ver', 'servicios.editar',
   // Analítica y exportaciones
@@ -56,7 +59,7 @@ export const ROLES_SISTEMA: { nombre: string; label: string; descripcion: string
     nombre: 'coordinadora_sedes', label: 'Coordinadora de Sedes', descripcion: 'Gestión de agenda, pacientes y reportes', esSistema: true,
     permisos: [
       ...CITAS, 'citas.revertir', ...PACIENTES, 'membresias.ver', 'membresias.vender', 'membresias.consumir', 'membresias.gestionar',
-      'promociones.ver', 'promociones.gestionar', 'movimientos.ver', 'movimientos.editar', 'horarios.ver', 'horarios.editar',
+      'promociones.ver', 'promociones.gestionar', 'movimientos.ver', 'movimientos.editar', 'horarios.ver', 'horarios.editar', 'ausencias.gestionar',
       'profesionales.ver', 'profesionales.editar', 'competencias.editar', 'servicios.ver', 'servicios.editar',
       'analytics.ver', 'analytics.agentes', 'exportar.usar', 'comunicaciones.gestionar', 'canales.gestionar', 'notificaciones.ver', 'auditoria.ver',
       ...CLINICA, 'hc.anular', 'receta_medica.ver', 'receta.emitir', 'medico.asignar', 'dispositivos.gestionar',
@@ -73,6 +76,13 @@ export const ROLES_SISTEMA: { nombre: string; label: string; descripcion: string
     permisos: [...CITAS, ...PACIENTES, 'membresias.ver', 'membresias.vender'],
   },
   {
+    // Especial Contact (23-sep-2026): contact center con más manejo. Todo lo del contact center (agenda, pacientes,
+    // venta de membresías, todas las sedes) MÁS Horarios y Restricciones completo: horarios base y excepciones de
+    // sede, almuerzos, permisos, vacaciones, enfermedad y reunión. Sin acceso clínico ni a administración.
+    nombre: 'especial_contact', label: 'Especial Contact', descripcion: 'Contact center con gestión completa de Horarios y Restricciones (todas las sedes)', esSistema: false,
+    permisos: [...CITAS, ...PACIENTES, 'membresias.ver', 'membresias.vender', 'horarios.ver', 'horarios.editar', 'ausencias.gestionar'],
+  },
+  {
     // Médico colegiado: agenda y pacientes solo lectura, historia clínica completa, receta y se asigna a las citas.
     nombre: 'medico', label: 'Médico', descripcion: 'Médico colegiado: registra historia clínica y emite recetas', esSistema: false,
     permisos: ['citas.ver', 'pacientes.ver', 'membresias.ver', ...CLINICA, 'receta_medica.ver', 'receta.emitir', 'medico.autoasignar'],
@@ -82,5 +92,12 @@ export const ROLES_SISTEMA: { nombre: string; label: string; descripcion: string
     // clínica ni recetas por ahora; se le agregan permisos desde Administración › Roles cuando se decida.
     nombre: 'podologa', label: 'Podóloga', descripcion: 'Ve la agenda de su sede (solo lectura)', esSistema: false,
     permisos: ['citas.ver'],
+  },
+  {
+    // Recursos Humanos (21-sep-2026): registra las AUSENCIAS del personal (permisos, vacaciones, descansos médicos) en
+    // cualquier sede (ROLES_TODAS_SEDES) y comprueba en la agenda, en solo lectura, que el bloqueo quedó. Nada más:
+    // no agenda, no ve pacientes ni historia clínica, no toca horarios, almuerzos ni movimientos, y no cancela citas.
+    nombre: 'recursos_humanos', label: 'Recursos Humanos', descripcion: 'Registra permisos, vacaciones y descansos médicos; ve la agenda en solo lectura', esSistema: false,
+    permisos: ['citas.ver', 'horarios.ver', 'ausencias.gestionar'],
   },
 ];

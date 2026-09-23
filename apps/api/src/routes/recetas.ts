@@ -52,6 +52,7 @@ const emitirSchema = z.object({
   indicacionesGenerales: texto(1500),
   vigenciaDias: z.number().int().min(1).max(365).nullable().optional(),
   items: z.array(itemSchema).min(1).max(30),
+  reemplazaRecetaId: uuid.nullable().optional(), // «Editar»: la receta que esta corrige (queda anulada)
 });
 const anularSchema = z.object({ motivo: z.string().trim().min(5).max(500) });
 
@@ -140,14 +141,14 @@ router.get('/:id', ...ver, async (req, res) => {
 });
 
 // GET /recetas/:id/pdf — PDF en streaming (inline), con QR de verificación.
-// La receta médica sale con ORIGINAL (paciente) + COPIA (farmacia) en páginas separadas; ?copias=1
-// imprime solo el original. Las indicaciones salen en una sola copia.
+// Media hoja A4 (A5) y UNA sola copia (22-sep-2026: antes la receta médica salía en A4 con ORIGINAL +
+// COPIA PARA FARMACIA y en la impresora parecía un duplicado). ?copias=2 agrega la copia para farmacia.
 router.get('/:id/pdf', ...ver, async (req, res) => {
   const meta = await recetaMeta(req.params.id, req);
   assertSede(req, meta.sedeId);
   const receta = await rx.getRecetaCompleta(meta.id);
   await hc.auditarLecturaHC({ ...ctx(req), pacienteId: meta.pacienteId, origen: 'pdf', recetaId: meta.id, sedeId: meta.sedeId });
-  const conCopia = receta.tipoDocumento === 'RECETA_MEDICA' && req.query.copias !== '1';
+  const conCopia = receta.tipoDocumento === 'RECETA_MEDICA' && req.query.copias === '2';
   // ?firma=1 — estampar la firma digitalizada. SOLO el médico a cuyo nombre salió la receta, con la
   // SUYA; nadie más puede ponerle la firma de otro. Sin ?firma=1 sale la línea para firmar a mano.
   let firma: Buffer | null = null;
@@ -163,13 +164,15 @@ router.get('/:id/pdf', ...ver, async (req, res) => {
     await registrarAudit({ ...ctx(req), citaId: receta.atencion.citaId, accion: 'estampar_firma', entidad: 'receta', entidadId: receta.id, sedeId: meta.sedeId, despues: { numero: receta.numero } });
   }
   const qr = await qrPng(urlVerificacionReceta(receta.codigoVerificacion));
-  const doc = nuevoPdf(`Receta ${receta.numero}`);
+  // Hoja A4 normal (se imprime en cualquier impresora) con el documento en la MITAD SUPERIOR y letra pequeña:
+  // se corta por la línea punteada y queda una receta tipo carta de media hoja.
+  const doc = nuevoPdf(`Receta ${receta.numero}`, 'A4');
   const prefijo = receta.tipoDocumento === 'RECETA_MEDICA' ? 'receta' : 'indicaciones';
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `inline; filename="${prefijo}-${String(receta.numero).padStart(6, '0')}.pdf"`);
   res.setHeader('Cache-Control', 'private, no-store');
   doc.pipe(res);
-  escribirRecetaPdf(doc, receta, { qr, firma, copias: conCopia ? ['original', 'farmacia'] : [null] });
+  escribirRecetaPdf(doc, receta, { qr, firma, mediaHoja: true, copias: conCopia ? ['original', 'farmacia'] : [null] });
   doc.end();
 });
 

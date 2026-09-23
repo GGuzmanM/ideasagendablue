@@ -309,6 +309,7 @@ model Profesional {
   citas              Cita[]                     @relation("CitaProfesional")
   citasSolicitadas   Cita[]                     @relation("CitaSolicitado")
   citasComoMedico    Cita[]                     @relation("CitaMedico")
+  citasAtendidas     Cita[]                     @relation("CitaAtendidoPor")
   agregados          AgregadoDiario[]
   entradas           EntradaPodologa[]
   // Sedes donde este médico atiende baropodometría "por solicitud" (independiente de su
@@ -562,6 +563,7 @@ model Servicio {
   videos                    ServicioVideo[]
   atencionesClinicas        AtencionClinica[]
   recetaItems               RecetaItem[] // ítems tipo SERVICIO en indicaciones (profilaxis, láser)
+  tratamientosDiagnostico   TratamientoDiagnostico[]
   controlesSugeridos        ControlSugerido[]
 
   creadoPor     String?  @db.Uuid // Usuario que creó el registro (auditoría)
@@ -754,6 +756,9 @@ model Cita {
   // Médico de la cita (podología: podóloga + médico). Lo toma el propio médico (a sí mismo) o lo
   // asigna admin/coordinación; la receta médica de la atención sale a SU nombre y con su CMP.
   medicoId                String?           @db.Uuid
+  // Columna «Adicional» (de emergencia, no es una persona): podóloga que REALMENTE atendió. Solo informativo —
+  // la cita sigue en la columna Adicional y NO ocupa la agenda de esa podóloga (pudo atender a otro a la vez).
+  atendidoPorId           String?           @db.Uuid
   medicoAsignadoEn        DateTime?
   medicoAsignadoPorId     String?           @db.Uuid // usuario que lo asignó (el mismo médico si se autoasignó)
   sedeId                  String            @db.Uuid
@@ -846,6 +851,7 @@ model Cita {
   profesional           Profesional?          @relation("CitaProfesional", fields: [profesionalId], references: [id])
   solicitadoProfesional Profesional?          @relation("CitaSolicitado", fields: [solicitadoProfesionalId], references: [id])
   medico                Profesional?          @relation("CitaMedico", fields: [medicoId], references: [id], onDelete: Restrict)
+  atendidoPor           Profesional?          @relation("CitaAtendidoPor", fields: [atendidoPorId], references: [id], onDelete: SetNull)
   sede                  Sede                  @relation(fields: [sedeId], references: [id])
   unidadNegocio         UnidadNegocio         @relation(fields: [unidadNegocioId], references: [id])
   servicio              Servicio              @relation(fields: [servicioId], references: [id])
@@ -1755,10 +1761,14 @@ model Cie10 {
   descripcion String // "Tiña de las uñas (onicomicosis)"
   categoria   String? // agrupador legible para la UI (ej. "Micosis superficiales")
   activo      Boolean  @default(true)
+  // Diagnósticos más usados en la clínica (lista del ERP, 23-sep-2026): salen como lista rápida al diagnosticar
+  // y traen su lista de tratamientos habituales (TratamientoDiagnostico) al hacer la receta.
+  frecuente   Boolean  @default(false)
   creadoEn    DateTime @default(now())
 
   diagnosticos DiagnosticoAtencion[]
   recetaItems  RecetaItem[]
+  tratamientos TratamientoDiagnostico[]
 
   // Búsqueda por `descripcion` (y por `codigo`) con similarity(): índice pg_trgm GIN
   // creado vía SQL crudo en la migración: cie10_descripcion_trgm.
@@ -1792,6 +1802,7 @@ model Medicamento {
   // Texto de posología por defecto que se precarga al agregarlo a una receta (3.4).
   posologiaSugerida String?
   recetaItems       RecetaItem[]
+  tratamientosDiagnostico TratamientoDiagnostico[]
 
   @@index([dci])
   @@index([grupo])
@@ -1825,6 +1836,7 @@ enum TipoNota {
   procedimiento
   indicacion
   observacion
+  procedimiento_preventivo // 23-sep-2026: pedido de la clínica (p. ej. profilaxis / cuidado preventivo del pie)
 }
 
 enum TipoDiagnostico {
@@ -1864,6 +1876,39 @@ enum TipoItemReceta {
   MEDICAMENTO_OTC
   PRODUCTO
   SERVICIO
+}
+
+// TRATAMIENTOS HABITUALES POR DIAGNÓSTICO (23-sep-2026, tabla `diagnostico_cie10_plan` del ERP): al hacer la receta y
+// elegir el diagnóstico, se ofrecen con checks (tratamiento · presentación · aplicación) y se agregan de un clic.
+// Plantilla, no documento: se edita y se desactiva libremente (las recetas ya emitidas guardan su propia copia).
+model TratamientoDiagnostico {
+  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  cie10Codigo   String
+  orden         Int            @default(0)
+  tratamiento   String         // «Itraconazol 100mg (Itramicol®)», «Profilaxis»
+  presentacion  String?        // «Cápsulas #28», «Frasco 100ml #01» → se imprime como Cantidad
+  aplicacion    String?        // texto original del ERP («01 tab vía oral c/8h por 3 días»), de referencia
+  // Posología por defecto (separada de la aplicación): la receta sale llena y el médico solo valida o ajusta.
+  dosis         String?        // «1» (la unidad la pone el vademécum) o «1 gota», «2 puff»
+  via           String?        // «oral», «intramuscular»; null = la del vademécum
+  frecuencia    String?        // «cada 8 horas», «1 vez al día», «solo si hay dolor»
+  duracion      String?        // «3 días», «2 semanas», «1 mes»
+  indicaciones  String?        // lo que queda de la aplicación («Después del almuerzo») → se imprime como Indicaciones
+  tipo          TipoItemReceta @default(MEDICAMENTO_OTC)
+  medicamentoId String?        // vínculo al vademécum cuando se reconoce (trae receta/venta libre y alergias)
+  servicioId    String?        @db.Uuid
+  marca         String?        // marca a imprimir si el vademécum trae el genérico («Itramicol»)
+  activo        Boolean        @default(true)
+  codigoErp     String?        @unique // «B35.1#12» — idempotencia de la importación del ERP
+  creadoEn      DateTime       @default(now())
+  actualizadoEn DateTime       @updatedAt
+
+  cie10       Cie10        @relation(fields: [cie10Codigo], references: [codigo])
+  medicamento Medicamento? @relation(fields: [medicamentoId], references: [id])
+  servicio    Servicio?    @relation(fields: [servicioId], references: [id])
+
+  @@index([cie10Codigo, activo])
+  @@map("tratamientos_diagnostico")
 }
 
 // Una historia por paciente. Se abre perezosamente en la primera atención/antecedente/alergia.

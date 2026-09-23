@@ -9,6 +9,7 @@ import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { profesionalesApi } from '../../api';
+import { baroSolicitudApi } from '../../api/baroSolicitud';
 import { cn } from '../../utils/cn';
 
 // Orden de días: Lun..Dom (diaSemana: 0=Dom..6=Sáb).
@@ -29,6 +30,14 @@ export function SemanaTipoContent({ sedeId, sedeNombre }: { sedeId?: string; sed
     queryFn: () => profesionalesApi.listar({ activo: true, ...(sedeId ? { sedeId } : {}) }),
   });
 
+  // MÉDICOS de la sede (23-sep-2026): atienden baro «por solicitud», sin asignación fija a la sede, así que la lista
+  // de arriba no los traía. Salen del registro de baro de esa sede (Movimientos › Baro) y se editan igual que las podólogas.
+  const { data: baro } = useQuery({
+    queryKey: ['baro-solicitud', sedeId ?? 'todas', 'horarios-personal'],
+    queryFn: () => baroSolicitudApi.obtener(sedeId),
+    enabled: !!sedeId,
+  });
+
   // Las "máquinas" de baropodometría (Baro 1 / Baro 2) son pseudo-personas: NO tienen
   // horario de trabajo propio, así que se excluyen de este módulo (solo personal real).
   const esMaquinaBaro = (p: { nombres: string; apellidos: string }) =>
@@ -36,16 +45,25 @@ export function SemanaTipoContent({ sedeId, sedeNombre }: { sedeId?: string; sed
 
   const grupos = useMemo(() => {
     const term = q.trim().toLowerCase();
-    const filtrados = personal.filter((p) => !esMaquinaBaro(p) && (!term || `${p.nombres} ${p.apellidos}`.toLowerCase().includes(term)));
-    const porTipo = new Map<string, typeof filtrados>();
+    type Fila = { id: string; nombre: string; tipo: string; color: string | null };
+    const filas = new Map<string, Fila>();
+    for (const p of personal) {
+      if (esMaquinaBaro(p)) continue;
+      filas.set(p.id, { id: p.id, nombre: `${p.nombres} ${p.apellidos}`.trim(), tipo: p.tipo ?? 'otro', color: p.colorAvatar ?? null });
+    }
+    for (const m of baro?.porSolicitud ?? []) {
+      if (m.tipo !== 'medico' || filas.has(m.id) || /^baro(\s*\d+)?$/i.test(m.nombre.trim())) continue;
+      filas.set(m.id, { id: m.id, nombre: m.nombre, tipo: 'medico', color: null });
+    }
+    const filtrados = [...filas.values()].filter((p) => !term || p.nombre.toLowerCase().includes(term));
+    const porTipo = new Map<string, Fila[]>();
     for (const p of filtrados) {
-      const k = p.tipo ?? 'otro';
-      const arr = porTipo.get(k) ?? [];
+      const arr = porTipo.get(p.tipo) ?? [];
       arr.push(p);
-      porTipo.set(k, arr);
+      porTipo.set(p.tipo, arr);
     }
     return [...porTipo.entries()].sort((a, b) => (TIPO_LABEL[a[0]] ?? a[0]).localeCompare(TIPO_LABEL[b[0]] ?? b[0]));
-  }, [personal, q]);
+  }, [personal, baro, q]);
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -90,10 +108,13 @@ export function SemanaTipoContent({ sedeId, sedeNombre }: { sedeId?: string; sed
       ) : (
         grupos.map(([tipo, lista]) => (
           <div key={tipo} className="space-y-3">
-            <div className="flex items-center justify-between px-1">
+            <div className="flex items-center justify-between px-1" data-grupo-tipo={tipo}>
               <span className="font-label-caps text-label-caps text-on-surface-variant font-bold uppercase tracking-wider">
                 {TIPO_LABEL[tipo] ?? tipo} ({lista.length})
               </span>
+              {tipo === 'medico' && sedeId && (
+                <span className="text-[10px] text-on-surface-variant/70">Médicos que atienden en esta sede (baro por solicitud y asignados)</span>
+              )}
             </div>
             <div className="bg-surface-container-lowest rounded-2xl border border-outline-variant/60 divide-y divide-outline-variant/30 overflow-hidden shadow-xs">
               {lista.map((p) => (
@@ -105,12 +126,12 @@ export function SemanaTipoContent({ sedeId, sedeNombre }: { sedeId?: string; sed
                     <div className="flex items-center gap-3">
                       <span
                         className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0 shadow-2xs"
-                        style={{ backgroundColor: p.colorAvatar || '#0044ab' }}
+                        style={{ backgroundColor: p.color || '#0044ab' }}
                       >
-                        {`${p.nombres} ${p.apellidos}`.split(' ').map((x) => x[0]).slice(0, 2).join('')}
+                        {p.nombre.split(' ').map((x) => x[0]).slice(0, 2).join('')}
                       </span>
                       <span className="text-xs font-bold text-on-surface">
-                        {p.nombres} {p.apellidos}
+                        {p.nombre}
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
@@ -123,7 +144,7 @@ export function SemanaTipoContent({ sedeId, sedeNombre }: { sedeId?: string; sed
                     </div>
                   </button>
                   {abierto === p.id && (
-                    <EditorHorario profesionalId={p.id} nombre={`${p.nombres} ${p.apellidos}`} />
+                    <EditorHorario profesionalId={p.id} nombre={p.nombre} />
                   )}
                 </div>
               ))}

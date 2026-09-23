@@ -25,9 +25,13 @@ const requireGestor = requirePermiso('membresias.gestionar');
 const requireVerMemb = requirePermiso('membresias.ver');    // ver el catálogo vendible
 const requireVender = requirePermiso('membresias.vender');  // vender a un paciente
 
-/** URL base pública del API (para armar las URLs de archivos servidos en /uploads). */
-function baseUrlDe(req: { protocol: string; get: (h: string) => string | undefined }): string {
-  return `${req.protocol}://${req.get('host')}`;
+/**
+ * Prefijo de las URLs de archivos de /uploads: VACÍO = ruta relativa. Antes era `http://host` armado
+ * desde la petición, que tras el proxy siempre salía http://localhost:3002 → el contrato no abría
+ * desde otra PC y el navegador lo bloqueaba bajo HTTPS.
+ */
+function baseUrlDe(_req: unknown): string {
+  return '';
 }
 
 /** Datos del paciente listos para estampar en el contrato. */

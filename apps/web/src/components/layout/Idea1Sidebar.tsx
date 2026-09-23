@@ -1,7 +1,13 @@
+import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '../../utils/cn';
 import { useAuthStore } from '../../stores/authStore';
 import { useContadorControles } from '../../services/controlesService';
+
+// Menú plegado (solo iconos): preferencia del equipo que se usa, guardada en el navegador.
+const CLAVE_PLEGADO = 'limablue-sidebar-plegado';
+const leerPlegado = () => { try { return localStorage.getItem(CLAVE_PLEGADO) === '1'; } catch { return false; } };
+const guardarPlegado = (v: boolean) => { try { localStorage.setItem(CLAVE_PLEGADO, v ? '1' : '0'); } catch { /* sin almacenamiento: solo esta sesión */ } };
 
 export interface NavItem {
   to: string;
@@ -17,6 +23,8 @@ export const ADMIN_PERMS = ['profesionales.ver', 'servicios.ver', 'competencias.
 export const idea1NavItems: NavItem[] = [
   { to: '/AgendaPrincipal', label: 'Agenda', icon: 'calendar_today', permiso: 'citas.ver' },
   { to: '/pacientes', label: 'Pacientes', icon: 'groups', permiso: 'pacientes.ver' },
+  // Vista rápida de quienes ya llegaron hoy (médicos, administración y coordinación).
+  { to: '/pacientes-del-dia', label: 'Pacientes del día', icon: 'clinical_notes', permiso: ['medico.autoasignar', 'medico.asignar'] },
   { to: '/historia-clinica/bandeja', label: 'Bandeja clínica', icon: 'inbox', permiso: 'hc.ver' },
   { to: '/horarios', label: 'Horarios y Restricciones', icon: 'schedule', permiso: 'horarios.ver' },
   { to: '/herramientas', label: 'Herramientas', icon: 'home_repair_service', permiso: HERRAMIENTAS_PERMS },
@@ -42,24 +50,46 @@ export function Idea1Sidebar() {
     : idea1NavItems;
   // Alerta de controles (4.2): vencidos + los que vencen en 7 días, sobre «Bandeja clínica».
   const controles = useContadorControles();
+  const [plegado, setPlegado] = useState(leerPlegado);
+  const alternar = () => { setPlegado((v) => { guardarPlegado(!v); return !v; }); };
 
   return (
-    <aside className="h-full sticky top-0 left-0 w-sidebar-expanded bg-[#0e4f9f] border-r border-outline-variant/20 flex flex-col py-6 px-4 z-30 shrink-0 select-none">
-      {/* Header / Logo */}
-      <div className="mb-6 px-3">
-        <Link to="/AgendaPrincipal" className="flex items-center gap-3 group">
-          <div className="w-12 h-12 flex items-center justify-center group-hover:scale-105 transition-transform" title="Limablue Agenda">
+    <aside
+      data-testid="sidebar"
+      data-plegado={plegado ? '1' : '0'}
+      className={cn(
+        'h-full sticky top-0 left-0 bg-[#0e4f9f] border-r border-outline-variant/20 flex flex-col py-6 z-30 shrink-0 select-none transition-[width] duration-200',
+        plegado ? 'w-sidebar-collapsed px-2' : 'w-sidebar-expanded px-4',
+      )}
+    >
+      {/* Header / Logo + botón para plegar/desplegar */}
+      <div className={cn('mb-6 flex items-center', plegado ? 'flex-col gap-2 px-0' : 'gap-2 px-3')}>
+        <Link to="/AgendaPrincipal" className={cn('flex items-center gap-3 group min-w-0', plegado ? 'justify-center' : 'flex-1')} title="Limablue Agenda">
+          <div className="w-12 h-12 flex items-center justify-center group-hover:scale-105 transition-transform shrink-0">
             <img src="/logo-login.png" alt="Limablue" className="w-full h-full object-contain" />
           </div>
-          <div>
-            <h1 className="font-headline-md text-headline-md font-bold text-white leading-none tracking-tight">
-              Agenda
-            </h1>
-            <p className="font-label-caps text-label-caps text-secondary-fixed-dim mt-1 text-[11px] font-medium tracking-wide">
-              Gestión Médica
-            </p>
-          </div>
+          {!plegado && (
+            <div className="min-w-0">
+              <h1 className="font-headline-md text-headline-md font-bold text-white leading-none tracking-tight">
+                Agenda
+              </h1>
+              <p className="font-label-caps text-label-caps text-secondary-fixed-dim mt-1 text-[11px] font-medium tracking-wide">
+                Gestión Médica
+              </p>
+            </div>
+          )}
         </Link>
+        <button
+          type="button"
+          onClick={alternar}
+          data-testid="sidebar-toggle"
+          title={plegado ? 'Mostrar menú' : 'Ocultar menú'}
+          aria-label={plegado ? 'Mostrar menú' : 'Ocultar menú'}
+          aria-expanded={!plegado}
+          className="w-8 h-8 rounded-lg grid place-items-center text-blue-100/80 hover:text-white hover:bg-white/15 transition-colors shrink-0"
+        >
+          <span className="material-symbols-outlined text-xl">{plegado ? 'chevron_right' : 'chevron_left'}</span>
+        </button>
       </div>
 
       {/* Navigation items */}
@@ -73,10 +103,12 @@ export function Idea1Sidebar() {
             <Link
               key={item.to}
               to={item.to}
+              title={plegado ? item.label : undefined}
               className={cn(
-                "flex items-center gap-3.5 py-2.5 px-3.5 rounded-xl transition-all duration-200 group text-sm font-medium",
+                "relative flex items-center rounded-xl transition-all duration-200 group text-sm font-medium",
+                plegado ? "justify-center py-2.5 px-0" : "gap-3.5 py-2.5 px-3.5",
                 isActive
-                  ? "bg-white/15 text-white font-bold border-l-4 border-white pl-3 shadow-sm"
+                  ? cn("bg-white/15 text-white font-bold shadow-sm", !plegado && "border-l-4 border-white pl-3")
                   : "text-blue-100/75 hover:bg-white/10 hover:text-white"
               )}
             >
@@ -89,11 +121,11 @@ export function Idea1Sidebar() {
               >
                 {item.icon}
               </span>
-              <span className="truncate">{item.label}</span>
+              {!plegado && <span className="truncate">{item.label}</span>}
               {item.to === '/historia-clinica/bandeja' && controles.total > 0 && (
                 <span data-testid="badge-controles"
                   title={`${controles.vencidos} control(es) vencido(s) · ${controles.proximos} en los próximos 7 días`}
-                  className={cn('ml-auto min-w-[20px] h-5 px-1.5 rounded-full text-[11px] font-bold flex items-center justify-center text-white shrink-0', controles.vencidos ? 'bg-red-500' : 'bg-amber-500')}>
+                  className={cn('min-w-[20px] h-5 px-1.5 rounded-full text-[11px] font-bold flex items-center justify-center text-white shrink-0', controles.vencidos ? 'bg-red-500' : 'bg-amber-500', plegado ? 'absolute -top-1 -right-1 scale-90' : 'ml-auto')}>
                   {controles.total > 99 ? '99+' : controles.total}
                 </span>
               )}
@@ -105,19 +137,21 @@ export function Idea1Sidebar() {
       {/* Footer / User profile */}
       <div className="mt-auto pt-4 border-t border-white/10 shrink-0">
 
-        <div className="p-3 bg-white/10 rounded-2xl flex items-center justify-between gap-2 border border-white/15 shadow-sm">
+        <div className={cn('bg-white/10 rounded-2xl flex items-center border border-white/15 shadow-sm', plegado ? 'flex-col gap-1.5 p-1.5' : 'justify-between gap-2 p-3')} title={plegado ? `${usuario?.nombre ?? ''} · ${usuario?.rol ?? ''}` : undefined}>
           <div className="flex items-center gap-2.5 overflow-hidden">
             <div className="w-9 h-9 rounded-xl border border-white/20 bg-white/15 flex items-center justify-center text-white font-bold text-xs shrink-0 shadow-inner">
               {usuario?.nombre ? usuario.nombre.split(' ').map(n => n[0]).slice(0, 2).join('') : 'AD'}
             </div>
-            <div className="overflow-hidden min-w-0">
-              <p className="text-white font-semibold text-xs truncate leading-snug">
-                {usuario?.nombre ?? 'Administrador'}
-              </p>
-              <p className="text-blue-200/70 text-[10px] truncate capitalize leading-tight mt-0.5">
-                {usuario?.rol ?? 'admin'}
-              </p>
-            </div>
+            {!plegado && (
+              <div className="overflow-hidden min-w-0">
+                <p className="text-white font-semibold text-xs truncate leading-snug">
+                  {usuario?.nombre ?? 'Administrador'}
+                </p>
+                <p className="text-blue-200/70 text-[10px] truncate capitalize leading-tight mt-0.5">
+                  {usuario?.rol ?? 'admin'}
+                </p>
+              </div>
+            )}
           </div>
 
           <button
