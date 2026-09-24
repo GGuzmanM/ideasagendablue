@@ -243,8 +243,23 @@ router.get('/seleccionables', requireAuth, async (req, res) => {
   });
 
   // Por solicitud: profesionales con una competencia SOLO-POR-SOLICITUD al servicio/unidad (médicos + Daniel en baro).
-  const porSolicitud = await prisma.profesional.findMany({
-    where: { deletedAt: null, activo: true, competencias: compFiltro({ soloPorSolicitud: true }) },
+  // 23-sep-2026: antes salían los de TODAS las sedes y, en Podología, apenas se abría Nueva Cita (desde el 19-sep los
+  // médicos tienen «Ortésicos» por solicitud, que es de Podología). Ahora:
+  //  · con sede: solo los registrados en ESA sede y vigentes ESA fecha (Movimientos › Baro, tabla baro_medico_sede);
+  //  · fuera de Baropodometría: solo cuando el servicio elegido lo hacen ellos (sin servicio no se listan).
+  const unidad = await prisma.unidadNegocio.findUnique({ where: { id: unidadNegocioId }, select: { modoReserva: true } });
+  const incluirPorSolicitud = !!servicioId || unidad?.modoReserva === 'sin_eleccion';
+  const diaSel = fecha ?? new Date().toISOString().slice(0, 10);
+  const porSolicitud = !incluirPorSolicitud ? [] : await prisma.profesional.findMany({
+    where: {
+      deletedAt: null, activo: true, competencias: compFiltro({ soloPorSolicitud: true }),
+      ...(sedeId ? {
+        baroSedes: { some: {
+          sedeId, activa: true, fechaInicio: { lte: new Date(`${diaSel}T23:59:59`) },
+          OR: [{ fechaFin: null }, { fechaFin: { gte: new Date(`${diaSel}T00:00:00`) } }],
+        } },
+      } : {}),
+    },
     select: { id: true, nombres: true, apellidos: true, tipo: true },
     orderBy: [{ apellidos: 'asc' }],
   });

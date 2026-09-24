@@ -967,7 +967,7 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
                   onChange={(e) => setMedicoBaroId(e.target.value)}
                   className="w-full appearance-none bg-surface-container-low border border-outline-variant rounded-xl pl-11 pr-4 py-3 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all font-medium text-on-surface"
                 >
-                  <option value="">Sin médico específico</option>
+                  <option value="">Sin médico — lo toma el que atienda ese día</option>
                   {medicosBaro.map((m) => {
                     const ocup = profesionalesOcupados?.get(m.id);
                     return (
@@ -1005,7 +1005,7 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
               <p className="font-body-md text-xs text-on-surface-variant/70 italic">
                 {medicosBaro.length === 0
                   ? 'No hay médicos en la lista por solicitud. Usa “Gestionar” para agregar quién atiende baropodometría.'
-                  : 'La máquina (Baro 1/2) se asigna automáticamente. Elige el médico que atenderá esta cita.'}
+                  : 'La máquina (Baro 1/2) se asigna automáticamente. El médico es opcional: si no lo eliges, el médico que atienda ese día en la sede toma la cita y queda asignado.'}
               </p>
             </div>
           ) : (

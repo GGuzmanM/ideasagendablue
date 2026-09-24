@@ -46,7 +46,7 @@ function itemCoincide(i: ItemComposicion, servicioId: string, subcategoriaId: st
  * para que una membresía "Premium" no consuma una cita "Regular"); si no tiene
  * composición (paquete simple) va por el servicio resuelto (sin subcategoría).
  */
-function paqueteCorresponde(
+export function paqueteCorresponde(
   pp: { servicioNuevoId: string | null; composicion: unknown },
   servicioId: string,
   subcategoriaId: string | null,

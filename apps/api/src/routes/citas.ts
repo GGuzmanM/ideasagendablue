@@ -10,7 +10,7 @@ import { registrarAudit, auditEnTx } from '../services/audit';
 import { esFichaAdicional } from '../utils/fichaAdicional';
 import { dispararWebhooks } from '../services/webhooks';
 import { emitirEventoCita } from '../socket';
-import { requireAuth, requireScope, requireAcceso, requirePermiso, assertSede, puedeTodasLasSedes } from '../middleware/auth';
+import { requireAuth, requireScope, requireAcceso, requirePermiso, requireRol, assertSede, puedeTodasLasSedes } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { withDeadlockRetry, esDeadlockTransitorio, esConflictoDeSlot } from '../utils/dbRetry';
 import { agregarRango } from '../services/agregacion';
@@ -29,8 +29,8 @@ import { pendientesPorCitas } from '../services/consentimientoService';
 import { sincronizarVideosDeCita, cancelarVideosDeCita } from '../services/videoEnvioService';
 import { consumirTokenAccion } from '../services/tokenAccionCita';
 import { sincronizarSesionPaquete } from '../services/paqueteSesionService';
-import { recalcularPaquete, validarCupoItemAlAgendar } from '../services/consumoService';
-import { precioListaDe, validarYCalcularPromo } from '../services/promocionesService';
+import { recalcularPaquete, validarCupoItemAlAgendar, paqueteCorresponde } from '../services/consumoService';
+import { precioListaDe, validarYCalcularPromo, recalcularPromoTrasCambio } from '../services/promocionesService';
 import { getServicioAnclaId, esCombinacionPermitida } from '../services/combinacionService';
 import { enviarCorreoReserva } from '../services/emailService';
 import { verificarTokenConfirmacion } from '../utils/confirmToken';
@@ -235,27 +235,6 @@ async function validarSinBloqueo(profesionalId: string, fecha: string, horaInici
       throw new AppError('El profesional tiene almuerzo en ese horario', 409, 'SLOT_BLOQUEADO');
     }
   }
-}
-
-// ─── Helper: médico "solo por solicitud" de baro EN UNA SEDE ──────────────────
-// En baropodometría la cita ocupa una máquina (Baro 1/2) y el médico que la atiende se
-// guarda en solicitadoProfesionalId. Ese médico es quien está registrado para baro en ESA
-// sede (baro_medico_sede) y tiene competencia por-solicitud en el servicio. Si hay
-// exactamente uno, lo devuelve; si hay 0 ó >1, devuelve null (no adjunta médico).
-async function medicoDeSolicitud(servicioId: string, sedeId: string): Promise<string | null> {
-  const registros = await prisma.baroMedicoSede.findMany({
-    where: {
-      sedeId,
-      activa: true,
-      profesional: {
-        activo: true,
-        deletedAt: null,
-        competencias: { some: { servicioId, activa: true, soloPorSolicitud: true } },
-      },
-    },
-    select: { profesionalId: true },
-  });
-  return registros.length === 1 ? registros[0].profesionalId : null;
 }
 
 // ¿El médico está registrado para atender baro en esta sede (y habilitado en el servicio)?
@@ -983,12 +962,12 @@ router.post('/', requireAuth, requireAcceso('appointments:write', 'citas.crear')
     // quede ocupado también en su columna de podología (anti doble-booking bidireccional).
     // Recepción puede ELEGIR el médico (si el roster de la sede tiene varios); si no, se
     // adjunta el único registrado en esa sede. El médico debe atender baro EN ESA SEDE.
+    // 24-sep-2026: el médico ya NO es obligatorio ni se adjunta solo. Si recepción no lo elige, la cita queda sin médico
+    // y la TOMA el médico que atienda ese día en la sede («Médico de la cita» / Pacientes del día).
     if (data.solicitadoProfesionalId) {
       const ok = await medicoAtiendeBaroEnSede(data.solicitadoProfesionalId, data.servicioId, data.sedeId, data.fecha);
       if (!ok) throw new AppError('El médico elegido no atiende baropodometría en esta sede', 400, 'MEDICO_BARO_INVALIDO');
       solicitadoProfesionalId = data.solicitadoProfesionalId;
-    } else {
-      solicitadoProfesionalId = await medicoDeSolicitud(data.servicioId, data.sedeId);
     }
   } else if (unidad.modoReserva === 'preferencia_opcional') {
     if (!profesionalId) {
@@ -1272,6 +1251,10 @@ router.post('/', requireAuth, requireAcceso('appointments:write', 'citas.crear')
           pacienteId: data.pacienteId,
           profesionalId,
           solicitadoProfesionalId,
+          // Baro con médico elegido al agendar: ese médico ES el médico de la cita (mismo dato que cuando lo toma él ese día).
+          ...(unidad.modoReserva === 'sin_eleccion' && solicitadoProfesionalId
+            ? { medicoId: solicitadoProfesionalId, medicoAsignadoEn: new Date(), medicoAsignadoPorId: usuarioId ?? null }
+            : {}),
           sedeId: data.sedeId,
           unidadNegocioId: data.unidadNegocioId,
           servicioId: data.servicioId,
@@ -2530,6 +2513,122 @@ router.patch('/:id/canal', requireAuth, requireAcceso('appointments:write', 'cit
     cita: citaCompleta as never,
     cambiadoPor: req.user?.userId ?? 'sistema',
   });
+  res.json(citaCompleta);
+});
+
+// ─── PATCH /citas/:id/tratamiento ─────────────────────────────────────────────
+// Cambiar el TRATAMIENTO (servicio) y/o la subcategoría de una cita (24-sep-2026, pedido de la clínica).
+// Quién: admin, coordinación, contact center, especial contact y recepción. Cuándo: agendada / confirmada / llegó; después
+// ya no, salvo el ADMIN (en cualquier momento). Mismas reglas que al agendar: misma unidad, el profesional (o la máquina
+// de baro y su médico) lo tiene habilitado, subcategoría válida, si dura más debe caber (hora, turno, bloqueos y sin
+// cruzarse, dentro de la tx Serializable), membresía que lo cubra y promo que siga aplicando. Cita doble: no.
+const ROLES_CAMBIAN_TRATAMIENTO = ['admin', 'coordinadora_sedes', 'contact_center', 'especial_contact', 'recepcionista'];
+const ESTADOS_CAMBIO_TRATAMIENTO = ['agendada', 'confirmada', 'llego'];
+router.patch('/:id/tratamiento', requireAuth, requireRol(...ROLES_CAMBIAN_TRATAMIENTO), guardSedeCita, async (req, res) => {
+  const data = z.object({ servicioId: z.string().uuid(), subcategoriaId: z.string().uuid().nullable().optional() }).parse(req.body);
+  const cita = await prisma.cita.findUnique({
+    where: { id: req.params.id, deletedAt: null },
+    include: { servicio: { select: { nombre: true } }, subcategoria: { select: { nombre: true } } },
+  });
+  if (!cita) throw new AppError('Cita no encontrada', 404);
+  const esAdmin = req.user?.rol === 'admin';
+  if (['cancelada', 'reprogramada'].includes(cita.estado)) {
+    throw new AppError('La cita está cancelada o reprogramada: no se le cambia el tratamiento', 400, 'ESTADO_FINAL');
+  }
+  if (!esAdmin && !ESTADOS_CAMBIO_TRATAMIENTO.includes(cita.estado)) {
+    throw new AppError('El tratamiento solo se cambia mientras la cita está agendada o hasta que el paciente llegó. Después, solo administración.', 403, 'TRATAMIENTO_BLOQUEADO');
+  }
+  if (cita.slotGrupoId) {
+    throw new AppError('Es una cita doble: para cambiar uno de sus tratamientos, cancélala y agéndala de nuevo', 400, 'CITA_DOBLE');
+  }
+  const profesionalId = cita.profesionalId;
+  if (!profesionalId) throw new AppError('La cita no tiene profesional asignado', 400, 'SIN_PROFESIONAL');
+
+  const servicio = await prisma.servicio.findUnique({ where: { id: data.servicioId } });
+  if (!servicio || !servicio.activo) throw new AppError('Servicio no encontrado o inactivo', 404);
+  if (servicio.unidadNegocioId !== cita.unidadNegocioId) {
+    throw new AppError('El nuevo tratamiento debe ser de la misma área de la cita (podología, fisioterapia o baropodometría)', 400, 'OTRA_UNIDAD');
+  }
+  const subcategoriaId = (await resolverSubcategoria(servicio.id, data.subcategoriaId)) ?? null;
+  if (servicio.id === cita.servicioId && subcategoriaId === (cita.subcategoriaId ?? null)) {
+    res.json(await getCitaCompleta(cita.id)); // sin cambios
+    return;
+  }
+
+  // Habilitado: el profesional de la cita (o la máquina de baro) y, en baro, su médico.
+  const fecha = fechaAStr(cita.fecha);
+  const competencia = await prisma.competenciaProfesional.findFirst({ where: { profesionalId: profesionalId, servicioId: servicio.id, activa: true } });
+  if (!competencia) throw new AppError('El profesional de la cita no tiene habilitado ese tratamiento: reprográmala con otro profesional', 400, 'SIN_COMPETENCIA');
+  if (cita.solicitadoProfesionalId && !(await medicoAtiendeBaroEnSede(cita.solicitadoProfesionalId, servicio.id, cita.sedeId, fecha))) {
+    throw new AppError('El médico de la cita no atiende ese tratamiento en esta sede', 400, 'MEDICO_BARO_INVALIDO');
+  }
+
+  // Si el nuevo dura MÁS, tiene que caber en el mismo horario (si dura menos, siempre cabe).
+  const duracion = servicio.duracionMinutos;
+  const dureMas = duracion > cita.duracionMinutos;
+  if (dureMas) {
+    if (!horaInicioValidaParaDuracion(cita.horaInicio, duracion)) {
+      throw new AppError('Ese tratamiento dura 1 hora y solo empieza en hora entera: reprograma la cita a una hora en punto', 400, 'SLOT_HORA_INVALIDA');
+    }
+    const turno = (await turnosDelDia(cita.sedeId, fecha, [profesionalId])).get(profesionalId);
+    if (turno) assertTerminaEnTurno(cita.horaInicio, duracion, turno.horaFin);
+    await validarSinBloqueo(profesionalId, fecha, cita.horaInicio, duracion);
+    if (cita.solicitadoProfesionalId) await validarSinBloqueo(cita.solicitadoProfesionalId, fecha, cita.horaInicio, duracion);
+  }
+
+  // Membresía / paquete: debe cubrir el nuevo tratamiento; si la sesión ya se descontó, primero se devuelve.
+  if (cita.paquetePacienteId) {
+    if (cita.sesionConsumida) {
+      throw new AppError('La sesión de la membresía ya se descontó con esta cita: para cambiar el tratamiento, primero hay que devolver la sesión (revertir la llegada)', 409, 'SESION_YA_DESCONTADA');
+    }
+    const pp = await prisma.paquetePaciente.findUnique({ where: { id: cita.paquetePacienteId }, select: { servicioNuevoId: true, composicion: true } });
+    const comp = Array.isArray(pp?.composicion) ? pp!.composicion : [];
+    if (pp && (comp.length > 0 || pp.servicioNuevoId) && !paqueteCorresponde(pp, servicio.id, subcategoriaId)) {
+      throw new AppError('La membresía o paquete de esta cita no cubre ese tratamiento', 409, 'PAQUETE_NO_CORRESPONDE');
+    }
+  }
+
+  // Dinero: nuevo precio de lista; la promo (si tiene) debe seguir aplicando y se recalcula.
+  const precioLista = await precioListaDe(servicio.id, subcategoriaId);
+  let montoDescuento: number | null = null;
+  let montoFinal = precioLista;
+  if (cita.promocionId) {
+    const calc = await recalcularPromoTrasCambio(cita.promocionId, { servicioId: servicio.id, sedeId: cita.sedeId, fecha, canal: cita.canal, pacienteId: cita.pacienteId }, precioLista);
+    montoDescuento = calc.descuento;
+    montoFinal = calc.final;
+  }
+
+  const atencion = await prisma.atencionClinica.findUnique({ where: { citaId: cita.id }, select: { id: true } });
+  const subNueva = subcategoriaId ? await prisma.subcategoriaServicio.findUnique({ where: { id: subcategoriaId }, select: { nombre: true } }) : null;
+  try {
+    await withDeadlockRetry(() => prisma.$transaction(async (tx) => {
+      if (dureMas) {
+        await validarProfesionalLibre(profesionalId, fecha, cita.horaInicio, duracion, cita.id, [], tx);
+        if (cita.solicitadoProfesionalId && cita.solicitadoProfesionalId !== profesionalId) {
+          await validarProfesionalLibre(cita.solicitadoProfesionalId, fecha, cita.horaInicio, duracion, cita.id, [], tx);
+        }
+      }
+      if (cita.paquetePacienteId) await validarCupoItemAlAgendar(tx, cita.paquetePacienteId, servicio.id, subcategoriaId, cita.id);
+      await tx.cita.update({
+        where: { id: cita.id },
+        data: { servicioId: servicio.id, subcategoriaId, duracionMinutos: duracion, precioLista, montoDescuento, montoFinal },
+      });
+      // La atención clínica (si ya se abrió) copia el servicio de su cita: se corrige igual.
+      if (atencion) await tx.atencionClinica.update({ where: { id: atencion.id }, data: { servicioId: servicio.id, subcategoriaId } });
+      await auditEnTx(tx, {
+        citaId: cita.id, usuarioId: req.user?.userId, accion: 'cambiar_tratamiento', entidad: 'cita', entidadId: cita.id,
+        antes: { servicio: cita.servicio.nombre, subcategoria: cita.subcategoria?.nombre ?? null, duracionMinutos: cita.duracionMinutos, montoFinal: cita.montoFinal != null ? Number(cita.montoFinal) : null, estado: cita.estado },
+        despues: { servicio: servicio.nombre, subcategoria: subNueva?.nombre ?? null, duracionMinutos: duracion, montoFinal, atencionCorregida: !!atencion },
+        sedeId: cita.sedeId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
+      });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
+  } catch (err) {
+    if (esConflictoDeSlot(err)) throw new AppError('Ese horario acaba de ocuparse. Refresque e intente otra vez.', 409, 'SLOT_OCUPADO');
+    throw err;
+  }
+
+  const citaCompleta = await getCitaCompleta(cita.id);
+  emitirEventoCita({ tipo: 'cita:actualizada', sedeId: cita.sedeId, fecha, cita: citaCompleta as never, cambiadoPor: req.user?.userId ?? 'sistema' });
   res.json(citaCompleta);
 });
 

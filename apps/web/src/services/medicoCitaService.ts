@@ -10,14 +10,17 @@ export interface CitaConMedico {
   estado: string;
   medicoId?: string | null;
   medico?: { id: string; nombres: string; apellidos: string; colegiatura?: string | null } | null;
+  // Baro: el médico que atiende la máquina (se guarda también aquí; citas viejas solo lo tienen aquí).
+  solicitadoProfesional?: { id: string; nombres: string; apellidos: string; colegiatura?: string | null } | null;
   unidadNegocio?: { nombre: string } | null;
 }
 
 const SIN_CAMBIO_MEDICO = ['cancelada', 'reprogramada', 'no_show'];
 
-/** Podología lleva médico; en las demás unidades solo se muestra si ya tiene uno. */
+/** Podología y Baropodometría llevan médico (baro: lo toma el médico que atienda ese día, 24-sep-2026); en las demás
+ *  unidades solo se muestra si ya tiene uno. */
 export const citaLlevaMedico = (c: Pick<CitaConMedico, 'unidadNegocio' | 'medicoId'>) =>
-  /podolog/i.test(c.unidadNegocio?.nombre ?? '') || !!c.medicoId;
+  /podolog|baropodometr/i.test(c.unidadNegocio?.nombre ?? '') || !!c.medicoId;
 
 /**
  * Médico de la cita en el detalle: el médico se toma / suelta la cita; admin y coordinación
@@ -32,7 +35,9 @@ export function useMedicoDeLaCita(cita: CitaConMedico) {
   const miFicha = usuario?.profesional?.tipo === 'medico' ? usuario.profesionalId ?? null : null;
   const soyMedico = !!miFicha && tiene('medico.autoasignar');
   const activa = !SIN_CAMBIO_MEDICO.includes((cita.estado || '').toLowerCase());
-  const medicoId = cita.medicoId ?? null;
+  // Baro: citas agendadas antes guardaban al médico solo como «solicitado» (Solo X): cuenta como su médico.
+  const esBaro = /baropodometr/i.test(cita.unidadNegocio?.nombre ?? '');
+  const medicoId = cita.medicoId ?? (esBaro ? cita.solicitadoProfesional?.id ?? null : null);
   const esMia = !!miFicha && medicoId === miFicha;
 
   const { data: asignables = [], isLoading: cargandoAsignables } = useQuery({
@@ -62,7 +67,7 @@ export function useMedicoDeLaCita(cita: CitaConMedico) {
   });
 
   return {
-    medico: cita.medico ?? null,
+    medico: cita.medico ?? (esBaro ? cita.solicitadoProfesional ?? null : null),
     medicoId,
     activa,
     soyMedico,

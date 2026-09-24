@@ -5,7 +5,7 @@
  */
 import type { ConstanciaParaPdf } from './constanciaService';
 import { TIPO_CONSTANCIA_LABEL, type TipoConstancia } from './constanciaService';
-import { Doc, W, H, M, CONTENT_W, GRIS, INK, LINEA, SUAVE, SEXO, fechaLima, edadDe, dibujarCabecera, campo, urlVerificacionReceta } from './pdfComun';
+import { Doc, W, H, M, CONTENT_W, GRIS, INK, LINEA, SUAVE, SEXO, fechaLima, edadDe, dibujarCabecera, campo, urlVerificacionReceta, VERIFICACION_PUBLICA } from './pdfComun';
 
 export function escribirConstanciaPdf(doc: Doc, c: ConstanciaParaPdf, qr: Buffer | null): void {
   const at = c.atencion;
@@ -47,14 +47,16 @@ export function escribirConstanciaPdf(doc: Doc, c: ConstanciaParaPdf, qr: Buffer
   const reg = regRaw ? (tienePrefijo ? regRaw : (tipo === 'descanso_medico' ? `CMP ${regRaw}` : `Reg. ${regRaw}`)) : '';
   doc.font('Helvetica').fontSize(8.5).fillColor(GRIS).text(tipo === 'descanso_medico' ? 'Médico cirujano' : 'Profesional que atendió', xS, yF + 18, { width: 220, align: 'center' }).text(reg, xS, yF + 29, { width: 220, align: 'center' });
 
-  // Barra de verificación con QR
-  doc.rect(0, H - BARRA, W, BARRA).fill('#F2F4F6');
-  const QR = 52, txtW = W - 2 * M - QR - 16;
-  doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text('Verifique la autenticidad de este documento', M, H - BARRA + 12, { width: txtW });
-  doc.font('Helvetica').fontSize(7.5).fillColor(GRIS)
-    .text(`Escanee el código QR o ingrese a ${urlVerificacionReceta(c.codigoVerificacion)}`, M, H - BARRA + 25, { width: txtW })
-    .text(`Código de verificación: ${c.codigoVerificacion}  ·  Generado por Limablue Agenda`, M, H - BARRA + 38, { width: txtW });
-  if (qr) doc.image(qr, W - M - QR, H - BARRA + 6, { width: QR, height: QR });
+  // Barra de verificación con QR (solo con dirección pública configurada: VERIFICACION_BASE_URL)
+  if (VERIFICACION_PUBLICA) {
+    doc.rect(0, H - BARRA, W, BARRA).fill('#F2F4F6');
+    const QR = 52, txtW = W - 2 * M - QR - 16;
+    doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text('Verifique la autenticidad de este documento', M, H - BARRA + 12, { width: txtW });
+    doc.font('Helvetica').fontSize(7.5).fillColor(GRIS)
+      .text(`Escanee el código QR o ingrese a ${urlVerificacionReceta(c.codigoVerificacion)}`, M, H - BARRA + 25, { width: txtW })
+      .text(`Código de verificación: ${c.codigoVerificacion}  ·  Generado por Limablue Agenda`, M, H - BARRA + 38, { width: txtW });
+    if (qr) doc.image(qr, W - M - QR, H - BARRA + 6, { width: QR, height: QR });
+  }
   if (c.estado === 'anulada') {
     doc.save().rotate(-30, { origin: [W / 2, H / 2] }).font('Helvetica-Bold').fontSize(64).fillColor('#B42318').fillOpacity(0.18)
       .text('ANULADA', 0, H / 2 - 40, { width: W, align: 'center' }).restore();

@@ -114,8 +114,9 @@ export const useAuthStore = create<AuthState>()(
         const u = get().usuario;
         if (!u) return false;
         // Roles que ven TODAS las sedes (espeja ROLES_TODAS_SEDES del backend). Es solo acceso a
-        // sedes; contact_center NO es coordinadora (no gestiona). Recepción NO entra aquí.
-        if (['admin', 'coordinadora_sedes', 'contact_center', 'especial_contact', 'recursos_humanos'].includes(u.rol)) return true;
+        // sedes; contact_center NO es coordinadora (no gestiona). Recepción entra desde el 24-sep-2026
+        // (ve y agenda en todas); su sede asignada (`u.sedes`) es con la que abre la agenda.
+        if (['admin', 'coordinadora_sedes', 'contact_center', 'especial_contact', 'recursos_humanos', 'recepcionista'].includes(u.rol)) return true;
         return u.sedes.some(s => s.id === sedeId);
       },
     }),

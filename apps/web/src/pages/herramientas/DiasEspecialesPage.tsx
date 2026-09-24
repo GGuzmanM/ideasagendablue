@@ -121,7 +121,7 @@ export function DiasEspecialesPage() {
                   <button key={e.id} onClick={() => { setFecha(e.fecha); setFechaFin(''); }}
                     className={cn('px-2.5 py-1.5 rounded-lg text-xs font-semibold border text-left transition-all',
                       activo ? 'bg-amber-600 text-white border-amber-600' : 'bg-white text-slate-700 border-slate-200 hover:border-amber-400')}>
-                    <span className="capitalize">{format(parseISO(e.fecha), "EEE d MMM", { locale: es })}</span>
+                    <span className="capitalize">{format(parseISO(e.fecha.slice(0, 10)), "EEE d MMM", { locale: es })}</span>
                     <span className={cn('ml-1 font-normal', activo ? 'text-amber-100' : 'text-slate-400')}>{e.horaApertura}–{e.horaCierre}</span>
                   </button>
                 );

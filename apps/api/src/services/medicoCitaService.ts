@@ -54,9 +54,18 @@ export async function medicosAsignables(sedeId: string) {
 export async function cambiarMedicoCita(p: Ctx & { user: AuthPayload; citaId: string; accion: AccionMedico }) {
   const cita = await prisma.cita.findFirst({
     where: { id: p.citaId, deletedAt: null },
-    select: { id: true, estado: true, sedeId: true, fecha: true, slotGrupoId: true, medicoId: true, medico: { select: { nombres: true, apellidos: true } } },
+    select: {
+      id: true, estado: true, sedeId: true, fecha: true, slotGrupoId: true, medicoId: true, solicitadoProfesionalId: true,
+      medico: { select: { nombres: true, apellidos: true } }, solicitadoProfesional: { select: { nombres: true, apellidos: true } },
+      unidadNegocio: { select: { modoReserva: true } },
+    },
   });
   if (!cita) throw new AppError('Cita no encontrada', 404);
+  // BARO (24-sep-2026): la cita puede agendarse SIN médico y lo toma el que atienda ese día. El médico de baro vive en
+  // `solicitadoProfesionalId` (ocupa su tiempo y sale como «Solo X»); al tomar/asignar se escriben los dos campos.
+  const esBaro = cita.unidadNegocio.modoReserva === 'sin_eleccion';
+  const medicoActual = cita.medicoId ?? (esBaro ? cita.solicitadoProfesionalId : null);
+  const nombreActual = cita.medico ?? (esBaro ? cita.solicitadoProfesional : null);
   const hermanas = cita.slotGrupoId
     ? await prisma.cita.findMany({ where: { slotGrupoId: cita.slotGrupoId, id: { not: cita.id }, deletedAt: null }, select: { id: true, sedeId: true } })
     : [];
@@ -66,11 +75,11 @@ export async function cambiarMedicoCita(p: Ctx & { user: AuthPayload; citaId: st
   const permisos = p.user.permisos ?? [];
   const decision = decidirCambioMedico(
     { profesionalId: yo?.id ?? null, esMedico: !!yo, puedeAsignar: permisos.includes('medico.asignar'), puedeAutoasignar: permisos.includes('medico.autoasignar') },
-    { medicoId: cita.medicoId, estado: cita.estado, tieneRecetaVigente: await tieneRecetaVigente(ids) },
+    { medicoId: medicoActual, estado: cita.estado, tieneRecetaVigente: await tieneRecetaVigente(ids) },
     p.accion,
   );
   if (!decision.ok) {
-    const quien = decision.code === 'CITA_TOMADA' ? nombreDe(cita.medico) : null;
+    const quien = decision.code === 'CITA_TOMADA' ? nombreDe(nombreActual) : null;
     throw new AppError(quien ? `Esta cita ya la tomó ${quien}` : decision.mensaje, decision.status, decision.code);
   }
   if (decision.sinCambio) return getCitaCompleta(cita.id);
@@ -89,8 +98,11 @@ export async function cambiarMedicoCita(p: Ctx & { user: AuthPayload; citaId: st
   await prisma.$transaction(async (tx) => {
     // Guarda: solo si el médico sigue siendo el que leímos (dos «Tomar» a la vez → uno gana).
     const u = await tx.cita.updateMany({
-      where: { id: cita.id, medicoId: cita.medicoId },
-      data: { medicoId: decision.medicoId, medicoAsignadoEn: decision.medicoId ? new Date() : null, medicoAsignadoPorId: decision.medicoId ? p.usuarioId ?? null : null },
+      where: { id: cita.id, medicoId: cita.medicoId, ...(esBaro ? { solicitadoProfesionalId: cita.solicitadoProfesionalId } : {}) },
+      data: {
+        medicoId: decision.medicoId, medicoAsignadoEn: decision.medicoId ? new Date() : null, medicoAsignadoPorId: decision.medicoId ? p.usuarioId ?? null : null,
+        ...(esBaro ? { solicitadoProfesionalId: decision.medicoId } : {}),
+      },
     });
     if (u.count === 0) {
       const ahora = await tx.cita.findUnique({ where: { id: cita.id }, select: { medico: { select: { nombres: true, apellidos: true } } } });
@@ -106,7 +118,7 @@ export async function cambiarMedicoCita(p: Ctx & { user: AuthPayload; citaId: st
     for (const id of ids) {
       await auditEnTx(tx, {
         citaId: id, usuarioId: p.usuarioId, accion: accionAudit, entidad: 'cita', entidadId: id, sedeId: cita.sedeId, ip: p.ip, userAgent: p.userAgent,
-        antes: { medicoId: cita.medicoId, medico: nombreDe(cita.medico) },
+        antes: { medicoId: medicoActual, medico: nombreDe(nombreActual) },
         despues: { medicoId: decision.medicoId, medico: nombreDe(nuevo), ...(id !== cita.id ? { cascada: true, slotGrupoId: cita.slotGrupoId } : {}) },
       });
     }

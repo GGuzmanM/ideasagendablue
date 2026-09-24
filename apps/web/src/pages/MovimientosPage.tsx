@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, useDraggable, useDroppable, type DragEndEvent } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import toast from 'react-hot-toast';
-import { format, parseISO, differenceInCalendarDays, addDays, endOfMonth } from 'date-fns';
+import { format, parseISO, differenceInCalendarDays, addDays } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { cn } from '../utils/cn';
 import { type Sede } from '../api';
@@ -668,14 +668,15 @@ export function MovimientosPage() {
   const moverMut = useMutation({
     mutationFn: async ({ persona, fromSedeId, toSedeId }: { persona: PersonaGrupo; fromSedeId: string; toSedeId: string }) => {
       const cierre = format(addDays(parseISO(fechaVista), -1), 'yyyy-MM-dd'); // último día en la sede vieja
-      const finMes = format(endOfMonth(parseISO(fechaVista)), 'yyyy-MM-dd'); // el arrastre rige hasta fin de mes (28/29/30/31); la auto-renovación lo continúa
+      // 24-sep-2026: el arrastre rige SIN fecha de fin (igual que las podólogas): la persona sigue en la sede nueva
+      // los meses siguientes hasta que alguien la cambie a mano. Antes terminaba a fin de mes y el mes siguiente salía vacío.
       if (grupo === 'recepcion') {
-        // Atómico en backend: cierra la vieja + crea la nueva [fechaVista → fin de mes] en una tx.
+        // Atómico en backend: cierra la vieja + crea la nueva [fechaVista → sin fin] en una tx.
         if (persona.asignacionId) await composicionSedeApi.moverAsignacion(persona.asignacionId, { sedeId: toSedeId, desde: fechaVista });
-        else await composicionSedeApi.crearAsignacion({ sedeId: toSedeId, fechaInicio: fechaVista, fechaFin: finMes, recepcionistaId: persona.id });
+        else await composicionSedeApi.crearAsignacion({ sedeId: toSedeId, fechaInicio: fechaVista, fechaFin: null, recepcionistaId: persona.id });
       } else {
         await baroSolicitudApi.quitar(persona.id, fromSedeId, cierre); // cierra, no borra
-        await baroSolicitudApi.agregar(persona.id, toSedeId, { fechaInicio: fechaVista, fechaFin: finMes, motivo: 'OTRO' });
+        await baroSolicitudApi.agregar(persona.id, toSedeId, { fechaInicio: fechaVista, fechaFin: null, motivo: 'OTRO' });
       }
     },
     onSuccess: () => { invalidarGrupos(); toast.success('Movido de sede'); },

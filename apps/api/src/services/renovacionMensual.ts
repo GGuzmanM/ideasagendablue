@@ -2,9 +2,9 @@ import { prisma } from '../db';
 
 // ─── Auto-renovación mensual de asignaciones ─────────────────────────────────────
 // Al cambiar de mes, el personal CONTINÚA en su misma sede salvo que lo hayan movido o dado de
-// baja. Un arrastre/asignación fija `fechaFin` = fin de mes (ver MovimientosPage); este job, al
-// entrar el mes nuevo (o al arrancar el server si se lo perdió), crea el periodo del mes actual
-// [1° … fin de mes] en la ÚLTIMA sede conocida de cada persona.
+// baja. Desde el 24-sep-2026 los arrastres y altas de recepción y doctores quedan SIN fecha de fin
+// (siguen hasta que alguien los cambie a mano), así que este job es solo una RED DE SEGURIDAD para
+// periodos viejos que terminaban a fin de mes: al entrar el mes nuevo los continúa, ya sin fin.
 //
 // Es IDEMPOTENTE (si ya existe cobertura del mes, no duplica) y hace CATCH-UP (si el server estuvo
 // caído varios meses, restaura la cobertura del mes ACTUAL — los meses pasados sin citas no importan).
@@ -66,7 +66,7 @@ export async function renovarAsignacionesMensuales(): Promise<{ renovadosBaro: n
     });
     if (cubre > 0) continue;                                                            // ya movido/renovado a mano
     await prisma.baroMedicoSede.create({
-      data: { profesionalId: profId, sedeId: ult.sedeId, activa: true, fechaInicio: baroIni, fechaFin: baroFin, motivo: null },
+      data: { profesionalId: profId, sedeId: ult.sedeId, activa: true, fechaInicio: baroIni, fechaFin: null, motivo: null }, // sin fin: ya no se renueva cada mes
     });
     renovadosBaro++;
   }
@@ -95,7 +95,7 @@ export async function renovarAsignacionesMensuales(): Promise<{ renovadosBaro: n
     });
     if (cubre > 0) continue;
     await prisma.asignacionAdministrativa.create({
-      data: { sedeId: ult.sedeId, recepcionistaId: recId, fechaInicio: recIni, fechaFin: recFin, notas: 'Renovación automática' },
+      data: { sedeId: ult.sedeId, recepcionistaId: recId, fechaInicio: recIni, fechaFin: null, notas: 'Renovación automática (sin fin)' },
     });
     renovadosRecep++;
   }

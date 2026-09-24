@@ -104,7 +104,7 @@ function PanelCitasPendientes({
           <div className="px-3.5 py-2 flex flex-wrap gap-1.5">
             {verificacion.resumenPorDia.map(d => (
               <span key={d.fecha} className="text-xxs bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-medium">
-                {format(parseISO(d.fecha), 'EEE d MMM', { locale: es })} ({d.cantidad})
+                {format(parseISO(d.fecha.slice(0, 10)), 'EEE d MMM', { locale: es })} ({d.cantidad})
               </span>
             ))}
           </div>
@@ -180,7 +180,7 @@ function FilaCita({
   return (
     <tr className="border-b border-red-50 hover:bg-red-50/50">
       <td className="px-3 py-2 whitespace-nowrap text-slate-700">
-        {format(parseISO(cita.fecha), 'EEE d MMM', { locale: es })}
+        {format(parseISO(cita.fecha.slice(0, 10)), 'EEE d MMM', { locale: es })}
       </td>
       <td className="px-3 py-2 whitespace-nowrap text-slate-600 font-mono">
         {cita.horaInicio}–{cita.horaFin}

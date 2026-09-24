@@ -74,7 +74,7 @@ export const HORARIO_TIPO_PODOLOGA = [
 /**
  * Registra al médico en la sede dentro del roster de baro (`baro_medico_sede`), que es de donde
  * Movimientos › Doctores saca sus tarjetas, y le habilita «por solicitud» los servicios de baro
- * (igual que POST /baro-solicitud). De hoy a fin de mes: la renovación mensual lo continúa.
+ * (igual que POST /baro-solicitud). Desde hoy y SIN fecha de fin (24-sep-2026): sigue hasta que se cambie en Movimientos.
  * Si ya tiene un periodo vigente hoy (en cualquier sede), no se toca: manda Movimientos.
  */
 export async function registrarMedicoEnBaroEnTx(tx: Prisma.TransactionClient, p: { profesionalId: string; sedeId: string; creadoPor?: string }): Promise<boolean> {
@@ -86,7 +86,7 @@ export async function registrarMedicoEnBaroEnTx(tx: Prisma.TransactionClient, p:
   });
   if (vigente) return false;
   await tx.baroMedicoSede.create({
-    data: { profesionalId: p.profesionalId, sedeId: p.sedeId, activa: true, fechaInicio: inicio, fechaFin: new Date(`${finDeMes(hoy)}T00:00:00`), creadoPor: p.creadoPor },
+    data: { profesionalId: p.profesionalId, sedeId: p.sedeId, activa: true, fechaInicio: inicio, fechaFin: null, creadoPor: p.creadoPor },
   });
   const unidad = await tx.unidadNegocio.findFirst({ where: { nombre: { startsWith: 'Baropodometr' }, deletedAt: null }, select: { id: true } });
   const servicios = unidad ? await tx.servicio.findMany({ where: { unidadNegocioId: unidad.id, deletedAt: null }, select: { id: true } }) : [];
@@ -120,13 +120,13 @@ export async function resolverFichaEnTx(tx: Prisma.TransactionClient, p: PedidoF
     if (e.tipo === 'vincular') {
       // Ficha que ya existía: se respeta su sede actual de Movimientos; solo se le da una si hoy no tiene ninguna.
       const vigente = await tx.asignacionAdministrativa.findFirst({ where: { recepcionistaId: e.ficha.id, deletedAt: null, fechaInicio: { lte: fechaDb(hoy) }, OR: [{ fechaFin: null }, { fechaFin: { gte: fechaDb(hoy) } }] }, select: { id: true } });
-      if (!vigente) await tx.asignacionAdministrativa.create({ data: { sedeId: p.sedeId, recepcionistaId: e.ficha.id, fechaInicio: fechaDb(hoy), fechaFin: fechaDb(finDeMes(hoy)), notas: 'Creada al vincular su usuario', creadoPor: p.creadoPor } });
+      if (!vigente) await tx.asignacionAdministrativa.create({ data: { sedeId: p.sedeId, recepcionistaId: e.ficha.id, fechaInicio: fechaDb(hoy), fechaFin: null, notas: 'Creada al vincular su usuario', creadoPor: p.creadoPor } });
       await auditEnTx(tx, { usuarioId: p.creadoPor, accion: 'vincular_ficha_recepcion', entidad: 'recepcionista', entidadId: e.ficha.id, despues: { nombre: e.ficha.nombre, usuario: p.nombre }, sedeId: p.sedeId, ip: p.ip, userAgent: p.userAgent });
       return { recepcionistaId: e.ficha.id, accion: 'vinculada', nombreFicha: e.ficha.nombre };
     }
     const ficha = await tx.recepcionista.create({ data: { nombre: p.nombre.trim(), creadoPor: p.creadoPor } });
-    await tx.asignacionAdministrativa.create({ data: { sedeId: p.sedeId, recepcionistaId: ficha.id, fechaInicio: fechaDb(hoy), fechaFin: fechaDb(finDeMes(hoy)), notas: 'Creada junto con su usuario', creadoPor: p.creadoPor } });
-    await auditEnTx(tx, { usuarioId: p.creadoPor, accion: 'crear_ficha_recepcion', entidad: 'recepcionista', entidadId: ficha.id, despues: { nombre: ficha.nombre, sedeId: p.sedeId, fechaInicio: hoy, fechaFin: finDeMes(hoy) }, sedeId: p.sedeId, ip: p.ip, userAgent: p.userAgent });
+    await tx.asignacionAdministrativa.create({ data: { sedeId: p.sedeId, recepcionistaId: ficha.id, fechaInicio: fechaDb(hoy), fechaFin: null, notas: 'Creada junto con su usuario', creadoPor: p.creadoPor } });
+    await auditEnTx(tx, { usuarioId: p.creadoPor, accion: 'crear_ficha_recepcion', entidad: 'recepcionista', entidadId: ficha.id, despues: { nombre: ficha.nombre, sedeId: p.sedeId, fechaInicio: hoy, fechaFin: null }, sedeId: p.sedeId, ip: p.ip, userAgent: p.userAgent });
     return { recepcionistaId: ficha.id, accion: 'creada', nombreFicha: ficha.nombre };
   }
 
@@ -161,7 +161,7 @@ export async function resolverFichaEnTx(tx: Prisma.TransactionClient, p: PedidoF
   });
   if (p.rol === 'medico') {
     await registrarMedicoEnBaroEnTx(tx, { profesionalId: ficha.id, sedeId: p.sedeId, creadoPor: p.creadoPor });
-    await tx.asignacionAdministrativa.create({ data: { sedeId: p.sedeId, profesionalId: ficha.id, fechaInicio: fechaDb(hoy), fechaFin: fechaDb(finDeMes(hoy)), notas: 'Creada junto con su usuario', creadoPor: p.creadoPor } });
+    await tx.asignacionAdministrativa.create({ data: { sedeId: p.sedeId, profesionalId: ficha.id, fechaInicio: fechaDb(hoy), fechaFin: null, notas: 'Creada junto con su usuario', creadoPor: p.creadoPor } });
   } else {
     await tx.asignacionSede.create({ data: { profesionalId: ficha.id, sedeId: p.sedeId, fechaInicio: fechaDb(hoy), fechaFin: null, activa: true, notas: 'Creada junto con su usuario', creadoPor: p.creadoPor } });
     await tx.horarioProfesional.createMany({ data: HORARIO_TIPO_PODOLOGA.map((h) => ({ ...h, profesionalId: ficha.id })) });

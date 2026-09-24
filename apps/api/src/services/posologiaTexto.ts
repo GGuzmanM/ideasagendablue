@@ -80,6 +80,22 @@ export function textoDuracion(v: string | null | undefined): string {
 }
 
 /**
+ * Posología CORTA para el PDF (24-sep-2026), en forma de frase para que entre en la misma línea que el nombre:
+ * «2 cápsulas, vía oral, cada 12 horas, durante 7 días». Sin rótulos; «durante» solo si la duración empieza con número.
+ */
+export function lineaPosologiaCorta(it: PosologiaCampos): string {
+  const forma = it.formaFarmaceutica ?? ''; const tipo = it.tipo ?? '';
+  const via = tipo === 'SERVICIO' || tipo === 'PRODUCTO' ? '' : textoVia(it.via);
+  const dur = textoDuracion(it.duracion);
+  return [
+    textoDosis(it.dosis, forma, tipo),
+    via ? (/^v[ií]a\b/i.test(via) ? via : `vía ${via}`) : '',
+    textoFrecuencia(it.frecuencia),
+    dur ? (/^\d/.test(dur) ? `durante ${dur}` : dur) : '',
+  ].filter(Boolean).join(', ');
+}
+
+/**
  * Línea de posología rotulada, p. ej. «Dosis: 1 cápsula · Vía: oral · Frecuencia: cada 12 horas · Duración: 7 días».
  * Devuelve '' si no hay nada. Las indicaciones NO van aquí (se imprimen aparte).
  */

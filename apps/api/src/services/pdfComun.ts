@@ -108,6 +108,10 @@ export function campo(doc: Doc, label: string, valor: string, x: number, y: numb
 /** Dirección pública de la web (la que abre el QR). En el servidor: VERIFICACION_BASE_URL. */
 export const BASE_VERIFICACION = (process.env.VERIFICACION_BASE_URL || process.env.APP_BASE_URL || 'http://localhost:5180').replace(/\/+$/, '');
 export const urlVerificacionReceta = (codigo: string) => `${BASE_VERIFICACION}/verificar/${codigo}`;
+/** El cuadro «Verifique la autenticidad…» + QR solo se imprime cuando hay una dirección PÚBLICA configurada a propósito
+ *  (VERIFICACION_BASE_URL). Con localhost o la IP de la red interna nadie de afuera (farmacia, paciente) podría abrirlo,
+ *  así que mientras no exista dominio público los PDF salen sin ese cuadro (24-sep-2026). */
+export const VERIFICACION_PUBLICA = !!process.env.VERIFICACION_BASE_URL?.trim();
 
 /** PNG del QR (se genera antes de escribir el PDF: pdfkit dibuja de forma síncrona). */
 export function qrPng(texto: string): Promise<Buffer> {

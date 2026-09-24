@@ -105,7 +105,7 @@ function FilaPodologa({ p, sedeId, semanaRef }: { p: PodologaSemana; sedeId: str
             return (
               <div
                 key={d.fecha}
-                title={`${DIA_LABEL[d.diaSemana]} ${format(parseISO(d.fecha), 'd MMM', { locale: es })} · no trabaja este día`}
+                title={`${DIA_LABEL[d.diaSemana]} ${format(parseISO(d.fecha.slice(0, 10)), 'd MMM', { locale: es })} · no trabaja este día`}
                 className="flex flex-col items-center justify-center py-2.5 rounded-xl border border-outline-variant/20 bg-surface-container-low/40 text-on-surface-variant/40 select-none cursor-not-allowed"
               >
                 <span className="text-[10px] font-bold uppercase">{DIA_LABEL[d.diaSemana]}</span>
@@ -120,7 +120,7 @@ function FilaPodologa({ p, sedeId, semanaRef }: { p: PodologaSemana; sedeId: str
               type="button"
               onClick={() => toggleDia(d)}
               disabled={mut.isPending}
-              title={`${DIA_LABEL[d.diaSemana]} ${format(parseISO(d.fecha), 'd MMM', { locale: es })} · clic para cambiar a ${es8 ? '09:00' : '08:00'}`}
+              title={`${DIA_LABEL[d.diaSemana]} ${format(parseISO(d.fecha.slice(0, 10)), 'd MMM', { locale: es })} · clic para cambiar a ${es8 ? '09:00' : '08:00'}`}
               className={cn(
                 'flex flex-col items-center justify-center py-2.5 rounded-xl border transition-all cursor-pointer shadow-2xs disabled:opacity-50',
                 es8

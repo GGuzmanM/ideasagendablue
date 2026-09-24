@@ -255,6 +255,8 @@ export const ACCION_LABEL: Record<string, AccionStyle> = {
   anular_receta:                def('Receta anulada', 'block', 'rojo'),
   corregir_receta:              def('Receta corregida (reemplazada)', 'edit_note', 'ambar'),
   asignar_atendido_por:         def('Podóloga que atendió (Adicional)', 'person_check', 'azul'),
+  corregir_subcategoria:        def('Subcategoría corregida', 'edit', 'ambar'),
+  cambiar_tratamiento:          def('Tratamiento cambiado', 'edit', 'ambar'),
   verificar_receta:             def('Receta verificada (público)', 'verified', 'cielo'),
   crear_receta_favorita:        def('Receta favorita creada', 'star', 'teal'),
   eliminar_receta_favorita:     def('Receta favorita eliminada', 'delete', 'rojo'),

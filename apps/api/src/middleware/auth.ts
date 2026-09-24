@@ -88,9 +88,10 @@ export async function sedesDerivadasDeFicha(u: { rol: string; recepcionistaId: s
 // ─── Autorización por SEDE ─────────────────────────────────────────────────────
 // Roles que VEN/OPERAN TODAS las sedes (coordinación general + contact center, que atiende
 // llamadas de todas las sedes). Es SOLO acceso a sedes — NO otorga poderes de gestión (eso va
-// por `permisos`/requireRol; contact_center NO es coordinadora). El resto (recepción) solo
-// opera/lee las sedes de su token. Espeja authStore.puedeAccederSede en el frontend.
-const ROLES_TODAS_SEDES = ['admin', 'coordinadora_sedes', 'contact_center', 'especial_contact', 'recursos_humanos'];
+// por `permisos`/requireRol; contact_center NO es coordinadora). Espeja authStore.puedeAccederSede.
+// 24-sep-2026: RECEPCIÓN también ve y agenda en todas las sedes; su sede asignada (Movimientos, en
+// `user.sedes`) sigue siendo con la que la agenda abre por defecto.
+const ROLES_TODAS_SEDES = ['admin', 'coordinadora_sedes', 'contact_center', 'especial_contact', 'recursos_humanos', 'recepcionista'];
 
 export function puedeTodasLasSedes(user: AuthPayload): boolean {
   return ROLES_TODAS_SEDES.includes(user.rol);

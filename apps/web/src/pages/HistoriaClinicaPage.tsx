@@ -2,7 +2,7 @@
 // Izquierda: paciente, alergias, accesos, "Nueva atención" y tabla de atenciones.
 // Derecha: pestañas Evolución · Receta · Antecedentes y alergias (+ próximas: procedimientos, escalas, podograma, consentimientos).
 // Vista PURA: toda la lógica vive en services/historiaClinicaService.ts.
-import { useEffect, useRef, useState, type PointerEvent as EventoPuntero } from 'react';
+import { useEffect, useRef, useState, type PointerEvent as EventoPuntero, type ReactNode } from 'react';
 import { MedicoDeLaCita } from '../components/agenda/MedicoDeLaCita';
 import { citaLlevaMedico } from '../services/medicoCitaService';
 import { MiFirmaBoton } from '../components/historiaClinica/MiFirmaDialog';
@@ -77,6 +77,7 @@ export function HistoriaClinicaPage() {
 
   const alergias = h.historia?.alergias ?? [];
   const atenciones = h.historia?.atenciones ?? [];
+  const vistaUnica = leerVistaUnica(); // vista de una sola pestaña (en prueba: ?vista=unica)
 
   return (
     <div className="flex flex-col h-full overflow-hidden bg-background text-on-surface">
@@ -92,6 +93,14 @@ export function HistoriaClinicaPage() {
             {h.historia && <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[11px] font-bold font-mono-label">HC N° {String(h.historia.numero).padStart(6, '0')}</span>}
             {h.historia?.estado === 'pasiva' && <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[11px] font-bold uppercase" title="Historia en archivo pasivo (sin atenciones recientes)">En archivo</span>}
           </span>
+          {/* Vista de una sola pestaña, en prueba: cada quien la prueba y vuelve cuando quiera (queda recordado en su navegador) */}
+          <button onClick={() => h.navigate({ search: `?vista=${vistaUnica ? 'clasica' : 'unica'}` })} data-testid="alternar-vista-hc"
+            title={vistaUnica ? 'Volver a la vista de pestañas de siempre' : 'Todo en una sola pestaña: antecedentes, motivo, diagnóstico, receta y procedimientos en orden'}
+            className="hidden md:flex min-h-[36px] px-3 rounded-full border border-primary/30 bg-primary/5 text-primary text-xs font-semibold items-center gap-1.5 hover:bg-primary/10 whitespace-nowrap">
+            <span className="material-symbols-outlined text-base">{vistaUnica ? 'tab' : 'view_agenda'}</span>
+            {vistaUnica ? 'Volver a la vista clásica' : 'Probar vista nueva'}
+            {!vistaUnica && <span className="px-1.5 py-0.5 rounded-full bg-primary text-on-primary text-[9px] font-bold uppercase">Nuevo</span>}
+          </button>
         </div>
         {h.puedeRegistrar && (
           <div className="relative">
@@ -210,6 +219,7 @@ export function HistoriaClinicaPage() {
 
         {/* ── Panel derecho ── */}
         <main className="flex-1 lg:overflow-y-auto">
+          {vistaUnica ? <VistaUnica h={h} /> : (<>
           {/* Pestañas: pegadas arriba al desplazar (en tablet la página entera es la que scrollea) */}
           {/* En tablet las 8 pestañas se reparten en dos filas (nada queda oculto fuera de la pantalla) */}
           <div className="sticky top-0 z-10 border-b border-outline-variant/20 bg-surface-container-lowest px-3 lg:px-6 pt-2 lg:pt-3 flex gap-1 flex-wrap">
@@ -250,6 +260,7 @@ export function HistoriaClinicaPage() {
               )
             )}
           </div>
+          </>)}
         </main>
       </div>
 
@@ -304,7 +315,7 @@ function VisitaGenexisCard({ visita }: { visita: HistorialGenexisRegistro | null
   );
 }
 
-function CabeceraAtencion({ h, a }: { h: H; a: AtencionCompleta }) {
+function CabeceraAtencion({ h, a, sinMotivo = false }: { h: H; a: AtencionCompleta; sinMotivo?: boolean }) {
   // Resumen para el paciente (4.4): se puede ver siempre, también con la atención ya cerrada.
   const [verResumen, setVerResumen] = useState(false);
   const [confirmarCierre, setConfirmarCierre] = useState(false);
@@ -332,7 +343,7 @@ function CabeceraAtencion({ h, a }: { h: H; a: AtencionCompleta }) {
           <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${cerrada ? 'bg-surface-container text-on-surface-variant' : 'bg-emerald-100 text-emerald-700'}`}>{cerrada ? 'Cerrada' : 'Abierta'}</span>
         </div>
         <p className="text-sm text-on-surface-variant mt-1"><b className="text-on-surface">{nombreProfesional(a.profesional)}</b> · {a.sede.nombre}{a.abiertaEtiqueta ? ` · registrada por ${a.abiertaEtiqueta}` : ''}</p>
-        <p className="text-sm mt-2"><span className={LBL}>Motivo de consulta</span>{a.motivoConsulta}</p>
+        {!sinMotivo && <p className="text-sm mt-2"><span className={LBL}>Motivo de consulta</span>{a.motivoConsulta}</p>}
         {controles.length > 0 && (
           <div className="flex flex-wrap gap-1.5 mt-2" data-testid="controles-atencion">
             {controles.map((x) => (
@@ -392,19 +403,25 @@ function CabeceraAtencion({ h, a }: { h: H; a: AtencionCompleta }) {
   );
 }
 
+/** Pestaña Evolución (vista clásica): diagnósticos + notas, igual que siempre. La vista de una sola pestaña los muestra por separado. */
 function PanelEvolucion({ h, a }: { h: H; a: AtencionCompleta }) {
+  return (
+    <div className="space-y-6">
+      <PanelDiagnosticos h={h} a={a} />
+      <PanelNotas h={h} a={a} />
+    </div>
+  );
+}
+
+function PanelDiagnosticos({ h, a }: { h: H; a: AtencionCompleta }) {
   const e = h.evolucion; // vive en la página: el borrador sobrevive al cambio de pestaña
-  const dictado = h.dictado; // dictado por voz en los campos de la nota (1.6)
-  const c = h.consulta; // dictado de toda la consulta: resalta el campo que está recibiendo texto
-  const escribeEn = (s: SeccionDictado | SeccionDictado[]) => c.activo && (Array.isArray(s) ? s.includes(c.seccion) : c.seccion === s);
+  const c = h.consulta; // dictado de toda la consulta
   const [confirmarDx, setConfirmarDx] = useState<string | null>(null);
-  const [confirmarNota, setConfirmarNota] = useState<string | null>(null);
-  const [plantillasAbierto, setPlantillasAbierto] = useState(false);
   const [catalogoAbierto, setCatalogoAbierto] = useState(false);
   // Cerrada = solo lectura (misma regla que el servidor): diagnósticos y notas ya no se tocan.
   const editable = h.puedeRegistrar && !e.cerrada;
   return (
-    <div className="space-y-6">
+    <>
       {/* Diagnósticos */}
       <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5">
         <div className="flex items-center justify-between mb-3">
@@ -458,7 +475,22 @@ function PanelEvolucion({ h, a }: { h: H; a: AtencionCompleta }) {
           </div>
         )}
       </section>
+      {catalogoAbierto && <CatalogoCie10Dialog onClose={() => setCatalogoAbierto(false)} />}
+      {confirmarDx && <DialogoMotivo titulo="Eliminar diagnóstico" descripcion="Se quita de la atención; el motivo queda en la auditoría." confirmar="Eliminar" pending={e.eliminarDxMut.isPending} onConfirmar={(m) => { e.eliminarDxMut.mutate({ id: confirmarDx, motivo: m }); setConfirmarDx(null); }} onClose={() => setConfirmarDx(null)} />}
+    </>
+  );
+}
 
+function PanelNotas({ h, a }: { h: H; a: AtencionCompleta }) {
+  const e = h.evolucion; // vive en la página: el borrador sobrevive al cambio de pestaña
+  const dictado = h.dictado; // dictado por voz en los campos de la nota (1.6)
+  const c = h.consulta; // dictado de toda la consulta: resalta el campo que está recibiendo texto
+  const escribeEn = (s: SeccionDictado | SeccionDictado[]) => c.activo && (Array.isArray(s) ? s.includes(c.seccion) : c.seccion === s);
+  const [confirmarNota, setConfirmarNota] = useState<string | null>(null);
+  const [plantillasAbierto, setPlantillasAbierto] = useState(false);
+  const editable = h.puedeRegistrar && !e.cerrada;
+  return (
+    <>
       {/* Notas de evolución */}
       <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5">
         <div className="flex items-center justify-between mb-3">
@@ -535,10 +567,8 @@ function PanelEvolucion({ h, a }: { h: H; a: AtencionCompleta }) {
         )}
       </section>
       {plantillasAbierto && <PlantillasDialog onClose={() => setPlantillasAbierto(false)} />}
-      {catalogoAbierto && <CatalogoCie10Dialog onClose={() => setCatalogoAbierto(false)} />}
-      {confirmarDx && <DialogoMotivo titulo="Eliminar diagnóstico" descripcion="Se quita de la atención; el motivo queda en la auditoría." confirmar="Eliminar" pending={e.eliminarDxMut.isPending} onConfirmar={(m) => { e.eliminarDxMut.mutate({ id: confirmarDx, motivo: m }); setConfirmarDx(null); }} onClose={() => setConfirmarDx(null)} />}
       {confirmarNota && <DialogoMotivo titulo="Eliminar nota" descripcion="La nota deja de verse en la historia (queda en el historial interno); el motivo queda en la auditoría." confirmar="Eliminar" pending={e.eliminarNotaMut.isPending} onConfirmar={(m) => { e.eliminarNotaMut.mutate({ notaId: confirmarNota, motivo: m }); setConfirmarNota(null); }} onClose={() => setConfirmarNota(null)} />}
-    </div>
+    </>
   );
 }
 
@@ -1669,6 +1699,202 @@ function PanelFotos({ h, a }: { h: H; a: AtencionCompleta }) {
       {f.fotoMedir && (
         <MedidorUlcera fotoId={f.fotoMedir.id} titulo={`${f.fotoMedir.zona || 'Foto'}${f.fotoMedir.pie ? ` · ${PIE_LABEL[f.fotoMedir.pie]}` : ''} · ${fmtFecha(f.fotoMedir.tomadaEn)}`}
           guardando={f.medirMut.isPending} onClose={() => f.setFotoMedir(null)} onGuardar={(m) => f.medirMut.mutate({ foto: f.fotoMedir!, ...m })} />
+      )}
+    </div>
+  );
+}
+
+// ─── Vista de UNA sola pestaña (24-sep-2026, pedido de la clínica) ──────────────────────────────────────────────────
+// Las MISMAS piezas de siempre, reordenadas de arriba abajo: 1 Antecedentes y alergias · 2 Motivo de consulta y anamnesis
+// · 3 Diagnóstico · 4 Tratamiento (receta) · 5 Procedimientos y consentimientos · Escalas (al costado en pantallas
+// anchas; si no, al final). Podograma y Fotos siguen en su propia pestaña (necesitan pantalla). Nada cambia por detrás:
+// mismos borradores, dictado, permisos y reglas. Mientras se prueba, se activa por equipo con ?vista=unica y se vuelve
+// a la clásica con ?vista=clasica (queda recordado en ese navegador).
+const CLAVE_VISTA_HC = 'limablue-hc-vista';
+function leerVistaUnica(): boolean {
+  try {
+    const q = new URLSearchParams(window.location.search).get('vista');
+    if (q === 'unica' || q === 'clasica') localStorage.setItem(CLAVE_VISTA_HC, q);
+    return localStorage.getItem(CLAVE_VISTA_HC) === 'unica';
+  } catch {
+    return false;
+  }
+}
+
+type SeccionUnicaId = 'antecedentes' | 'motivo' | 'diagnostico' | 'receta' | 'procedimientos' | 'escalas';
+// Lo que antes era «ir a la pestaña X» (dictado, enlaces con ?tab=receta, avisos) ahora baja a su sección.
+const SECCION_DE_TAB: Partial<Record<TabHc, SeccionUnicaId>> = {
+  antecedentes: 'antecedentes', evolucion: 'motivo', receta: 'receta', procedimientos: 'procedimientos', consentimientos: 'procedimientos', escalas: 'escalas',
+};
+const irASeccion = (id: SeccionUnicaId, behavior: ScrollBehavior = 'smooth') => document.getElementById(`hc-sec-${id}`)?.scrollIntoView({ behavior, block: 'start' });
+const ANCHO_ESCALAS_AL_COSTADO = 1700; // px de ventana desde los que las escalas van en columna al costado
+
+function useAnchoMinimo(px: number): boolean {
+  const consulta = `(min-width: ${px}px)`;
+  const [ok, setOk] = useState(() => typeof window !== 'undefined' && window.matchMedia(consulta).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(consulta);
+    const cambio = () => setOk(mq.matches);
+    mq.addEventListener('change', cambio);
+    return () => mq.removeEventListener('change', cambio);
+  }, [consulta]);
+  return ok;
+}
+
+function VistaUnica({ h }: { h: H }) {
+  const enAtencion = h.tab !== 'podograma' && h.tab !== 'fotos';
+  const tabs: { id: TabHc; label: string; icon: string; activa: boolean }[] = [
+    { id: 'antecedentes', label: 'Atención', icon: 'clinical_notes', activa: enAtencion },
+    { id: 'podograma', label: 'Podograma', icon: 'footprint', activa: h.tab === 'podograma' },
+    { id: 'fotos', label: 'Fotos', icon: 'photo_camera', activa: h.tab === 'fotos' },
+  ];
+  return (
+    <>
+      <div className="sticky top-0 z-10 border-b border-outline-variant/20 bg-surface-container-lowest px-3 lg:px-6 pt-2 lg:pt-3" data-testid="vista-unica">
+        <div className="flex gap-1 flex-wrap">
+          {tabs.map((t) => (
+            <button key={t.id} onClick={() => { if (t.id === 'antecedentes' && enAtencion) irASeccion('antecedentes'); else h.setTab(t.id); }}
+              className={`px-3 lg:px-4 py-3 lg:py-2.5 text-sm font-semibold border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${t.activa ? 'border-primary text-primary' : 'border-transparent text-on-surface-variant hover:text-on-surface'}`}>
+              <span className="material-symbols-outlined text-base">{t.icon}</span>{t.label}
+              {t.id === 'fotos' && h.fotosSinGuardar > 0 && (
+                <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold flex items-center justify-center" title="Fotos sin guardar" data-testid="badge-fotos-sin-guardar">{h.fotosSinGuardar}</span>
+              )}
+            </button>
+          ))}
+        </div>
+        {enAtencion && <IndiceVistaUnica h={h} />}
+      </div>
+      {enAtencion ? <ContenidoVistaUnica h={h} /> : (
+        <div className="p-3 sm:p-4 lg:p-6 max-w-[1100px]">
+          <ConAtencionSeleccionada h={h}>
+            {(a) => (
+              <>
+                <CabeceraAtencion h={h} a={a} />
+                {h.tab === 'podograma' && <PanelPodograma h={h} a={a} />}
+                {h.tab === 'fotos' && <PanelFotos h={h} a={a} />}
+              </>
+            )}
+          </ConAtencionSeleccionada>
+        </div>
+      )}
+    </>
+  );
+}
+
+/** Índice de secciones (siempre a la vista): salta a cada una y marca con ✓ las que ya tienen algo registrado. */
+function IndiceVistaUnica({ h }: { h: H }) {
+  const a = h.atencion && h.atencionSel && !h.genexisSel ? h.atencion : null;
+  const pendientesFirma = usePendientesConsentimiento(a?.citaId ?? null);
+  const hc = h.historia;
+  const items: { id: SeccionUnicaId; n?: number; label: string; hecho: boolean; aviso?: boolean }[] = [
+    { id: 'antecedentes', n: 1, label: 'Antecedentes y alergias', hecho: !!hc && (hc.alergias.length + hc.antecedentes.length) > 0 },
+    ...(a ? [
+      { id: 'motivo' as const, n: 2, label: 'Motivo y anamnesis', hecho: a.notas.length > 0 },
+      { id: 'diagnostico' as const, n: 3, label: 'Diagnóstico', hecho: a.diagnosticos.length > 0 },
+      { id: 'receta' as const, n: 4, label: 'Tratamiento (receta)', hecho: a.recetas.length > 0 },
+      { id: 'procedimientos' as const, n: 5, label: 'Procedimientos y consentimientos', hecho: a.procedimientos.length > 0 && pendientesFirma.length === 0, aviso: pendientesFirma.length > 0 },
+      { id: 'escalas' as const, label: 'Escalas', hecho: a.escalas.length > 0 },
+    ] : []),
+  ];
+  return (
+    <nav aria-label="Secciones de la atención" className="flex gap-1.5 overflow-x-auto py-2 -mx-1 px-1" data-testid="indice-vista-unica">
+      {items.map((it) => (
+        <button key={it.id} onClick={() => irASeccion(it.id)} title={it.aviso ? 'Falta firmar un consentimiento' : undefined}
+          className="shrink-0 min-h-[36px] pl-1.5 pr-3 rounded-full border border-outline-variant/40 bg-surface-container-lowest hover:bg-surface-container-low text-xs font-semibold text-on-surface flex items-center gap-1.5">
+          <span className={`w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center ${it.aviso ? 'bg-amber-600 text-white' : it.hecho ? 'bg-emerald-600 text-white' : 'bg-primary/10 text-primary'}`}>
+            {it.aviso ? '!' : it.hecho ? <span className="material-symbols-outlined text-[13px]">check</span> : (it.n ?? <span className="material-symbols-outlined text-[13px]">monitor_heart</span>)}
+          </span>
+          {it.label}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+/** Título numerado de cada sección; `scroll-mt` deja espacio para la barra pegada de arriba al saltar. */
+function SeccionUnica({ id, n, titulo, children }: { id: SeccionUnicaId; n?: number; titulo: string; children: ReactNode }) {
+  return (
+    <section id={`hc-sec-${id}`} className="scroll-mt-32 space-y-3" data-testid={`seccion-${id}`}>
+      <h2 className="flex items-center gap-2.5 text-base font-bold text-on-surface">
+        <span className="w-7 h-7 rounded-full bg-primary text-on-primary text-sm flex items-center justify-center shrink-0">
+          {n ?? <span className="material-symbols-outlined text-base">monitor_heart</span>}
+        </span>
+        {titulo}
+      </h2>
+      {children}
+    </section>
+  );
+}
+
+/** Mismas guardas que la vista clásica: visita del sistema anterior, sin atención elegida, error o cargando. */
+function ConAtencionSeleccionada({ h, children }: { h: H; children: (a: AtencionCompleta) => ReactNode }) {
+  if (h.genexisSel) return <VisitaGenexisCard visita={h.visitaGenexis} />;
+  if (!h.atencionSel) return (
+    <div className="text-center py-16 text-on-surface-variant">
+      <span className="material-symbols-outlined text-5xl mb-2">clinical_notes</span>
+      <p className="text-sm">Selecciona una atención en el panel izquierdo{h.puedeRegistrar ? ' o registra una nueva' : ''}.</p>
+    </div>
+  );
+  if (h.errorAtencion) return (
+    <div className="rounded-2xl border border-rose-200 bg-rose-50/60 p-5 text-sm text-rose-800">
+      No se pudo abrir esta atención: {h.errorAtencion.message}. Elige otra en la lista de la izquierda.
+    </div>
+  );
+  if (h.cargandoAtencion || !h.atencion) return <Skeleton className="h-64 w-full" />;
+  return <>{children(h.atencion)}</>;
+}
+
+function ContenidoVistaUnica({ h }: { h: H }) {
+  const escalasAlCostado = useAnchoMinimo(ANCHO_ESCALAS_AL_COSTADO);
+  const a = h.atencion && h.atencionSel && !h.genexisSel && !h.errorAtencion && !h.cargandoAtencion ? h.atencion : null;
+  // «Ir a la pestaña X» ahora es bajar a su sección. Al abrir con ?tab=receta se espera a que la atención cargue.
+  const pendiente = useRef<SeccionUnicaId | null>(h.tab !== 'evolucion' ? SECCION_DE_TAB[h.tab] ?? null : null);
+  const tabPrevio = useRef(h.tab);
+  useEffect(() => {
+    const alAbrir = h.tab === tabPrevio.current; // primera vez (enlace con ?tab=…), no un cambio hecho en pantalla
+    if (!alAbrir) { tabPrevio.current = h.tab; pendiente.current = SECCION_DE_TAB[h.tab] ?? null; }
+    const sec = pendiente.current;
+    if (!sec) return;
+    // Al abrir, las secciones de arriba terminan de cargar DESPUÉS del salto y la empujan: se repite un par de veces.
+    const tiempos = alAbrir ? [100, 800, 1800, 3000] : [80];
+    const ts = tiempos.map((ms, i) => setTimeout(() => {
+      if (!document.getElementById(`hc-sec-${sec}`)) return;
+      irASeccion(sec, alAbrir ? 'auto' : 'smooth');
+      if (i === tiempos.length - 1) pendiente.current = null;
+    }, ms));
+    return () => ts.forEach(clearTimeout);
+  }, [h.tab, a?.id]);
+
+  return (
+    <div className={`p-3 sm:p-4 lg:p-6 ${escalasAlCostado && a ? 'grid grid-cols-[minmax(0,1fr)_460px] gap-6 items-start' : ''}`}>
+      <div className="space-y-8 min-w-0 max-w-[1100px]">
+        {a && <CabeceraAtencion h={h} a={a} sinMotivo />}
+        <SeccionUnica id="antecedentes" n={1} titulo="Antecedentes y alergias"><PanelAntecedentes h={h} /></SeccionUnica>
+        {a ? (
+          <>
+            <SeccionUnica id="motivo" n={2} titulo="Motivo de consulta y anamnesis">
+              <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest px-5 py-4" data-testid="motivo-consulta">
+                <span className={LBL}>Motivo de consulta</span>
+                <p className="text-sm text-on-surface whitespace-pre-wrap">{a.motivoConsulta}</p>
+              </div>
+              <PanelNotas h={h} a={a} />
+            </SeccionUnica>
+            <SeccionUnica id="diagnostico" n={3} titulo="Diagnóstico"><PanelDiagnosticos h={h} a={a} /></SeccionUnica>
+            <SeccionUnica id="receta" n={4} titulo="Tratamiento (receta)"><PanelReceta h={h} a={a} /></SeccionUnica>
+            <SeccionUnica id="procedimientos" n={5} titulo="Procedimientos y consentimientos">
+              <PanelProcedimientos h={h} a={a} />
+              <PanelConsentimientos a={a} puedeRegistrar={h.puedeRegistrar} />
+            </SeccionUnica>
+            {!escalasAlCostado && <SeccionUnica id="escalas" titulo="Escalas"><PanelEscalas h={h} a={a} /></SeccionUnica>}
+          </>
+        ) : (
+          <ConAtencionSeleccionada h={h}>{() => null}</ConAtencionSeleccionada>
+        )}
+      </div>
+      {escalasAlCostado && a && (
+        <aside className="sticky top-32 max-h-[calc(100vh-10rem)] overflow-y-auto pr-1">
+          <SeccionUnica id="escalas" titulo="Escalas"><PanelEscalas h={h} a={a} /></SeccionUnica>
+        </aside>
       )}
     </div>
   );

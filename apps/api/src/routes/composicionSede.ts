@@ -247,10 +247,10 @@ const asignacionSchema = z.object({
 });
 
 // ¿La persona ya tiene una asignación (en cualquier sede) que solape el rango nuevo?
-async function haySolape(campo: 'profesionalId' | 'recepcionistaId', personaId: string, inicio: string, fin: string | null, excluirId?: string) {
+async function haySolape(campo: 'profesionalId' | 'recepcionistaId', personaId: string, inicio: string, fin: string | null, excluirId?: string, db: Pick<typeof prisma, 'asignacionAdministrativa'> = prisma) {
   const nuevoInicio = new Date(inicio);
   const nuevoFin = fin ? new Date(fin) : null;
-  const existentes = await prisma.asignacionAdministrativa.findMany({
+  const existentes = await db.asignacionAdministrativa.findMany({
     where: { [campo]: personaId, deletedAt: null, ...(excluirId ? { id: { not: excluirId } } : {}) },
     select: { fechaInicio: true, fechaFin: true },
   });
@@ -312,19 +312,30 @@ router.get('/asignaciones', ...gestion, async (req, res) => {
 router.post('/asignaciones', ...gestion, async (req, res) => {
   const data = asignacionSchema.parse(req.body);
   const { campo, personaId } = await validarAsignacion(data);
-  if (await haySolape(campo, personaId, data.fechaInicio, data.fechaFin ?? null)) {
-    throw new AppError('Esa persona ya tiene una asignación que se cruza con ese rango de fechas', 409, 'SOLAPE');
-  }
-  const nueva = await prisma.asignacionAdministrativa.create({
-    data: {
-      sedeId: data.sedeId,
-      fechaInicio: new Date(data.fechaInicio),
-      fechaFin: data.fechaFin ? new Date(data.fechaFin) : null,
-      profesionalId: campo === 'profesionalId' ? personaId : null,
-      recepcionistaId: campo === 'recepcionistaId' ? personaId : null,
-      notas: data.notas?.trim() || null,
-      creadoPor: req.user?.userId,
-    },
+  // Si la persona ya está en una sede el día de inicio (asignación sin fin o que lo cubre), esa se CIERRA el día anterior
+  // — así «Asignar» funciona como un movimiento y no choca con las asignaciones abiertas (24-sep-2026).
+  const DIA = 86_400_000;
+  const inicio = new Date(data.fechaInicio);
+  const cubre = await prisma.asignacionAdministrativa.findFirst({
+    where: { [campo]: personaId, deletedAt: null, fechaInicio: { lt: inicio }, OR: [{ fechaFin: null }, { fechaFin: { gte: inicio } }] },
+    select: { id: true },
+  });
+  const nueva = await prisma.$transaction(async (tx) => {
+    if (cubre) await tx.asignacionAdministrativa.update({ where: { id: cubre.id }, data: { fechaFin: new Date(inicio.getTime() - DIA) } });
+    if (await haySolape(campo, personaId, data.fechaInicio, data.fechaFin ?? null, undefined, tx)) {
+      throw new AppError('Esa persona ya tiene una asignación que se cruza con ese rango de fechas', 409, 'SOLAPE');
+    }
+    return tx.asignacionAdministrativa.create({
+      data: {
+        sedeId: data.sedeId,
+        fechaInicio: inicio,
+        fechaFin: data.fechaFin ? new Date(data.fechaFin) : null,
+        profesionalId: campo === 'profesionalId' ? personaId : null,
+        recepcionistaId: campo === 'recepcionistaId' ? personaId : null,
+        notas: data.notas?.trim() || null,
+        creadoPor: req.user?.userId,
+      },
+    });
   });
   res.status(201).json(nueva);
 });
@@ -365,8 +376,10 @@ router.patch('/asignaciones/:id', ...gestion, async (req, res) => {
 });
 
 // MOVER de sede (arrastre) de forma ATÓMICA: cierra la asignación vieja el día anterior a `desde`
-// y crea la nueva [desde → fin de mes] en una sola transacción. Evita el estado roto de hacerlo
+// y crea la nueva [desde → SIN FIN] en una sola transacción. Evita el estado roto de hacerlo
 // en 2 llamadas desde el front (si la 2ª fallaba, la persona quedaba sin sede en ambas).
+// 24-sep-2026: antes la nueva terminaba a fin de mes y el mes siguiente aparecía vacío; ahora sigue
+// hasta que alguien la cambie a mano (igual que las podólogas desde el 19-sep).
 router.post('/asignaciones/:id/mover', ...gestion, async (req, res) => {
   const actual = await prisma.asignacionAdministrativa.findFirst({ where: { id: req.params.id, deletedAt: null } });
   if (!actual) throw new AppError('Asignación no encontrada', 404);
@@ -380,15 +393,13 @@ router.post('/asignaciones/:id/mover', ...gestion, async (req, res) => {
   const DIA = 86_400_000;
   const desde = new Date(data.desde); // @db.Date medianoche UTC
   const cierre = new Date(desde.getTime() - DIA);
-  const [y, m] = data.desde.split('-').map(Number);
-  const finMes = new Date(Date.UTC(y, m, 0)); // último día del mes (bisiesto-correcto)
 
-  // Recortar el fin nuevo si la persona ya tiene una asignación futura dentro del mes (1 sede/día).
+  // Sin fin, salvo que la persona ya tenga una asignación FUTURA programada: ahí termina el día anterior (1 sede/día).
   const prox = await prisma.asignacionAdministrativa.findFirst({
     where: { [campo]: personaId, deletedAt: null, id: { not: actual.id }, fechaInicio: { gt: desde } },
     select: { fechaInicio: true }, orderBy: { fechaInicio: 'asc' },
   });
-  const finNuevo = prox && prox.fechaInicio <= finMes ? new Date(prox.fechaInicio.getTime() - DIA) : finMes;
+  const finNuevo = prox ? new Date(prox.fechaInicio.getTime() - DIA) : null;
 
   await prisma.$transaction(async (tx) => {
     // Cerrar la vieja el día anterior; si arrancaba en/después de `desde` (sin días previos), borrarla.

@@ -70,6 +70,18 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
     esAdicional,
     atendioOpciones,
     atendidoPorMutation,
+    puedeCambiarTratamiento,
+    cambiandoTratamiento,
+    setCambiandoTratamiento,
+    abrirCambioTratamiento,
+    opcionesTratamiento,
+    subcategoriasTrat,
+    tratServicioId,
+    elegirTratServicio,
+    tratSubcategoriaId,
+    setTratSubcategoriaId,
+    puedeGuardarTratamiento,
+    tratamientoMutation,
     fechaSelStr,
     profesionales,
     datosPaciente,
@@ -386,6 +398,32 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                     );
                   })}
                 </div>
+              ) : cambiandoTratamiento ? (
+                // Cambiar tratamiento / subcategoría (agendada → llegó; admin siempre). El servidor valida el resto.
+                <div className="flex flex-col gap-2" data-campo="cambiar-tratamiento">
+                  <select value={tratServicioId} onChange={(e) => elegirTratServicio(e.target.value)} aria-label="Nuevo tratamiento"
+                    className="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-xl px-3 py-2 text-sm font-semibold text-on-surface outline-none focus:ring-2 focus:ring-primary/20">
+                    {opcionesTratamiento.length === 0 && <option value={tratServicioId}>Cargando tratamientos…</option>}
+                    {opcionesTratamiento.map((s) => <option key={s.id} value={s.id}>{s.nombre} · {s.duracionMinutos} min</option>)}
+                  </select>
+                  {subcategoriasTrat.length > 0 && (
+                    <select value={tratSubcategoriaId} onChange={(e) => setTratSubcategoriaId(e.target.value)} aria-label="Subcategoría"
+                      className="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-xl px-3 py-2 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20">
+                      <option value="">Elige la subcategoría…</option>
+                      {subcategoriasTrat.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+                    </select>
+                  )}
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => tratamientoMutation.mutate()} disabled={!puedeGuardarTratamiento || tratamientoMutation.isPending}
+                      className="flex-1 min-h-[36px] rounded-xl bg-primary text-on-primary text-xs font-bold disabled:opacity-50">
+                      {tratamientoMutation.isPending ? 'Guardando…' : 'Guardar cambio'}
+                    </button>
+                    <button type="button" onClick={() => setCambiandoTratamiento(false)} disabled={tratamientoMutation.isPending}
+                      className="min-h-[36px] px-3 rounded-xl border border-outline-variant/40 text-xs font-semibold text-on-surface hover:bg-surface-container">
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
               ) : (
                 <div className="font-body-lg text-on-surface font-bold tracking-tight uppercase flex items-center gap-2 flex-wrap">
                   <span>{cita.servicio?.nombre}</span>
@@ -393,6 +431,13 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                     <span className="px-2 py-0.5 rounded-md bg-primary/10 text-primary text-xs font-semibold normal-case">
                       {cita.subcategoria.nombre}
                     </span>
+                  )}
+                  {puedeCambiarTratamiento && (
+                    <button type="button" onClick={abrirCambioTratamiento} data-testid="btn-cambiar-tratamiento"
+                      title="Cambiar el tratamiento o la subcategoría de esta cita"
+                      className="ml-auto normal-case text-xs font-semibold text-primary hover:underline flex items-center gap-1">
+                      <span className="material-symbols-outlined text-sm">edit</span>Cambiar
+                    </button>
                   )}
                 </div>
               )}

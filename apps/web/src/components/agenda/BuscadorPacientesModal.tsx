@@ -316,7 +316,7 @@ export function BuscadorPacientesModal({ open, onClose }: BuscadorPacientesModal
                               <div key={c.id} className="p-3.5 bg-primary/5 border border-primary/20 rounded-xl flex items-center justify-between gap-3">
                                 <div>
                                   <p className="text-xs font-bold text-on-surface font-mono">
-                                    {format(parseISO(c.fecha), "EEEE d 'de' MMMM yyyy", { locale: es })} · {c.horaInicio}
+                                    {format(parseISO(c.fecha.slice(0, 10)), "EEEE d 'de' MMMM yyyy", { locale: es })} · {c.horaInicio}
                                   </p>
                                   <p className="text-xs text-on-surface-variant mt-0.5">
                                     {c.servicio.nombre} {c.profesional ? `· ${c.profesional.nombres}` : ''} · Sede: {c.sede.nombre}
@@ -351,7 +351,7 @@ export function BuscadorPacientesModal({ open, onClose }: BuscadorPacientesModal
                               >
                                 <div className="space-y-0.5">
                                   <p className="text-xs font-bold text-on-surface font-mono">
-                                    {format(parseISO(c.fecha), "EEEE d 'de' MMMM yyyy", { locale: es })} · {c.horaInicio}
+                                    {format(parseISO(c.fecha.slice(0, 10)), "EEEE d 'de' MMMM yyyy", { locale: es })} · {c.horaInicio}
                                   </p>
                                   <p className="text-xs font-semibold text-on-surface-variant">
                                     {c.servicio.nombre} {c.profesional ? `· Prof. ${c.profesional.nombres} ${c.profesional.apellidos}` : ''}

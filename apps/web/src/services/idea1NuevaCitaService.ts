@@ -101,6 +101,7 @@ export function useIdea1NuevaCitaForm({
   const qc = useQueryClient();
   const token = useAuthStore((s) => s.token);
   const rolActual = useAuthStore((s) => s.usuario?.rol); // para pre-marcar el canal por rol
+  const usuarioSesion = useAuthStore((s) => s.usuario); // su sede asignada es la sede por defecto al agendar
   const { canales, canalesPaciente } = useCanales();
 
   const idempotencyKeyRef = useRef(uuidv4());
@@ -196,9 +197,11 @@ export function useIdea1NuevaCitaForm({
   useEffect(() => {
     if (!permitirCambiarSede) return;
     if (sedesDisponibles.length > 0 && !sedeId) {
-      setSedeId(sedesDisponibles[0].id);
+      // Preferir la sede asignada del usuario (recepción ve todas, pero agenda por defecto en la suya).
+      const asignada = usuarioSesion?.sedes?.find((s) => sedesDisponibles.some((x) => x.id === s.id))?.id;
+      setSedeId(asignada ?? sedesDisponibles[0].id);
     }
-  }, [permitirCambiarSede, sedesDisponibles, sedeId]);
+  }, [permitirCambiarSede, sedesDisponibles, sedeId, usuarioSesion]);
 
   const sedeActualSel = sedesDisponibles.find((s) => s.id === sedeId);
   const unidadesDeSede = sedeActualSel?.unidadesNegocio ?? [];
@@ -217,14 +220,14 @@ export function useIdea1NuevaCitaForm({
   });
   const medicosBaro = baroRoster?.porSolicitud ?? [];
   const [medicoBaroId, setMedicoBaroId] = useState('');
-  // Si hay exactamente un médico en el roster, se preselecciona; al salir de baro se limpia.
+  // 24-sep-2026: el médico NO se preselecciona (ni siquiera si hay uno solo): la cita queda sin médico y la toma el que
+  // atienda ese día en la sede. Recepción puede elegirlo si ya lo sabe. Al salir de baro se limpia.
   useEffect(() => {
     if (!esBaro) { if (medicoBaroId) setMedicoBaroId(''); return; }
     // Si el médico elegido YA NO está en el roster de esta fecha/sede (cambió la fecha y su periodo
     // no rige, o se movió de sede), limpiar la selección obsoleta ANTES de autoseleccionar. Evita
     // agendar a un doctor que ese día no atiende ahí (violaría "1 sede por día").
     if (medicoBaroId && !medicosBaro.some((m) => m.id === medicoBaroId)) { setMedicoBaroId(''); return; }
-    if (!medicoBaroId && medicosBaro.length === 1) setMedicoBaroId(medicosBaro[0].id);
   }, [esBaro, medicosBaro, medicoBaroId]);
 
   // Al cambiar de sede, seleccionar Podología (o la primera unidad) por defecto.

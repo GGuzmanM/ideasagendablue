@@ -220,6 +220,10 @@ export const citasApi = {
   asignarAtendidoPor: (id: string, profesionalId: string | null) =>
     api.patch<CitaResumen>(`/citas/${id}/atendido-por`, { profesionalId }),
 
+  // Cambiar tratamiento (servicio) y/o subcategoría: agendada/confirmada/llegó (admin: siempre). El servidor valida todo.
+  cambiarTratamiento: (id: string, data: { servicioId: string; subcategoriaId: string | null }) =>
+    api.patch<CitaResumen>(`/citas/${id}/tratamiento`, data),
+
   // Agregar/editar el comentario de recepción en cualquier estado (antes, durante o después).
   actualizarComentario: (id: string, comentario: string) =>
     api.patch<CitaResumen>(`/citas/${id}/comentario`, { comentario }),

@@ -100,7 +100,7 @@ export function Idea1ModalExcepciones({ sedeId, sedeName, onClose }: Props) {
               />
               {form.fecha && (
                 <p className="text-[11px] text-on-surface-variant mt-1.5 capitalize">
-                  {format(parseISO(form.fecha), "EEEE d 'de' MMMM", { locale: es })}
+                  {format(parseISO(form.fecha.slice(0, 10)), "EEEE d 'de' MMMM", { locale: es })}
                 </p>
               )}
             </div>
@@ -255,7 +255,7 @@ export function Idea1ModalExcepciones({ sedeId, sedeName, onClose }: Props) {
                     />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold text-on-surface capitalize">
-                        {format(parseISO(exc.fecha), "EEEE d 'de' MMMM", { locale: es })}
+                        {format(parseISO(exc.fecha.slice(0, 10)), "EEEE d 'de' MMMM", { locale: es })}
                       </p>
                       <p className="text-xs text-on-surface-variant">
                         {exc.abierto ? (

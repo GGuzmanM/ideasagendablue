@@ -644,11 +644,13 @@ export function useIdea1AgendaData() {
     if (!sedesDbRaw) return; // aún cargando la lista de sedes
     if (sedesDb.length > 0) {
       const esValida = sedesDb.some((s) => s.id === sedeId);
-      if (!sedeId || !esValida) setSedeId(sedesDb[0].id);
+      // Por defecto, la sede ASIGNADA del usuario (recepción: la de Movimientos), aunque vea todas; si no, la primera.
+      const asignada = usuario?.sedes?.find((s) => sedesDb.some((x) => x.id === s.id))?.id;
+      if (!sedeId || !esValida) setSedeId(asignada ?? sedesDb[0].id);
     } else if (sedeId) {
       setSedeId(null); // sin sedes accesibles: no heredar la sede de otro usuario
     }
-  }, [sedesDbRaw, sedesDb, sedeId, setSedeId]);
+  }, [sedesDbRaw, sedesDb, sedeId, setSedeId, usuario]);
 
   const activeSedeDb = sedesDb?.find((s) => s.id === sedeId);
   const unidadesDisponibles = activeSedeDb?.unidadesNegocio || [];

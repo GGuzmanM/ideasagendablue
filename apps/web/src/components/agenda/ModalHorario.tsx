@@ -281,7 +281,7 @@ export function ModalHorario({ sedeId, sedeName, onClose }: ModalHorarioProps) {
                         <div className={cn('w-2 h-2 rounded-full shrink-0', exc.abierto ? 'bg-green-400' : 'bg-red-400')} />
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-slate-800">
-                            {format(parseISO(exc.fecha), "EEEE d 'de' MMMM", { locale: es })}
+                            {format(parseISO(exc.fecha.slice(0, 10)), "EEEE d 'de' MMMM", { locale: es })}
                           </p>
                           <p className="text-xs text-slate-500">
                             {exc.abierto

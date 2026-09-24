@@ -233,3 +233,29 @@ export async function validarYCalcularPromo(
   const { descuento, final } = calcularMontoFinal(precioLista, p.tipo, p.valor != null ? Number(p.valor) : null);
   return { descuento, final, tipo: p.tipo };
 }
+
+/**
+ * Cambio de TRATAMIENTO de una cita que ya tiene la promo (24-sep-2026): la promo debe seguir aplicando al nuevo
+ * servicio (sede/fecha/canal/servicio), pero NO se vuelve a pedir el código ni se descuenta otro cupo (esta cita ya lo
+ * usó). Recalcula el dinero con el nuevo precio de lista.
+ */
+export async function recalcularPromoTrasCambio(
+  promocionId: string,
+  ctx: ContextoPromo,
+  precioLista: number,
+): Promise<{ descuento: number; final: number }> {
+  const p = (await prisma.promocion.findFirst({
+    where: { id: promocionId },
+    select: {
+      id: true, nombre: true, tipo: true, valor: true, activo: true,
+      serviciosIds: true, sedesIds: true, canales: true, vigenciaInicio: true, vigenciaFin: true,
+      diasSemana: true, codigo: true, soloPacientesNuevos: true, cupoTotal: true, limitePorPaciente: true,
+    },
+  })) as unknown as PromoRow | null;
+  if (!p) throw new AppError('La promoción de la cita ya no existe: quítala antes de cambiar el tratamiento', 409, 'PROMO_INVALIDA');
+  if (!(TIPOS_DESCUENTO as unknown as string[]).includes(p.tipo)) return { descuento: 0, final: Math.max(0, Number(precioLista) || 0) };
+  if (!pasaRestriccionesEstaticas(p, ctx)) {
+    throw new AppError(`La promoción "${p.nombre}" no aplica al nuevo tratamiento: quita o cambia la promoción primero`, 409, 'PROMO_NO_APLICA');
+  }
+  return calcularMontoFinal(precioLista, p.tipo, p.valor != null ? Number(p.valor) : null);
+}
