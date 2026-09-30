@@ -74,14 +74,37 @@ export async function sedesVigentesDePodologa(profesionalId: string): Promise<st
   return [...new Set(asigs.map((a) => a.sedeId))];
 }
 
+// Sedes donde MOVIMIENTOS tiene HOY a este médico (27-sep-2026): su tarjeta en Movimientos › Doctores
+// (`baro_medico_sede`) y, si tiene columna propia en la agenda (p. ej. el dermatólogo), su asignación de sede.
+// Antes el médico solo veía las sedes marcadas a mano al crear su usuario: la Dra. Chigne se movió de Lince a
+// Paz Soldán en Movimientos y el Visor seguía mostrándole solo Lince.
+export async function sedesVigentesDeMedico(profesionalId: string): Promise<string[]> {
+  const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  const inicio = new Date(`${hoy}T00:00:00.000Z`);
+  const fin = new Date(`${hoy}T23:59:59.999Z`);
+  const [baro, columna] = await Promise.all([
+    prisma.baroMedicoSede.findMany({
+      where: { profesionalId, activa: true, fechaInicio: { lte: fin }, OR: [{ fechaFin: null }, { fechaFin: { gte: inicio } }] },
+      select: { sedeId: true },
+    }),
+    sedesVigentesDePodologa(profesionalId),
+  ]);
+  return [...new Set([...baro.map((b) => b.sedeId), ...columna])];
+}
+
 /**
  * Sedes que salen de la FICHA de la persona (una sola fuente de verdad: Movimientos), o `null` si
  * este usuario usa sus sedes marcadas a mano. Recepcionista vinculada → su roster; podóloga con
- * ficha → su asignación de sede. Moverlas en Movimientos cambia su acceso al instante.
+ * ficha → su asignación de sede; médico con ficha → donde lo tiene Movimientos hoy (si no figura en
+ * ninguna, sus sedes marcadas a mano). Moverlos en Movimientos cambia su acceso al instante.
  */
 export async function sedesDerivadasDeFicha(u: { rol: string; recepcionistaId: string | null; profesionalId: string | null }): Promise<string[] | null> {
   if (u.recepcionistaId) return sedesVigentesDeRecepcionista(u.recepcionistaId);
   if (u.rol === 'podologa' && u.profesionalId) return sedesVigentesDePodologa(u.profesionalId);
+  if (u.rol === 'medico' && u.profesionalId) {
+    const sedes = await sedesVigentesDeMedico(u.profesionalId);
+    return sedes.length ? sedes : null;
+  }
   return null;
 }
 

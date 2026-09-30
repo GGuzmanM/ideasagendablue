@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
+import { rutaInicio } from '../utils/rutaInicio';
 import { notificacionesApi } from '../api/notificaciones';
 import { useNotificacionesStore } from '../stores/notificacionesStore';
 
@@ -75,7 +76,7 @@ export function LoginPage() {
       } catch {
         // Si falla, seguir igualmente sin bloquear acceso
       }
-      navigate('/AgendaPrincipal', { replace: true });
+      navigate(rutaInicio(useAuthStore.getState().usuario), { replace: true });
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Error al iniciar sesión');
     } finally {

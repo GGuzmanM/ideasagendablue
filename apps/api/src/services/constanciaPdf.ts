@@ -44,8 +44,10 @@ export function escribirConstanciaPdf(doc: Doc, c: ConstanciaParaPdf, qr: Buffer
   doc.font('Helvetica-Bold').fontSize(10).fillColor(INK).text(c.emisorNombre, xS, yF + 5, { width: 220, align: 'center', lineBreak: false, ellipsis: true });
   const regRaw = (c.emisorRegistro ?? '').trim();
   const tienePrefijo = /^(CMP|COP|CTMP|CEP|RNE|REG\.?)\b/i.test(regRaw);
-  const reg = regRaw ? (tienePrefijo ? regRaw : (tipo === 'descanso_medico' ? `CMP ${regRaw}` : `Reg. ${regRaw}`)) : '';
-  doc.font('Helvetica').fontSize(8.5).fillColor(GRIS).text(tipo === 'descanso_medico' ? 'Médico cirujano' : 'Profesional que atendió', xS, yF + 18, { width: 220, align: 'center' }).text(reg, xS, yF + 29, { width: 220, align: 'center' });
+  const esMedico = tipo === 'descanso_medico' || c.emisorEsMedico;
+  const reg = regRaw ? (tienePrefijo ? regRaw : (esMedico ? `CMP ${regRaw}` : `Reg. ${regRaw}`)) : '';
+  const cargo = tipo === 'descanso_medico' ? 'Médico cirujano' : esMedico ? 'Médico' : 'Profesional que atendió';
+  doc.font('Helvetica').fontSize(8.5).fillColor(GRIS).text(cargo, xS, yF + 18, { width: 220, align: 'center' }).text(reg, xS, yF + 29, { width: 220, align: 'center' });
 
   // Barra de verificación con QR (solo con dirección pública configurada: VERIFICACION_BASE_URL)
   if (VERIFICACION_PUBLICA) {

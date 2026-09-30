@@ -1,7 +1,8 @@
-// «Pacientes del día»: quiénes ya llegaron hoy a la sede, para que el médico se tome al paciente, entre a la
+// «Visor de Pacientes» (antes «Pacientes del día»): quiénes ya llegaron hoy a la sede, para que el médico se tome al paciente, entre a la
 // historia clínica (inicia o continúa la atención) y emita la receta, sin pasar por la agenda.
 // Vista PURA: la lógica vive en services/visorPacientesService.ts.
 import { type CitaResumen } from '../api/citas';
+import { type RecetaDelDia } from '../api/recetas';
 import { nombreMedico } from '../api/medicoCita';
 import { Skeleton } from '../components/ui/Skeleton';
 import { useVisorPacientes, type FiltroVisor } from '../services/visorPacientesService';
@@ -10,6 +11,33 @@ import { cn } from '../utils/cn';
 const BTN = 'min-h-[40px] lg:min-h-0 px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 disabled:opacity-50 transition-colors';
 const BTN_SEC = `${BTN} border border-outline-variant text-on-surface hover:bg-surface-container-high`;
 const BTN_PRI = `${BTN} bg-primary text-on-primary hover:bg-primary/90`;
+
+/** «Con receta» (y cuántas si hay más de una); si solo hay indicaciones podológicas, lo dice. */
+function ChipReceta({ rx }: { rx: RecetaDelDia }) {
+  const texto = rx.recetasMedicas > 0
+    ? `Con receta${rx.recetasMedicas > 1 ? ` (${rx.recetasMedicas})` : ''}${rx.indicaciones ? ' + indicaciones' : ''}`
+    : 'Con indicaciones';
+  return (
+    <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-emerald-600 text-white flex items-center gap-0.5" data-testid="visor-con-receta">
+      <span className="material-symbols-outlined text-[13px]">prescriptions</span>{texto}
+    </span>
+  );
+}
+
+const TONO_FILA = {
+  receta: 'border-emerald-500 bg-emerald-200/60 ring-1 ring-emerald-500/50',
+  mio: 'border-blue-500 bg-blue-200/60 ring-1 ring-blue-500/50',
+  con_medico: 'border-sky-400 bg-sky-100',
+  en_atencion: 'border-amber-300/70 bg-amber-50/40',
+  normal: 'border-outline-variant/20',
+} as const;
+
+const LEYENDA: { clase: string; texto: string; soloMedico?: boolean }[] = [
+  { clase: 'bg-blue-200 border-blue-500', texto: 'Mis pacientes', soloMedico: true },
+  { clase: 'bg-sky-100 border-sky-400', texto: 'Con médico asignado' },
+  { clase: 'bg-emerald-200 border-emerald-500', texto: 'Con receta' },
+  { clase: 'bg-amber-100 border-amber-300', texto: 'En atención sin médico' },
+];
 
 function nombrePaciente(c: CitaResumen) { return `${c.paciente.nombres} ${c.paciente.apellidoPaterno} ${c.paciente.apellidoMaterno ?? ''}`.trim(); }
 
@@ -21,7 +49,7 @@ export function VisorPacientesPage() {
       <header className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="font-headline-md text-headline-md font-bold text-on-surface flex items-center gap-2">
-            <span className="material-symbols-outlined text-primary">clinical_notes</span>Pacientes del día
+            <span className="material-symbols-outlined text-primary">clinical_notes</span>Visor de Pacientes
           </h1>
           <p className="text-xs text-on-surface-variant mt-0.5">
             Quienes ya llegaron hoy a {v.sedeNombre || 'la sede'}. Tómate al paciente, entra a su historia y emite la receta desde aquí.
@@ -53,6 +81,11 @@ export function VisorPacientesPage() {
         <span className="flex-1" />
         <span className="text-xs text-on-surface-variant">{v.porVenir} por llegar · {v.atendidos.length} atendido{v.atendidos.length === 1 ? '' : 's'} hoy</span>
       </div>
+      <div className="flex items-center gap-3 flex-wrap text-[11px] text-on-surface-variant" data-testid="visor-leyenda">
+        {LEYENDA.filter((l) => !l.soloMedico || v.soyMedico).map((l) => (
+          <span key={l.texto} className="flex items-center gap-1"><span className={cn('w-3 h-3 rounded border', l.clase)} />{l.texto}</span>
+        ))}
+      </div>
 
       {v.cargando ? <Skeleton className="h-40 w-full" /> : v.error ? <p className="text-sm text-rose-700">{v.error.message}</p> : (
         <>
@@ -65,8 +98,12 @@ export function VisorPacientesPage() {
               {v.enSede.map((c) => {
                 const a = v.acciones(c);
                 const enAtencion = c.estado === 'en_atencion';
+                // Color de la fila (26-sep-2026), de mayor a menor prioridad: con receta → VERDE; mi paciente (el médico
+                // logueado) → AZUL fuerte; con otro médico asignado → AZUL claro; en atención sin médico → AMARILLO.
+                const rx = v.recetaDe(c);
+                const tono = rx ? 'receta' : a.esMia ? 'mio' : c.medicoId ? 'con_medico' : enAtencion ? 'en_atencion' : 'normal';
                 return (
-                  <div key={c.id} data-testid={`visor-cita-${c.id}`} className={cn('rounded-xl border px-4 py-3 flex items-center gap-3 flex-wrap', enAtencion ? 'border-amber-300/70 bg-amber-50/40' : 'border-outline-variant/20', a.esMia && 'ring-1 ring-primary/30')}>
+                  <div key={c.id} data-testid={`visor-cita-${c.id}`} data-tono={tono} className={cn('rounded-xl border px-4 py-3 flex items-center gap-3 flex-wrap', TONO_FILA[tono])}>
                     <span className="w-1 h-10 rounded-full shrink-0" style={{ background: c.servicio.color }} />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
@@ -77,6 +114,7 @@ export function VisorPacientesPage() {
                         </span>
                         {a.esperaMin !== null && a.esperaMin >= 15 && <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-rose-100 text-rose-700">{a.esperaMin} min esperando</span>}
                         {c.consultorioNumero ? <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">C{c.consultorioNumero}</span> : null}
+                        {rx && <ChipReceta rx={rx} />}
                       </div>
                       <p className="text-xs text-on-surface-variant mt-0.5 truncate">
                         {c.horaInicio} · {c.servicio.nombre}{c.subcategoria ? ` · ${c.subcategoria.nombre}` : ''} · {c.unidadNegocio.nombre}
@@ -98,6 +136,9 @@ export function VisorPacientesPage() {
                       )}
                       {a.puedeTomar && <button onClick={() => v.tomar(c)} disabled={v.pendiente} className={BTN_SEC} data-testid="visor-tomar"><span className="material-symbols-outlined text-base">person_add</span>Tomar</button>}
                       {a.puedeSoltar && !a.puedeAsignar && <button onClick={() => v.soltar(c)} disabled={v.pendiente} className={BTN_SEC} title="Dejar de ser el médico de esta cita"><span className="material-symbols-outlined text-base">person_remove</span>Soltar</button>}
+                      {!a.puedeAtender && a.puedeVerHistoria && (
+                        <button onClick={() => void v.atender(c)} className={BTN_SEC} title="Ver su historia clínica (solo lectura: la atiende otro médico)" data-testid="visor-ver-historia"><span className="material-symbols-outlined text-base">visibility</span>Ver historia</button>
+                      )}
                       {a.puedeAtender && (
                         <>
                           <button onClick={() => void v.atender(c)} className={BTN_PRI} data-testid="visor-atender"><span className="material-symbols-outlined text-base">stethoscope</span>{enAtencion ? 'Continuar atención' : 'Atender'}</button>
@@ -124,6 +165,7 @@ export function VisorPacientesPage() {
                   <div key={c.id} className="rounded-xl border border-outline-variant/20 px-3 py-2 flex items-center gap-2 flex-wrap">
                     <span className="text-sm font-semibold text-on-surface">{nombrePaciente(c)}</span>
                     <span className="text-xs text-on-surface-variant">{c.horaInicio} · {c.servicio.nombre}{c.medico ? ` · ${nombreMedico(c.medico)}` : ''}</span>
+                    {v.recetaDe(c) && <ChipReceta rx={v.recetaDe(c)!} />}
                     <span className="flex-1" />
                     {v.acciones(c).puedeAtender && <button onClick={() => void v.atender(c)} className={BTN_SEC}><span className="material-symbols-outlined text-base">description</span>Ver historia</button>}
                   </div>

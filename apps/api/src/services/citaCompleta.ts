@@ -48,6 +48,7 @@ export async function getCitaCompleta(id: string) {
       paquetePaciente: { include: { paquete: true } },
       promocion: { select: promoCitaSelect },
       creadoPorUsuario: { select: { id: true, nombre: true } },
+      pagadaPor: { select: { id: true, nombre: true } }, // quién marcó la cita como pagada
       comentarios: comentariosInclude,
       // Aparato del consultorio: el tiempo real vigente del tratamiento (máx 1, índice parcial).
       tiemposTratamiento: {

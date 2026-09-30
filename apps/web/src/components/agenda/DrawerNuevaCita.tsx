@@ -13,6 +13,7 @@ import { format } from 'date-fns';
 import { useAuthStore } from '../../stores/authStore';
 import { canalDefaultPorRol } from '../../utils/canalDefault';
 import { horaInicioValidaParaDuracion, esCitaInactiva, UBIGEO_EXTRANJERO } from '@limablue/shared';
+import { ESTADOS_PAGO, infoEstadoPago, type EstadoPago } from '../../utils/estadoPago';
 import { useCanales } from '../../hooks/useCanales';
 import { usePromociones } from '../../hooks/usePromociones';
 import { formatPromoValor } from '../../api/promociones';
@@ -81,6 +82,7 @@ export function DrawerNuevaCita({
   const [profesionalId, setProfesionalId] = useState(profIdInicial ?? '');
   const [hora, setHora] = useState(horaInicio ?? '08:00');
   const [canal, setCanal] = useState(() => canalDefaultPorRol(rolActual)); // pre-marcado por rol; editable
+  const [estadoPago, setEstadoPago] = useState<EstadoPago>('pendiente'); // 29-sep-2026: estado de pago (reportes)
   const { canales: canalesOpts } = useCanales();
   const [promocionId, setPromocionId] = useState(''); // '' = sin promoción
   const { promociones } = usePromociones();
@@ -556,6 +558,7 @@ export function DrawerNuevaCita({
           fecha: fechaStr,
           horaInicio: hora,
           canal,
+          estadoPago: estadoPago !== 'pendiente' ? estadoPago : undefined,
           comentarioRecepcion: comentario || undefined,
           paquetePacienteId,
           promocionId: promocionId || null, // se guarda 1 vez (backend → PRINCIPAL)
@@ -577,6 +580,7 @@ export function DrawerNuevaCita({
         fecha: fechaStr,
         horaInicio: hora,
         canal,
+        estadoPago: estadoPago !== 'pendiente' ? estadoPago : undefined,
         comentarioRecepcion: comentario || undefined,
         paquetePacienteId,
         // Genexis: la sesión elegida a mano del desplegable (adjudicación manual)
@@ -1022,9 +1026,17 @@ export function DrawerNuevaCita({
 
           {/* Canal de reserva — de dónde viene el cliente */}
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1.5">Canal de reserva</label>
-            <select className="input text-sm" value={canal} onChange={e => setCanal(e.target.value)}>
+            <label className="block text-xs font-bold text-amber-800 mb-1.5">Canal de reserva</label>
+            <select className="input text-sm bg-amber-50 border-amber-400 ring-1 ring-amber-400 font-semibold text-amber-900 focus:ring-amber-400" value={canal} onChange={e => setCanal(e.target.value)}>
               {canalesOpts.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+          </div>
+
+          {/* ESTADO DE PAGO (29-sep-2026) */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">Estado de pago</label>
+            <select className={`input text-sm font-semibold ${infoEstadoPago(estadoPago).activo}`} value={estadoPago} onChange={e => setEstadoPago(e.target.value as EstadoPago)}>
+              {ESTADOS_PAGO.map(e => <option key={e.value} value={e.value}>{e.label}</option>)}
             </select>
           </div>
 

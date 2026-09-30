@@ -130,15 +130,23 @@ export async function crearMovimientoEnTx(tx: Prisma.TransactionClient, data: Cr
       },
       select: { sedeId: true },
     });
-    const totalCitas = await tx.cita.count({
+    // 28-sep-2026: las citas en la sede DESTINO no estorban (ahí va a estar); solo las de otras sedes quedarían huérfanas.
+    const pendientes = await tx.cita.findMany({
       where: {
         profesionalId: data.profesionalId,
+        sedeId: { not: data.sedeId },
         fecha: { gte: nuevaFechaInicio, lte: nuevaFechaFin ?? addDays(nuevaFechaInicio, 365) },
         estado: { in: ['agendada', 'confirmada', 'llego', 'en_atencion'] },
         deletedAt: null,
       },
+      select: { fecha: true, horaInicio: true, sede: { select: { nombre: true } } },
+      orderBy: [{ fecha: 'asc' }, { horaInicio: 'asc' }],
     });
-    if (totalCitas > 0) throw new CitasPendientesError(totalCitas, asignacionOrigen?.sedeId ?? data.sedeId);
+    if (pendientes.length > 0) {
+      const detalle = pendientes.slice(0, 6).map((c) => `${c.fecha.toISOString().slice(8, 10)}/${c.fecha.toISOString().slice(5, 7)} ${c.horaInicio} (${c.sede.nombre})`).join(', ')
+        + (pendientes.length > 6 ? ` y ${pendientes.length - 6} más` : '');
+      throw new CitasPendientesError(pendientes.length, asignacionOrigen?.sedeId ?? data.sedeId, detalle);
+    }
 
     // ── 0-bis. Coordinación con VACACIONES: un movimiento no puede pisar días de
     //          vacación del profesional (las tablas se hablan). ──────────────────

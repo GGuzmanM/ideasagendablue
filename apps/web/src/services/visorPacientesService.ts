@@ -9,6 +9,7 @@ import toast from 'react-hot-toast';
 import { citasApi, type CitaResumen } from '../api/citas';
 import { sedesApi } from '../api';
 import { medicoCitaApi } from '../api/medicoCita';
+import { recetasApi, type RecetaDelDia } from '../api/recetas';
 import { citaLlevaMedico } from './medicoCitaService';
 import { useAuthStore } from '../stores/authStore';
 import { useAgendaStore } from '../stores/agendaStore';
@@ -50,6 +51,17 @@ export function useVisorPacientes() {
     enabled: !!sedeId,
     refetchInterval: 30_000,
   });
+
+  // Citas que ya tienen receta / indicaciones vigentes → la fila se pinta en VERDE (25-sep-2026). Con el prefijo
+  // ['citas'] se refresca junto con las citas (socket y botón Actualizar).
+  const recetasQ = useQuery({
+    queryKey: ['citas', 'visor-recetas', sedeId, fecha],
+    queryFn: () => recetasApi.delDia(sedeId, fecha),
+    enabled: !!sedeId && puedeVerHc,
+    refetchInterval: 30_000,
+  });
+  const recetaPorCita = useMemo(() => new Map((recetasQ.data ?? []).map((r) => [r.citaId, r] as const)), [recetasQ.data]);
+  const recetaDe = (c: CitaResumen): RecetaDelDia | null => recetaPorCita.get(c.id) ?? null;
 
   const [filtro, setFiltro] = useState<FiltroVisor>(soyMedico ? 'todos' : 'todos');
   const [busqueda, setBusqueda] = useState('');
@@ -101,6 +113,8 @@ export function useVisorPacientes() {
       puedeAsignar: puedeAsignar && llevaMedico,
       // El médico atiende a SU paciente (o a uno sin médico, que toma al entrar); administración entra a cualquiera.
       puedeAtender: puedeVerHc && (!soyMedico || esMia || !c.medicoId || puedeAsignar),
+      // Paciente que tomó OTRO médico: se ve su historia (solo lectura), sin atender (26-sep-2026).
+      puedeVerHistoria: puedeVerHc,
       llegoHora: horaDe(c.llegoEn) ?? c.horaInicio,
       enAtencionHora: horaDe(c.enAtencionEn),
       esperaMin: c.llegoEn && c.estado === 'llego' ? Math.max(0, Math.round((Date.now() - new Date(c.llegoEn).getTime()) / 60000)) : null,
@@ -123,8 +137,8 @@ export function useVisorPacientes() {
     sedes, sedeId, setSedeId, sedeNombre: sedes.find((s) => s.id === sedeId)?.nombre ?? '',
     fecha, cargando: citasQ.isLoading, error: citasQ.error as Error | null,
     filtro, setFiltro, busqueda, setBusqueda, verAtendidos, setVerAtendidos,
-    enSede, atendidos, porVenir, asignables, acciones,
+    enSede, atendidos, porVenir, asignables, acciones, recetaDe,
     tomar, soltar, asignar, atender, pendiente: medicoMut.isPending,
-    refrescar: () => void citasQ.refetch(),
+    refrescar: () => { void citasQ.refetch(); void recetasQ.refetch(); },
   };
 }

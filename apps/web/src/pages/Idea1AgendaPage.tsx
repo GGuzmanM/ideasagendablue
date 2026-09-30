@@ -74,6 +74,8 @@ export function Idea1AgendaPage() {
     gridTemplateColsCss,
     // Acciones
     handleMoverCita,
+    handleIntercambiarCitas,
+    isIntercambiando,
     isMoving,
   } = useIdea1AgendaData();
 
@@ -89,6 +91,11 @@ export function Idea1AgendaPage() {
   const [modalHorarioOpen, setModalHorarioOpen] = useState(false);
   const [buscadorOpen, setBuscadorOpen] = useState(false);
   const [dragOverSlot, setDragOverSlot] = useState<{ doctorId: string; hora: string } | null>(null);
+  // Mientras se arrastra una cita, las tarjetas CANCELADAS / NO VINO dejan pasar el «soltar» a la casilla de abajo:
+  // ese horario está libre (el servidor lo permite), pero la tarjeta rayada lo tapaba (25-sep-2026).
+  const [arrastrando, setArrastrando] = useState<string | false>(false); // id de la cita que se arrastra
+  // Cita sobre la que se está soltando otra (para resaltarla: «soltar aquí = intercambiar»).
+  const [sobreCita, setSobreCita] = useState<string | null>(null);
   // Roles de solo lectura en la agenda (p. ej. médico): no crean citas ni las arrastran. El
   // backend lo exige igual (403); aquí se evita ofrecer la acción.
   const puedeCrearCita = useAuthStore((s) => s.tiene('citas.crear'));
@@ -863,12 +870,19 @@ export function Idea1AgendaPage() {
                             // Baropodometría: el doctor está OPERANDO la máquina. Se marca con el
                             // color de la unidad y etiqueta propia (no un "ocupado" genérico gris).
                             const uniColor = oc.unidadNegocio.color || '#64748b';
-                            const esBaroOc = /baropodometr/i.test(oc.unidadNegocio.nombre);
+                            const esBaroOc = !oc.sedeNombre && !oc.enOtraColumna && /baropodometr/i.test(oc.unidadNegocio.nombre);
+                            // Cita de la misma persona en OTRA sede (una sola agenda para las dos): «Atiende en One».
+                            // Pedida «Solo X» con la cita en OTRA columna de esta misma agenda: «Atiende en Adicional One».
+                            const etiquetaOc = oc.sedeNombre ? `Atiende en ${oc.sedeNombre}` : oc.enOtraColumna ? `Atiende en ${oc.enColumna}` : oc.unidadNegocio.nombre;
                             return (
                               <div
                                 key={`ocup-${oc.citaId}-${doc.id}`}
                                 onClick={() => handleVerOcupacionExterna(oc.citaId)}
-                                title={`${esBaroOc ? 'Opera' : 'Ocupado en'} ${oc.unidadNegocio.nombre} (${oc.enColumna}) · ${oc.pacienteNombre} · ${oc.servicioNombre}\nClic para ver el detalle`}
+                                title={oc.sedeNombre
+                                  ? `Atiende en ${oc.sedeNombre} a esta hora · ${oc.pacienteNombre} · ${oc.servicioNombre}\nNo se puede agendar aquí (misma persona, una sola agenda)`
+                                  : oc.enOtraColumna
+                                  ? `La pidieron («Solo ${doc.nombres.split(' ')[0]}») para ${oc.pacienteNombre} · ${oc.servicioNombre}, cita en la columna ${oc.enColumna}\nClic para ver el detalle`
+                                  : `${esBaroOc ? 'Opera' : 'Ocupado en'} ${oc.unidadNegocio.nombre} (${oc.enColumna}) · ${oc.pacienteNombre} · ${oc.servicioNombre}\nClic para ver el detalle`}
                                 style={{
                                   position: 'absolute',
                                   top: `${topPx}px`,
@@ -883,8 +897,8 @@ export function Idea1AgendaPage() {
                                 className="pointer-events-auto cursor-pointer rounded-xl px-2 py-1.5 flex flex-col justify-center border-2 border-dashed text-slate-700 overflow-hidden select-none z-15 hover:brightness-95 transition-all shadow-xs"
                               >
                                 <div className="flex items-center gap-1 font-bold text-[11px] truncate" style={{ color: uniColor }}>
-                                  <span className="material-symbols-outlined text-sm shrink-0">{esBaroOc ? 'footprint' : 'block'}</span>
-                                  <span className="truncate">{oc.unidadNegocio.nombre}</span>
+                                  <span className="material-symbols-outlined text-sm shrink-0">{oc.sedeNombre ? 'location_on' : oc.enOtraColumna ? 'person_pin_circle' : esBaroOc ? 'footprint' : 'block'}</span>
+                                  <span className="truncate">{etiquetaOc}</span>
                                 </div>
                                 {!isCompact && (
                                   <div className="flex flex-col gap-0.5 mt-0.5 min-w-0">
@@ -892,7 +906,7 @@ export function Idea1AgendaPage() {
                                       {oc.pacienteNombre}
                                     </span>
                                     <span className="text-[10px] text-slate-500 truncate">
-                                      {esBaroOc ? `Opera ${oc.enColumna}` : `${oc.servicioNombre} · ${oc.enColumna}`}
+                                      {esBaroOc ? `Opera ${oc.enColumna}` : oc.sedeNombre || oc.enOtraColumna ? oc.servicioNombre : `${oc.servicioNombre} · ${oc.enColumna}`}
                                     </span>
                                     <span className="text-[9px] font-mono text-slate-500">{oc.horaInicio}</span>
                                   </div>
@@ -920,6 +934,19 @@ export function Idea1AgendaPage() {
                               cita.estado !== 'CANCELADA';
 
                             const esCancelada = cita.estado === 'CANCELADA';
+                            // Cancelada DENTRO de un permiso / almuerzo / vacaciones de la profesional (26-sep-2026: cancelaron
+                            // a José Maldonado para poner el permiso de Luz Flores): ese horario no está libre, así que la
+                            // tarjeta se atenúa (se ve el bloqueo detrás) y NO ofrece «+» para agendar ahí.
+                            const bloqueoDeCancelada = (() => {
+                              if (!esCancelada) return null;
+                              const ini = timeToMinutes(cita.horaInicio), fin = ini + (cita.duracionMinutos || 30);
+                              const choca = (hi?: string | null, hf?: string | null) => !!hi && !!hf && ini < timeToMinutes(hf) && fin > timeToMinutes(hi);
+                              if (doc.enVacaciones) return 'vacaciones';
+                              const p = docPermisos.find((x) => choca(x.horaInicio, x.horaFin));
+                              if (p) return p.motivo ? `permiso (${p.motivo})` : 'permiso';
+                              if (docAlmuerzos.some((a) => choca(a.horaInicio, a.horaFin))) return 'almuerzo';
+                              return null;
+                            })();
                             // Patrón inline: rayas diagonales rojas sobre fondo cremita —
                             // se diferencia a un vistazo de cualquier otro estado.
                             const canceladaBgStyle = esCancelada
@@ -950,13 +977,43 @@ export function Idea1AgendaPage() {
                                   };
                                   e.dataTransfer.setData('text/plain', JSON.stringify(payload));
                                   e.dataTransfer.effectAllowed = 'move';
+                                  setTimeout(() => setArrastrando(cita.id), 0); // después del dragstart (no tocar el DOM en él)
                                 }}
-                                onDragEnd={() => setDragOverSlot(null)}
+                                onDragEnd={() => { setDragOverSlot(null); setArrastrando(false); setSobreCita(null); }}
+                                // Soltar OTRA cita encima de esta → intercambiar pacientes (misma sede y día). Las canceladas / no vino
+                                // dejan pasar el soltar a la casilla (no se intercambian).
+                                onDragOver={(e) => {
+                                  if (!arrastrando || arrastrando === cita.id || !esDraggable || cita.raw?.slotGrupoId) return;
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  e.dataTransfer.dropEffect = 'move';
+                                  if (sobreCita !== cita.id) setSobreCita(cita.id);
+                                }}
+                                onDragLeave={() => setSobreCita((prev) => (prev === cita.id ? null : prev))}
+                                onDrop={async (e) => {
+                                  if (!arrastrando || arrastrando === cita.id || !esDraggable) return;
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setSobreCita(null);
+                                  setDragOverSlot(null);
+                                  if (isMoving || isIntercambiando) { toast('Espera: se está moviendo una cita…', { icon: '⏳' }); return; }
+                                  let payload: { citaId?: string; slotGrupoId?: string | null; pacienteNombre?: string; profesionalNombre?: string; horaInicio?: string } | null = null;
+                                  try { payload = JSON.parse(e.dataTransfer.getData('text/plain') || 'null'); } catch { payload = null; }
+                                  if (!payload?.citaId || payload.citaId === cita.id) return;
+                                  if (payload.slotGrupoId || cita.raw?.slotGrupoId) { toast.error('Las citas dobles se mueven con su bloque: no se intercambian'); return; }
+                                  const ok = window.confirm(
+                                    `¿Intercambiar pacientes?\n\n• ${payload.pacienteNombre ?? 'Paciente'} (${payload.profesionalNombre ?? ''} ${payload.horaInicio ?? ''}) → pasa a ${doc.nombres} ${cita.horaInicio}\n• ${cita.paciente} (${doc.nombres} ${cita.horaInicio}) → pasa a ${payload.profesionalNombre ?? ''} ${payload.horaInicio ?? ''}`,
+                                  );
+                                  if (!ok) return;
+                                  try { await handleIntercambiarCitas({ citaIdA: payload.citaId, citaIdB: cita.id }); } catch { /* el toast ya muestra el motivo */ }
+                                }}
                                 title={
                                   esDraggable
                                     ? 'Arrastra para mover esta cita a otro médico u horario'
                                     : esCancelada
-                                    ? 'Cita cancelada · pasá el mouse para ver acciones'
+                                    ? bloqueoDeCancelada
+                                      ? `Cita cancelada · ese horario tiene ${bloqueoDeCancelada}: no se puede agendar ahí`
+                                      : 'Cita cancelada · pasa el mouse para ver acciones'
                                     : undefined
                                 }
                                 style={{
@@ -969,8 +1026,10 @@ export function Idea1AgendaPage() {
                                   right: '0px',
                                   ...canceladaBgStyle,
                                 }}
-                                className={`group appointment-card pointer-events-auto rounded-xl p-2 flex flex-col justify-between transition-all border overflow-hidden relative ${
-                                  esCancelada ? 'is-cancelada' : 'hover:scale-[1.01] hover:shadow-lg'
+                                className={`group appointment-card ${arrastrando && (esCancelada || cita.estado === 'NO SHOW') ? 'pointer-events-none opacity-60' : 'pointer-events-auto'} rounded-xl p-2 flex flex-col justify-between transition-all border overflow-hidden relative ${
+                                  esCancelada ? `is-cancelada${bloqueoDeCancelada ? ' opacity-50 hover:opacity-100' : ''}` : 'hover:scale-[1.01] hover:shadow-lg'
+                                } ${
+                                  sobreCita === cita.id ? 'ring-4 ring-amber-400 ring-offset-1 z-40' : ''
                                 } ${
                                   esDraggable ? 'cursor-grab active:cursor-grabbing hover:border-primary/50' : esCancelada ? 'cursor-default' : 'cursor-pointer'
                                 } ${
@@ -1027,20 +1086,26 @@ export function Idea1AgendaPage() {
                                     >
                                       <span className="material-symbols-outlined text-[18px]">visibility</span>
                                     </button>
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleAbrirNuevaCita({
-                                          horaInicio: cita.horaInicio,
-                                          profesionalId: doc.id,
-                                        });
-                                      }}
-                                      title="Agendar una nueva cita en este slot"
-                                      className="w-8 h-8 grid place-items-center rounded-full bg-primary text-white shadow-md shadow-primary/30 hover:shadow-lg hover:opacity-90 transition-all"
-                                    >
-                                      <span className="material-symbols-outlined text-[18px]">add_circle</span>
-                                    </button>
+                                    {bloqueoDeCancelada ? (
+                                      <span className="text-[10px] font-bold text-rose-700 bg-white/90 border border-rose-200 rounded-full px-2 py-0.5 max-w-[70%] truncate" title={`Ese horario tiene ${bloqueoDeCancelada}`}>
+                                        Con {bloqueoDeCancelada.split(' (')[0]}
+                                      </span>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleAbrirNuevaCita({
+                                            horaInicio: cita.horaInicio,
+                                            profesionalId: doc.id,
+                                          });
+                                        }}
+                                        title="Agendar una nueva cita en este slot"
+                                        className="w-8 h-8 grid place-items-center rounded-full bg-primary text-white shadow-md shadow-primary/30 hover:shadow-lg hover:opacity-90 transition-all"
+                                      >
+                                        <span className="material-symbols-outlined text-[18px]">add_circle</span>
+                                      </button>
+                                    )}
                                   </div>
                                 )}
 

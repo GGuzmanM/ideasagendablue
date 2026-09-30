@@ -37,11 +37,11 @@ import { PlantillasDialog } from '../components/historiaClinica/PlantillasDialog
 import { ResumenPacienteDialog } from '../components/historiaClinica/ResumenPacienteDialog';
 import { ZONAS_PIE, coordZona, zonaPorId } from '../utils/zonasPie';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { useHistoriaClinicaPage, useAntecedentesAlergias, useRecetasAtencion, useEscalas, usePodograma, useMiniaturaPodograma, useFotosClinicas, useFotoUrl, MF_ETIQUETAS, IWGDF_CONTROL, type TabHc } from '../services/historiaClinicaService';
+import { useHistoriaClinicaPage, useMotivoAnamnesis, useAntecedentesAlergias, useRecetasAtencion, useEscalas, usePodograma, useMiniaturaPodograma, useFotosClinicas, useFotoUrl, MF_ETIQUETAS, IWGDF_CONTROL, type TabHc } from '../services/historiaClinicaService';
 import type { FotoPendiente, CamposPendiente } from '../stores/fotosPendientesStore';
 import { VISTA_SILUETA_LABEL, TIPO_ANTECEDENTE_LABEL, TIPO_NOTA_LABEL, TIPO_PROCEDIMIENTO_LABEL, TIPO_ESCALA_LABEL, TIPO_LESION_LABEL, COLOR_LESION, etiquetaLesion, PIE_LABEL, VISTAS_PODOGRAMA, VISTA_PODOGRAMA_LABEL, CATEGORIA_FOTO_LABEL, edadDe, nombreProfesional, type AtencionClinica, type AtencionCompleta, type TipoAntecedente, type TipoNota, type SeveridadAlergia, type TipoProcedimiento, type TipoEscala, type TipoLesion, type MarcaPodograma, type VistaSilueta, type AnotacionPodograma, type ImagenPodograma, type VistaPodograma, type CategoriaFoto, type FotoClinica, type Pie } from '../api/historiaClinica';
 import { TIPO_DOC_LABEL } from '../api/recetas';
-import { historiaClinicaApi, ORIGEN_CONTROL_LABEL } from '../api/historiaClinica';
+import { historiaClinicaApi, ORIGEN_CONTROL_LABEL, type NotaErp } from '../api/historiaClinica';
 import toast from 'react-hot-toast';
 import { useConfirmarQuitar } from '../components/historiaClinica/DialogoConfirmar';
 import { faltantesAtencion } from '../utils/faltantesAtencion';
@@ -102,7 +102,7 @@ export function HistoriaClinicaPage() {
             {!vistaUnica && <span className="px-1.5 py-0.5 rounded-full bg-primary text-on-primary text-[9px] font-bold uppercase">Nuevo</span>}
           </button>
         </div>
-        {h.puedeRegistrar && (
+        {h.puedeRegistrarBase && (
           <div className="relative">
             <button onClick={() => h.setMostrarCandidatas((v) => !v)} title="Nueva atención" className="min-h-[44px] px-4 lg:px-5 py-2.5 bg-primary text-on-primary font-bold rounded-xl shadow-lg shadow-primary/20 hover:opacity-90 active:scale-95 transition-all flex items-center text-sm whitespace-nowrap">
               <span className="material-symbols-outlined mr-2 text-base">add_circle</span>Nueva atención
@@ -113,7 +113,7 @@ export function HistoriaClinicaPage() {
                 {h.citasCandidatas.length === 0 ? (
                   <div className="px-4 py-4 text-sm text-on-surface-variant">No hay citas atendidas pendientes. La atención se registra desde una cita que llegó, está en atención o se completó.</div>
                 ) : h.citasCandidatas.map((c) => (
-                  <button key={c.id} onClick={() => { h.setCitaARegistrar(c); h.setMostrarCandidatas(false); }} className="w-full text-left px-4 py-2.5 hover:bg-primary/5 border-b border-outline-variant/10 last:border-0 flex items-center gap-3">
+                  <button key={c.id} onClick={() => { h.setMostrarCandidatas(false); void h.iniciarAtencion(c); }} className="w-full text-left px-4 py-2.5 hover:bg-primary/5 border-b border-outline-variant/10 last:border-0 flex items-center gap-3">
                     <span className="w-1.5 h-8 rounded-full" style={{ background: c.servicio?.color ?? '#0044ab' }} />
                     <span className="min-w-0 flex-1"><span className="block text-sm font-semibold text-on-surface">{fmtFecha(c.fecha)} · {c.horaInicio} · {c.servicio?.nombre}</span><span className="block text-[11px] text-on-surface-variant">{c.sede?.nombre} · {c.profesional ? `${c.profesional.nombres} ${c.profesional.apellidos}` : '—'} · {ESTADO_CITA_LABEL[(c.estado || '').toLowerCase()] ?? c.estado}</span></span>
                     <span className="material-symbols-outlined text-primary">chevron_right</span>
@@ -193,7 +193,7 @@ export function HistoriaClinicaPage() {
                         </div>
                       </div>
                     </button>
-                  ) : (
+                  ) : it.tipo === 'genexis' ? (
                     <button key={it.id} onClick={() => h.seleccionarGenexis(it.id)} data-testid="visita-genexis" className={`shrink-0 w-[270px] lg:w-full snap-start text-left rounded-xl border border-dashed px-3 py-2 transition-all ${h.genexisSel === it.id ? 'border-primary bg-primary/5' : 'border-outline-variant/40 bg-surface-container-low/40 hover:bg-surface-container-low'}`}>
                       <div className="flex items-center gap-2">
                         <span className="material-symbols-outlined text-on-surface-variant/70 text-lg shrink-0">inventory_2</span>
@@ -201,7 +201,24 @@ export function HistoriaClinicaPage() {
                           <div className="text-sm font-semibold text-on-surface truncate">{fmtFecha(it.visita.fechaCita)}{it.visita.horaCita ? ` · ${it.visita.horaCita} h` : ''} · {it.visita.servicio ?? 'Visita'}</div>
                           <div className="text-[11px] text-on-surface-variant truncate">{it.visita.podologo ?? '—'}{it.visita.sede ? ` · ${it.visita.sede}` : ''}</div>
                         </div>
-                        <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-surface-container text-on-surface-variant shrink-0">Sistema anterior</span>
+                        <div className="flex flex-col items-end gap-0.5 shrink-0">
+                          <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-surface-container text-on-surface-variant">Sistema anterior</span>
+                          {it.notaErp && <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-sky-100 text-sky-800" data-testid="visita-con-nota-erp">Con nota clínica</span>}
+                        </div>
+                      </div>
+                    </button>
+                  ) : (
+                    <button key={it.id} onClick={() => h.seleccionarGenexis(it.id)} data-testid="nota-erp" className={`shrink-0 w-[270px] lg:w-full snap-start text-left rounded-xl border border-dashed px-3 py-2 transition-all ${h.genexisSel === it.id ? 'border-primary bg-primary/5' : 'border-outline-variant/40 bg-surface-container-low/40 hover:bg-surface-container-low'}`}>
+                      <div className="flex items-center gap-2">
+                        <span className="material-symbols-outlined text-on-surface-variant/70 text-lg shrink-0">inventory_2</span>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-semibold text-on-surface truncate">{fmtFecha(it.nota.fecha)}{it.nota.hora ? ` · ${it.nota.hora}` : ''} · {it.nota.servicio ?? 'Atención'}</div>
+                          <div className="text-[11px] text-on-surface-variant truncate">{it.nota.profesional ?? '—'}{it.nota.sede ? ` · ${it.nota.sede}` : ''}</div>
+                        </div>
+                        <div className="flex flex-col items-end gap-0.5 shrink-0">
+                          <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-surface-container text-on-surface-variant">Sistema anterior</span>
+                          <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-sky-100 text-sky-800">Con nota clínica</span>
+                        </div>
                       </div>
                     </button>
                   ))}
@@ -235,7 +252,7 @@ export function HistoriaClinicaPage() {
           </div>
           <div className="p-3 sm:p-4 lg:p-6 max-w-[1100px]">
             {h.tab === 'antecedentes' && <PanelAntecedentes h={h} />}
-            {h.tab !== 'antecedentes' && h.genexisSel && <VisitaGenexisCard visita={h.visitaGenexis} />}
+            {h.tab !== 'antecedentes' && h.genexisSel && <VisitaGenexisCard visita={h.visitaGenexis} nota={h.notaErpSel} />}
             {(h.tab === 'evolucion' || h.tab === 'receta' || h.tab === 'procedimientos' || h.tab === 'escalas' || h.tab === 'podograma' || h.tab === 'fotos' || h.tab === 'consentimientos') && !h.genexisSel && (
               !h.atencionSel ? (
                 <div className="text-center py-20 text-on-surface-variant">
@@ -289,8 +306,9 @@ export function HistoriaClinicaPage() {
 
 type H = ReturnType<typeof useHistoriaClinicaPage>;
 
-/** Visita del sistema anterior (Genexis): archivo congelado, se muestra tal cual quedó, sin editar. */
-function VisitaGenexisCard({ visita }: { visita: HistorialGenexisRegistro | null }) {
+/** Visita del sistema anterior (Genexis) y/o su nota clínica del ERP: archivo congelado, se muestra tal cual quedó. */
+function VisitaGenexisCard({ visita, nota = null }: { visita: HistorialGenexisRegistro | null; nota?: NotaErp | null }) {
+  if (!visita && nota) return <NotaErpSolaCard nota={nota} />;
   if (!visita) return <Skeleton className="h-40 w-full" />;
   return (
     <div className="rounded-2xl border border-dashed border-outline-variant/50 bg-surface-container-low/40 p-5 space-y-3" data-testid="visita-genexis-detalle">
@@ -309,8 +327,76 @@ function VisitaGenexisCard({ visita }: { visita: HistorialGenexisRegistro | null
       </p>
       {visita.obsPodologo && <div><p className={LBL}>Observaciones del profesional</p><p className="text-sm text-on-surface whitespace-pre-wrap break-words">{visita.obsPodologo}</p></div>}
       {visita.obsPaciente && <div><p className={LBL}>Observaciones de recepción</p><p className="text-sm text-on-surface whitespace-pre-wrap break-words">{visita.obsPaciente}</p></div>}
-      {!visita.obsPodologo && !visita.obsPaciente && <p className="text-sm text-on-surface-variant">Esta visita no tiene observaciones registradas.</p>}
+      {!visita.obsPodologo && !visita.obsPaciente && !nota && <p className="text-sm text-on-surface-variant">Esta visita no tiene observaciones registradas.</p>}
       {(visita.fechaCreacionGx || visita.usuarioCreacionGx) && <p className="text-[11px] text-on-surface-variant/70">Registrado{visita.fechaCreacionGx ? ` el ${visita.fechaCreacionGx}` : ''}{visita.usuarioCreacionGx ? ` por ${visita.usuarioCreacionGx}` : ''}</p>}
+      {nota && <NotaErpDetalle key={nota.id} nota={nota} />}
+    </div>
+  );
+}
+
+/** Nota del ERP sin visita de Genexis del mismo día: tarjeta propia del «Sistema anterior». */
+function NotaErpSolaCard({ nota }: { nota: NotaErp }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-outline-variant/50 bg-surface-container-low/40 p-5 space-y-3" data-testid="nota-erp-detalle">
+      <div className="flex items-start gap-3 flex-wrap">
+        <span className="material-symbols-outlined text-on-surface-variant text-2xl">inventory_2</span>
+        <div className="min-w-0 flex-1">
+          <h3 className="font-headline-sm text-headline-sm font-bold text-on-surface">{fmtFecha(nota.fecha)}{nota.hora ? ` · ${nota.hora}` : ''}</h3>
+          <p className="text-sm text-on-surface">{nota.servicio ?? 'Atención'}</p>
+          <p className="text-xs text-on-surface-variant">{nota.sede ?? ''}</p>
+        </div>
+        <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-surface-container text-on-surface-variant">Sistema anterior</span>
+      </div>
+      <p className="text-xs text-on-surface-variant bg-surface-container-low rounded-lg px-3 py-2 flex items-start gap-2">
+        <span className="material-symbols-outlined text-base">lock</span>
+        <span>Atención registrada en el sistema anterior de la clínica. Es un archivo: se lee tal cual quedó y no se puede editar ni completar. Lo nuevo se registra en una atención de esta historia.</span>
+      </p>
+      <NotaErpDetalle key={nota.id} nota={nota} />
+    </div>
+  );
+}
+
+const LARGO_ANAMNESIS = 700;
+
+/** Nota clínica del ERP: quién atendió, anamnesis (plegada si repite la anterior o es muy larga), diagnóstico, plan… */
+function NotaErpDetalle({ nota }: { nota: NotaErp }) {
+  const [verAnamnesis, setVerAnamnesis] = useState(!nota.anamnesisRepetida);
+  const [completa, setCompleta] = useState(false);
+  const larga = (nota.anamnesis?.length ?? 0) > LARGO_ANAMNESIS;
+  const texto = nota.anamnesis && larga && !completa ? `${nota.anamnesis.slice(0, LARGO_ANAMNESIS).trimEnd()}…` : nota.anamnesis;
+  const campo = (etiqueta: string, valor: string | null) => valor ? <div><p className={LBL}>{etiqueta}</p><p className="text-sm text-on-surface whitespace-pre-wrap break-words">{valor}</p></div> : null;
+  return (
+    <div className="rounded-xl border border-sky-200 bg-sky-50/40 p-4 space-y-3" data-testid="nota-erp">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <p className="text-xs font-bold uppercase tracking-wide text-sky-800 flex items-center gap-1.5">
+          <span className="material-symbols-outlined text-base">clinical_notes</span>Nota clínica del sistema anterior
+        </p>
+        <span className="text-[11px] text-on-surface-variant">Atención ERP N° {nota.idAtencion}</span>
+      </div>
+      <div>
+        <p className={LBL}>Atendió</p>
+        <p className="text-sm text-on-surface">{nota.profesional ?? 'No registrado'}{nota.cargo ? <span className="text-on-surface-variant"> · {nota.cargo}</span> : null}</p>
+      </div>
+      {nota.anamnesis && (
+        <div>
+          <p className={LBL}>Anamnesis</p>
+          {!verAnamnesis ? (
+            <button type="button" onClick={() => setVerAnamnesis(true)} className="text-sm text-on-surface-variant hover:text-primary flex items-center gap-1" data-testid="anamnesis-repetida">
+              <span className="material-symbols-outlined text-base">content_copy</span>
+              Misma anamnesis que la atención del {nota.anamnesisDesde ? fmtFecha(nota.anamnesisDesde) : 'anterior'} · <span className="font-semibold text-primary">Ver</span>
+            </button>
+          ) : (
+            <>
+              <p className="text-sm text-on-surface whitespace-pre-wrap break-words">{texto}</p>
+              {larga && <button type="button" onClick={() => setCompleta(!completa)} className="text-xs font-semibold text-primary mt-1">{completa ? 'Ver menos' : 'Ver todo'}</button>}
+            </>
+          )}
+        </div>
+      )}
+      {campo('Diagnóstico', nota.diagnostico)}
+      {campo('Plan de tratamiento', nota.planTratamiento)}
+      {campo('Nota del médico', nota.notaMedico)}
+      {campo('Examen físico', nota.examenFisico)}
     </div>
   );
 }
@@ -343,7 +429,13 @@ function CabeceraAtencion({ h, a, sinMotivo = false }: { h: H; a: AtencionComple
           <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${cerrada ? 'bg-surface-container text-on-surface-variant' : 'bg-emerald-100 text-emerald-700'}`}>{cerrada ? 'Cerrada' : 'Abierta'}</span>
         </div>
         <p className="text-sm text-on-surface-variant mt-1"><b className="text-on-surface">{nombreProfesional(a.profesional)}</b> · {a.sede.nombre}{a.abiertaEtiqueta ? ` · registrada por ${a.abiertaEtiqueta}` : ''}</p>
-        {!sinMotivo && <p className="text-sm mt-2"><span className={LBL}>Motivo de consulta</span>{a.motivoConsulta}</p>}
+        {!sinMotivo && <p className="text-sm mt-2"><span className={LBL}>Motivo de consulta</span>{a.motivoConsulta || <span className="text-amber-700">Pendiente (llénalo en Evolución)</span>}</p>}
+        {h.medicoDeOtro && (
+          <p className="text-xs mt-2 rounded-lg bg-sky-50 border border-sky-200 text-sky-900 px-3 py-1.5 flex items-center gap-1.5" data-testid="aviso-otro-medico">
+            <span className="material-symbols-outlined text-base">visibility</span>
+            Atención de {h.medicoDeOtro.nombres} {h.medicoDeOtro.apellidos}: puedes verla, pero no modificarla.
+          </p>
+        )}
         {controles.length > 0 && (
           <div className="flex flex-wrap gap-1.5 mt-2" data-testid="controles-atencion">
             {controles.map((x) => (
@@ -407,9 +499,44 @@ function CabeceraAtencion({ h, a, sinMotivo = false }: { h: H; a: AtencionComple
 function PanelEvolucion({ h, a }: { h: H; a: AtencionCompleta }) {
   return (
     <div className="space-y-6">
+      <CamposMotivoAnamnesis h={h} a={a} />
       <PanelDiagnosticos h={h} a={a} />
       <PanelNotas h={h} a={a} />
     </div>
+  );
+}
+
+/** Motivo de consulta y anamnesis: dos campos, editables mientras la atención esté abierta (26-sep-2026). */
+function CamposMotivoAnamnesis({ h, a }: { h: H; a: AtencionCompleta }) {
+  const m = useMotivoAnamnesis(a, h.puedeRegistrar && a.estado !== 'cerrada');
+  return (
+    <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5 space-y-3" data-testid="motivo-anamnesis">
+      <h3 className="font-headline-sm text-headline-sm font-semibold text-on-surface flex items-center"><span className="material-symbols-outlined mr-2 text-primary">record_voice_over</span>Motivo de consulta y anamnesis</h3>
+      {m.editable ? (
+        <>
+          <div>
+            <label className={LBL} htmlFor="hc-motivo">Motivo de consulta</label>
+            <textarea id="hc-motivo" value={m.motivo} onChange={(e) => m.setMotivo(e.target.value)} rows={2} maxLength={500} placeholder="Ej. Dolor y engrosamiento de la uña del 1.er dedo derecho" className={INPUT} />
+          </div>
+          <div>
+            <label className={LBL} htmlFor="hc-anamnesis">Anamnesis</label>
+            <textarea id="hc-anamnesis" value={m.anamnesis} onChange={(e) => m.setAnamnesis(e.target.value)} rows={4} maxLength={5000} placeholder="Historia de la molestia: desde cuándo, cómo empezó, qué ha probado, antecedentes relacionados…" className={INPUT} />
+          </div>
+          <div className="flex items-center justify-end gap-3">
+            {m.cambiado && <span className="text-xs text-amber-700">Cambios sin guardar</span>}
+            <button onClick={() => m.guardarMut.mutate()} disabled={!m.cambiado || m.guardarMut.isPending} data-testid="guardar-motivo-anamnesis"
+              className="min-h-[44px] lg:min-h-0 px-5 py-2 bg-primary text-on-primary rounded-xl text-sm font-bold disabled:opacity-50">
+              {m.guardarMut.isPending ? 'Guardando…' : 'Guardar'}
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className="grid gap-3">
+          <div><span className={LBL}>Motivo de consulta</span><p className="text-sm text-on-surface whitespace-pre-wrap">{a.motivoConsulta || '—'}</p></div>
+          <div><span className={LBL}>Anamnesis</span><p className="text-sm text-on-surface whitespace-pre-wrap">{a.anamnesis || '—'}</p></div>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -1828,7 +1955,7 @@ function SeccionUnica({ id, n, titulo, children }: { id: SeccionUnicaId; n?: num
 
 /** Mismas guardas que la vista clásica: visita del sistema anterior, sin atención elegida, error o cargando. */
 function ConAtencionSeleccionada({ h, children }: { h: H; children: (a: AtencionCompleta) => ReactNode }) {
-  if (h.genexisSel) return <VisitaGenexisCard visita={h.visitaGenexis} />;
+  if (h.genexisSel) return <VisitaGenexisCard visita={h.visitaGenexis} nota={h.notaErpSel} />;
   if (!h.atencionSel) return (
     <div className="text-center py-16 text-on-surface-variant">
       <span className="material-symbols-outlined text-5xl mb-2">clinical_notes</span>
@@ -1873,10 +2000,7 @@ function ContenidoVistaUnica({ h }: { h: H }) {
         {a ? (
           <>
             <SeccionUnica id="motivo" n={2} titulo="Motivo de consulta y anamnesis">
-              <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest px-5 py-4" data-testid="motivo-consulta">
-                <span className={LBL}>Motivo de consulta</span>
-                <p className="text-sm text-on-surface whitespace-pre-wrap">{a.motivoConsulta}</p>
-              </div>
+              <CamposMotivoAnamnesis h={h} a={a} />
               <PanelNotas h={h} a={a} />
             </SeccionUnica>
             <SeccionUnica id="diagnostico" n={3} titulo="Diagnóstico"><PanelDiagnosticos h={h} a={a} /></SeccionUnica>

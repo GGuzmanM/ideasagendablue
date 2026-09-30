@@ -4,13 +4,13 @@ import toast from 'react-hot-toast';
 import { format, addDays } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { citasApi, type CitaResumen } from '../api/citas';
-import { profesionalesApi, pacientesApi, disponibilidadApi, competenciasApi, serviciosApi, type Profesional, type HistorialCita } from '../api';
+import { api, profesionalesApi, pacientesApi, disponibilidadApi, competenciasApi, serviciosApi, type Profesional, type HistorialCita } from '../api';
 import { useCanales } from '../hooks/useCanales';
 import { usePromociones } from '../hooks/usePromociones';
 import { usePaquetesPaciente, paquetesElegibles, paquetesOtraSede, paquetesSesionesApi } from '../api/paquetesSesiones';
-import { useAgendaStore } from '../stores/agendaStore';
 import { generarSlotsDelDia, horaInicioValidaParaDuracion, esCitaInactiva } from '@limablue/shared';
 import { useAuthStore } from '../stores/authStore';
+import { estadoPagoDe, infoEstadoPago, type EstadoPago } from '../utils/estadoPago';
 import { useResumenAtencionCita, useFichaPrevia } from '../api/historiaClinica';
 
 const SLOTS = generarSlotsDelDia('08:00', '20:00', 30);
@@ -59,7 +59,6 @@ export interface UseIdea1DetalleCitaProps {
 export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1DetalleCitaProps) {
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const { sedeId, unidadNegocioId } = useAgendaStore();
 
   const [citaActiva, setCitaActiva] = useState<CitaResumen>(citaProp);
 
@@ -90,6 +89,10 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
   }, [citaFresca]);
 
   const cita = citaActiva;
+  // Reprogramar se hace en la SEDE y la UNIDAD de la CITA, no en las que están abiertas en la agenda (25-sep-2026: una
+  // cita de Paz Soldán abierta desde el buscador, con la agenda en One, listaba a las profesionales de One).
+  const sedeId = cita.sedeId;
+  const unidadNegocioId = cita.unidadNegocio?.id ?? cita.unidadNegocioId;
   const estadoNorm = (cita.estado || '').toLowerCase().replace(/\s+/g, '_');
 
   const comentarios = cita.comentarios ?? [];
@@ -276,6 +279,45 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
       toast.error(e.message);
     },
   });
+
+  // ESTADO DE PAGO (29-sep-2026): pendiente / incompleto / completo. Editable en cualquier estado por quien gestiona la
+  // cita (citas.estado). En un bloque combinado el servidor cambia las dos citas.
+  const puedeMarcarPagada = useAuthStore((s) => s.tiene('citas.estado'));
+  const [estadoPagoSel, setEstadoPagoSel] = useState<EstadoPago>(estadoPagoDe(cita));
+  useEffect(() => { setEstadoPagoSel(estadoPagoDe(cita)); }, [cita.estadoPago, cita.pagada]); // eslint-disable-line react-hooks/exhaustive-deps
+  const estadoPagoMutation = useMutation({
+    mutationFn: (estado: EstadoPago) => citasApi.cambiarEstadoPago(cita.id, estado),
+    onSuccess: (_r, estado) => {
+      invalidarAgenda(qc);
+      toast.success(`Estado de pago: ${infoEstadoPago(estado).label}`);
+    },
+    onError: (e: Error) => {
+      setEstadoPagoSel(estadoPagoDe(cita));
+      toast.error(e.message);
+    },
+  });
+
+  // Comprobante de pago (29-sep-2026): adjuntar / reemplazar / quitar después de agendar (un comprobante por cita).
+  const [subiendoComprobante, setSubiendoComprobante] = useState(false);
+  const comprobanteMutation = useMutation({
+    mutationFn: (c: { url: string; nombre?: string; mimeType?: string } | null) => citasApi.actualizarComprobante(cita.id, c),
+    onSuccess: (_r, c) => { invalidarAgenda(qc); toast.success(c ? 'Comprobante adjuntado' : 'Comprobante quitado'); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const subirComprobante = async (file: File) => {
+    if (file.size > 10 * 1024 * 1024) { toast.error('El archivo excede los 10MB'); return; }
+    setSubiendoComprobante(true);
+    try {
+      const fd = new FormData();
+      fd.append('comprobante', file);
+      const r = await api.upload<{ url: string; nombre: string; mimeType: string }>('/citas/upload-comprobante', fd);
+      await comprobanteMutation.mutateAsync({ url: r.url, nombre: r.nombre, mimeType: r.mimeType });
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo subir el comprobante');
+    } finally {
+      setSubiendoComprobante(false);
+    }
+  };
 
   const { promociones } = usePromociones();
   const esSecundariaBloque = cita.slotRol === 'SECUNDARIO';
@@ -602,6 +644,13 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
     canalSel,
     setCanalSel,
     canalMutation,
+    puedeMarcarPagada,
+    estadoPagoSel,
+    setEstadoPagoSel,
+    estadoPagoMutation,
+    subiendoComprobante,
+    subirComprobante,
+    comprobanteMutation,
     promociones,
     esSecundariaBloque,
     promoCita,

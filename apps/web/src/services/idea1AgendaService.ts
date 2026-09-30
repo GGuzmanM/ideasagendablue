@@ -32,6 +32,8 @@ export interface DoctorAgenda {
   enVacaciones?: boolean;
   /** Ficha «Adicional <sede>»: columna extra fija de la sede; va al final, antes de las vacaciones. */
   esAdicional?: boolean;
+  /** Ese día tiene PERMISO que cubre todo su turno: va al final, después de los Adicional y antes de vacaciones. */
+  permisoDiaCompleto?: boolean;
   citasCount?: number;
   estadiaLabel?: string;
 }
@@ -299,6 +301,9 @@ export function formatearEstadiaFin(fechaFinInput?: any): string | null {
   let day = 0;
   let monthIdx = 0;
 
+  // Fin 2099+ = en la práctica SIN fin (así se le dieron dos sedes a la vez al dermatólogo): no es una estadía temporal.
+  if (parts[0].length === 4 && Number(parts[0]) >= 2099) return null;
+
   if (parts[0].length === 4) {
     // YYYY-MM-DD
     day = parseInt(parts[2], 10);
@@ -362,6 +367,26 @@ export function extraerEstadiaLabel(p: any): string | undefined {
 /* ==========================================================================
    3. PROCESAMIENTO Y ORDENAMIENTO DE DOCTORES
    ========================================================================== */
+
+const aMin = (h: string) => { const [hh, mm] = h.split(':').map(Number); return (hh ?? 0) * 60 + (mm ?? 0); };
+
+/**
+ * ¿Los permisos del día cubren TODO el turno [entrada, salida]? (29-sep-2026). Se suman los tramos (un permiso de mañana
+ * y otro de tarde también cuentan). Sin turno ese día no aplica: la persona no trabaja y ya se ve así.
+ */
+export function permisosCubrenTurno(permisos: { horaInicio?: string | null; horaFin?: string | null }[], entrada?: string | null, salida?: string | null): boolean {
+  if (!entrada || !salida || !permisos.length) return false;
+  const tramos = permisos
+    .filter((p) => p.horaInicio && p.horaFin)
+    .map((p) => [aMin(p.horaInicio!), aMin(p.horaFin!)] as const)
+    .sort((a, b) => a[0] - b[0]);
+  let cubierto = aMin(entrada);
+  for (const [ini, fin] of tramos) {
+    if (ini > cubierto) break; // hueco sin permiso dentro del turno
+    cubierto = Math.max(cubierto, fin);
+  }
+  return cubierto >= aMin(salida);
+}
 
 /**
  * Procesa y ordena el listado de doctores para la grilla de agenda:
@@ -432,6 +457,11 @@ export function procesarYOrdenarDoctores(params: {
       // cuyo motivo mencionaba "Vacaciones" (ej.: trabaja hasta las 15:00 pero se retira por vacaciones
       // → bloqueaba el día ENTERO). El flag `esVacaciones` es la única verdad; el texto no decide.
       const tieneVacaciones = sel?.bloqueos?.some((b: any) => b.esVacaciones === true) || false;
+      // Permiso que cubre TODO su turno ese día (no almuerzo ni vacaciones): la columna se va al final ese día y
+      // vuelve a su lugar cuando el permiso termina (se calcula por fecha).
+      const prof = profesionalesDb.find((x) => x.id === doc.id);
+      const permisosDia = (sel?.bloqueos ?? []).filter((b: any) => b.tipo !== 'ALMUERZO' && !b.esVacaciones);
+      const permisoDiaCompleto = !tieneVacaciones && permisosCubrenTurno(permisosDia, prof?.horaEntrada, prof?.horaSalida);
 
       const count = citasAgenda.filter((c) => c.doctorId === doc.id).length;
 
@@ -439,13 +469,15 @@ export function procesarYOrdenarDoctores(params: {
         ...doc,
         enVacaciones: tieneVacaciones,
         esAdicional: esColumnaAdicional(doc),
+        permisoDiaCompleto,
         citasCount: count,
       };
     })
     .sort((a, b) => {
-      // Orden (izq → der): 1º las personas en su orden de llegada (el API ya las trae alfabéticas),
-      // 2º las columnas «Adicional» de la sede, 3º quienes están de vacaciones (al final, a la derecha).
-      const grupo = (d: DoctorAgenda) => (d.enVacaciones ? 2 : d.esAdicional ? 1 : 0);
+      // Orden (izq → der): 1º las personas en su orden de llegada (el API ya las trae alfabéticas y deja al final de
+      // este grupo a quien tenga `ordenAgenda`, p. ej. Wenceslao), 2º las columnas «Adicional» de la sede, 3º quienes
+      // tienen PERMISO todo el día, 4º quienes están de vacaciones (al final, a la derecha).
+      const grupo = (d: DoctorAgenda) => (d.enVacaciones ? 3 : d.permisoDiaCompleto ? 2 : d.esAdicional ? 1 : 0);
       return grupo(a) - grupo(b); // sort estable: dentro de cada grupo se conserva el orden original
     });
 }
@@ -902,6 +934,17 @@ export function useIdea1AgendaData() {
     onError: (e: any) => toast.error(e?.message || 'Error al mover la cita'),
   });
 
+  // Intercambiar pacientes (26-sep-2026): se suelta una cita sobre otra y se cambian de lugar en un paso.
+  const intercambiarMutation = useMutation({
+    mutationFn: ({ citaIdA, citaIdB }: { citaIdA: string; citaIdB: string }) => citasApi.intercambiar(citaIdA, citaIdB),
+    onSuccess: (r) => {
+      invalidarAgenda(qc);
+      const n = (c: { paciente?: { nombres: string } | null }) => c.paciente?.nombres.split(' ')[0] ?? 'Paciente';
+      toast.success(`Intercambiadas: ${n(r.a)} ↔ ${n(r.b)}`, { duration: 3000 });
+    },
+    onError: (e: Error) => toast.error(e.message || 'No se pudo intercambiar'),
+  });
+
   return {
     // Store
     sedeId,
@@ -955,6 +998,8 @@ export function useIdea1AgendaData() {
     gridTemplateColsCss,
     // Acciones
     handleMoverCita: moverMutation.mutateAsync,
+    handleIntercambiarCitas: intercambiarMutation.mutateAsync,
+    isIntercambiando: intercambiarMutation.isPending,
     isMoving: moverMutation.isPending,
   };
 }

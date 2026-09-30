@@ -29,7 +29,7 @@ export function ConstanciasSection({ a, puedeRegistrar, esMedicoPrescriptor }: {
         <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3" data-testid="form-constancia">
           <p className="text-sm font-semibold text-on-surface">{TIPO_CONSTANCIA_LABEL[c.tipo]}</p>
           {c.tipo === 'constancia_atencion'
-            ? <p className="text-xs text-on-surface-variant">Deja constancia de que el paciente fue atendido hoy en esta sede, por este servicio y a cargo del profesional que lo atendió. El texto lo arma el sistema; puedes agregar una nota.</p>
+            ? <p className="text-xs text-on-surface-variant">Deja constancia de que el paciente fue atendido hoy en esta sede, por este servicio y a cargo del profesional que lo atendió. La firma y sella el médico de la cita, con su CMP. El texto lo arma el sistema; puedes agregar una nota.</p>
             : (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div><label className={LBL}>Desde el día</label><input type="date" value={c.desde} onChange={(e) => c.setDesde(e.target.value)} className={INPUT} data-testid="descanso-desde" /></div>

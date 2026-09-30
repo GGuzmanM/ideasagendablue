@@ -1,7 +1,8 @@
 import { useMemo, useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import { format } from 'date-fns';
+import { addMonths, format, startOfMonth } from 'date-fns';
+import { es } from 'date-fns/locale';
 import { sedesApi, profesionalesApi, citasApi } from '../api';
 import { almuerzosApi, type BloqueoAlmuerzo } from '../api/almuerzos';
 import { permisosApi } from '../api/permisos';
@@ -31,17 +32,34 @@ export interface ProfesionalConAlmuerzo {
   noDisponibleMotivo: 'vacaciones' | 'no_trabaja' | null;
 }
 
+/** Mes que se mira (29-sep-2026): el ACTUAL (desde hoy) o el SIGUIENTE (desde su día 1). Sirve para dejar listos los
+ *  almuerzos de quien llega a la sede el mes que viene: hoy no está en ella, así que antes no aparecía ni se le podía
+ *  asignar. Lo que se asigna en el mes siguiente empieza el día 1 y no toca el mes actual. */
+export type MesAlmuerzo = 'actual' | 'siguiente';
+
+const mayus = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+
 export function useAlmuerzosData(overrideSedeId?: string) {
   const qc = useQueryClient();
   const [sedeSelId, setSedeSelId] = useState<string>(overrideSedeId ?? '');
   const [confirmando, setConfirmando] = useState<BloqueoAlmuerzo | null>(null);
+  const [mes, setMes] = useState<MesAlmuerzo>('actual');
 
   useEffect(() => {
     if (overrideSedeId) setSedeSelId(overrideSedeId);
   }, [overrideSedeId]);
 
   const { usuario, puedeAccederSede } = useAuthStore();
-  const hoy = format(new Date(), 'yyyy-MM-dd');
+  const hoyStr = format(new Date(), 'yyyy-MM-dd');
+  const inicioSiguiente = startOfMonth(addMonths(new Date(), 1));
+  // Fecha de referencia de toda la vista: hoy, o el día 1 del mes siguiente.
+  const hoy = mes === 'siguiente' ? format(inicioSiguiente, 'yyyy-MM-dd') : hoyStr;
+  const meses: { id: MesAlmuerzo; label: string; detalle: string }[] = [
+    { id: 'actual', label: mayus(format(new Date(), 'LLLL', { locale: es })), detalle: 'desde hoy' },
+    { id: 'siguiente', label: mayus(format(inicioSiguiente, 'LLLL', { locale: es })), detalle: `desde el 1 de ${format(inicioSiguiente, 'LLLL', { locale: es })}` },
+  ];
+  /** «hoy» o «el 1 oct» para los textos de la vista. */
+  const diaLabel = mes === 'siguiente' ? `el ${format(inicioSiguiente, "d 'de' MMM", { locale: es })}` : 'hoy';
 
   const { data: sedesRaw = [] } = useQuery({
     queryKey: ['sedes'],
@@ -146,6 +164,11 @@ export function useAlmuerzosData(overrideSedeId?: string) {
     sedeId,
     setSedeSelId,
     sedeActual,
+    mes,
+    setMes,
+    meses,
+    fechaRef: hoy,
+    diaLabel,
     loading: loadingBloqueos || loadingProfs,
     disponibles,
     noDisponibles,
@@ -183,10 +206,11 @@ export function useAsignarAlmuerzo(
   profesional: { id: string; nombres: string; apellidos: string; horaEntrada?: string | null; horaSalida?: string | null },
   sedeId: string,
   onClose: () => void,
+  fechaRef?: string,
 ) {
   const qc = useQueryClient();
   const [turnoSel, setTurnoSel] = useState<string>('');
-  const hoy = format(new Date(), 'yyyy-MM-dd');
+  const hoy = fechaRef ?? format(new Date(), 'yyyy-MM-dd');
 
   // Citas de HOY del especialista → semáforo de franjas libres/ocupadas en el popover.
   const { data: citasHoy = [], isLoading: cargandoOcupacion } = useQuery({

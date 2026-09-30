@@ -105,28 +105,45 @@ export async function renovarAsignacionesMensuales(): Promise<{ renovadosBaro: n
   // Mismo criterio: manda el ÚLTIMO almuerzo recurrente de cada profesional (incluidos los borrados:
   // si lo quitaron, no resucita); solo se renueva el que terminó justo a fin de mes, y en la sede
   // donde la persona está HOY (si la movieron de sede, el almuerzo la acompaña).
+  // 28-sep-2026 (pedido de la clínica): el almuerzo se ve siempre hasta el fin del MES SIGUIENTE. El vigente que termina a
+  // fin de este mes se ALARGA (no espera al día 1) para que la agenda del mes que viene ya lo muestre y bloquee.
   let renovadosAlmuerzo = 0;
   const almIni = new Date(`${mesIniStr}T00:00:00.000Z`);
-  const almFin = new Date(`${mesFinStr}T23:59:59.999Z`);
+  const finSig = new Date(Y, M + 1, 0).getDate();
+  const [YS, MS] = M === 12 ? [Y + 1, 1] : [Y, M + 1];
+  const horizonteStr = `${YS}-${pad(MS)}-${pad(finSig)}`;
+  const almFin = new Date(`${horizonteStr}T23:59:59.999Z`);
   const hoyDb = new Date(`${hoyStr}T12:00:00.000Z`);
   const almuerzos = await prisma.bloqueoAgenda.findMany({
     where: { tipo: 'ALMUERZO', esRecurrente: true, profesional: { activo: true, deletedAt: null } },
-    select: { profesionalId: true, deletedAt: true, fechaFin: true, horaInicio: true, horaFin: true, duracionMin: true, motivo: true },
+    select: { id: true, profesionalId: true, sedeId: true, deletedAt: true, fechaFin: true, horaInicio: true, horaFin: true, duracionMin: true, motivo: true },
     orderBy: [{ fechaInicio: 'desc' }, { creadoEn: 'desc' }],
   });
-  const ultimoAlm = new Map<string, (typeof almuerzos)[number]>();
-  for (const a of almuerzos) if (!ultimoAlm.has(a.profesionalId)) ultimoAlm.set(a.profesionalId, a);
-  for (const [profId, ult] of ultimoAlm) {
-    if (ult.deletedAt || !ult.horaInicio || !ult.horaFin) continue;
-    const finStr = ymd(ult.fechaFin);
-    if (finStr >= mesIniStr || !esFinDeMes(finStr)) continue;
-    const cubre = await prisma.bloqueoAgenda.count({ where: { profesionalId: profId, tipo: 'ALMUERZO', deletedAt: null, fechaFin: { gte: almIni } } });
-    if (cubre > 0) continue;
+  const almuerzosPorProf = new Map<string, (typeof almuerzos)[number][]>();
+  for (const a of almuerzos) almuerzosPorProf.set(a.profesionalId, [...(almuerzosPorProf.get(a.profesionalId) ?? []), a]);
+  for (const [profId, lista] of almuerzosPorProf) {
     const sedeHoy = await prisma.asignacionSede.findFirst({
       where: { profesionalId: profId, fechaInicio: { lte: hoyDb }, OR: [{ fechaFin: null }, { fechaFin: { gte: hoyDb } }] },
       orderBy: { fechaInicio: 'desc' }, select: { sedeId: true },
     });
     if (!sedeHoy) continue;
+    // 24-sep-2026: manda el último almuerzo de la sede donde está HOY; uno que quedó en otra sede (p. ej. puesto por
+    // error) ya no dicta la hora del mes siguiente. Si no tiene ninguno en su sede, el último que haya (se mudó).
+    const ult = lista.find((a) => a.sedeId === sedeHoy.sedeId) ?? lista[0]!;
+    if (ult.deletedAt || !ult.horaInicio || !ult.horaFin) continue;
+    const finStr = ymd(ult.fechaFin);
+    if (finStr >= horizonteStr || !esFinDeMes(finStr)) continue;                     // ya llega al horizonte / no era mensual
+    if (finStr >= mesIniStr) {
+      // Vigente y termina a fin de este mes: se alarga hasta el horizonte (solo el de la sede donde está hoy).
+      if (ult.sedeId !== sedeHoy.sedeId) continue;
+      await prisma.bloqueoAgenda.update({ where: { id: ult.id }, data: { fechaFin: almFin } });
+      renovadosAlmuerzo++;
+      continue;
+    }
+    const cubre = await prisma.bloqueoAgenda.count({
+      where: { profesionalId: profId, tipo: 'ALMUERZO', deletedAt: null, fechaFin: { gte: almIni }, OR: [{ sedeId: null }, { sedeId: sedeHoy.sedeId }] },
+    });
+    if (cubre > 0) continue;
     await prisma.bloqueoAgenda.create({
       data: {
         profesionalId: profId, sedeId: sedeHoy.sedeId, tipo: 'ALMUERZO', esRecurrente: true, horaInicio: ult.horaInicio, horaFin: ult.horaFin,

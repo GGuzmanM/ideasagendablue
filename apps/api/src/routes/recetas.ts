@@ -9,6 +9,7 @@ import { escribirRecetaPdf } from '../services/recetaPdf';
 import { nuevoPdf, qrPng, urlVerificacionReceta } from '../services/pdfComun';
 import { filtroRecetaMedica, puedeVerRecetaMedica } from '../services/recetaVisibilidad';
 import { registrarAudit } from '../services/audit';
+import { fechaDb } from '../utils/fechaLima';
 
 // ─── Recetas e indicaciones (Fase 2) ──────────────────────────────────────────
 // Permisos por TIPO de documento:
@@ -124,6 +125,24 @@ router.delete('/favoritas/:id', requireAuth, async (req, res) => {
 });
 
 // GET /recetas/paciente/:pacienteId — historial de recetas del paciente
+// GET /recetas/del-dia?sedeId&fecha — citas del día (en esa sede) que ya tienen receta médica o indicaciones VIGENTES
+// (no anuladas). Para el Visor de Pacientes, que las pinta en verde (25-sep-2026). Solo ids y conteos, sin contenido.
+router.get('/del-dia', requireAuth, requirePermiso('hc.ver'), async (req, res) => {
+  const { sedeId, fecha } = z.object({ sedeId: uuid, fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).parse(req.query);
+  assertSede(req, sedeId);
+  const recetas = await prisma.receta.findMany({
+    where: { estado: { not: 'anulada' }, atencion: { fecha: fechaDb(fecha), cita: { sedeId } } },
+    select: { tipoDocumento: true, atencion: { select: { citaId: true } } },
+  });
+  const porCita = new Map<string, { citaId: string; recetasMedicas: number; indicaciones: number }>();
+  for (const r of recetas) {
+    const c = porCita.get(r.atencion.citaId) ?? { citaId: r.atencion.citaId, recetasMedicas: 0, indicaciones: 0 };
+    if (r.tipoDocumento === 'RECETA_MEDICA') c.recetasMedicas++; else c.indicaciones++;
+    porCita.set(r.atencion.citaId, c);
+  }
+  res.json([...porCita.values()]);
+});
+
 router.get('/paciente/:pacienteId', ...ver, async (req, res) => {
   await hc.assertAccesoPaciente(user(req), req.params.pacienteId);
   const lista = await rx.listarRecetasPaciente(req.params.pacienteId);

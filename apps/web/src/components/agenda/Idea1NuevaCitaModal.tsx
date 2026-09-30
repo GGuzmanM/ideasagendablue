@@ -6,6 +6,10 @@ import {
   type UseIdea1NuevaCitaFormProps,
 } from '../../services/idea1NuevaCitaService';
 import { RomboAlerta } from '../pacientes/RomboAlerta';
+import { ESTADOS_PAGO } from '../../utils/estadoPago';
+import { urlArchivo } from '../../utils/urlArchivo';
+import { DistritoAutocomplete, PaisAutocomplete } from '../ui/DistritoAutocomplete';
+import { UBIGEO_EXTRANJERO } from '@limablue/shared';
 import { VisorHistorialGenexis } from '../pacientes/HistorialGenexis';
 import { BaroSolicitudModal } from './BaroSolicitudModal';
 
@@ -56,7 +60,12 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
     setNpSexo,
     npCanalId,
     setNpCanalId,
+    npUbigeoId,
+    setNpUbigeoId,
+    npPaisResidencia,
+    setNpPaisResidencia,
     npEdad,
+    edadPacienteSel,
     puedeBuscarDni,
     buscarPorDocumento,
     dniConsultando,
@@ -76,6 +85,8 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
     setMembFin,
     canal,
     setCanal,
+    estadoPago,
+    setEstadoPago,
     promocionId,
     setPromocionId,
     codigoPromo,
@@ -311,6 +322,9 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
                       <div className="overflow-hidden">
                         <div className="flex items-center gap-2">
                           <p className="font-bold text-sm text-on-surface truncate">{pacienteSeleccionado.nombreCompleto}</p>
+                          {edadPacienteSel != null && (
+                            <span className="shrink-0 text-[11px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary" data-testid="edad-paciente">{edadPacienteSel} años</span>
+                          )}
                           {pacienteSeleccionado.alerta && <RomboAlerta alerta={pacienteSeleccionado.alerta} />}
                         </div>
                         <p className="text-xs text-on-surface-variant">
@@ -412,6 +426,7 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
                                   nombreCompleto: nombreComp,
                                   telefono: pac.telefono,
                                   numeroDocumento: pac.numeroDocumento,
+                                  fechaNacimiento: pac.fechaNacimiento ?? null,
                                   alerta: pac.alerta,
                                   familiares: pac.familiares,
                                 });
@@ -575,6 +590,20 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
                     />
                   </div>
                 </div>
+                {/* Dirección — distrito de residencia (igual que en «Nuevo paciente») */}
+                <div>
+                  <label className="text-xs font-bold text-on-surface-variant block mb-1">Dirección — Distrito de residencia</label>
+                  <DistritoAutocomplete
+                    value={npUbigeoId}
+                    onChange={(id) => { setNpUbigeoId(id); if (id !== UBIGEO_EXTRANJERO) setNpPaisResidencia(null); }}
+                  />
+                </div>
+                {npUbigeoId === UBIGEO_EXTRANJERO && (
+                  <div>
+                    <label className="text-xs font-bold text-on-surface-variant block mb-1">País de residencia *</label>
+                    <PaisAutocomplete value={npPaisResidencia} onChange={setNpPaisResidencia} />
+                  </div>
+                )}
                 {/* Canal de captación del paciente nuevo */}
                 <div>
                   <label className="text-xs font-bold text-on-surface-variant block mb-1">Canal de captación</label>
@@ -876,14 +905,17 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
           {/* Grid Layout for Canal & Promoción */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <label className="font-label-caps text-label-caps text-on-surface-variant text-[11px] font-bold">
-                CANAL DE RESERVA
+              {/* Resaltado en ámbar (29-sep-2026): que recepción no lo pase por alto al agendar. */}
+              {/* Misma altura de etiqueta y de caja que «Promoción»: el borde grueso es un ring (no ocupa espacio). */}
+              <label className="font-label-caps text-label-caps text-amber-800 text-[11px] font-bold flex items-center gap-1 h-4 leading-none">
+                <span className="material-symbols-outlined text-[14px] leading-none">campaign</span>CANAL DE RESERVA
               </label>
               <div className="relative">
                 <select
                   value={canal}
                   onChange={(e) => setCanal(e.target.value)}
-                  className="w-full appearance-none bg-surface-container-low border border-outline-variant rounded-xl px-4 py-3 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all text-on-surface font-medium"
+                  data-testid="canal-reserva"
+                  className="w-full appearance-none bg-amber-50 border border-amber-400 ring-1 ring-amber-400 rounded-xl px-4 py-3 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-400 transition-all text-amber-900 font-semibold"
                 >
                   {canales.map((c) => (
                     <option key={c.value} value={c.value}>
@@ -891,14 +923,14 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
                     </option>
                   ))}
                 </select>
-                <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-outline">
+                <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-amber-600">
                   expand_more
                 </span>
               </div>
             </div>
 
             <div className="space-y-2">
-              <label className="font-label-caps text-label-caps text-on-surface-variant text-[11px] font-bold">
+              <label className="font-label-caps text-label-caps text-on-surface-variant text-[11px] font-bold flex items-center h-4 leading-none">
                 PROMOCIÓN (OPCIONAL)
               </label>
               {usandoMembresia ? (
@@ -937,6 +969,61 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
                 </>
               )}
             </div>
+          </div>
+
+          {/* ESTADO DE PAGO (29-sep-2026): se puede cambiar después en el detalle de la cita. */}
+          <div className="space-y-2" data-testid="cita-estado-pago">
+            <label className="font-label-caps text-label-caps text-on-surface-variant text-[11px] font-bold flex items-center gap-1 h-4 leading-none">
+              <span className="material-symbols-outlined text-[14px] leading-none text-emerald-700">payments</span>ESTADO DE PAGO
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {ESTADOS_PAGO.map((e) => (
+                <button
+                  key={e.value}
+                  type="button"
+                  onClick={() => setEstadoPago(e.value)}
+                  data-testid={`estado-pago-${e.value}`}
+                  className={`flex items-center justify-center gap-1.5 rounded-xl border px-2 py-2.5 text-xs font-bold transition-colors ${estadoPago === e.value ? e.activo : 'bg-surface-container-low border-outline-variant text-on-surface-variant hover:bg-surface-container-high'}`}
+                >
+                  <span className="material-symbols-outlined text-[16px]">{e.icono}</span>{e.label}
+                </button>
+              ))}
+            </div>
+            {/* Comprobante (opcional): solo con pago incompleto / completo */}
+            {estadoPago !== 'pendiente' && (comprobante ? (
+              <div className="flex items-center gap-2.5 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2" data-testid="comprobante-adjunto">
+                <span className="material-symbols-outlined text-emerald-700 text-[20px]">task</span>
+                <span className="text-xs font-bold text-emerald-800 truncate flex-1">{comprobante.nombre}</span>
+                <a href={urlArchivo(comprobante.url)} target="_blank" rel="noreferrer" className="text-xs font-bold text-emerald-700 hover:underline">Ver</a>
+                <button type="button" onClick={() => setComprobante(null)} className="text-xs font-bold text-red-600 hover:underline">Quitar</button>
+              </div>
+            ) : (
+              <div
+                data-testid="comprobante-subir"
+                onClick={() => inputFileRef.current?.click()}
+                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true); }}
+                onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true); }}
+                onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(false); }}
+                onDrop={(e) => {
+                  e.preventDefault(); e.stopPropagation(); setIsDragging(false);
+                  if (e.dataTransfer.files && e.dataTransfer.files[0]) handleSubirComprobante(e.dataTransfer.files[0]);
+                }}
+                className={`flex items-center gap-2.5 rounded-xl border border-dashed px-3 py-2 cursor-pointer transition-colors ${isDragging ? 'border-emerald-500 bg-emerald-100' : 'border-emerald-400 bg-white hover:bg-emerald-50'}`}
+              >
+                <span className="material-symbols-outlined text-emerald-700 text-[20px]">{subiendo ? 'progress_activity' : 'attach_file'}</span>
+                <span className="text-xs font-semibold text-on-surface flex-1">
+                  {subiendo ? 'Subiendo comprobante…' : isDragging ? 'Suelta el comprobante aquí' : <>Adjuntar comprobante <span className="font-normal text-on-surface-variant">(opcional) · clic, arrastrar o Ctrl+V</span></>}
+                </span>
+                <span className="text-[10px] text-on-surface-variant">JPG · PNG · PDF</span>
+                <input
+                  ref={inputFileRef}
+                  type="file"
+                  accept="image/*,application/pdf"
+                  className="hidden"
+                  onChange={(e) => { if (e.target.files && e.target.files[0]) handleSubirComprobante(e.target.files[0]); e.target.value = ''; }}
+                />
+              </div>
+            ))}
           </div>
 
           {/* Selección de Profesional */}
@@ -1151,90 +1238,6 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
               placeholder="Notas internas opcionales (ej. paciente refiere dolor en el talón derecho)..."
               className="w-full bg-surface-container-low border border-outline-variant rounded-xl px-4 py-3 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all resize-none text-on-surface"
             />
-          </div>
-
-          {/* Sección Pago Anticipado */}
-          <div className="bg-[#FFFBEB] border border-[#FEF3C7] rounded-xl p-4 space-y-3">
-            <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-[#B45309] text-xl">payments</span>
-              <span className="font-body-md text-sm font-bold text-[#92400E]">
-                Pago anticipado <span className="font-normal opacity-75">(opcional)</span>
-              </span>
-            </div>
-
-            {comprobante ? (
-              <div className="p-3 bg-white rounded-xl border border-[#F59E0B]/40 flex items-center justify-between">
-                <div className="flex items-center gap-2.5 overflow-hidden">
-                  <span className="material-symbols-outlined text-[#B45309]">description</span>
-                  <span className="text-xs font-bold text-[#92400E] truncate">{comprobante.nombre}</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setComprobante(null)}
-                  className="text-xs font-bold text-red-600 hover:underline cursor-pointer"
-                >
-                  Quitar
-                </button>
-              </div>
-            ) : (
-              <div
-                onClick={() => inputFileRef.current?.click()}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setIsDragging(true);
-                }}
-                onDragEnter={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setIsDragging(true);
-                }}
-                onDragLeave={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setIsDragging(false);
-                }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setIsDragging(false);
-                  if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-                    handleSubirComprobante(e.dataTransfer.files[0]);
-                  }
-                }}
-                className={`border-2 border-dashed rounded-xl p-5 flex flex-col items-center justify-center text-center cursor-pointer transition-all group ${
-                  isDragging
-                    ? 'border-amber-500 bg-amber-100/80 scale-[1.02] shadow-md'
-                    : 'border-[#F59E0B]/40 bg-white/60 hover:bg-white hover:border-[#F59E0B]/70'
-                }`}
-              >
-                <span className={`material-symbols-outlined text-2xl mb-1 transition-transform ${
-                  isDragging ? 'text-amber-700 scale-125 animate-bounce' : 'text-[#B45309]/50 group-hover:scale-110'
-                }`}>
-                  {isDragging ? 'cloud_upload' : 'upload_file'}
-                </span>
-                <p className="font-body-md text-xs text-[#92400E] font-bold">
-                  {subiendo
-                    ? 'Subiendo comprobante...'
-                    : isDragging
-                    ? '¡Suelte el comprobante aquí!'
-                    : 'Haz clic, arrastra o pega (Ctrl+V) el comprobante'}
-                </p>
-                <p className="font-body-md text-[11px] text-[#92400E]/70 mt-0.5">JPG · PNG · PDF (máx. 10MB)</p>
-                <input
-                  ref={inputFileRef}
-                  type="file"
-                  accept="image/*,application/pdf"
-                  className="hidden"
-                  onChange={(e) => {
-                    if (e.target.files && e.target.files[0]) {
-                      handleSubirComprobante(e.target.files[0]);
-                    }
-                  }}
-                />
-              </div>
-            )}
-            <p className="text-[11px] text-[#92400E]/70 italic">Sin comprobante la cita igual se crea con normalidad.</p>
           </div>
 
           {/* Visor Historial Genexis (Modal Secundario) */}

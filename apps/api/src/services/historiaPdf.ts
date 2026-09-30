@@ -136,7 +136,8 @@ export function escribirHistoriaPdf(doc: Doc, h: HistoriaParaPdf, opts: { fotos?
     const prof = `${a.profesional.nombres} ${a.profesional.apellidos}`.trim();
     const estado = a.estado === 'cerrada' ? `cerrada${a.cerradaEn ? ` el ${fechaLima(a.cerradaEn)}` : ''}` : 'abierta';
     parrafo(`${prof} (${PROFESION[a.profesional.tipo] ?? a.profesional.tipo}) · Atención ${estado}`, 'Profesional', { tam: 8.5, color: GRIS });
-    parrafo(a.motivoConsulta, 'Motivo de consulta');
+    parrafo(a.motivoConsulta || '—', 'Motivo de consulta');
+    if (a.anamnesis) parrafo(a.anamnesis, 'Anamnesis'); // 26-sep-2026: campo propio de la atención
 
     if (a.diagnosticos.length) {
       subtitulo('Diagnósticos');

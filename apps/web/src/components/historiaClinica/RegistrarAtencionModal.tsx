@@ -30,7 +30,7 @@ export function RegistrarAtencionModal({ cita, nombrePaciente, onClose, onCreada
             <div><span className={LBL}>Estado</span><b>{ESTADO_CITA[estado] ?? cita.estado}</b></div>
           </div>
           <div>
-            <label className={LBL}>Motivo de consulta *</label>
+            <label className={LBL}>Motivo de consulta (opcional: se puede llenar después)</label>
             <textarea value={f.motivoConsulta} onChange={(e) => f.setMotivoConsulta(e.target.value)} rows={3} autoFocus maxLength={500} placeholder="Ej. Dolor y engrosamiento de la uña del 1.er dedo derecho" className={INPUT} />
           </div>
           <div>

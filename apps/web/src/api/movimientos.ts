@@ -119,11 +119,13 @@ export const movimientosApi = {
       sede: string;
     }>(`/movimientos/${id}/impacto`),
 
-  verificarCitas: (params: { profesionalId: string; fechaInicio: string; fechaFin?: string | null }) =>
+  // sedeId = sede DESTINO del movimiento: sus citas no se listan (no estorban).
+  verificarCitas: (params: { profesionalId: string; fechaInicio: string; fechaFin?: string | null; sedeId?: string | null }) =>
     api.get<VerificarCitasResult>('/movimientos/verificar-citas', {
       profesionalId: params.profesionalId,
       fechaInicio: params.fechaInicio,
       ...(params.fechaFin ? { fechaFin: params.fechaFin } : {}),
+      ...(params.sedeId ? { sedeId: params.sedeId } : {}),
     } as Record<string, string>),
 
   gestionarCita: (id: string, data: { estado: 'cancelada' | 'reprogramada'; motivo?: string }) =>

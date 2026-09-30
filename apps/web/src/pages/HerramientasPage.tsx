@@ -259,7 +259,7 @@ export function HerramientasPage() {
                 exportTab === 'excel' ? 'bg-emerald-600 text-white shadow-md' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
               }`}
             >
-              <span>📄</span> Lista de Citas (CSV)
+              <span>📄</span> Lista de Citas (Excel)
             </button>
             <button
               onClick={() => setExportTab('reactivacion')}
@@ -471,7 +471,7 @@ function ExcelTool() {
   const token = useAuthStore(s => s.token);
   const [fecha, setFecha] = useState<Date>(() => proximoDiaHabil(startOfDay(new Date())));
   const [sedeId, setSedeId] = useState<string>('');
-  const [exportando, setExportando] = useState(false);
+  const [exportando, setExportando] = useState<false | 'csv' | 'excel'>(false);
 
   const { data: sedes = [] } = useQuery<Sede[]>({
     queryKey: ['sedes-herramientas'],
@@ -483,12 +483,13 @@ function ExcelTool() {
   const fechaDisplay = format(fecha, "EEEE d 'de' MMMM, yyyy", { locale: es });
   const sedeSeleccionada = sedes.find(s => s.id === sedeId);
 
-  const descargar = async () => {
-    setExportando(true);
+  // `excel` (29-sep-2026): DNI, nombre, sede, servicio, hora, teléfono, estado y ¿pagado?, con los mismos filtros.
+  const descargar = async (formato: 'csv' | 'excel' = 'csv') => {
+    setExportando(formato);
     try {
       const params = new URLSearchParams({ fecha: fechaStr });
       if (sedeId) params.set('sedeId', sedeId);
-      const res = await fetch(`/api/v1/exportar/citas?${params}`, {
+      const res = await fetch(`/api/v1/exportar/${formato === 'excel' ? 'citas-excel' : 'citas'}?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) {
@@ -500,13 +501,13 @@ function ExcelTool() {
       const a = document.createElement('a');
       a.href = url;
       const sufijo = sedeSeleccionada ? `-${sedeSeleccionada.nombre.replace(/\s+/g, '-').toLowerCase()}` : '';
-      a.download = `citas-limablue-${fechaStr}${sufijo}.csv`;
+      a.download = `citas-limablue-${fechaStr}${sufijo}.${formato === 'excel' ? 'xlsx' : 'csv'}`;
       a.click();
       URL.revokeObjectURL(url);
       const sedeLabel = sedeSeleccionada ? ` · ${sedeSeleccionada.nombre}` : ' · Todas las sedes';
-      toast.success(`CSV descargado — ${fechaDisplay}${sedeLabel}`);
+      toast.success(`${formato === 'excel' ? 'Excel' : 'CSV'} descargado — ${fechaDisplay}${sedeLabel}`);
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'No se pudo descargar el CSV');
+      toast.error(e instanceof Error ? e.message : 'No se pudo descargar el archivo');
     } finally {
       setExportando(false);
     }
@@ -524,8 +525,8 @@ function ExcelTool() {
             </svg>
           </div>
           <div>
-            <h2 className="text-white font-bold text-base">Lista de citas · CSV</h2>
-            <p className="text-emerald-100 text-xs">Exportar agenda del día (CSV, solo texto) para confirmaciones WhatsApp</p>
+            <h2 className="text-white font-bold text-base">Lista de citas · Excel</h2>
+            <p className="text-emerald-100 text-xs">Exportar las citas del día con su estado y pago</p>
           </div>
         </div>
       </div>
@@ -605,39 +606,30 @@ function ExcelTool() {
           </div>
         </div>
 
-        {/* Campos incluidos */}
-        <div className="rounded-xl bg-slate-50 border border-slate-100 p-3.5">
-          <p className="text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wide">Columnas del CSV</p>
+        {/* Columnas del Excel (29-sep-2026: único formato; mismos filtros de día y sede de arriba) */}
+        <div className="rounded-xl bg-slate-50 border border-slate-100 p-3.5" data-testid="excel-control">
+          <p className="text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wide">Columnas del Excel</p>
           <div className="grid grid-cols-2 gap-y-1 gap-x-4">
-            {['Número (+51 si son 9 dígitos)', 'Nombre completo', 'Día', 'Hora', 'Sede', 'Dirección'].map(c => (
+            {['DNI', 'Nombre completo', 'Sede', 'Servicio', 'Hora cita', 'Teléfono', 'Estado', '¿Pagado?'].map(c => (
               <div key={c} className="flex items-center gap-1.5 text-xs text-slate-600">
                 <span className="w-3.5 h-3.5 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold text-xxs flex-shrink-0">✓</span>
                 {c}
               </div>
             ))}
           </div>
-          <p className="mt-2 text-xxs text-slate-400">CSV de solo texto · Solo citas activas (excluye canceladas y no-shows) · Respeta otros códigos de país (+1, etc.)</p>
+          <p className="mt-2 text-xxs text-slate-400">Todas las citas del día (también canceladas y no vino: la columna Estado lo indica) · Encabezado con filtros de Excel</p>
         </div>
 
         {/* Botón */}
         <button
-          onClick={descargar}
-          disabled={exportando}
+          onClick={() => descargar('excel')}
+          disabled={!!exportando}
           className="w-full flex items-center justify-center gap-2 py-3 rounded-xl font-semibold text-sm bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 transition-all shadow-sm shadow-emerald-900/20"
         >
           {exportando ? (
-            <>
-              <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              Generando CSV…
-            </>
+            <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Generando Excel…</>
           ) : (
-            <>
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M12 10v6m0 0l-3-3m3 3l3-3M3 17v2a2 2 0 002 2h14a2 2 0 002-2v-2" />
-              </svg>
-              Descargar CSV
-            </>
+            <><span className="material-symbols-outlined text-[18px]">download</span>Descargar Excel</>
           )}
         </button>
       </div>

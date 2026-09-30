@@ -49,6 +49,7 @@ import { HorariosRestriccionesPage } from './pages/HorariosRestriccionesPage';
 import { HistoriaClinicaPage } from './pages/HistoriaClinicaPage';
 import { BandejaClinicaPage } from './pages/BandejaClinicaPage';
 import { VisorPacientesPage } from './pages/VisorPacientesPage';
+import { rutaInicio } from './utils/rutaInicio';
 
 // Guard de SESIÓN: sin token → directo a /login. Está suscrito al store, así que al cerrar sesión
 // (logout pone token=null) redirige AL INSTANTE — no se queda la vista/sidebar hasta el próximo clic.
@@ -56,6 +57,22 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   const token = useAuthStore(s => s.token);
   if (!token) return <Navigate to="/login" replace />;
   return <>{children}</>;
+}
+
+// Inicio según el rol: médicos → Visor de Pacientes; el resto → agenda.
+function IrAlInicio() {
+  const usuario = useAuthStore(s => s.usuario);
+  return <Navigate to={rutaInicio(usuario)} replace />;
+}
+
+// Sin ninguna sección permitida por su rol (caso raro): se avisa en vez de mostrar algo que no le corresponde.
+function SinPermisos() {
+  return (
+    <div className="p-8 text-center text-sm text-on-surface-variant">
+      <span className="material-symbols-outlined text-5xl mb-2 block">lock</span>
+      Tu usuario no tiene acceso a ninguna sección todavía. Pide a administración que revise los permisos de tu rol.
+    </div>
+  );
 }
 
 function RequirePermiso({ permiso, children }: { permiso: string | string[]; children: React.ReactNode }) {
@@ -68,8 +85,9 @@ function RequirePermiso({ permiso, children }: { permiso: string | string[]; chi
     ? permiso.some(p => perms.includes(p))
     : perms.includes(permiso);
 
+  // Sin permiso: aunque escriba la dirección a mano (o toque el logo), va a SU página de inicio, no a esta.
   if (!tiene) {
-    return <Navigate to="/AgendaPrincipal" replace />;
+    return <Navigate to={rutaInicio(usuario)} replace />;
   }
 
   return <>{children}</>;
@@ -85,21 +103,22 @@ export default function App() {
 
   return (
     <Routes>
-      <Route path="/login" element={token ? <Navigate to="/AgendaPrincipal" replace /> : <LoginPage />} />
+      <Route path="/login" element={token ? <IrAlInicio /> : <LoginPage />} />
       {/* Vista principal de la agenda */}
-      <Route path="/AgendaPrincipal" element={<RequireAuth><Idea1AgendaPage /></RequireAuth>} />
+      <Route path="/AgendaPrincipal" element={<RequireAuth><RequirePermiso permiso="citas.ver"><Idea1AgendaPage /></RequirePermiso></RequireAuth>} />
       {/* Compatibilidad: la URL anterior /idea1 redirige a la nueva (bookmarks) */}
       <Route path="/idea1" element={<Navigate to="/AgendaPrincipal" replace />} />
       {/* Vista de impresión (sin Layout/sidebar) — matriz A4 horizontal para PDF */}
-      <Route path="/imprimir/composicion-sede" element={<ComposicionImprimirPage />} />
+      <Route path="/imprimir/composicion-sede" element={<RequireAuth><RequirePermiso permiso="movimientos.editar"><ComposicionImprimirPage /></RequirePermiso></RequireAuth>} />
       {/* Comprobantes del día en una sola hoja (cierre) */}
-      <Route path="/imprimir/comprobantes" element={<ComprobantesImprimirPage />} />
+      <Route path="/imprimir/comprobantes" element={<RequireAuth><RequirePermiso permiso="citas.ver"><ComprobantesImprimirPage /></RequirePermiso></RequireAuth>} />
       {/* Cambios de personal del mes (movimientos) — A4 vertical para PDF */}
-      <Route path="/imprimir/movimientos" element={<MovimientosImprimirPage />} />
+      <Route path="/imprimir/movimientos" element={<RequireAuth><RequirePermiso permiso="movimientos.ver"><MovimientosImprimirPage /></RequirePermiso></RequireAuth>} />
       {/* PÚBLICA (sin login): verificación de recetas desde el QR del PDF */}
       <Route path="/verificar/:codigo" element={<VerificarRecetaPage />} />
       <Route element={<RequireAuth><Layout /></RequireAuth>}>
-        <Route path="/" element={<Navigate to="/AgendaPrincipal" replace />} />
+        <Route path="/" element={<IrAlInicio />} />
+        <Route path="/sin-permisos" element={<SinPermisos />} />
         {/* Agenda antigua DESHABILITADA: se redirige a la agenda principal (ya no se usa). */}
         <Route path="/agenda-vieja" element={<Navigate to="/AgendaPrincipal" replace />} />
         <Route path="/pacientes" element={<RequirePermiso permiso="pacientes.ver"><PacientesPage /></RequirePermiso>} />
@@ -150,7 +169,7 @@ export default function App() {
         <Route path="/analytics/agentes/:agenteId" element={<RequirePermiso permiso="analytics.ver"><AgenteDetallePage /></RequirePermiso>} />
         <Route path="/analytics/:kpi" element={<RequirePermiso permiso="analytics.ver"><AnalyticsDetallePage /></RequirePermiso>} />
       </Route>
-      <Route path="*" element={<Navigate to="/AgendaPrincipal" replace />} />
+      <Route path="*" element={<IrAlInicio />} />
     </Routes>
   );
 }

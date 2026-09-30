@@ -44,6 +44,8 @@ export function usePermisosData(overrideSedeId?: string) {
     }
   }, [overrideSedeId]);
   const [fecha, setFecha] = useState<string>(hoyISO());
+  // Permiso por RANGO de fechas (solo tipo «Permiso»): null = un solo día.
+  const [fechaHasta, setFechaHasta] = useState<string | null>(null);
 
   // Formulario — se puede bloquear a uno o VARIOS profesionales a la vez.
   const [profesionalIds, setProfesionalIds] = useState<string[]>([]);
@@ -71,7 +73,7 @@ export function usePermisosData(overrideSedeId?: string) {
 
   // Pacientes en conflicto
   const [citasConflicto, setCitasConflicto] = useState<
-    { horaInicio: string; paciente: string; telefono: string; servicio: string; estado: string }[]
+    { fecha?: string; horaInicio: string; paciente: string; telefono: string; servicio: string; estado: string }[]
   >([]);
 
   // Pacientes cuyas citas se CANCELARON al reportar enfermedad
@@ -198,12 +200,13 @@ export function usePermisosData(overrideSedeId?: string) {
         profesionalIds,
         sedeId,
         fecha,
+        ...(fechaHasta && fechaHasta > fecha ? { fechaFin: fechaHasta } : {}),
         horaInicio: desde,
         horaFin: hasta,
         motivo: motivo.trim(),
       }),
     onSuccess: (r) => {
-      qc.invalidateQueries({ queryKey: ['permisos', sedeId, fecha] });
+      qc.invalidateQueries({ queryKey: ['permisos'] });
       qc.invalidateQueries({ queryKey: ['permisos-agenda'] });
       const conflictos = r.conflictos.flatMap((c) =>
         c.citas.map((x) => ({ ...x, paciente: `${c.nombre}: ${x.paciente}` })),
@@ -212,6 +215,7 @@ export function usePermisosData(overrideSedeId?: string) {
       if (r.creados.length > 0) {
         toast.success(
           `Bloqueado(s): ${r.creados.map((c) => c.nombre).join(', ')}` +
+            ((r.dias ?? 1) > 1 ? ` · ${r.dias} días` : '') +
             (r.conflictos.length > 0
               ? ` · No se pudo con ${r.conflictos
                   .map((c) => c.nombre)
@@ -222,7 +226,7 @@ export function usePermisosData(overrideSedeId?: string) {
         if (r.conflictos.length === 0) setMotivo('');
       } else {
         toast.error(
-          `Ninguno se bloqueó: ${r.conflictos.map((c) => c.nombre).join(', ')} tienen pacientes en ese rango`,
+          `Ninguno se bloqueó: ${r.conflictos.map((c) => c.nombre).join(', ')} tienen pacientes o permisos en ese rango`,
         );
       }
     },
@@ -372,6 +376,7 @@ export function usePermisosData(overrideSedeId?: string) {
   };
 
   const rangoOk = !!desde && !!hasta && hasta > desde;
+  const fechasOk = modo !== 'individual' || !fechaHasta || fechaHasta >= fecha;
   const valido =
     modo === 'vacaciones'
       ? profesionalIds.length > 0 &&
@@ -383,7 +388,7 @@ export function usePermisosData(overrideSedeId?: string) {
           ? motivo.trim().length >= 3
           : modo === 'enfermedad'
           ? profesionalIds.length === 1
-          : profesionalIds.length > 0 && motivo.trim().length >= 3);
+          : profesionalIds.length > 0 && motivo.trim().length >= 3 && fechasOk);
 
   const enviando =
     crearMut.isPending ||
@@ -418,6 +423,8 @@ export function usePermisosData(overrideSedeId?: string) {
     sedeActual,
     fecha,
     setFecha,
+    fechaHasta,
+    setFechaHasta,
     modo,
     cambiarModo,
     profesionalIds,

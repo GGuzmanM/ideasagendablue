@@ -16,10 +16,12 @@ function MiniHorarioDia({
   rango,
   bloques,
   turnoSel,
+  diaLabel,
 }: {
   rango: { iniMin: number; finMin: number };
   bloques: BloqueDia[];
   turnoSel: string;
+  diaLabel: string;
 }) {
   const total = rango.finMin - rango.iniMin;
   const pct = (min: number) => ((min - rango.iniMin) / total) * 100;
@@ -35,7 +37,7 @@ function MiniHorarioDia({
   return (
     <div className="mb-3">
       <p className="font-label-caps text-[10px] text-on-surface-variant uppercase tracking-wider mb-1.5">
-        Franja de almuerzo hoy ({fmt(rango.iniMin)} – {fmt(rango.finMin)})
+        Franja de almuerzo {diaLabel} ({fmt(rango.iniMin)} – {fmt(rango.finMin)})
       </p>
       <div className="relative h-9 bg-tertiary-fixed/25 rounded-lg border border-outline-variant/40 overflow-hidden">
         {/* Divisores por hora (los 3 turnos de la franja) */}
@@ -87,15 +89,19 @@ function PopoverAsignar({
   profesional,
   sedeId,
   onClose,
+  fechaRef,
+  diaLabel,
 }: {
   profesional: ProfesionalConAlmuerzo;
   sedeId: string;
   onClose: () => void;
+  fechaRef: string;
+  diaLabel: string;
 }) {
   const {
     turnoSel, setTurnoSel, ocupacion, cargandoOcupacion, crearMutation,
     rangoDia, bloquesDia, conflicto, citasEnTurnoSel, confirmar,
-  } = useAsignarAlmuerzo(profesional, sedeId, onClose);
+  } = useAsignarAlmuerzo(profesional, sedeId, onClose, fechaRef);
 
   return (
     <div className="absolute right-0 top-full mt-2 z-50 w-80 bg-surface-container-lowest border border-outline-variant/50 rounded-xl shadow-xl p-4">
@@ -105,7 +111,7 @@ function PopoverAsignar({
       {cargandoOcupacion ? (
         <div className="h-14 mb-3 rounded-lg bg-surface-container-low animate-pulse" />
       ) : (
-        <MiniHorarioDia rango={rangoDia} bloques={bloquesDia} turnoSel={turnoSel} />
+        <MiniHorarioDia rango={rangoDia} bloques={bloquesDia} turnoSel={turnoSel} diaLabel={diaLabel} />
       )}
 
       <p className="font-body-md text-xs text-on-surface-variant mb-2">
@@ -147,7 +153,7 @@ function PopoverAsignar({
                     : 'bg-amber-100 text-amber-800',
                 )}
               >
-                {cargandoOcupacion ? '…' : libre ? 'Libre hoy' : `${t.citas} cita${t.citas === 1 ? '' : 's'} hoy`}
+                {cargandoOcupacion ? '…' : libre ? `Libre ${diaLabel}` : `${t.citas} cita${t.citas === 1 ? '' : 's'} ${diaLabel}`}
               </span>
             </button>
           );
@@ -179,7 +185,7 @@ function PopoverAsignar({
           onClick={confirmar}
           disabled={!turnoSel || conflicto || crearMutation.isPending}
           className="flex-1 py-2 text-xs font-bold text-on-primary bg-primary hover:opacity-90 disabled:opacity-40 rounded-lg transition-all shadow-sm shadow-primary/20"
-          title={conflicto ? 'Tiene cita en esa franja hoy — elige otro turno' : undefined}
+          title={conflicto ? `Tiene cita en esa franja ${diaLabel} — elige otro turno` : undefined}
         >
           {crearMutation.isPending ? '…' : 'Confirmar'}
         </button>
@@ -244,9 +250,13 @@ function FilaProfesional({
   abierto,
   onToggle,
   onClose,
+  fechaRef,
+  diaLabel,
 }: {
   prof: ProfesionalConAlmuerzo;
   sedeId: string;
+  fechaRef: string;
+  diaLabel: string;
   onEliminar: (b: BloqueoAlmuerzo) => void;
   // Estado del selector controlado por el PADRE: solo una fila abierta a la vez.
   abierto: boolean;
@@ -284,7 +294,7 @@ function FilaProfesional({
             )}
             {prof.noDisponibleMotivo === 'no_trabaja' && (
               <span className="ml-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant border border-outline-variant/50">
-                No trabaja hoy
+                No trabaja {diaLabel}
               </span>
             )}
           </div>
@@ -309,12 +319,12 @@ function FilaProfesional({
             <button
               onClick={onToggle}
               className="px-3 py-1.5 rounded-lg border border-outline-variant text-primary font-headline-sm text-xs hover:bg-primary/5 transition-colors flex items-center gap-1 font-semibold"
-              title="Cambiar horario de almuerzo desde hoy hasta fin de mes"
+              title={`Cambiar horario de almuerzo desde ${diaLabel} hasta fin del mes siguiente`}
             >
               <span className="material-symbols-outlined text-[16px]">edit</span> Cambiar
             </button>
             {abierto && (
-              <PopoverAsignar profesional={prof} sedeId={sedeId} onClose={onClose} />
+              <PopoverAsignar profesional={prof} sedeId={sedeId} onClose={onClose} fechaRef={fechaRef} diaLabel={diaLabel} />
             )}
           </div>
           <button
@@ -334,7 +344,7 @@ function FilaProfesional({
             <span className="material-symbols-outlined text-[18px]">add</span> Asignar
           </button>
           {abierto && (
-            <PopoverAsignar profesional={prof} sedeId={sedeId} onClose={onClose} />
+            <PopoverAsignar profesional={prof} sedeId={sedeId} onClose={onClose} fechaRef={fechaRef} diaLabel={diaLabel} />
           )}
         </div>
       )}
@@ -357,6 +367,11 @@ export function AlmuerzosPage({
     sedeId,
     setSedeSelId,
     sedeActual,
+    mes,
+    setMes,
+    meses,
+    fechaRef,
+    diaLabel,
     loading,
     disponibles,
     noDisponibles,
@@ -371,7 +386,7 @@ export function AlmuerzosPage({
   // abierto en el padre. Abrir otro (o el mismo) cierra el anterior — no se apilan.
   const [abiertoId, setAbiertoId] = useState<string | null>(null);
   // Al cambiar de sede, cerrar cualquier selector abierto (la lista cambia).
-  useEffect(() => { setAbiertoId(null); }, [sedeId]);
+  useEffect(() => { setAbiertoId(null); }, [sedeId, mes]);
 
   return (
     <div className="flex-1 overflow-y-auto bg-background text-on-background">
@@ -413,6 +428,30 @@ export function AlmuerzosPage({
           </div>
         )}
 
+        {/* Mes: el actual (desde hoy) o el siguiente (desde su día 1), para dejar listos los almuerzos de quien llega */}
+        <div className="mb-4 flex items-center gap-3 flex-wrap" data-testid="almuerzos-mes">
+          <div className="flex gap-1 bg-surface-container-low rounded-lg p-1">
+            {meses.map((m) => (
+              <button
+                key={m.id}
+                onClick={() => setMes(m.id)}
+                className={cn(
+                  'px-4 py-1.5 rounded-md text-sm font-semibold transition-colors',
+                  mes === m.id ? 'bg-primary text-on-primary shadow-sm' : 'text-on-surface-variant hover:bg-surface-container-high',
+                )}
+              >
+                {m.label} <span className="font-normal text-xs opacity-80">· {m.detalle}</span>
+              </button>
+            ))}
+          </div>
+          {mes === 'siguiente' && (
+            <p className="text-xs text-on-surface-variant flex items-center gap-1">
+              <span className="material-symbols-outlined text-base text-primary">info</span>
+              Personal que estará en la sede {diaLabel}. Lo que asignes aquí empieza {diaLabel} y no cambia el mes actual.
+            </p>
+          )}
+        </div>
+
         {loading ? (
           <div className="flex justify-center py-12">
             <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -420,7 +459,7 @@ export function AlmuerzosPage({
         ) : disponibles.length === 0 && noDisponibles.length === 0 ? (
           <div className="text-center py-12 text-on-surface-variant">
             <p className="text-2xl mb-2">🍽</p>
-            <p className="text-sm">No hay profesionales elegibles en esta sede</p>
+            <p className="text-sm">No hay profesionales elegibles en esta sede {diaLabel}</p>
           </div>
         ) : (
           <>
@@ -431,6 +470,8 @@ export function AlmuerzosPage({
                   key={prof.id}
                   prof={prof}
                   sedeId={sedeId}
+                  fechaRef={fechaRef}
+                  diaLabel={diaLabel}
                   onEliminar={setConfirmando}
                   abierto={abiertoId === prof.id}
                   onToggle={() => setAbiertoId((prev) => (prev === prof.id ? null : prof.id))}
@@ -439,7 +480,7 @@ export function AlmuerzosPage({
               ))}
               {disponibles.length === 0 && (
                 <div className="p-6 bg-surface-container-lowest text-center text-sm text-on-surface-variant">
-                  Ningún profesional disponible hoy en esta sede.
+                  Ningún profesional disponible {diaLabel} en esta sede.
                 </div>
               )}
             </div>
@@ -448,7 +489,7 @@ export function AlmuerzosPage({
             {noDisponibles.length > 0 && (
               <details className="mt-4 group">
                 <summary className="cursor-pointer text-xs font-semibold text-on-surface-variant hover:text-on-surface select-none">
-                  No disponibles hoy ({noDisponibles.length}) — vacaciones o sin turno ▾
+                  No disponibles {diaLabel} ({noDisponibles.length}) — vacaciones o sin turno ▾
                 </summary>
                 <div className="mt-2 bg-surface-container-lowest rounded-xl border border-outline-variant/50 shadow-sm overflow-visible flex flex-col gap-[1px] bg-outline-variant/20">
                   {noDisponibles.map((prof) => (
@@ -456,6 +497,8 @@ export function AlmuerzosPage({
                       key={prof.id}
                       prof={prof}
                       sedeId={sedeId}
+                      fechaRef={fechaRef}
+                      diaLabel={diaLabel}
                       onEliminar={setConfirmando}
                       abierto={abiertoId === prof.id}
                       onToggle={() => setAbiertoId((prev) => (prev === prof.id ? null : prof.id))}

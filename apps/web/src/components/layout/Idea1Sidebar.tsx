@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '../../utils/cn';
 import { useAuthStore } from '../../stores/authStore';
+import { rutaInicio } from '../../utils/rutaInicio';
 import { useContadorControles } from '../../services/controlesService';
 
 // Menú plegado (solo iconos): preferencia del equipo que se usa, guardada en el navegador.
@@ -24,7 +25,7 @@ export const idea1NavItems: NavItem[] = [
   { to: '/AgendaPrincipal', label: 'Agenda', icon: 'calendar_today', permiso: 'citas.ver' },
   { to: '/pacientes', label: 'Pacientes', icon: 'groups', permiso: 'pacientes.ver' },
   // Vista rápida de quienes ya llegaron hoy (médicos, administración y coordinación).
-  { to: '/pacientes-del-dia', label: 'Pacientes del día', icon: 'clinical_notes', permiso: ['medico.autoasignar', 'medico.asignar'] },
+  { to: '/pacientes-del-dia', label: 'Visor de Pacientes', icon: 'clinical_notes', permiso: ['medico.autoasignar', 'medico.asignar'] },
   { to: '/historia-clinica/bandeja', label: 'Bandeja clínica', icon: 'inbox', permiso: 'hc.ver' },
   { to: '/horarios', label: 'Horarios y Restricciones', icon: 'schedule', permiso: 'horarios.ver' },
   { to: '/herramientas', label: 'Herramientas', icon: 'home_repair_service', permiso: HERRAMIENTAS_PERMS },
@@ -64,7 +65,7 @@ export function Idea1Sidebar() {
     >
       {/* Header / Logo + botón para plegar/desplegar */}
       <div className={cn('mb-6 flex items-center', plegado ? 'flex-col gap-2 px-0' : 'gap-2 px-3')}>
-        <Link to="/AgendaPrincipal" className={cn('flex items-center gap-3 group min-w-0', plegado ? 'justify-center' : 'flex-1')} title="Limablue Agenda">
+        <Link to={rutaInicio(usuario)} className={cn('flex items-center gap-3 group min-w-0', plegado ? 'justify-center' : 'flex-1')} title="Limablue Agenda">
           <div className="w-12 h-12 flex items-center justify-center group-hover:scale-105 transition-transform shrink-0">
             <img src="/logo-login.png" alt="Limablue" className="w-full h-full object-contain" />
           </div>

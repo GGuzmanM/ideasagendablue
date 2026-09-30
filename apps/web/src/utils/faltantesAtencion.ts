@@ -4,9 +4,10 @@
 export function faltantesAtencion(a: {
   diagnosticos: { principal: boolean }[]; notas: unknown[]; procedimientos: unknown[];
   marcasPodograma: unknown[]; imagenesPodograma: unknown[]; recetas: { estado: string }[];
-  dibujosSilueta?: { anotaciones?: unknown[] }[];
+  dibujosSilueta?: { anotaciones?: unknown[] }[]; motivoConsulta?: string | null;
 }): string[] {
   const f: string[] = [];
+  if (a.motivoConsulta !== undefined && !(a.motivoConsulta ?? '').trim()) f.push('Falta el motivo de consulta');
   if (!a.diagnosticos.length) f.push('Sin diagnóstico');
   else if (!a.diagnosticos.some((d) => d.principal)) f.push('Sin diagnóstico principal');
   if (!a.notas.length) f.push('Sin nota de evolución');

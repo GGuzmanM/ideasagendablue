@@ -40,6 +40,8 @@ import { verificarSecretosAlArranque } from './utils/verificarSecretos';
 import { globalLimiter, analyticsLimiter } from './middleware/rateLimits';
 
 import citasRouter, { autocompletarCitasPorTiempo } from './routes/citas';
+import reboteRouter from './routes/rebote';
+import { vencerRebotes } from './services/reboteService';
 import usersRouter from './routes/users';
 import rolesRouter from './routes/roles';
 import disponibilidadRouter from './routes/disponibilidad';
@@ -198,6 +200,7 @@ app.use(`${v1}/auth`, authRouter);
 app.use(`${v1}/users`, usersRouter);
 app.use(`${v1}/roles`, rolesRouter);
 app.use(`${v1}/citas`, citasRouter);
+app.use(`${v1}/rebote`, reboteRouter); // Rebote: bandeja de rellamada (apagado salvo REBOTE_HABILITADO=1)
 app.use(`${v1}/disponibilidad`, disponibilidadRouter);
 app.use(`${v1}/pacientes`, pacientesRouter);
 app.use(`${v1}/reniec`, reniecRouter);
@@ -312,7 +315,10 @@ setInterval(recalcAgregados, 6 * 60 * 60_000).unref();
 const autocompletar = () => void cerrarTiemposAbandonados()
   .catch((e) => console.error('[tiempos] error al cerrar tratamientos sin FIN:', e))
   .then(() => autocompletarCitasPorTiempo())
-  .catch((e) => console.error('[autocompletar] error:', e));
+  .catch((e) => console.error('[autocompletar] error:', e))
+  // Rebote: a los 30 días sin reagendar la cita se cancela sola (sin filas → no hace nada).
+  .then(() => vencerRebotes())
+  .catch((e) => console.error('[rebote] error al vencer:', e));
 setTimeout(autocompletar, 15_000); // al arrancar (deja que la BD/redis estén listos)
 setInterval(autocompletar, 5 * 60_000).unref();
 

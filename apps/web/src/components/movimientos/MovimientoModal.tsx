@@ -38,18 +38,13 @@ function PanelCitasPendientes({
   nombreProfesional,
   fechaInicio,
   fechaFin,
-  onGestionar,
-  gestionando,
 }: {
   verificacion: VerificarCitasResult;
   nombreProfesional: string;
   fechaInicio: string;
   fechaFin: string | null;
-  onGestionar: (citaId: string, estado: 'cancelada' | 'reprogramada') => Promise<void>;
-  gestionando: string | null;
 }) {
   const [expandido, setExpandido] = useState(true);
-  const [menuId, setMenuId] = useState<string | null>(null);
 
   const copiarLista = () => {
     const desde = fechaInicio ? format(parseISO(fechaInicio), 'd MMM', { locale: es }) : '';
@@ -87,7 +82,7 @@ function PanelCitasPendientes({
             <span>⚠</span> {verificacion.totalCitas} cita{verificacion.totalCitas !== 1 ? 's' : ''} activa{verificacion.totalCitas !== 1 ? 's' : ''} en ese período
           </p>
           <p className="text-xs text-red-600 mt-0.5">
-            Deben gestionarse antes de confirmar el movimiento de {nombreProfesional}.
+            Muévelas a otra podóloga desde la agenda antes de confirmar el movimiento de {nombreProfesional}.
           </p>
         </div>
         <button
@@ -120,22 +115,12 @@ function PanelCitasPendientes({
                   <th className="px-3 py-1.5 text-left font-semibold">Teléfono</th>
                   <th className="px-3 py-1.5 text-left font-semibold">Servicio</th>
                   <th className="px-3 py-1.5 text-left font-semibold">Estado</th>
-                  <th className="px-2 py-1.5" />
+                  <th className="px-3 py-1.5 text-left font-semibold">Sede</th>
                 </tr>
               </thead>
               <tbody>
                 {verificacion.citas.map(cita => (
-                  <FilaCita
-                    key={cita.id}
-                    cita={cita}
-                    menuAbierto={menuId === cita.id}
-                    onToggleMenu={() => setMenuId(menuId === cita.id ? null : cita.id)}
-                    onGestionar={async (estado) => {
-                      setMenuId(null);
-                      await onGestionar(cita.id, estado);
-                    }}
-                    gestionando={gestionando === cita.id}
-                  />
+                  <FilaCita key={cita.id} cita={cita} />
                 ))}
               </tbody>
             </table>
@@ -144,7 +129,7 @@ function PanelCitasPendientes({
           {/* Footer */}
           <div className="px-3.5 py-2.5 border-t border-red-100 flex items-center justify-between gap-2">
             <p className="text-xxs text-red-400 italic">
-              Contacta a los pacientes y gestiona sus citas para poder confirmar el movimiento.
+              Las citas no se cancelan: muévelas a otra podóloga en la agenda y vuelve a confirmar el movimiento.
             </p>
             <button
               onClick={copiarLista}
@@ -159,19 +144,7 @@ function PanelCitasPendientes({
   );
 }
 
-function FilaCita({
-  cita,
-  menuAbierto,
-  onToggleMenu,
-  onGestionar,
-  gestionando,
-}: {
-  cita: CitaPendiente;
-  menuAbierto: boolean;
-  onToggleMenu: () => void;
-  onGestionar: (estado: 'cancelada' | 'reprogramada') => Promise<void>;
-  gestionando: boolean;
-}) {
+function FilaCita({ cita }: { cita: CitaPendiente }) {
   const copiarTelefono = () => {
     navigator.clipboard.writeText(cita.paciente.telefono);
     toast.success('Teléfono copiado', { duration: 1500 });
@@ -202,40 +175,7 @@ function FilaCita({
           {ESTADO_LABEL[cita.estado] ?? cita.estado}
         </span>
       </td>
-      <td className="px-2 py-2 relative">
-        {gestionando ? (
-          <div className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin mx-auto" />
-        ) : (
-          <div className="relative">
-            <button onClick={onToggleMenu} className="text-slate-400 hover:text-slate-600 px-1 font-bold text-base leading-none">⋮</button>
-            {menuAbierto && (
-              <div className="absolute right-0 top-5 bg-white border border-slate-200 rounded-lg shadow-lg z-50 min-w-[160px] py-1">
-                <button
-                  onClick={() => onGestionar('reprogramada')}
-                  className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 text-slate-700"
-                >
-                  Marcar como reagendada
-                </button>
-                <button
-                  onClick={() => onGestionar('cancelada')}
-                  className="w-full text-left px-3 py-2 text-xs hover:bg-red-50 text-red-600"
-                >
-                  Marcar como cancelada
-                </button>
-                <hr className="my-1 border-slate-100" />
-                <a
-                  href={`/agenda?sedeId=${encodeURIComponent(cita.sede)}&fecha=${cita.fecha}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block px-3 py-2 text-xs hover:bg-slate-50 text-slate-500"
-                >
-                  Ver en agenda ↗
-                </a>
-              </div>
-            )}
-          </div>
-        )}
-      </td>
+      <td className="px-3 py-2 text-slate-600 whitespace-nowrap">{cita.sede}</td>
     </tr>
   );
 }
@@ -258,7 +198,6 @@ export function MovimientoModal({ onClose, movimientoEditar, prefillSedeId }: Pr
   const [preview, setPreview] = useState<Awaited<ReturnType<typeof movimientosApi.preview>> | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [verificacion, setVerificacion] = useState<VerificarCitasResult | null>(null);
-  const [gestionandoCitaId, setGestionandoCitaId] = useState<string | null>(null);
 
   const { data: sedes } = useQuery({ queryKey: ['sedes'], queryFn: sedesApi.listar });
   const { data: profesionales } = useQuery({
@@ -298,6 +237,7 @@ export function MovimientoModal({ onClose, movimientoEditar, prefillSedeId }: Pr
         profesionalId,
         fechaInicio,
         fechaFin: sinFechaFin ? null : (fechaFin || null),
+        sedeId,
       });
       setVerificacion(ver);
     } catch {
@@ -312,28 +252,6 @@ export function MovimientoModal({ onClose, movimientoEditar, prefillSedeId }: Pr
     const t = setTimeout(fetchPreview, 400);
     return () => clearTimeout(t);
   }, [fetchPreview]);
-
-  const handleGestionarCita = async (citaId: string, estado: 'cancelada' | 'reprogramada') => {
-    setGestionandoCitaId(citaId);
-    try {
-      await movimientosApi.gestionarCita(citaId, {
-        estado,
-        motivo: estado === 'cancelada' ? 'Gestión previa a movimiento de podóloga' : undefined,
-      });
-      // Refrescar lista de citas
-      const ver = await movimientosApi.verificarCitas({
-        profesionalId,
-        fechaInicio,
-        fechaFin: sinFechaFin ? null : (fechaFin || null),
-      });
-      setVerificacion(ver);
-      toast.success(estado === 'cancelada' ? 'Cita cancelada' : 'Cita marcada como reagendada', { duration: 2000 });
-    } catch (e: unknown) {
-      toast.error((e as Error).message);
-    } finally {
-      setGestionandoCitaId(null);
-    }
-  };
 
   const crearMutation = useMutation({
     mutationFn: () =>
@@ -360,6 +278,7 @@ export function MovimientoModal({ onClose, movimientoEditar, prefillSedeId }: Pr
             profesionalId,
             fechaInicio,
             fechaFin: sinFechaFin ? null : (fechaFin || null),
+            sedeId,
           });
           setVerificacion(ver);
         } catch {
@@ -395,6 +314,7 @@ export function MovimientoModal({ onClose, movimientoEditar, prefillSedeId }: Pr
             profesionalId,
             fechaInicio,
             fechaFin: sinFechaFin ? null : (fechaFin || null),
+            sedeId,
           });
           setVerificacion(ver);
           toast.error('Gestiona las citas del período antes de cambiar la sede');
@@ -631,8 +551,6 @@ export function MovimientoModal({ onClose, movimientoEditar, prefillSedeId }: Pr
                 nombreProfesional={nombreProfesional}
                 fechaInicio={fechaInicio}
                 fechaFin={sinFechaFin ? null : fechaFin || null}
-                onGestionar={handleGestionarCita}
-                gestionando={gestionandoCitaId}
               />
             )}
           </div>

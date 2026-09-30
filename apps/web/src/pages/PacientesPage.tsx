@@ -699,6 +699,7 @@ export function FichaPacientePage() {
             nombreCompleto,
             telefono: paciente.telefono,
             numeroDocumento: paciente.numeroDocumento,
+            fechaNacimiento: paciente.fechaNacimiento ?? null,
             alerta: paciente.alerta ?? undefined,
             familiares: paciente.familiares ?? undefined,
           }}

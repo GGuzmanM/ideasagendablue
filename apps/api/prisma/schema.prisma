@@ -28,6 +28,13 @@ enum EstadoCita {
   reprogramada
 }
 
+// Estado de pago de la cita (29-sep-2026): lo marca recepción, para reportes.
+enum EstadoPago {
+  pendiente // Pendiente de pago (por defecto)
+  incompleto // Pago incompleto
+  completo // Pago completo
+}
+
 // Rol de una cita dentro de un BLOQUE COMBINADO (profilaxis + servicio extra en el
 // mismo slot de 1 h). `PRINCIPAL` = el ancla (profilaxis, siempre); `SECUNDARIO` = el
 // extra. null en `Cita.slotRol` = cita individual (no pertenece a ningún bloque).
@@ -846,8 +853,33 @@ model Cita {
   // (antes se metía dentro del comentario como [IK:...] y se filtraba a la vista).
   idempotencyKey String?
 
+  // PAGO (29-sep-2026): recepción marca el estado de pago (Nueva Cita, detalle y popover). Para reportes.
+  // `estadoPago` manda; `pagada` se mantiene sincronizado (= completo) para los reportes que ya lo usan.
+  // `pagadaEn` / `pagadaPorId` = cuándo y quién registró el último estado de pago (null si nunca se tocó).
+  estadoPago  EstadoPago @default(pendiente)
+  pagada      Boolean    @default(false)
+  pagadaEn    DateTime?
+  pagadaPorId String?    @db.Uuid
+
+  // REBOTE (30-sep-2026): el paciente no puede venir y la cita sale de la agenda a una bandeja para
+  // volver a llamarlo. Mientras está en rebote la cita queda en estado 'reprogramada' (libera el slot).
+  // Rebote activo = reboteDesde != null Y reboteCerradoEn == null. Se cierra al reagendarla (mover),
+  // al descartarla o sola a los 30 días (reboteVenceEl) → cancelada.
+  reboteDesde         DateTime?
+  reboteVenceEl       DateTime?
+  reboteMotivo        String?
+  rebotePorId         String?    @db.Uuid
+  reboteEstadoOrigen  EstadoCita? // agendada | confirmada | no_show
+  reboteTurno         String? // preferencia del paciente: manana | tarde | cualquiera
+  reboteLlamarDesde   DateTime?  @db.Date // no llamarlo antes de esta fecha (opcional)
+  reboteProfesionalId String?    @db.Uuid // podóloga con la que estaba (snapshot al enviar)
+  reboteCerradoEn     DateTime?
+  reboteResultado     String? // reagendada | vencida | descartada
+
   paciente              Paciente              @relation(fields: [pacienteId], references: [id])
   creadoPorUsuario      Usuario?              @relation("CitasCreadas", fields: [creadoPorUsuarioId], references: [id])
+  pagadaPor             Usuario?              @relation("CitasPagadas", fields: [pagadaPorId], references: [id], onDelete: SetNull)
+  rebotePor             Usuario?              @relation("CitasRebote", fields: [rebotePorId], references: [id], onDelete: SetNull)
   profesional           Profesional?          @relation("CitaProfesional", fields: [profesionalId], references: [id])
   solicitadoProfesional Profesional?          @relation("CitaSolicitado", fields: [solicitadoProfesionalId], references: [id])
   medico                Profesional?          @relation("CitaMedico", fields: [medicoId], references: [id], onDelete: Restrict)
@@ -868,6 +900,7 @@ model Cita {
   videoEnvios           VideoEnvioLog[]
   atencionClinica       AtencionClinica? // Historia clínica: 1 atención por cita (PRINCIPAL del bloque)
   tiemposTratamiento    TiempoTratamiento[] // aparato del consultorio: máx 1 vigente (índice parcial)
+  reboteLlamadas        ReboteLlamada[]
 
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
@@ -889,6 +922,7 @@ model Cita {
   @@index([estado])
   @@index([unidadNegocioId, fecha])
   @@index([slotGrupoId])
+  @@index([reboteDesde])
   @@index([subcategoriaId])
   // Desempeño de Agentes: consultas por autor de la reserva en un rango de fechas.
   @@index([creadoPorUsuarioId, fecha])
@@ -1028,6 +1062,22 @@ model ComentarioCita {
 
   @@index([citaId, creadoEn])
   @@map("comentarios_cita")
+}
+
+// ─── ReboteLlamada (bitácora de intentos de contacto de una cita en rebote) ───
+model ReboteLlamada {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  citaId    String   @db.Uuid
+  usuarioId String?  @db.Uuid
+  resultado String // contesto | no_contesto | pidio_llamar_luego | otro
+  nota      String?
+  creadoEn  DateTime @default(now())
+
+  cita    Cita     @relation(fields: [citaId], references: [id], onDelete: Restrict)
+  usuario Usuario? @relation("ReboteLlamadas", fields: [usuarioId], references: [id], onDelete: SetNull)
+
+  @@index([citaId, creadoEn])
+  @@map("rebote_llamadas")
 }
 
 // ─── Paquete (plantilla) ──────────────────────────────────────────────────────
@@ -1277,6 +1327,9 @@ model Usuario {
   notificacionesVistas  NotificacionVista[]
   bloqueosCreados       BloqueoAgenda[]
   citasCreadas          Cita[]              @relation("CitasCreadas")
+  citasPagadas          Cita[]              @relation("CitasPagadas")
+  citasRebote           Cita[]              @relation("CitasRebote")
+  reboteLlamadas        ReboteLlamada[]     @relation("ReboteLlamadas")
   comentariosCita       ComentarioCita[]
 
   creadoPor     String?  @db.Uuid // Usuario que creó el registro (auditoría)
@@ -1618,6 +1671,43 @@ model HistorialGenexis {
   @@map("historial_genexis")
 }
 
+// Historia clínica del ERP anterior (28-sep-2026): notas clínicas de cada atención (anamnesis, diagnóstico, plan de
+// tratamiento, nota del médico, examen físico), CONGELADAS y de solo lectura, igual que historial_genexis. Una fila por
+// atención del ERP (el ID solo es único dentro de su sede). Textos crudos, jamás FK a catálogos. El paciente y la visita
+// de Genexis a la que corresponde se enlazan al cargar con FK débil (scripts/hc-erp). La HC la muestra dentro de la
+// tarjeta «Sistema anterior» de esa visita, o como tarjeta propia si no tiene visita.
+model HistoriaClinicaErp {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  pacienteId         String?  @db.Uuid // FK débil a Paciente (por documento); null si no existe o es ambiguo
+  historialGenexisId String?  @db.Uuid // FK débil a la visita de Genexis del mismo día (y hora)
+  tipoDocumento      String
+  numeroDocumento    String
+  pacienteNombre     String?
+  sedeCodigo         String // sucursal del ERP (01, 02, 14, 19…)
+  sede               String? // sede resuelta (prefijo del profesional o código)
+  idAtencion         String
+  fecha              DateTime @db.Date
+  hora               String?
+  profesionalCodigo  String?
+  profesionalDni     String?
+  profesional        String? // texto crudo del ERP (ej. «2 Pod Rodriguez . , Raysa»)
+  servicioCodigo     String?
+  servicio           String?
+  anamnesis          String?
+  diagnostico        String?
+  planTratamiento    String?
+  notaMedico         String?
+  examenFisico       String?
+  estadoErp          String?
+  importadoEn        DateTime @default(now())
+
+  @@unique([sedeCodigo, idAtencion])
+  @@index([pacienteId, fecha(sort: Desc)])
+  @@index([numeroDocumento])
+  @@index([historialGenexisId])
+  @@map("historia_clinica_erp")
+}
+
 model TokenAccionCita {
   id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   token     String    @unique
@@ -1943,7 +2033,8 @@ model AtencionClinica {
   servicioId          String         @db.Uuid
   subcategoriaId      String?        @db.Uuid // sin relación
   fecha               DateTime       @db.Date // = cita.fecha
-  motivoConsulta      String // obligatorio (decisión médica B2)
+  motivoConsulta      String // 26-sep-2026: puede quedar '' al abrir (se llena después, mientras la atención esté abierta)
+  anamnesis           String? // 26-sep-2026: campo propio, separado del motivo; editable hasta cerrar la atención
   estado              EstadoAtencion @default(abierta)
   abiertaPorUsuarioId String?        @db.Uuid
   abiertaEtiqueta     String?

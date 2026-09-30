@@ -75,9 +75,10 @@ export async function crearAlmuerzo(data: {
     fFin = new Date(Date.UTC(year!, month! - 1, day!, 23, 59, 59, 999));
     esRec = false;
   } else {
-    // Para días normales (Lunes a Sábado), rige vigencia hasta fin de mes
+    // Para días normales (Lunes a Sábado), rige hasta fin del MES SIGUIENTE (28-sep-2026, pedido de la clínica: antes
+    // era fin de este mes y al mirar el mes que viene la agenda salía sin almuerzos hasta el día 1).
     fIni = new Date(Date.UTC(year!, month! - 1, day!, 0, 0, 0, 0));
-    const fFinMes = new Date(Date.UTC(year!, month!, 0, 23, 59, 59, 999));
+    const fFinMes = new Date(Date.UTC(year!, month! + 1, 0, 23, 59, 59, 999));
 
     const fechaConsulta = new Date(`${fechaStr}T12:00:00Z`);
     const asignacion = await prisma.asignacionSede.findFirst({
@@ -89,6 +90,27 @@ export async function crearAlmuerzo(data: {
       },
       orderBy: { fechaInicio: 'desc' },
     });
+
+    // 24-sep-2026: no se pone el almuerzo en una sede donde la profesional NO está ese día (si está asignada a OTRA).
+    // Así nació el almuerzo de One de Raysa estando en Lince: la agenda de Lince no lo mostraba, pero bloqueaba 14–15.
+    if (!asignacion) {
+      const otra = await prisma.asignacionSede.findFirst({
+        where: {
+          profesionalId: data.profesionalId,
+          fechaInicio: { lte: fechaConsulta },
+          OR: [{ fechaFin: null }, { fechaFin: { gte: fechaConsulta } }],
+        },
+        orderBy: { fechaInicio: 'desc' },
+        select: { sede: { select: { nombre: true } }, profesional: { select: { nombres: true } } },
+      });
+      if (otra) {
+        throw new AppError(
+          `${otra.profesional.nombres.split(' ')[0]} está asignada a ${otra.sede.nombre} en esa fecha, no a esta sede: registra su almuerzo en ${otra.sede.nombre}.`,
+          422,
+          'ALMUERZO_OTRA_SEDE',
+        );
+      }
+    }
 
     fFin = fFinMes;
     if (asignacion?.fechaFin && asignacion.fechaFin < fFinMes) {

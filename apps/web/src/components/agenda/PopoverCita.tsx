@@ -8,6 +8,7 @@ import { Avatar } from '../ui/Avatar';
 import { format, addDays } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { cn } from '../../utils/cn';
+import { ESTADOS_PAGO, estadoPagoDe, infoEstadoPago, type EstadoPago } from '../../utils/estadoPago';
 import { useCanales } from '../../hooks/useCanales';
 import { usePromociones } from '../../hooks/usePromociones';
 import { formatPromoValor } from '../../api/promociones';
@@ -149,6 +150,14 @@ export function PopoverCita({ cita, onClose, onReprogramar }: PopoverCitaProps) 
     mutationFn: (canal: string) => citasApi.actualizarCanal(cita.id, canal),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['citas'] }); toast.success('Canal actualizado'); },
     onError: (e: Error) => { setCanalSel(cita.canal); toast.error(e.message); },
+  });
+
+  // ESTADO DE PAGO (29-sep-2026): selector inline; en un bloque combinado el servidor cambia las dos.
+  const [estadoPagoSel, setEstadoPagoSel] = useState<EstadoPago>(estadoPagoDe(cita));
+  const estadoPagoMutation = useMutation({
+    mutationFn: (estado: EstadoPago) => citasApi.cambiarEstadoPago(cita.id, estado),
+    onSuccess: (_r, estado) => { qc.invalidateQueries({ queryKey: ['citas'] }); toast.success(`Estado de pago: ${infoEstadoPago(estado).label}`); },
+    onError: (e: Error) => { setEstadoPagoSel(estadoPagoDe(cita)); toast.error(e.message); },
   });
 
   // Promoción — editable solo desde la cita PORTADORA (no SECUNDARIO de un bloque). La
@@ -456,16 +465,27 @@ export function PopoverCita({ cita, onClose, onReprogramar }: PopoverCitaProps) 
               </div>
             )}
             <div className="flex items-center gap-2 text-sm">
-              <span className="text-slate-400 w-20 text-xs">Canal</span>
+              <span className="text-amber-700 font-semibold w-20 text-xs">Canal</span>
               <select
                 value={canalSel}
                 onChange={e => { setCanalSel(e.target.value); canalMutation.mutate(e.target.value); }}
                 disabled={canalMutation.isPending}
-                className="text-xs text-slate-700 border border-slate-200 rounded-md px-1.5 py-0.5 bg-white hover:border-slate-300 focus:outline-none focus:ring-1 focus:ring-limablue-400"
+                className="text-xs font-semibold text-amber-900 border border-amber-400 ring-1 ring-amber-400 rounded-md px-1.5 py-0.5 bg-amber-50 hover:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-400"
                 title="Canal de reserva — de dónde viene el cliente"
               >
                 {!canalesOpts.some(c => c.value === canalSel) && <option value={canalSel}>{canalSel}</option>}
                 {canalesOpts.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+              </select>
+            </div>
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-slate-400 w-20 text-xs">Pago</span>
+              <select
+                value={estadoPagoSel}
+                onChange={e => { const v = e.target.value as EstadoPago; setEstadoPagoSel(v); estadoPagoMutation.mutate(v); }}
+                disabled={estadoPagoMutation.isPending}
+                className={`text-xs font-semibold border rounded-md px-1.5 py-0.5 focus:outline-none ${infoEstadoPago(estadoPagoSel).activo}`}
+              >
+                {ESTADOS_PAGO.map(e => <option key={e.value} value={e.value}>{e.label}</option>)}
               </select>
             </div>
             {/* Promoción. Editable solo desde la portadora; la secundaria la ve heredada (solo lectura). */}
@@ -781,7 +801,8 @@ export function PopoverCita({ cita, onClose, onReprogramar }: PopoverCitaProps) 
 
             {comentarios.length > 0 ? (
               <ul className="space-y-2 mb-2">
-                {comentarios.map(c => (
+                {/* Del más nuevo al más viejo (29-sep-2026). */}
+                {[...comentarios].sort((a, b) => (b.creadoEn ?? '').localeCompare(a.creadoEn ?? '')).map(c => (
                   <li key={c.id} className="text-sm bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
                     <p className="text-slate-700 whitespace-pre-wrap break-words">{c.texto}</p>
                     <p className="text-[11px] text-slate-400 mt-1">

@@ -11,7 +11,7 @@ import { AppError } from '../middleware/errorHandler';
 import { AuthPayload } from '../middleware/auth';
 import { auditEnTx } from './audit';
 import { Ctx, etiquetaUsuario } from './historiaClinicaService';
-import { asegurarMedicoPrescriptor, codigoVerificacion } from './recetaService';
+import { asegurarMedicoPrescriptor, asegurarFirmanteReceta, codigoVerificacion } from './recetaService';
 import { fechaDb, fechaAStr } from '../utils/fechaLima';
 import { CLINICA } from './pdfComun';
 
@@ -36,7 +36,7 @@ async function atencionParaConstancia(atencionId: string) {
       paciente: { select: { nombres: true, apellidoPaterno: true, apellidoMaterno: true, tipoDocumento: true, numeroDocumento: true } },
       sede: { select: { nombre: true, direccion: true } },
       servicio: { select: { nombre: true, duracionMinutos: true } },
-      cita: { select: { horaInicio: true } },
+      cita: { select: { horaInicio: true, medicoId: true } },
       diagnosticos: { where: { deletedAt: null }, orderBy: [{ principal: 'desc' }, { creadoEn: 'asc' }], select: { cie10Codigo: true, principal: true, cie10: { select: { descripcion: true } } } },
     },
   });
@@ -83,9 +83,11 @@ const CARGO: Record<string, string> = { podologa: 'Podóloga', fisioterapeuta: '
 export async function emitirConstancia(p: Ctx & { user: AuthPayload; atencionId: string } & CamposConstancia) {
   const at = await atencionParaConstancia(p.atencionId);
   const fechaAt = fechaAStr(at.fecha);
-  // Emisor: el descanso lo firma el médico que tiene sesión (candado de la receta); la constancia,
-  // el profesional que atendió (nunca un equipo Baro).
+  // Emisor (quien FIRMA y SELLA): el descanso, el médico que tiene sesión (candado de la receta). La constancia de atención,
+  // desde el 30-sep-2026, el MÉDICO DE LA CITA (antes salía a nombre de la podóloga que atendió, en el espacio donde sella
+  // el médico). El texto de la constancia sigue diciendo quién atendió (`atendio`).
   let emisor: { id: string; nombre: string; registro: string | null; cargo: string };
+  let atendio: { nombre: string; cargo: string } | null = null;
   let desde: string | null = null, hasta: string | null = null, dias: number | null = null, dxCodigo: string | null = null, dxTexto: string | null = null;
   if (p.tipo === 'descanso_medico') {
     const m = await asegurarMedicoPrescriptor(p.user);
@@ -101,15 +103,27 @@ export async function emitirConstancia(p: Ctx & { user: AuthPayload; atencionId:
       : at.diagnosticos.find((d) => d.principal) ?? at.diagnosticos[0] ?? null;
     if (p.diagnosticoCie10Codigo && !dx) throw new AppError('Ese diagnóstico no está en la atención', 400, 'DX_NO_ESTA');
     if (!dx) throw new AppError('El descanso médico necesita un diagnóstico registrado en la atención', 400, 'FALTA_DIAGNOSTICO');
-    dxCodigo = dx.cie10Codigo; dxTexto = `${dx.cie10.descripcion} (CIE-10 ${dx.cie10Codigo})`;
+    // Los diagnósticos agregados por la clínica (LB001…) no son códigos CIE-10: se imprime solo el nombre.
+    dxCodigo = dx.cie10Codigo; dxTexto = /^LB\d+$/.test(dx.cie10Codigo) ? dx.cie10.descripcion : `${dx.cie10.descripcion} (CIE-10 ${dx.cie10Codigo})`;
   } else {
     const pr = at.profesional;
     if (pr.esEquipo) throw new AppError('La atención está a nombre de un equipo: elige primero el profesional que atendió', 409, 'PROFESIONAL_ES_EQUIPO');
-    emisor = { id: pr.id, nombre: `${pr.nombres} ${pr.apellidos}`.trim(), registro: (pr.colegiatura ?? '').trim() || null, cargo: CARGO[pr.tipo] ?? 'Profesional' };
+    atendio = { nombre: `${pr.nombres} ${pr.apellidos}`.trim(), cargo: CARGO[pr.tipo] ?? 'Profesional' };
+    // Médico que firma: el de la cita; si la cita no tiene, el médico que emite; si atendió un médico (baro), él.
+    let medicoId = at.cita?.medicoId ?? null;
+    if (!medicoId && p.user.profesionalId) {
+      const yo = await prisma.profesional.findFirst({ where: { id: p.user.profesionalId, tipo: 'medico', esEquipo: false, deletedAt: null }, select: { id: true } });
+      medicoId = yo?.id ?? null;
+    }
+    if (!medicoId && pr.tipo === 'medico') medicoId = pr.id;
+    if (!medicoId) throw new AppError('La cita no tiene médico asignado: asígnalo primero (la constancia la firma y sella el médico, con su CMP)', 409, 'SIN_MEDICO_ASIGNADO');
+    const m = await asegurarFirmanteReceta(medicoId);
+    emisor = { id: m.id, nombre: m.nombre, registro: m.registro, cargo: 'Médico' };
   }
+  const quien = atendio ?? emisor; // en el texto: quién atendió (constancia) o quién suscribe (descanso)
   const texto = textoConstancia({
     tipo: p.tipo, paciente: at.paciente, sede: at.sede.nombre, fechaAtencion: fechaAt, horaInicio: at.cita?.horaInicio ?? null, duracionMinutos: at.servicio.duracionMinutos,
-    servicio: at.servicio.nombre, emisor: emisor.nombre, cargo: emisor.cargo, desde, hasta, dias, diagnostico: dxTexto, observacion: p.observacion,
+    servicio: at.servicio.nombre, emisor: quien.nombre, cargo: quien.cargo, desde, hasta, dias, diagnostico: dxTexto, observacion: p.observacion,
   });
   const etiqueta = await etiquetaUsuario(prisma, p.usuarioId);
   return prisma.$transaction(async (tx) => {
@@ -160,7 +174,9 @@ export async function constanciaParaPdf(id: string) {
     },
   });
   if (!c) throw new AppError('Constancia no encontrada', 404);
-  return c;
+  // ¿Firma un médico? (las constancias viejas las firmaba la podóloga: el PDF pone «Médico · CMP» solo si lo es).
+  const firmante = await prisma.profesional.findUnique({ where: { id: c.emisorProfesionalId }, select: { tipo: true } });
+  return { ...c, emisorEsMedico: firmante?.tipo === 'medico' };
 }
 export type ConstanciaParaPdf = Awaited<ReturnType<typeof constanciaParaPdf>>;
 

@@ -66,7 +66,12 @@ export interface RecetaFavorita {
 export const recetasPacienteKey = (pacienteId: string) => ['recetas-paciente', pacienteId] as const;
 export const favoritasKey = (tipo: TipoDocumentoReceta) => ['recetas-favoritas', tipo] as const;
 
+export interface RecetaDelDia { citaId: string; recetasMedicas: number; indicaciones: number }
+
 export const recetasApi = {
+  // Citas del día (sede) que ya tienen receta médica o indicaciones vigentes — Visor de Pacientes (en verde).
+  delDia: (sedeId: string, fecha: string) =>
+    api.get<RecetaDelDia[]>('/recetas/del-dia', { sedeId, fecha }),
   // reemplazaRecetaId: «Editar» — la receta que esta corrige (el servidor la anula en la misma operación).
   emitir: (data: { atencionId: string; tipoDocumento: TipoDocumentoReceta; emisorProfesionalId?: string | null; indicacionesGenerales?: string | null; vigenciaDias?: number | null; items: ItemEntrada[]; reemplazaRecetaId?: string | null }) =>
     api.post<RecetaCompleta>('/recetas', data),

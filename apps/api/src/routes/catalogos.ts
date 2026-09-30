@@ -124,7 +124,9 @@ const cie10Select = { codigo: true, descripcion: true, categoria: true, activo: 
 const aCie10Admin = (r: { codigo: string; descripcion: string; categoria: string | null; activo: boolean; frecuente: boolean; _count: { diagnosticos: number; tratamientos: number } }) =>
   ({ codigo: r.codigo, descripcion: r.descripcion, categoria: r.categoria, activo: r.activo, frecuente: r.frecuente, usos: r._count.diagnosticos, tratamientos: r._count.tratamientos });
 const cie10CrearSchema = z.object({
-  codigo: z.string().trim().toUpperCase().regex(RE_CIE10, 'Código CIE-10 no válido (ej. L84 o B35.1)'),
+  // 26-sep-2026: opcional. El médico agrega el diagnóstico que no encuentra (p. ej. «Pubalgia») aunque no sepa su código:
+  // se le asigna uno interno de la clínica (LB001, LB002…), que luego se puede corregir en Catálogo CIE-10.
+  codigo: z.union([z.literal(''), z.string().trim().toUpperCase().regex(RE_CIE10, 'Código CIE-10 no válido (ej. L84 o B35.1)')]).optional(),
   descripcion: z.string().trim().min(3).max(300),
   categoria: z.string().trim().max(120).nullable().optional(),
 });
@@ -156,11 +158,25 @@ router.get('/cie10/admin', requireAuth, requirePermiso('hc.ver'), async (req, re
 
 router.post('/cie10', requireAuth, requirePermiso('hc.registrar'), gestionaCatalogo, async (req, res) => {
   const d = cie10CrearSchema.parse(req.body);
-  const ya = await prisma.cie10.findUnique({ where: { codigo: d.codigo }, select: { activo: true } });
-  if (ya) throw new AppError(ya.activo ? `El código ${d.codigo} ya está en el catálogo` : `El código ${d.codigo} ya existe pero está inactivo: actívalo en la lista`, 409, 'CIE10_DUPLICADO');
+  if (d.codigo) {
+    const ya = await prisma.cie10.findUnique({ where: { codigo: d.codigo }, select: { activo: true } });
+    if (ya) throw new AppError(ya.activo ? `El código ${d.codigo} ya está en el catálogo` : `El código ${d.codigo} ya existe pero está inactivo: actívalo en la lista`, 409, 'CIE10_DUPLICADO');
+  }
+  // Mismo nombre ya cargado (activo): no se duplica, se usa ese.
+  const mismoNombre = await prisma.cie10.findFirst({ where: { descripcion: { equals: d.descripcion, mode: 'insensitive' }, activo: true }, select: cie10Select });
+  if (mismoNombre && !d.codigo) { res.status(200).json(aCie10Admin(mismoNombre)); return; }
   const row = await prisma.$transaction(async (tx) => {
-    const r = await tx.cie10.create({ data: { codigo: d.codigo, descripcion: d.descripcion, categoria: d.categoria || null }, select: cie10Select });
-    await auditEnTx(tx, { usuarioId: req.user?.userId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined, accion: 'crear_cie10', entidad: 'cie10', entidadId: uuidDeTexto(`cie10:${d.codigo}`), despues: { codigo: r.codigo, descripcion: r.descripcion, categoria: r.categoria } });
+    let codigo = d.codigo;
+    if (!codigo) {
+      const internos = await tx.cie10.findMany({ where: { codigo: { startsWith: 'LB' } }, select: { codigo: true } });
+      const max = internos.reduce((m, c) => Math.max(m, Number(c.codigo.slice(2)) || 0), 0);
+      codigo = `LB${String(max + 1).padStart(3, '0')}`;
+    }
+    const r = await tx.cie10.create({
+      data: { codigo, descripcion: d.descripcion, categoria: d.categoria || (d.codigo ? null : 'Agregados por la clínica (sin código CIE-10)') },
+      select: cie10Select,
+    });
+    await auditEnTx(tx, { usuarioId: req.user?.userId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined, accion: 'crear_cie10', entidad: 'cie10', entidadId: uuidDeTexto(`cie10:${codigo}`), despues: { codigo: r.codigo, descripcion: r.descripcion, categoria: r.categoria, codigoInterno: !d.codigo } });
     return r;
   });
   res.status(201).json(aCie10Admin(row));
@@ -217,7 +233,8 @@ router.get('/tratamientos-diagnostico', requireAuth, async (req, res) => {
 });
 
 const tratamientoSchema = z.object({
-  cie10Codigo: z.string().trim().toUpperCase().regex(RE_CIE10, 'Código CIE-10 no válido'),
+  // También los diagnósticos agregados por la clínica con código interno (LB001…).
+  cie10Codigo: z.string().trim().toUpperCase().refine((c) => RE_CIE10.test(c) || /^LB\d{3,}$/.test(c), 'Código CIE-10 no válido'),
   tratamiento: z.string().trim().min(2).max(300),
   presentacion: z.string().trim().max(120).nullable().optional(),
   aplicacion: z.string().trim().max(1500).nullable().optional(),

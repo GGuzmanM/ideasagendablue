@@ -1,3 +1,4 @@
+import { UBIGEO_EXTRANJERO } from '@limablue/shared';
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
@@ -28,6 +29,7 @@ import { promocionesApi, calcularConPromo, type PromocionElegible } from '../api
 import { useAuthStore } from '../stores/authStore';
 import { invalidarAgenda } from './idea1DetalleCitaService';
 import { canalDefaultPorRol } from '../utils/canalDefault';
+import type { EstadoPago } from '../utils/estadoPago';
 
 const toTitleCase = (str: string) =>
   str.replace(/\S+/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
@@ -83,6 +85,7 @@ export interface PacienteSeleccionado {
   nombreCompleto: string;
   telefono: string;
   numeroDocumento?: string;
+  fechaNacimiento?: string | null; // para mostrar la edad en la tarjeta del paciente elegido
   alerta?: any;
   familiares?: any[];
 }
@@ -134,6 +137,9 @@ export function useIdea1NuevaCitaForm({
   const [npFechaNacimiento, setNpFechaNacimiento] = useState('');
   const [npSexo, setNpSexo] = useState('');
   const [npCanalId, setNpCanalId] = useState<string | null>(null);
+  // Dirección — distrito de residencia (28-sep-2026: igual que en «Nuevo paciente»).
+  const [npUbigeoId, setNpUbigeoId] = useState<string | null>(null);
+  const [npPaisResidencia, setNpPaisResidencia] = useState<string | null>(null);
 
   // Estado RENIEC
   const [dniConsultando, setDniConsultando] = useState(false);
@@ -145,6 +151,8 @@ export function useIdea1NuevaCitaForm({
   const [paquetePacienteId, setPaquetePacienteId] = useState('');
   // Canal PRE-marcado según el rol de quien agenda (recepción / central telefónica). Editable.
   const [canal, setCanal] = useState(() => canalDefaultPorRol(rolActual));
+  // ESTADO DE PAGO (29-sep-2026): pendiente / incompleto / completo. Para reportes; se cambia después en el detalle.
+  const [estadoPago, setEstadoPago] = useState<EstadoPago>('pendiente');
   const [promocionId, setPromocionId] = useState('');
   const [codigoPromo, setCodigoPromo] = useState(''); // cupón/convenio si la promo lo requiere
   const [profesionalId, setProfesionalId] = useState(profInicial);
@@ -243,6 +251,8 @@ export function useIdea1NuevaCitaForm({
 
   // Edad autocalculada desde la fecha de nacimiento
   const npEdad = useMemo(() => calcularEdad(npFechaNacimiento), [npFechaNacimiento]);
+  // Edad del paciente ya elegido (tarjeta junto al nombre). null si no tiene fecha de nacimiento.
+  const edadPacienteSel = useMemo(() => calcularEdad(pacienteSeleccionado?.fechaNacimiento ?? ''), [pacienteSeleccionado?.fechaNacimiento]);
 
   // Consulta MANUAL por botón para evitar consumo innecesario de API PeruDevs
   const puedeBuscarDni = npTipoDoc === 'DNI' && /^\d{8}$/.test(npNumDoc.trim());
@@ -259,6 +269,7 @@ export function useIdea1NuevaCitaForm({
       nombreCompleto: nombreComp,
       telefono: yaRegistrado.telefono,
       numeroDocumento: yaRegistrado.numeroDocumento,
+      fechaNacimiento: yaRegistrado.fechaNacimiento ?? null,
       alerta: yaRegistrado.alerta ?? undefined,
       familiares: yaRegistrado.familiares ?? undefined,
     });
@@ -342,9 +353,18 @@ export function useIdea1NuevaCitaForm({
     [],
   );
 
-  // Escuchar pegado desde portapapeles (Ctrl+V)
+  // 29-sep-2026: el comprobante va con «Pago incompleto» o «Pago completo». Si vuelven a «Pendiente de pago», se descarta.
+  useEffect(() => {
+    if (estadoPago === 'pendiente' && comprobante) {
+      setComprobante(null);
+      toast('Se quitó el comprobante: la cita quedó como pendiente de pago', { icon: 'ℹ️' });
+    }
+  }, [estadoPago]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Escuchar pegado desde portapapeles (Ctrl+V) — solo con pago incompleto / completo
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent) => {
+      if (estadoPago === 'pendiente') return;
       const items = Array.from(e.clipboardData?.items ?? []);
       const imagen = items.find((i) => i.type.startsWith('image/'));
       if (imagen) {
@@ -354,7 +374,7 @@ export function useIdea1NuevaCitaForm({
     };
     document.addEventListener('paste', handlePaste);
     return () => document.removeEventListener('paste', handlePaste);
-  }, [handleSubirComprobante]);
+  }, [handleSubirComprobante, estadoPago]);
 
   // Queries base
   const { data: serviciosData = [] } = useQuery({
@@ -872,11 +892,13 @@ export function useIdea1NuevaCitaForm({
           fecha: fechaCita,
           horaInicio: horaCita,
           canal,
+          estadoPago: estadoPago !== 'pendiente' ? estadoPago : undefined,
           promocionId: promocionId || undefined,
           codigoPromo: promocionId && codigoPromo.trim() ? codigoPromo.trim() : undefined,
           comentarioRecepcion: comentarioRecepcion.trim() || undefined,
           paquetePacienteId: finalPaqueteId || undefined,
           motivoRetroactivo: esRetroactiva ? motivoRetroactivo.trim() : undefined,
+          ...(estadoPago !== 'pendiente' && comprobante ? { comprobanteUrl: comprobante.url, comprobanteNombre: comprobante.nombre, comprobanteMimeType: comprobante.mimeType } : {}),
           extra: {
             servicioId: extraServicioId,
             subcategoriaId: extraSubcategoriaId || undefined,
@@ -898,13 +920,12 @@ export function useIdea1NuevaCitaForm({
           fecha: fechaCita,
           horaInicio: horaCita,
           canal,
+          estadoPago: estadoPago !== 'pendiente' ? estadoPago : undefined,
           promocionId: promocionId || undefined,
           codigoPromo: promocionId && codigoPromo.trim() ? codigoPromo.trim() : undefined,
           comentarioRecepcion: comentarioRecepcion.trim() || undefined,
           paquetePacienteId: finalPaqueteId || undefined,
-          comprobanteUrl: comprobante?.url,
-          comprobanteNombre: comprobante?.nombre,
-          comprobanteMimeType: comprobante?.mimeType,
+          ...(estadoPago !== 'pendiente' && comprobante ? { comprobanteUrl: comprobante.url, comprobanteNombre: comprobante.nombre, comprobanteMimeType: comprobante.mimeType } : {}),
           motivoRetroactivo: esRetroactiva ? motivoRetroactivo.trim() : undefined,
         };
         return citasApi.crear(crearInput, key);
@@ -943,6 +964,7 @@ export function useIdea1NuevaCitaForm({
       if (npApellidoMaterno.trim().length < 2) throw new Error('Falta el apellido materno del paciente (si no tiene, repite el paterno).');
       if (npNumDoc.trim().length < 8) throw new Error('El número de documento debe tener al menos 8 caracteres.');
       if (npTelefono.trim().length < 9) throw new Error('El teléfono debe tener al menos 9 dígitos.');
+      if (npUbigeoId === UBIGEO_EXTRANJERO && !npPaisResidencia) throw new Error('Indica el país de residencia del paciente.');
       return pacientesApi.crear({
         nombres: npNombres.trim(),
         apellidoPaterno: npApellidoPaterno.trim(),
@@ -954,6 +976,8 @@ export function useIdea1NuevaCitaForm({
         fechaNacimiento: npFechaNacimiento || undefined,
         sexo: npSexo || undefined,
         canalId: npCanalId || undefined,
+        ubigeoId: npUbigeoId || undefined,
+        paisResidencia: npUbigeoId === UBIGEO_EXTRANJERO ? npPaisResidencia : undefined,
       });
     },
   });
@@ -1088,7 +1112,12 @@ export function useIdea1NuevaCitaForm({
     setNpSexo,
     npCanalId,
     setNpCanalId,
+    npUbigeoId,
+    setNpUbigeoId,
+    npPaisResidencia,
+    setNpPaisResidencia,
     npEdad,
+    edadPacienteSel,
     puedeBuscarDni,
     buscarPorDocumento,
     dniConsultando,
@@ -1108,6 +1137,8 @@ export function useIdea1NuevaCitaForm({
     setMembFin,
     canal,
     setCanal,
+    estadoPago,
+    setEstadoPago,
     promocionId,
     setPromocionId,
     codigoPromo,

@@ -113,8 +113,8 @@ export async function asegurarMedicoPrescriptor(user: AuthPayload) {
   return { id: p.id, nombre: `${p.nombres} ${p.apellidos}`.trim(), registro: cmp };
 }
 
-/** Médico a cuyo nombre sale la receta: persona activa, tipo médico y con CMP. */
-async function asegurarFirmanteReceta(profesionalId: string) {
+/** Médico a cuyo nombre sale la receta (y la constancia de atención): persona activa, tipo médico y con CMP. */
+export async function asegurarFirmanteReceta(profesionalId: string) {
   const p = await prisma.profesional.findFirst({
     where: { id: profesionalId, deletedAt: null },
     select: { id: true, nombres: true, apellidos: true, tipo: true, esEquipo: true, activo: true, colegiatura: true },
@@ -165,7 +165,9 @@ const recetaInclude = {
   items: { orderBy: { orden: 'asc' }, include: { diagnostico: { select: { codigo: true, descripcion: true } } } },
   paciente: { select: { id: true, nombres: true, apellidoPaterno: true, apellidoMaterno: true, tipoDocumento: true, numeroDocumento: true, fechaNacimiento: true, sexo: true } },
   emisor: { select: { id: true, nombres: true, apellidos: true, tipo: true } },
-  atencion: { select: { id: true, fecha: true, citaId: true, sede: { select: { id: true, nombre: true, direccion: true } } } },
+  atencion: { select: { id: true, fecha: true, citaId: true, sede: { select: { id: true, nombre: true, direccion: true } },
+    // Podóloga que atendió (sale en el pie del PDF): la de la columna o, en «Adicional», la registrada como que atendió.
+    cita: { select: { profesional: { select: { id: true, nombres: true, apellidos: true, tipo: true, esEquipo: true } }, atendidoPor: { select: { id: true, nombres: true, apellidos: true, tipo: true, esEquipo: true } } } } } },
   historiaClinica: { select: { numero: true, alergias: { where: { deletedAt: null, activa: true }, select: { sustancia: true, severidad: true, reaccion: true } } } },
 } as const;
 export type RecetaCompleta = Prisma.RecetaGetPayload<{ include: typeof recetaInclude }>;

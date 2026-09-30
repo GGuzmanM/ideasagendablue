@@ -255,6 +255,8 @@ export async function calcularDisponibilidad(params: DisponibilidadParams): Prom
         fechaInicio: { lte: fechaConsultada },
         fechaFin: { gte: fechaConsultada },
         ...(esFinde1 ? { esRecurrente: false } : {}),
+        // Solo los almuerzos de ESTA sede (o sin sede): uno de otra sede no bloquea aquí, como en la agenda (24-sep-2026).
+        OR: [{ sedeId: null }, { sedeId }],
       },
     });
 
@@ -448,6 +450,8 @@ export async function seleccionarProfesionalOptimo(
         fechaInicio: { lte: fechaDate2 },
         fechaFin: { gte: fechaDate2 },
         ...(esFinde2 ? { esRecurrente: false } : {}),
+        // Solo los almuerzos de ESTA sede (o sin sede): uno de otra sede no bloquea aquí, como en la agenda (24-sep-2026).
+        OR: [{ sedeId: null }, { sedeId }],
       },
       select: { horaInicio: true, horaFin: true },
     });

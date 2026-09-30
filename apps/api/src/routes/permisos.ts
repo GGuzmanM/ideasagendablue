@@ -288,8 +288,13 @@ router.post('/multiple', requireAuth, PUEDE_AUSENCIAS, async (req, res) => {
     horaInicio: z.string().regex(/^\d{2}:\d{2}$/),
     horaFin: z.string().regex(/^\d{2}:\d{2}$/),
     motivo: z.string().min(3).max(200),
+    // Rango de fechas (30-sep-2026): el mismo horario en cada día desde `fecha` hasta `fechaFin`.
+    fechaFin: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   }).parse(req.body);
   if (data.horaFin <= data.horaInicio) throw new AppError('La hora de fin debe ser mayor que la de inicio', 400);
+  if (data.fechaFin && data.fechaFin < data.fecha) throw new AppError('La fecha final no puede ser anterior a la inicial', 400);
+  const dias = diasDelRango(data.fecha, data.fechaFin ?? data.fecha);
+  if (dias.length > 92) throw new AppError('El rango de fechas no puede superar 92 días', 400);
 
   const ids = [...new Set(data.profesionalIds)];
   const profs = await prisma.profesional.findMany({
@@ -297,12 +302,10 @@ router.post('/multiple', requireAuth, PUEDE_AUSENCIAS, async (req, res) => {
     select: { id: true, nombres: true, apellidos: true, tipo: true },
   });
   const profPorId = new Map(profs.map((p) => [p.id, p]));
-
-  const fechaInicio = new Date(`${data.fecha}T${data.horaInicio}:00`);
-  const fechaFin = new Date(`${data.fecha}T${data.horaFin}:00`);
+  const conFecha = dias.length > 1; // en un rango, cada conflicto dice de qué día es
 
   const creados: { id: string; profesionalId: string; nombre: string }[] = [];
-  const conflictos: { profesionalId: string; nombre: string; citas: Awaited<ReturnType<typeof citasEnConflicto>> }[] = [];
+  const conflictos: { profesionalId: string; nombre: string; citas: (Awaited<ReturnType<typeof citasEnConflicto>>[number] & { fecha?: string })[] }[] = [];
   const invalidos: { profesionalId: string; motivo: string }[] = [];
 
   for (const id of ids) {
@@ -313,37 +316,39 @@ router.post('/multiple', requireAuth, PUEDE_AUSENCIAS, async (req, res) => {
       continue;
     }
     const nombre = `${prof.nombres.split(' ')[0]} ${prof.apellidos.split(' ')[0]}`.trim();
-    const citas = await citasEnConflicto(id, data.sedeId, data.fecha, data.horaInicio, data.horaFin);
-    if (citas.length > 0) { conflictos.push({ profesionalId: id, nombre, citas }); continue; }
 
-    const bloqueosExist = await permisosEnConflicto(id, data.fecha, data.horaInicio, data.horaFin);
-    if (bloqueosExist.length > 0) {
-      conflictos.push({
-        profesionalId: id,
-        nombre,
-        citas: bloqueosExist.map(b => ({
-          horaInicio: b.horaInicio || data.horaInicio,
-          estado: 'bloqueado',
-          servicio: b.motivo,
-          paciente: 'Permiso/Bloqueo previo existente',
-          telefono: '—',
-        })),
-      });
-      continue;
+    // Todo-o-nada por profesional: si CUALQUIER día del rango tiene pacientes o un permiso que se
+    // cruza, a esa persona no se le crea nada (se reporta con la fecha para que lo resuelvan).
+    const choques: (typeof conflictos)[number]['citas'] = [];
+    for (const dia of dias) {
+      const citas = await citasEnConflicto(id, data.sedeId, dia, data.horaInicio, data.horaFin);
+      choques.push(...citas.map(c => ({ ...c, ...(conFecha ? { fecha: dia } : {}) })));
+      const bloqueosExist = await permisosEnConflicto(id, dia, data.horaInicio, data.horaFin);
+      choques.push(...bloqueosExist.map(b => ({
+        horaInicio: b.horaInicio || data.horaInicio,
+        estado: 'bloqueado',
+        servicio: b.motivo,
+        paciente: 'Permiso/Bloqueo previo existente',
+        telefono: '—',
+        ...(conFecha ? { fecha: dia } : {}),
+      })));
     }
+    if (choques.length > 0) { conflictos.push({ profesionalId: id, nombre, citas: choques }); continue; }
 
-    const permiso = await prisma.bloqueoAgenda.create({
+    const nuevos = await prisma.$transaction(dias.map(dia => prisma.bloqueoAgenda.create({
       data: {
         profesionalId: id, sedeId: data.sedeId, tipo: 'PERMISO', esRecurrente: false,
-        fechaInicio, fechaFin, horaInicio: data.horaInicio, horaFin: data.horaFin,
+        fechaInicio: new Date(`${dia}T${data.horaInicio}:00`), fechaFin: new Date(`${dia}T${data.horaFin}:00`),
+        horaInicio: data.horaInicio, horaFin: data.horaFin,
         motivo: data.motivo, creadoPor: req.user?.userId,
       },
-    });
-    creados.push({ id: permiso.id, profesionalId: id, nombre });
+      select: { id: true },
+    })));
+    creados.push({ id: nuevos[0]!.id, profesionalId: id, nombre });
   }
 
-  if (creados.length > 0) await invalidateDisponibilidadCache(data.sedeId, data.fecha);
-  res.status(creados.length > 0 ? 201 : 200).json({ creados, conflictos, invalidos });
+  if (creados.length > 0) for (const dia of dias) await invalidateDisponibilidadCache(data.sedeId, dia);
+  res.status(creados.length > 0 ? 201 : 200).json({ creados, conflictos, invalidos, dias: dias.length });
 });
 
 // ─── POST /permisos/reunion ───────────────────────────────────────────────────

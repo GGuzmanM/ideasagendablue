@@ -17,6 +17,7 @@ import { prisma } from '../db';
 import { AppError } from '../middleware/errorHandler';
 import { AuthPayload, puedeTodasLasSedes } from '../middleware/auth';
 import { auditEnTx, registrarAudit } from './audit';
+import { esFichaAdicional } from '../utils/fichaAdicional';
 import { validarControles, crearControlesEnTx, type ControlEntrada } from './controlService';
 
 type Tx = Prisma.TransactionClient | PrismaClient;
@@ -45,6 +46,9 @@ export async function etiquetaUsuario(tx: Tx, usuarioId?: string | null): Promis
 // (las rutas clínicas usan requirePermiso, que exige usuario).
 export async function assertAccesoPaciente(user: AuthPayload, pacienteId: string): Promise<void> {
   if (puedeTodasLasSedes(user)) return;
+  // 26-sep-2026: los MÉDICOS LEEN toda historia clínica (también la de pacientes atendidos en otra sede o por otro
+  // médico). Escribir sigue limitado: su sede (assertSede) y solo las atenciones de sus citas (routes/historiaClinica).
+  if (user.rol === 'medico') return;
   if (user.sedes.length > 0) {
     // Una cita cancelada, reprogramada o "no vino" no convierte al paciente en paciente de la sede.
     const ok = await prisma.cita.findFirst({
@@ -348,15 +352,15 @@ export async function atencionOr404(id: string) {
 }
 
 // ─── Atención ─────────────────────────────────────────────────────────────────
-export async function abrirAtencion(p: Ctx & { citaId: string; motivoConsulta: string; profesionalId?: string | null }) {
+export async function abrirAtencion(p: Ctx & { citaId: string; motivoConsulta?: string; profesionalId?: string | null }) {
   const cita = await resolverCitaPrincipal(p.citaId);
   if (!ESTADOS_ATENDIDA.includes(cita.estado)) {
     throw new AppError('Solo se registra atención de una cita que llegó, está en atención o se completó', 409, 'CITA_NO_ATENDIDA');
   }
   const ya = await prisma.atencionClinica.findUnique({ where: { citaId: cita.id }, select: { id: true } });
   if (ya) throw new AppError('Esta cita ya tiene una atención clínica registrada', 409, 'ATENCION_YA_EXISTE');
-  const motivo = p.motivoConsulta.trim();
-  if (!motivo) throw new AppError('El motivo de consulta es obligatorio', 400, 'MOTIVO_REQUERIDO');
+  // 26-sep-2026: se abre al entrar (sin modal): el motivo y la anamnesis se llenan después, mientras esté abierta.
+  const motivo = (p.motivoConsulta ?? '').trim();
   const profesionalId = await resolverProfesionalAtencion(cita, p.profesionalId);
   const hc = await asegurarHistoria(cita.pacienteId, { sedeId: cita.sedeId, usuarioId: p.usuarioId });
   const etiqueta = await etiquetaUsuario(prisma, p.usuarioId);
@@ -407,24 +411,22 @@ export async function cambiarEstadoHistoria(p: Ctx & { pacienteId: string; estad
   return getHistoriaCompleta(p.pacienteId);
 }
 
-export async function editarAtencion(p: Ctx & { atencionId: string; motivoConsulta?: string; profesionalId?: string | null }) {
+export async function editarAtencion(p: Ctx & { atencionId: string; motivoConsulta?: string; anamnesis?: string | null; profesionalId?: string | null }) {
   const at = await atencionOr404(p.atencionId);
   exigirAbierta(at);
   const data: Prisma.AtencionClinicaUpdateInput = {};
-  if (p.motivoConsulta !== undefined) {
-    const m = p.motivoConsulta.trim();
-    if (!m) throw new AppError('El motivo de consulta es obligatorio', 400, 'MOTIVO_REQUERIDO');
-    data.motivoConsulta = m;
-  }
+  // Motivo y anamnesis: editables mientras la atención esté abierta (exigirAbierta arriba); pueden quedar vacíos.
+  if (p.motivoConsulta !== undefined) data.motivoConsulta = p.motivoConsulta.trim();
+  if (p.anamnesis !== undefined) data.anamnesis = p.anamnesis?.trim() || null;
   if (p.profesionalId) {
     // Misma regla que al abrir (en la Baro debe ser un médico): se valida contra la cita de la atención.
     const cita = await prisma.cita.findUniqueOrThrow({ where: { id: at.citaId }, select: citaBaseSelect });
     data.profesional = { connect: { id: await resolverProfesionalAtencion(cita, p.profesionalId) } };
   }
   await prisma.$transaction(async (tx) => {
-    const antes = await tx.atencionClinica.findUnique({ where: { id: at.id }, select: { motivoConsulta: true, profesionalId: true } });
+    const antes = await tx.atencionClinica.findUnique({ where: { id: at.id }, select: { motivoConsulta: true, anamnesis: true, profesionalId: true } });
     await tx.atencionClinica.update({ where: { id: at.id }, data });
-    await auditEnTx(tx, { ...ctxAudit(p), citaId: at.citaId, accion: 'editar_atencion', entidad: 'atencion_clinica', entidadId: at.id, sedeId: at.sedeId, antes, despues: { motivoConsulta: p.motivoConsulta, profesionalId: p.profesionalId } });
+    await auditEnTx(tx, { ...ctxAudit(p), citaId: at.citaId, accion: 'editar_atencion', entidad: 'atencion_clinica', entidadId: at.id, sedeId: at.sedeId, antes, despues: { motivoConsulta: p.motivoConsulta, anamnesis: p.anamnesis, profesionalId: p.profesionalId } });
   });
   return getAtencionCompleta(at.id);
 }
@@ -765,4 +767,19 @@ export async function sincronizarFechaAtencion(tx: Tx, citaId: string, nuevaFech
   if (!at) return false;
   await tx.atencionClinica.update({ where: { id: at.id }, data: { fecha: nuevaFecha } });
   return true;
+}
+
+/**
+ * 26-sep-2026: la atención va a nombre de la podóloga a la que se asignó la cita por ÚLTIMA vez (abierta o cerrada).
+ * Antes solo la seguía si estaba abierta: la agenda mostraba a la nueva y la historia seguía con la anterior.
+ * Solo si el destino es una PERSONA: una máquina (baro) o una columna «Adicional» no atiende, así que ahí se conserva
+ * la que ya tenía. Las notas y los documentos ya emitidos no se tocan. Devuelve el profesional anterior si cambió.
+ */
+export async function atencionSigueAProfesional(tx: Tx, citaId: string, destinoId: string): Promise<string | null> {
+  const at = await tx.atencionClinica.findUnique({ where: { citaId }, select: { id: true, profesionalId: true } });
+  if (!at || at.profesionalId === destinoId) return null;
+  const destino = await tx.profesional.findUnique({ where: { id: destinoId }, select: { esEquipo: true, nombres: true } });
+  if (!destino || destino.esEquipo || esFichaAdicional(destino.nombres)) return null;
+  await tx.atencionClinica.update({ where: { id: at.id }, data: { profesionalId: destinoId } });
+  return at.profesionalId;
 }

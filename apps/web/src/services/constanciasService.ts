@@ -1,5 +1,5 @@
 // Constancias y descansos médicos (5.4) — LÓGICA del bloque «Constancias» de la pestaña Receta.
-// Constancia de atención: quien tiene hc.registrar (la firma quien atendió). Descanso médico: solo el
+// Constancia de atención: quien tiene hc.registrar (la firma y sella el médico de la cita; el texto dice quién atendió). Descanso médico: solo el
 // médico con CMP que tiene sesión. Documentos inmutables: se anulan con motivo (quien lo emitió o hc.anular).
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';

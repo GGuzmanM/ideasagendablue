@@ -55,7 +55,7 @@ export interface Antecedente {
 
 export interface AtencionClinica {
   id: string; historiaClinicaId: string; citaId: string; pacienteId: string; profesionalId: string; sedeId: string; servicioId: string;
-  subcategoriaId: string | null; fecha: string; motivoConsulta: string; estado: EstadoAtencion;
+  subcategoriaId: string | null; fecha: string; motivoConsulta: string; anamnesis?: string | null; estado: EstadoAtencion;
   abiertaEtiqueta: string | null; cerradaEn: string | null; creadoEn: string;
   cita: {
     id: string; horaInicio: string; estado: string; duracionMinutos: number;
@@ -302,13 +302,37 @@ export const atencionKey = (atencionId: string) => ['atencion-clinica', atencion
 export const atencionPorCitaKey = (citaId: string) => ['atencion-por-cita', citaId] as const;
 
 const B = '/historia-clinica';
+/** Nota clínica del ERP anterior (28-sep-2026): congelada, solo lectura. Va dentro de la visita de Genexis del mismo
+ *  día (`enVisitaGenexis`) o, si no la hay, como tarjeta propia del «Sistema anterior». */
+export interface NotaErp {
+  id: string;
+  historialGenexisId: string | null;
+  enVisitaGenexis: boolean;
+  fecha: string;
+  hora: string | null;
+  sede: string | null;
+  profesional: string | null;
+  cargo: string | null;
+  profesionalErp: string | null;
+  servicio: string | null;
+  anamnesis: string | null;
+  anamnesisRepetida: boolean;
+  anamnesisDesde: string | null;
+  diagnostico: string | null;
+  planTratamiento: string | null;
+  notaMedico: string | null;
+  examenFisico: string | null;
+  idAtencion: string;
+}
+
 export const historiaClinicaApi = {
   dePaciente: (pacienteId: string) => api.get<HistoriaCompleta>(`${B}/paciente/${pacienteId}`),
+  notasErp: (pacienteId: string) => api.get<NotaErp[]>(`${B}/paciente/${pacienteId}/erp`),
   atencion: (id: string) => api.get<AtencionCompleta>(`${B}/atenciones/${id}`),
   resumenPorCita: (citaId: string) => api.get<ResumenAtencionCita>(`${B}/atencion/por-cita/${citaId}/resumen`),
   anteriores: (atencionId: string) => api.get<Anteriores>(`${B}/atenciones/${atencionId}/anteriores`),
-  abrirAtencion: (data: { citaId: string; motivoConsulta: string; profesionalId?: string | null }) => api.post<AtencionCompleta>(`${B}/atenciones`, data),
-  editarAtencion: (id: string, data: { motivoConsulta?: string; profesionalId?: string | null }) => api.patch<AtencionCompleta>(`${B}/atenciones/${id}`, data),
+  abrirAtencion: (data: { citaId: string; motivoConsulta?: string; profesionalId?: string | null }) => api.post<AtencionCompleta>(`${B}/atenciones`, data),
+  editarAtencion: (id: string, data: { motivoConsulta?: string; anamnesis?: string | null; profesionalId?: string | null }) => api.patch<AtencionCompleta>(`${B}/atenciones/${id}`, data),
   cerrarAtencion: (id: string, controles?: ControlEntrada[]) => api.patch<AtencionCompleta>(`${B}/atenciones/${id}/cerrar`, controles?.length ? { controles } : {}),
   sugerenciasControl: (atencionId: string) => api.get<SugerenciasControl>(`${B}/atenciones/${atencionId}/controles-sugeridos`),
   controles: (dias = 14) => api.get<ControlesBandeja>(`${B}/controles`, { dias: String(dias) }),

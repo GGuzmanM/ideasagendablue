@@ -243,7 +243,8 @@ export function ColumnaAgenda({ profesional, citas, bloqueos = [], permisos = []
     if (asg.esPrestamo) {
       return { label: `Préstamo ${asg.sedeOrigen ?? 'otra sede'}`, tooltip: `En préstamo desde ${asg.sedeOrigen ?? 'otra sede'} solo este día` };
     }
-    if (asg.fechaFin) {
+    // Fin 2099+ = sin fin en la práctica (dermatólogo en dos sedes a la vez): no lleva badge de «Hasta el…».
+    if (asg.fechaFin && Number(asg.fechaFin.slice(0, 4)) < 2099) {
       const diasRestantes = differenceInCalendarDays(parseISO(asg.fechaFin), new Date());
       if (diasRestantes < 0) return null;
       return { label: `Hasta el ${format(parseISO(asg.fechaFin), "d 'de' MMM", { locale: es })}`, tooltip };

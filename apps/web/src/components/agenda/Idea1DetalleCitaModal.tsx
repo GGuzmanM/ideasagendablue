@@ -1,4 +1,6 @@
 import { urlArchivo } from '../../utils/urlArchivo';
+import { ESTADOS_PAGO } from '../../utils/estadoPago';
+import { calcularEdad } from '../../services/pacientesService';
 import React from 'react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -101,6 +103,13 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
     canalSel,
     setCanalSel,
     canalMutation,
+    puedeMarcarPagada,
+    estadoPagoSel,
+    setEstadoPagoSel,
+    estadoPagoMutation,
+    subiendoComprobante,
+    subirComprobante,
+    comprobanteMutation,
     promociones,
     esSecundariaBloque,
     promoCita,
@@ -178,9 +187,23 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                     <span data-testid="popover-cita-nombre" className="truncate max-w-[280px]" title={nombrePaciente}>
                       {nombrePaciente}
                     </span>
+                    {/* Edad (29-sep-2026): solo si tiene fecha de nacimiento registrada. */}
+                    {(() => {
+                      const edad = calcularEdad(cita.paciente.fechaNacimiento ?? datosPaciente?.fechaNacimiento ?? '');
+                      return edad != null ? (
+                        <span className="shrink-0 text-[11px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary" data-testid="detalle-edad-paciente">{edad} años</span>
+                      ) : null;
+                    })()}
                   </h2>
                   <div className="font-body-md text-on-surface-variant flex items-center gap-2 mt-1 flex-wrap text-xs">
                     <span>{cita.paciente.telefono || 'Sin teléfono'}</span>
+                    {cita.paciente.numeroDocumento && (
+                      <span className="flex items-center gap-1" data-campo="documento-paciente">
+                        <span className="text-on-surface-variant/40">·</span>
+                        <span className="font-semibold text-on-surface-variant/80">{cita.paciente.tipoDocumento || 'DNI'}</span>
+                        <span className="font-mono">{cita.paciente.numeroDocumento}</span>
+                      </span>
+                    )}
                     <ToggleDatosPaciente
                       encendido={cita.paciente.requiereActualizacionDatos ?? false}
                       contacto={cita.paciente}
@@ -512,18 +535,9 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
 
               <div className="font-label-caps text-label-caps text-on-surface-variant/70 uppercase tracking-wider">Profesional</div>
               <div className="flex items-center gap-2 font-body-lg text-primary font-semibold">
-                {/* Cambiar de profesional/hora solo mientras la cita aún no está en atención. */}
-                {puedeReprogramar && !esFinal && estadoNorm !== 'en_atencion' ? (
-                  <button
-                    onClick={() => setReprogramando((prev) => !prev)}
-                    className="flex items-center gap-1.5 hover:underline transition-all text-left"
-                  >
-                    <span>{profActual}</span>
-                    <span className="material-symbols-outlined text-sm text-primary">edit</span>
-                  </button>
-                ) : (
-                  <span>{profActual}</span>
-                )}
+                {/* Solo informativo (26-sep-2026): el lápiz hacía pensar que aquí se cambia la profesional. Se cambia
+                    arrastrando la cita en la agenda o con «Reprogramar cita». */}
+                <span>{profActual}</span>
               </div>
 
               {/* Columna «Adicional»: qué podóloga la atendió de verdad (informativo; no ocupa su agenda). */}
@@ -584,7 +598,7 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                 </>
               )}
 
-              <div className="font-label-caps text-label-caps text-on-surface-variant/70 uppercase tracking-wider">Canal</div>
+              <div className="font-label-caps text-label-caps text-amber-800 uppercase tracking-wider font-bold">Canal</div>
               {puedeCorregir ? (
                 <div className="relative">
                   <select
@@ -594,7 +608,7 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                       canalMutation.mutate(e.target.value);
                     }}
                     disabled={canalMutation.isPending}
-                    className="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-xl px-3 py-1.5 text-xs font-medium text-on-surface outline-none focus:ring-2 focus:ring-primary/20 appearance-none hover:border-primary/40 transition-colors"
+                    className="w-full bg-amber-50 border border-amber-400 ring-1 ring-amber-400 rounded-xl px-3 py-1.5 text-xs font-semibold text-amber-900 outline-none focus:ring-2 focus:ring-amber-400 appearance-none hover:border-amber-500 transition-colors"
                   >
                     {!canalesOpts.some((c) => c.value === canalSel) && (
                       <option value={canalSel}>{canalSel}</option>
@@ -605,16 +619,75 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                       </option>
                     ))}
                   </select>
-                  <span className="material-symbols-outlined absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-on-surface-variant/60 text-base">
+                  <span className="material-symbols-outlined absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-amber-600 text-base">
                     expand_more
                   </span>
                 </div>
               ) : (
                 // Solo lectura: el canal se fija al registrar la cita.
-                <div className="text-xs font-medium text-on-surface px-3 py-1.5 rounded-xl bg-surface-container border border-outline-variant/20">
+                <div className="text-xs font-semibold text-amber-900 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-400 ring-1 ring-amber-400">
                   {canalesOpts.find((c) => c.value === canalSel)?.label ?? canalSel ?? '—'}
                 </div>
               )}
+
+              {/* ESTADO DE PAGO (29-sep-2026): se cambia en cualquier momento; queda quién y cuándo. */}
+              <div className="font-label-caps text-label-caps text-on-surface-variant/70 uppercase tracking-wider">Pago</div>
+              <div data-testid="detalle-estado-pago" className="space-y-1">
+                <div className="grid grid-cols-3 gap-1">
+                  {ESTADOS_PAGO.map((e) => (
+                    <button
+                      key={e.value}
+                      type="button"
+                      disabled={!puedeMarcarPagada || estadoPagoMutation.isPending}
+                      onClick={() => { if (e.value === estadoPagoSel) return; setEstadoPagoSel(e.value); estadoPagoMutation.mutate(e.value); }}
+                      data-testid={`detalle-pago-${e.value}`}
+                      className={`flex items-center justify-center gap-1 rounded-lg border px-1.5 py-1 text-[11px] font-bold leading-tight transition-colors disabled:cursor-default ${estadoPagoSel === e.value ? e.activo : 'bg-surface-container border-outline-variant/20 text-on-surface-variant hover:bg-surface-container-high'}`}
+                    >
+                      <span className="material-symbols-outlined text-[14px]">{e.icono}</span>{e.label}
+                    </button>
+                  ))}
+                </div>
+                {/* Comprobante: con pago incompleto / completo se adjunta, se ve o se reemplaza (un comprobante por cita). */}
+                {estadoPagoSel !== 'pendiente' && (
+                  <div className="flex items-center gap-2 text-[11px]" data-testid="detalle-comprobante">
+                    <span className="material-symbols-outlined text-[15px] text-emerald-700">{cita.comprobanteUrl ? 'task' : 'attach_file'}</span>
+                    {cita.comprobanteUrl ? (
+                      <>
+                        <a href={urlArchivo(cita.comprobanteUrl)} target="_blank" rel="noreferrer" className="font-semibold text-emerald-700 hover:underline truncate max-w-[130px]" title={cita.comprobanteNombre ?? undefined}>
+                          {cita.comprobanteNombre || 'Ver comprobante'}
+                        </a>
+                        {puedeMarcarPagada && (
+                          <>
+                            <label className="font-semibold text-primary hover:underline cursor-pointer">
+                              {subiendoComprobante ? 'Subiendo…' : 'Reemplazar'}
+                              <input type="file" accept="image/*,application/pdf" className="hidden" disabled={subiendoComprobante}
+                                onChange={(e) => { const f = e.target.files?.[0]; if (f) void subirComprobante(f); e.target.value = ''; }} />
+                            </label>
+                            <button type="button" disabled={comprobanteMutation.isPending} onClick={() => { if (window.confirm('¿Quitar el comprobante de esta cita?')) comprobanteMutation.mutate(null); }} className="font-semibold text-red-600 hover:underline">Quitar</button>
+                          </>
+                        )}
+                      </>
+                    ) : puedeMarcarPagada ? (
+                      <label className="font-semibold text-primary hover:underline cursor-pointer" data-testid="detalle-comprobante-subir">
+                        {subiendoComprobante ? 'Subiendo comprobante…' : 'Adjuntar comprobante (opcional)'}
+                        <input type="file" accept="image/*,application/pdf" className="hidden" disabled={subiendoComprobante}
+                          onChange={(e) => { const f = e.target.files?.[0]; if (f) void subirComprobante(f); e.target.value = ''; }} />
+                      </label>
+                    ) : (
+                      <span className="text-on-surface-variant">Sin comprobante</span>
+                    )}
+                  </div>
+                )}
+                {cita.pagadaEn && cita.pagadaPor && (
+                  <p className="text-[10px] text-on-surface-variant" data-testid="detalle-pagada-hora">
+                    Registrado por {cita.pagadaPor.nombre} · {(() => {
+                      const p = Object.fromEntries(new Intl.DateTimeFormat('es-PE', { timeZone: 'America/Lima', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })
+                        .formatToParts(new Date(cita.pagadaEn)).map((x) => [x.type, x.value]));
+                      return `${String(p.day).padStart(2, '0')}/${String(p.month).padStart(2, '0')} ${p.hour}:${p.minute}`;
+                    })()}
+                  </p>
+                )}
+              </div>
 
               {/* Quién registró la cita (usuario del sistema). Sin usuario = reserva en línea del paciente o carga masiva. */}
               <div className="font-label-caps text-label-caps text-on-surface-variant/70 uppercase tracking-wider">Agendó</div>
@@ -1105,7 +1178,8 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
 
               {comentarios.length > 0 ? (
                 <div className="space-y-2">
-                  {comentarios.map((c) => (
+                  {/* Del más nuevo al más viejo (29-sep-2026). */}
+                  {[...comentarios].sort((a, b) => (b.creadoEn ?? '').localeCompare(a.creadoEn ?? '')).map((c) => (
                     <div
                       key={c.id}
                       className="bg-surface-container-low rounded-xl p-3.5 border border-outline-variant/20 relative"

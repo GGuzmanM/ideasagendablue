@@ -51,7 +51,8 @@ const INCLUDE_COMPLETO = {
 
 // ─── GET /movimientos/verificar-citas ─────────────────────────────────────────
 router.get('/verificar-citas', requireAuth, requirePermiso('movimientos.ver'), async (req, res) => {
-  const { profesionalId, fechaInicio, fechaFin } = req.query as Record<string, string>;
+  // sedeId (opcional) = sede DESTINO: sus citas no se listan porque no estorban (ahí va a estar la podóloga).
+  const { profesionalId, fechaInicio, fechaFin, sedeId } = req.query as Record<string, string>;
   if (!profesionalId || !fechaInicio) {
     throw new AppError('Faltan parámetros: profesionalId, fechaInicio', 400);
   }
@@ -67,6 +68,7 @@ router.get('/verificar-citas', requireAuth, requirePermiso('movimientos.ver'), a
   const citas = await prisma.cita.findMany({
     where: {
       profesionalId,
+      ...(sedeId ? { sedeId: { not: sedeId } } : {}),
       fecha: { gte: inicio, lte: fin },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       estado: { in: ESTADOS_BLOQUEANTES as any },
@@ -375,6 +377,7 @@ router.put('/:id', requireAuth, requirePermiso('movimientos.editar'), async (req
     const totalCitas = await prisma.cita.count({
       where: {
         profesionalId: existente.profesionalId,
+        sedeId: { not: data.sedeId! }, // las de la sede nueva no estorban
         fecha: { gte: existente.fechaInicio, lte: nuevaFechaFin ?? addDays(existente.fechaInicio, 365) },
         estado: { in: ['agendada', 'confirmada', 'llego', 'en_atencion'] },
         deletedAt: null,

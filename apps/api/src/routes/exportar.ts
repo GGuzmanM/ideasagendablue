@@ -89,6 +89,84 @@ router.get('/citas', requireAuth, async (req, res) => {
   res.send(csv);
 });
 
+// ─── GET /exportar/citas-excel?fecha=YYYY-MM-DD[&sedeId=xxx] ───── (Excel) ──
+// Lista de citas del día para control de recepción (29-sep-2026): DNI, nombre, sede, servicio, hora, teléfono, estado
+// de la cita y estado de pago. TODAS las citas del día (también canceladas / no vino: la columna Estado lo dice y
+// el encabezado trae filtros de Excel). El CSV de arriba (WhatsApp) no cambia.
+const ESTADO_CITA_LABEL: Record<string, string> = {
+  agendada: 'Agendada', confirmada: 'Confirmada', llego: 'Llegó', en_atencion: 'En atención', completada: 'Completada',
+  no_show: 'No vino', cancelada: 'Cancelada', reprogramada: 'Reprogramada',
+};
+const ESTADO_PAGO_LABEL: Record<string, string> = { completo: 'Pago completo', incompleto: 'Pago incompleto', pendiente: 'Pendiente de pago' };
+
+router.get('/citas-excel', requireAuth, async (req, res) => {
+  const { fecha, sedeId } = req.query as { fecha?: string; sedeId?: string };
+  if (!fecha || !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+    throw new AppError('Parámetro fecha requerido (YYYY-MM-DD)', 400, 'FECHA_REQUERIDA');
+  }
+  const fechaDate = new Date(fecha + 'T12:00:00');
+  const sede = sedeId ? await prisma.sede.findUnique({ where: { id: sedeId }, select: { nombre: true } }) : null;
+
+  const citas = await prisma.cita.findMany({
+    where: { fecha: fechaDate, deletedAt: null, ...(sedeId ? { sedeId } : {}) },
+    include: {
+      paciente: { select: { nombres: true, apellidoPaterno: true, apellidoMaterno: true, telefono: true, tipoDocumento: true, numeroDocumento: true } },
+      sede: { select: { nombre: true } },
+      servicio: { select: { nombre: true } },
+      subcategoria: { select: { nombre: true } },
+    },
+    orderBy: [{ sede: { nombre: 'asc' } }, { horaInicio: 'asc' }],
+  });
+
+  const diaStr = fecha.split('-').reverse().join('/');
+  const diaSemana = new Intl.DateTimeFormat('es-PE', { weekday: 'long', timeZone: 'UTC' }).format(fechaDate);
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Citas');
+  const COLS = ['DNI', 'Nombre completo', 'Sede', 'Servicio', 'Hora cita', 'Teléfono', 'Estado', '¿Pagado?'];
+  ws.columns = [{ width: 14 }, { width: 38 }, { width: 14 }, { width: 42 }, { width: 11 }, { width: 16 }, { width: 14 }, { width: 19 }];
+
+  // Filtros aplicados (arriba del listado)
+  ws.mergeCells(1, 1, 1, COLS.length);
+  ws.getCell(1, 1).value = `Lista de citas · ${diaSemana.charAt(0).toUpperCase()}${diaSemana.slice(1)} ${diaStr} · Sede: ${sede?.nombre ?? 'Todas las sedes'}`;
+  ws.getCell(1, 1).font = { name: 'Arial', bold: true, size: 13 };
+
+  const FILA_CAB = 3; // título, una fila en blanco y el encabezado
+  const cab = ws.getRow(FILA_CAB);
+  cab.values = COLS;
+  cab.eachCell((c) => {
+    c.font = { name: 'Arial', bold: true, color: { argb: 'FFFFFFFF' } };
+    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0B7A5C' } };
+    c.alignment = { vertical: 'middle' };
+  });
+  ws.autoFilter = { from: { row: FILA_CAB, column: 1 }, to: { row: FILA_CAB, column: COLS.length } };
+  ws.views = [{ state: 'frozen', ySplit: FILA_CAB }];
+
+  const COLOR_PAGO: Record<string, string> = { completo: 'FFD1FAE5', incompleto: 'FFFEF3C7', pendiente: 'FFFFE4E6' };
+  citas.forEach((c, i) => {
+    const fila = ws.getRow(FILA_CAB + 1 + i);
+    fila.values = [
+      c.paciente.numeroDocumento ?? '',
+      `${c.paciente.nombres} ${c.paciente.apellidoPaterno} ${c.paciente.apellidoMaterno}`.replace(/\s+/g, ' ').trim(),
+      c.sede.nombre,
+      c.subcategoria ? `${c.servicio.nombre} · ${c.subcategoria.nombre}` : c.servicio.nombre,
+      c.horaInicio,
+      formatearNumero(c.paciente.telefono),
+      ESTADO_CITA_LABEL[c.estado] ?? c.estado,
+      ESTADO_PAGO_LABEL[c.estadoPago] ?? c.estadoPago,
+    ];
+    fila.font = { name: 'Arial', size: 10 };
+    fila.getCell(1).numFmt = '@'; // DNI y teléfono como TEXTO (sin notación científica ni ceros perdidos)
+    fila.getCell(6).numFmt = '@';
+    fila.getCell(8).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_PAGO[c.estadoPago] ?? 'FFFFFFFF' } };
+  });
+
+  const nombreArchivo = `citas-limablue-${fecha}${sede ? `-${sede.nombre.replace(/\s+/g, '-').toLowerCase()}` : ''}.xlsx`;
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(nombreArchivo)}"`);
+  await wb.xlsx.write(res);
+  res.end();
+});
+
 // ─── GET /exportar/reactivacion ──────────────────────────────────────────────
 // Filtro por período de última visita (3 modos, prioridad de arriba hacia abajo):
 //   1) fechaDesde + fechaHasta (YYYY-MM-DD) → última visita DENTRO del rango

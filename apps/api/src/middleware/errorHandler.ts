@@ -71,8 +71,11 @@ export class CitasPendientesError extends AppError {
   constructor(
     public readonly totalCitas: number,
     public readonly sedeOrigenId: string,
+    // 28-sep-2026: CUÁLES son (fecha, hora, sede). Sin esto recepción miraba los primeros días, no veía nada y no
+    // entendía el bloqueo (un movimiento sin fin revisa todas las citas futuras).
+    detalle?: string,
   ) {
-    super(`La podóloga tiene ${totalCitas} citas activas en ese período. Deben gestionarse antes de confirmar el movimiento.`, 409, 'CITAS_PENDIENTES');
+    super(`La podóloga tiene ${totalCitas} cita(s) activa(s) que quedarían fuera de su nueva sede${detalle ? `: ${detalle}` : ''}. Muévelas a otra podóloga desde la agenda y luego confirma el movimiento.`, 409, 'CITAS_PENDIENTES');
     this.name = 'CitasPendientesError';
   }
 }

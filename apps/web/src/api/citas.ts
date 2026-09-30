@@ -1,4 +1,5 @@
 import { api } from './client';
+import type { EstadoPago } from '../utils/estadoPago';
 import type { AlertaPaciente } from '../components/pacientes/RomboAlerta';
 import type { FamiliarPaciente } from '../components/pacientes/CuadroFamiliares';
 
@@ -98,6 +99,11 @@ export interface CitaResumen {
   // Motivo si la cita se registró retroactivamente (fecha pasada). null = cita normal. El flag
   // "retroactiva" se DERIVA comparando `fecha` con el día de `creadoEn`.
   motivoRetroactivo?: string | null;
+  // PAGADA (29-sep-2026): recepción valida si ya está pagada; quién y cuándo la marcó.
+  pagada?: boolean;
+  estadoPago?: EstadoPago; // pendiente / incompleto / completo (manda sobre `pagada`)
+  pagadaEn?: string | null;
+  pagadaPor?: { id: string; nombre: string } | null;
 }
 
 export interface CrearCitaInput {
@@ -121,6 +127,8 @@ export interface CrearCitaInput {
   comprobanteNombre?: string;
   comprobanteMimeType?: string;
   motivoRetroactivo?: string; // obligatorio si `fecha` es anterior a hoy (cita retroactiva)
+  pagada?: boolean; // (anterior) ya está pagada al agendar
+  estadoPago?: EstadoPago; // estado de pago al agendar (por defecto: pendiente)
 }
 
 // Agendamiento de un bloque combinado: ancla (profilaxis) + un servicio extra.
@@ -139,6 +147,11 @@ export interface CrearCitaCombinadaInput {
   promocionId?: string | null; // promo del BLOQUE (la guarda el backend en la PRINCIPAL)
   codigoPromo?: string;
   motivoRetroactivo?: string; // obligatorio si `fecha` es anterior a hoy (bloque retroactivo)
+  pagada?: boolean; // (anterior)
+  estadoPago?: EstadoPago; // el bloque se paga junto: va en las dos citas
+  comprobanteUrl?: string; // comprobante de pago del bloque (se guarda en la principal)
+  comprobanteNombre?: string;
+  comprobanteMimeType?: string;
   extra: {
     servicioId: string;
     subcategoriaId?: string; // obligatoria si el servicio extra tiene subcategorías (p. ej. Extracción de Uñero)
@@ -166,6 +179,8 @@ export interface OcupacionExterna {
   servicioNombre: string;
   unidadNegocio: { id: string; nombre: string; color: string };
   enColumna: string; // dónde ocurre físicamente (ej. "Baro 1")
+  sedeNombre?: string; // presente = la cita es de OTRA sede (misma persona en 2 sedes, p. ej. el dermatólogo)
+  enOtraColumna?: boolean; // misma unidad: pedida «Solo X», la cita está en la columna `enColumna`
 }
 
 // Ocupación de un profesional en la sede/fecha (una entrada por cita que lo ocupa).
@@ -220,6 +235,10 @@ export const citasApi = {
   asignarAtendidoPor: (id: string, profesionalId: string | null) =>
     api.patch<CitaResumen>(`/citas/${id}/atendido-por`, { profesionalId }),
 
+  // Intercambiar dos pacientes entre podólogas (mismo día y sede): cada cita queda en el lugar de la otra.
+  intercambiar: (citaIdA: string, citaIdB: string) =>
+    api.post<{ a: CitaResumen; b: CitaResumen }>('/citas/intercambiar', { citaIdA, citaIdB }),
+
   // Cambiar tratamiento (servicio) y/o subcategoría: agendada/confirmada/llegó (admin: siempre). El servidor valida todo.
   cambiarTratamiento: (id: string, data: { servicioId: string; subcategoriaId: string | null }) =>
     api.patch<CitaResumen>(`/citas/${id}/tratamiento`, data),
@@ -231,6 +250,16 @@ export const citasApi = {
   // Canal de reserva (de dónde viene el cliente).
   actualizarCanal: (id: string, canal: string) =>
     api.patch<CitaResumen>(`/citas/${id}/canal`, { canal }),
+
+  // PAGADA: marcar o desmarcar (en un bloque combinado se marcan las dos).
+  marcarPagada: (id: string, pagada: boolean) =>
+    api.patch<CitaResumen>(`/citas/${id}/pagada`, { pagada }),
+  // Comprobante de pago: adjuntar / reemplazar (el archivo ya subido con /citas/upload-comprobante) o quitar (null).
+  actualizarComprobante: (id: string, comprobante: { url: string; nombre?: string; mimeType?: string } | null) =>
+    api.patch<CitaResumen>(`/citas/${id}/comprobante`, comprobante ?? { url: null }),
+  // Estado de pago: pendiente / incompleto / completo (en un bloque combinado cambian las dos).
+  cambiarEstadoPago: (id: string, estadoPago: EstadoPago) =>
+    api.patch<CitaResumen>(`/citas/${id}/pago`, { estadoPago }),
 
   // Promoción de la cita (el backend la escribe en la portadora del bloque si aplica).
   actualizarPromocion: (id: string, promocionId: string | null) =>

@@ -24,7 +24,7 @@ import { familiaresDePacientes } from '../services/familiaresPaciente';
 import { programarRecordatoriosDeCita, cancelarRecordatoriosDeCita, reprogramarRecordatorioDeCita, forzarEnvioRecordatorioAhora } from '../services/recordatorioService';
 // Historia clínica: la agenda solo CONSULTA (guard de cancelar/no_show/eliminar) y sincroniza la
 // fecha de la atención al mover (acción reservada a coordinación/admin). Nunca escribe contenido clínico.
-import { assertSinAtencionClinica, sincronizarFechaAtencion } from '../services/historiaClinicaService';
+import { assertSinAtencionClinica, sincronizarFechaAtencion, atencionSigueAProfesional } from '../services/historiaClinicaService';
 import { pendientesPorCitas } from '../services/consentimientoService';
 import { sincronizarVideosDeCita, cancelarVideosDeCita } from '../services/videoEnvioService';
 import { consumirTokenAccion } from '../services/tokenAccionCita';
@@ -41,6 +41,7 @@ import { getCitaCompleta, promoCitaSelect, comentariosInclude, crearComentarioEn
 import { cambiarEstadoCita, ESTADOS_FINALES } from '../services/estadoCitaService';
 import { estadoAlMover, citaParaAuditoria } from '../services/agendaReglas';
 import { MAX_ABIERTO_MIN } from '../services/tiempoReglas';
+import { reboteAbierto } from '../services/reboteService';
 
 const router = Router();
 
@@ -110,6 +111,20 @@ async function resolverSubcategoria(servicioId: string, subcategoriaId?: string 
   return subcategoriaId;
 }
 
+// ─── Estado de pago (29-sep-2026) ─────────────────────────────────────────────
+// Pendiente de pago / Pago incompleto / Pago completo. `pagada` se mantiene sincronizado (= completo) para los reportes
+// que ya lo usan; `pagadaEn` / `pagadaPorId` = cuándo y quién registró el último estado de pago.
+const zEstadoPago = z.enum(['pendiente', 'incompleto', 'completo']);
+type EstadoPagoCita = z.infer<typeof zEstadoPago>;
+/** Estado de pago al crear: `estadoPago` manda; el viejo `pagada: true` equivale a pago completo. */
+function estadoPagoInicial(d: { estadoPago?: EstadoPagoCita; pagada?: boolean }): EstadoPagoCita {
+  return d.estadoPago ?? (d.pagada ? 'completo' : 'pendiente');
+}
+/** Campos a escribir al REGISTRAR un estado de pago (queda quién y cuándo). */
+function camposPago(estado: EstadoPagoCita, usuarioId: string | null | undefined) {
+  return { estadoPago: estado, pagada: estado === 'completo', pagadaEn: new Date(), pagadaPorId: usuarioId ?? null };
+}
+
 const crearCitaSchema = z.object({
   pacienteId: z.string().uuid(),
   profesionalId: z.string().uuid().nullable().optional(),
@@ -136,6 +151,8 @@ const crearCitaSchema = z.object({
   // Motivo obligatorio SOLO si la cita se agenda en una fecha pasada (retroactiva). Se valida en
   // el handler (aquí es opcional porque para citas normales no aplica). Ver `esFechaPasadaLima`.
   motivoRetroactivo: z.string().trim().max(500).optional(),
+  pagada: z.boolean().optional(), // (anterior) true = pago completo
+  estadoPago: zEstadoPago.optional(), // 29-sep-2026: pendiente / incompleto / completo
 });
 
 // Bloque combinado: ancla (profilaxis) + un servicio extra en el mismo slot de 1 h.
@@ -156,6 +173,11 @@ const crearCombinadaSchema = z.object({
   promocionId: z.string().uuid().nullable().optional(), // promo del BLOQUE → va en la PRINCIPAL
   codigoPromo: z.string().trim().max(60).optional(),
   motivoRetroactivo: z.string().trim().max(500).optional(), // obligatorio si el bloque es en fecha pasada
+  pagada: z.boolean().optional(), // (anterior) true = pago completo
+  estadoPago: zEstadoPago.optional(), // el bloque se paga junto: va en las dos citas
+  comprobanteUrl: z.string().optional(), // 29-sep-2026: el comprobante del bloque va en la PRINCIPAL
+  comprobanteNombre: z.string().optional(),
+  comprobanteMimeType: z.string().optional(),
   extra: z.object({
     servicioId: z.string().uuid(),
     profesionalId: z.string().uuid().optional(), // default: profesional del ancla
@@ -190,7 +212,7 @@ const estadoSchema = z.object({
 // ─── Helper: validar que el slot no choca con un bloqueo del profesional ──────
 // Cubre permisos/ausencias (no recurrentes) y almuerzos (recurrentes). Lanza
 // SLOT_BLOQUEADO si hay solapamiento con el rango [horaInicio, horaInicio+duración).
-async function validarSinBloqueo(profesionalId: string, fecha: string, horaInicio: string, duracionMin: number) {
+async function validarSinBloqueo(profesionalId: string, fecha: string, horaInicio: string, duracionMin: number, sedeId?: string) {
   const slotStart = timeToMinutes(horaInicio);
   const slotEnd = slotStart + duracionMin;
   // Límites del día anclados a UTC (no dependen de la TZ del proceso).
@@ -224,6 +246,8 @@ async function validarSinBloqueo(profesionalId: string, fecha: string, horaInici
       fechaInicio: { lte: fechaPunto },
       fechaFin: { gte: fechaPunto },
       ...(esFinde ? { esRecurrente: false } : {}),
+      // Almuerzo de OTRA sede (p. ej. uno viejo de la sede anterior) no bloquea: la agenda tampoco lo muestra (24-sep-2026).
+      ...(sedeId ? { OR: [{ sedeId: null }, { sedeId }] } : {}),
     },
     select: { horaInicio: true, horaFin: true },
   });
@@ -433,6 +457,37 @@ router.get('/', requireAuth, async (req, res) => {
   res.json(conAlerta);
 });
 
+// Citas del día en OTRAS sedes de los profesionales que tienen asignación en ESTA sede ese día (25-sep-2026). Caso: el
+// dermatólogo atiende en Paz Soldán y One a la vez (una sola agenda): su cita en una sede se pinta como bloque en la
+// columna de la otra. También sirve para Daniel (su baro en otra sede ocupa su columna de podología). Solo visual.
+async function citasDeAsignadosEnOtrasSedes(sedeId: string, fecha: string) {
+  const f = fechaDb(fecha);
+  const asignados = await prisma.asignacionSede.findMany({
+    where: { sedeId, fechaInicio: { lte: f }, OR: [{ fechaFin: null }, { fechaFin: { gte: f } }] },
+    select: { profesionalId: true },
+  });
+  const ids = new Set(asignados.map((a) => a.profesionalId));
+  if (ids.size === 0) return { ids, citas: [] };
+  const citas = await prisma.cita.findMany({
+    where: {
+      sedeId: { not: sedeId },
+      fecha: f,
+      deletedAt: null,
+      estado: { notIn: ['cancelada', 'no_show', 'reprogramada'] },
+      OR: [{ profesionalId: { in: [...ids] } }, { solicitadoProfesionalId: { in: [...ids] } }],
+    },
+    select: {
+      id: true, horaInicio: true, duracionMinutos: true, estado: true, profesionalId: true, solicitadoProfesionalId: true,
+      paciente: { select: { nombres: true, apellidoPaterno: true } },
+      servicio: { select: { nombre: true } },
+      unidadNegocio: { select: { id: true, nombre: true, color: true } },
+      sede: { select: { nombre: true } },
+    },
+    orderBy: { horaInicio: 'asc' },
+  });
+  return { ids, citas };
+}
+
 // ─── GET /citas/ocupacion-externa ─────────────────────────────────────────────
 // Devuelve las citas de OTRAS unidades de negocio (misma sede + fecha) que ocupan
 // el tiempo de algún profesional. Sirve para pintar "bloques fantasma" en la agenda:
@@ -495,7 +550,56 @@ router.get('/ocupacion-externa', requireAuth, async (req, res) => {
     }));
   });
 
-  res.json(ocupaciones);
+  // + MISMA unidad, pero pedida «Solo X» y la cita está en OTRA columna (una máquina, o una que quedó así de antes):
+  //   la columna de X debe verse ocupada a esa hora, igual que ya lo exige la validación (26-sep-2026, caso Sarai).
+  const solicitadas = await prisma.cita.findMany({
+    where: {
+      sedeId, fecha: fechaDb(fecha), unidadNegocioId, deletedAt: null,
+      estado: { notIn: ['cancelada', 'no_show', 'reprogramada'] },
+      solicitadoProfesionalId: { not: null },
+    },
+    select: {
+      id: true, horaInicio: true, duracionMinutos: true, estado: true, profesionalId: true, solicitadoProfesionalId: true,
+      paciente: { select: { nombres: true, apellidoPaterno: true } },
+      servicio: { select: { nombre: true } },
+      unidadNegocio: { select: { id: true, nombre: true, color: true } },
+      profesional: { select: { nombres: true, apellidos: true } },
+    },
+  });
+  const enOtraColumna = solicitadas
+    .filter((c) => c.solicitadoProfesionalId && c.solicitadoProfesionalId !== c.profesionalId)
+    .map((c) => ({
+      citaId: c.id,
+      profesionalOcupadoId: c.solicitadoProfesionalId!,
+      horaInicio: c.horaInicio,
+      duracionMinutos: c.duracionMinutos,
+      estado: c.estado,
+      pacienteNombre: `${c.paciente.nombres.split(' ')[0]} ${c.paciente.apellidoPaterno}`,
+      servicioNombre: c.servicio.nombre,
+      unidadNegocio: c.unidadNegocio,
+      enColumna: c.profesional ? `${c.profesional.nombres.split(' ')[0]} ${c.profesional.apellidos.split(' ')[0] ?? ''}`.trim() : c.unidadNegocio.nombre,
+      enOtraColumna: true, // presente = misma unidad, la cita está en la columna `enColumna` («Solo X»)
+    }));
+
+  // + su tiempo ocupado en OTRA sede (misma persona, una sola agenda)
+  const otras = await citasDeAsignadosEnOtrasSedes(sedeId, fecha);
+  const enOtraSede = otras.citas.flatMap((c) => {
+    const ids = [c.profesionalId, c.solicitadoProfesionalId].filter((x): x is string => !!x && otras.ids.has(x));
+    return [...new Set(ids)].map((profesionalOcupadoId) => ({
+      citaId: c.id,
+      profesionalOcupadoId,
+      horaInicio: c.horaInicio,
+      duracionMinutos: c.duracionMinutos,
+      estado: c.estado,
+      pacienteNombre: `${c.paciente.nombres.split(' ')[0]} ${c.paciente.apellidoPaterno}`,
+      servicioNombre: c.servicio.nombre,
+      unidadNegocio: c.unidadNegocio,
+      enColumna: c.sede.nombre,
+      sedeNombre: c.sede.nombre, // presente = la cita es de OTRA sede
+    }));
+  });
+
+  res.json([...ocupaciones, ...enOtraColumna, ...enOtraSede]);
 });
 
 // ─── GET /citas/ocupacion-dia ─────────────────────────────────────────────────
@@ -536,7 +640,13 @@ router.get('/ocupacion-dia', requireAuth, async (req, res) => {
     }));
   });
 
-  res.json(ocupaciones);
+  const otras = await citasDeAsignadosEnOtrasSedes(sedeId, fecha);
+  const enOtraSede = otras.citas.flatMap((c) =>
+    [...new Set([c.profesionalId, c.solicitadoProfesionalId].filter((x): x is string => !!x && otras.ids.has(x)))].map((profesionalId) => ({
+      profesionalId, citaId: c.id, horaInicio: c.horaInicio, duracionMinutos: c.duracionMinutos, unidad: `${c.unidadNegocio.nombre} · ${c.sede.nombre}`,
+    })));
+
+  res.json([...ocupaciones, ...enOtraSede]);
 });
 
 // ─── Página HTML pública (confirmar/cancelar desde el correo) ─────────────────
@@ -1061,7 +1171,7 @@ router.post('/', requireAuth, requireAcceso('appointments:write', 'citas.crear')
     }
 
     // Verificar que el slot no choca con un bloqueo del profesional (permiso, almuerzo, etc.)
-    await validarSinBloqueo(profesionalId!, data.fecha, data.horaInicio, servicio.duracionMinutos);
+    await validarSinBloqueo(profesionalId!, data.fecha, data.horaInicio, servicio.duracionMinutos, data.sedeId);
 
     // Anti doble-booking CRUZADO entre unidades: el profesional efectivo y, si la cita
     // es "Solo X" (baro), el médico solicitado, no pueden estar ocupados en otra unidad
@@ -1073,7 +1183,7 @@ router.post('/', requireAuth, requireAcceso('appointments:write', 'citas.crear')
       // El médico pedido "Solo X" (p.ej. Daniel en baro) también debe estar libre de BLOQUEOS
       // (reunión, permiso, almuerzo): la cita va en una máquina, pero él no puede atenderla si
       // tiene una reunión a esa hora. Sin esto, su reunión bloqueaba podología pero NO baro.
-      await validarSinBloqueo(solicitadoProfesionalId, data.fecha, data.horaInicio, servicio.duracionMinutos);
+      await validarSinBloqueo(solicitadoProfesionalId, data.fecha, data.horaInicio, servicio.duracionMinutos, data.sedeId);
     }
 
     // Comentario inicial (opcional): se guarda como primera ENTRADA del hilo
@@ -1266,6 +1376,7 @@ router.post('/', requireAuth, requireAcceso('appointments:write', 'citas.crear')
           canal: data.canal,
           origenAsignacion,
           creadoPorUsuarioId: usuarioId ?? null, // quién hizo la reserva
+          ...(estadoPagoInicial(data) !== 'pendiente' ? camposPago(estadoPagoInicial(data), usuarioId) : {}),
           motivoRetroactivo, // null salvo que se agende en fecha pasada
           idempotencyKey: idempotencyKey ?? null,
           paquetePacienteId: data.paquetePacienteId,
@@ -1388,7 +1499,7 @@ async function validarLegBloque(opts: {
     throw new AppError(`El bloque terminaría ${minutesToTime(finSlot)}, después del fin de turno del profesional (${horario.horaFin}).`, 400, 'SLOT_EXCEDE_TURNO');
   }
 
-  await validarSinBloqueo(opts.profesionalId, opts.fecha, opts.horaInicio, opts.duracionSlot);
+  await validarSinBloqueo(opts.profesionalId, opts.fecha, opts.horaInicio, opts.duracionSlot, opts.sedeId);
   await validarProfesionalLibre(opts.profesionalId, opts.fecha, opts.horaInicio, opts.duracionSlot);
 }
 
@@ -1574,6 +1685,7 @@ router.post('/combinada', requireAuth, requireAcceso('appointments:write', 'cita
             unidadNegocioId: data.unidadNegocioId, servicioId: data.servicioId, subcategoriaId: subcategoriaAncla, fecha: fechaDate,
             horaInicio: data.horaInicio, duracionMinutos: duracionSlot, estado: 'agendada',
             canal: data.canal, origenAsignacion: origenAncla, creadoPorUsuarioId: usuarioId ?? null,
+            ...(estadoPagoInicial(data) !== 'pendiente' ? camposPago(estadoPagoInicial(data), usuarioId) : {}),
             motivoRetroactivo,
             paquetePacienteId: data.paquetePacienteId, sesionNumero: sesionAncla,
             // FUENTE ÚNICA: la promo del bloque vive SOLO aquí (PRINCIPAL/profilaxis); la
@@ -1583,6 +1695,10 @@ router.post('/combinada', requireAuth, requireAcceso('appointments:write', 'cita
             precioLista: precioListaBloque,
             montoDescuento: montoDescuentoBloque,
             montoFinal: montoFinalBloque,
+            ...(data.comprobanteUrl ? {
+              comprobanteUrl: limpiarUrlArchivo(data.comprobanteUrl), comprobanteNombre: data.comprobanteNombre ?? null,
+              comprobanteMimeType: data.comprobanteMimeType ?? null, comprobanteSubidoPor: usuarioId ?? null, comprobanteSubidoEn: new Date(),
+            } : {}),
             slotGrupoId, slotRol: 'PRINCIPAL',
           },
         });
@@ -1592,6 +1708,7 @@ router.post('/combinada', requireAuth, requireAcceso('appointments:write', 'cita
             unidadNegocioId: extraSrv.unidadNegocioId, servicioId: data.extra.servicioId, subcategoriaId: subcategoriaExtra, fecha: fechaDate,
             horaInicio: data.horaInicio, duracionMinutos: duracionSlot, estado: 'agendada',
             canal: data.canal, origenAsignacion: 'elegida_por_paciente', creadoPorUsuarioId: usuarioId ?? null,
+            ...(estadoPagoInicial(data) !== 'pendiente' ? camposPago(estadoPagoInicial(data), usuarioId) : {}),
             motivoRetroactivo,
             paquetePacienteId: data.extra.paquetePacienteId, sesionNumero: sesionExtra,
             slotGrupoId, slotRol: 'SECUNDARIO',
@@ -1959,7 +2076,10 @@ router.patch('/:id/mover', requireAuth, requireAcceso('appointments:write', 'cit
   // bloque entero por /citas/grupo/:id/mover; si la hermana ya terminó o se canceló, esta va sola.
   if (cita.slotGrupoId) {
     const hermanaViva = await prisma.cita.findFirst({
-      where: { slotGrupoId: cita.slotGrupoId, id: { not: cita.id }, deletedAt: null, estado: { notIn: [...ESTADOS_FINALES, 'reprogramada'] as never } },
+      where: {
+        slotGrupoId: cita.slotGrupoId, id: { not: cita.id }, deletedAt: null,
+        OR: [{ estado: { notIn: [...ESTADOS_FINALES, 'reprogramada'] as never } }, { estado: 'reprogramada', reboteDesde: { not: null }, reboteCerradoEn: null }],
+      },
       select: { id: true },
     });
     if (hermanaViva) {
@@ -1968,9 +2088,14 @@ router.patch('/:id/mover', requireAuth, requireAcceso('appointments:write', 'cit
   }
   // Historia clínica: mover una cita que YA tiene atención registrada es una acción reservada
   // (no visible) de coordinación/admin; la fecha de la atención acompaña a la cita (ver tx).
-  const tieneAtencion = !!(await prisma.atencionClinica.findUnique({ where: { citaId: cita.id }, select: { id: true } }));
-  if (tieneAtencion && !['admin', 'coordinadora_sedes'].includes(req.user?.rol ?? '')) {
-    throw new AppError('La cita ya tiene atención clínica registrada: solo coordinación o administración pueden moverla', 403, 'CITA_CON_ATENCION_CLINICA');
+  const atencionDeCita = await prisma.atencionClinica.findUnique({ where: { citaId: cita.id }, select: { id: true, estado: true } });
+  const tieneAtencion = !!atencionDeCita;
+  // 26-sep-2026: con la atención abierta al entrar (sin modal), casi toda cita «en atención» ya tiene atención clínica.
+  // Moverla DENTRO DEL MISMO DÍA (otra podóloga u otra hora) lo puede hacer quien reprograma; a OTRO día sigue siendo
+  // reservado de coordinación/administración.
+  const mismoDia = fechaAStr(cita.fecha) === data.fecha;
+  if (tieneAtencion && !mismoDia && !['admin', 'coordinadora_sedes'].includes(req.user?.rol ?? '')) {
+    throw new AppError('La cita ya tiene atención clínica registrada: moverla a otro día solo lo hacen coordinación o administración', 403, 'CITA_CON_ATENCION_CLINICA');
   }
 
   // Servicios de 1 hora solo en hora entera
@@ -2049,6 +2174,15 @@ router.patch('/:id/mover', requireAuth, requireAcceso('appointments:write', 'cit
     assertTerminaEnTurno(data.horaInicio, cita.duracionMinutos, turnoDestino.horaFin);
   }
 
+  // «Solo X» fuera de baro (26-sep-2026): si la cita se mueve a la columna de OTRA PERSONA, la atiende esa persona y la
+  // pedida deja de estar en ella. Antes la marca seguía y ocupaba el tiempo de X sin verse en su columna (Sarai quedó
+  // «ocupada» a las 12:00 por una cita que ya estaba en «Adicional One»). Si va a una MÁQUINA, la marca se conserva.
+  let solicitadoFinal = cita.solicitadoProfesionalId;
+  if (cita.solicitadoProfesionalId && cita.unidadNegocio.modoReserva !== 'sin_eleccion' && nuevoProfesionalId && nuevoProfesionalId !== cita.profesionalId) {
+    const destino = await prisma.profesional.findUnique({ where: { id: nuevoProfesionalId }, select: { esEquipo: true } });
+    if (!destino?.esEquipo) solicitadoFinal = null;
+  }
+
   const lockId = uuidv4();
   const lockAcquired = await acquireSlotLock(
     cita.sedeId, nuevoProfesionalId!, data.fecha, data.horaInicio, lockId
@@ -2059,15 +2193,15 @@ router.patch('/:id/mover', requireAuth, requireAcceso('appointments:write', 'cit
 
   try {
     // No permitir mover la cita encima de un bloqueo (permiso/almuerzo) del profesional destino.
-    await validarSinBloqueo(nuevoProfesionalId!, data.fecha, data.horaInicio, cita.duracionMinutos);
+    await validarSinBloqueo(nuevoProfesionalId!, data.fecha, data.horaInicio, cita.duracionMinutos, cita.sedeId);
 
     // Anti doble-booking cruzado entre unidades (excluyendo la propia cita que se mueve).
     await validarProfesionalLibre(nuevoProfesionalId!, data.fecha, data.horaInicio, cita.duracionMinutos, cita.id);
-    if (cita.solicitadoProfesionalId) {
-      await validarProfesionalLibre(cita.solicitadoProfesionalId, data.fecha, data.horaInicio, cita.duracionMinutos, cita.id);
+    if (solicitadoFinal) {
+      await validarProfesionalLibre(solicitadoFinal, data.fecha, data.horaInicio, cita.duracionMinutos, cita.id);
       // El médico solicitado ("Solo Daniel") tampoco puede quedar sobre un bloqueo suyo
       // (reunión/permiso) — el CREATE ya lo validaba; el MOVER lo omitía.
-      await validarSinBloqueo(cita.solicitadoProfesionalId, data.fecha, data.horaInicio, cita.duracionMinutos);
+      await validarSinBloqueo(solicitadoFinal, data.fecha, data.horaInicio, cita.duracionMinutos, cita.sedeId);
     }
 
     const antes = {
@@ -2082,8 +2216,8 @@ router.patch('/:id/mover', requireAuth, requireAcceso('appointments:write', 'cit
       // a horas que se pisan (distinto inicio) se colaban. Con el SELECT aquí, SSI aborta una (40001
       // → retry → ve la otra → 409). Cubre profesional y médico de baro.
       await validarProfesionalLibre(nuevoProfesionalId!, data.fecha, data.horaInicio, cita.duracionMinutos, cita.id, [], tx);
-      if (cita.solicitadoProfesionalId && cita.solicitadoProfesionalId !== nuevoProfesionalId) {
-        await validarProfesionalLibre(cita.solicitadoProfesionalId, data.fecha, data.horaInicio, cita.duracionMinutos, cita.id, [], tx);
+      if (solicitadoFinal && solicitadoFinal !== nuevoProfesionalId) {
+        await validarProfesionalLibre(solicitadoFinal, data.fecha, data.horaInicio, cita.duracionMinutos, cita.id, [], tx);
       }
       const u = await tx.cita.update({
         where: { id: req.params.id },
@@ -2094,11 +2228,16 @@ router.patch('/:id/mover', requireAuth, requireAcceso('appointments:write', 'cit
           estado: estadoAlMover(cita, data.fecha) as never,
           ...limpiezaAlMover(cita, data.fecha),
           ...(data.origenAsignacion ? { origenAsignacion: data.origenAsignacion } : {}),
+          ...(solicitadoFinal !== cita.solicitadoProfesionalId ? { solicitadoProfesionalId: solicitadoFinal } : {}),
           // Otro DÍA sin atención registrada → se suelta el médico: lo toma el médico de ese día.
           ...(sueltaMedico(cita, data.fecha, tieneAtencion) ? SIN_MEDICO : {}),
+          // Rebote: reagendarla la saca de la bandeja.
+          ...(reboteAbierto(cita) ? { reboteCerradoEn: new Date(), reboteResultado: 'reagendada' } : {}),
         },
       });
       if (tieneAtencion) await sincronizarFechaAtencion(tx, cita.id, fechaDb(data.fecha));
+      // Otra podóloga (persona): la atención (abierta o cerrada) queda a nombre de la última a la que se asignó la cita.
+      const atencionDe = atencionDeCita && nuevoProfesionalId ? await atencionSigueAProfesional(tx, cita.id, nuevoProfesionalId) : null;
       await auditEnTx(tx, {
         citaId: cita.id,
         usuarioId,
@@ -2106,7 +2245,7 @@ router.patch('/:id/mover', requireAuth, requireAcceso('appointments:write', 'cit
         entidad: 'cita',
         entidadId: cita.id,
         antes,
-        despues: { profesionalId: nuevoProfesionalId, fecha: data.fecha, horaInicio: data.horaInicio, ...(sueltaMedico(cita, data.fecha, tieneAtencion) ? { medicoSoltado: cita.medicoId } : {}) },
+        despues: { profesionalId: nuevoProfesionalId, fecha: data.fecha, horaInicio: data.horaInicio, ...(solicitadoFinal !== cita.solicitadoProfesionalId ? { solicitadoSoltado: cita.solicitadoProfesionalId } : {}), ...(sueltaMedico(cita, data.fecha, tieneAtencion) ? { medicoSoltado: cita.medicoId } : {}), ...(atencionDe ? { atencionPasaDe: atencionDe } : {}), ...(reboteAbierto(cita) ? { rebote: 'reagendada' } : {}) },
         sedeId: cita.sedeId,
         ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
       });
@@ -2215,7 +2354,7 @@ router.patch('/grupo/:slotGrupoId/mover', requireAuth, requireAcceso('appointmen
   if (!lockAcquired) throw new AppError('Slot en proceso de reserva, intente nuevamente', 409, 'SLOT_LOCKED');
 
   try {
-    await validarSinBloqueo(nuevoProfesionalId!, data.fecha, data.horaInicio, ancla.duracionMinutos);
+    await validarSinBloqueo(nuevoProfesionalId!, data.fecha, data.horaInicio, ancla.duracionMinutos, sedeId);
     // Libre EXCLUYENDO las citas del propio grupo (comparten el slot a propósito).
     await validarProfesionalLibre(nuevoProfesionalId!, data.fecha, data.horaInicio, ancla.duracionMinutos, undefined, grupoIds);
 
@@ -2234,13 +2373,15 @@ router.patch('/grupo/:slotGrupoId/mover', requireAuth, requireAcceso('appointmen
             ...limpiezaAlMover(c, data.fecha),
             ...(data.origenAsignacion ? { origenAsignacion: data.origenAsignacion } : {}),
             ...(sueltaMedico(c, data.fecha, bloqueConAtencion) ? SIN_MEDICO : {}),
+            ...(reboteAbierto(c) ? { reboteCerradoEn: new Date(), reboteResultado: 'reagendada' } : {}),
           },
         });
         if (bloqueConAtencion) await sincronizarFechaAtencion(tx, c.id, fechaDb(data.fecha));
+        const atencionDe = bloqueConAtencion && nuevoProfesionalId ? await atencionSigueAProfesional(tx, c.id, nuevoProfesionalId) : null;
         await auditEnTx(tx, {
           citaId: c.id, usuarioId, accion: 'mover', entidad: 'cita', entidadId: c.id,
           antes: { profesionalId: c.profesionalId, fecha: c.fecha, horaInicio: c.horaInicio },
-          despues: { profesionalId: nuevoProfesionalId, fecha: data.fecha, horaInicio: data.horaInicio, bloque: slotGrupoId, ...(sueltaMedico(c, data.fecha, bloqueConAtencion) ? { medicoSoltado: c.medicoId } : {}) },
+          despues: { profesionalId: nuevoProfesionalId, fecha: data.fecha, horaInicio: data.horaInicio, bloque: slotGrupoId, ...(sueltaMedico(c, data.fecha, bloqueConAtencion) ? { medicoSoltado: c.medicoId } : {}), ...(atencionDe ? { atencionPasaDe: atencionDe } : {}), ...(reboteAbierto(c) ? { rebote: 'reagendada' } : {}) },
           sedeId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
         });
       }
@@ -2516,6 +2657,164 @@ router.patch('/:id/canal', requireAuth, requireAcceso('appointments:write', 'cit
   res.json(citaCompleta);
 });
 
+// ─── PATCH /citas/:id/pago  (y /pagada, la anterior) ───────────────────────────
+// ESTADO DE PAGO (29-sep-2026): pendiente / incompleto / completo. Editable en cualquier estado (como el canal). En un
+// bloque combinado se cambia el bloque entero (se paga junto). Queda quién y cuándo, y la auditoría.
+async function aplicarEstadoPago(req: Request, res: Response, estado: EstadoPagoCita) {
+  const cita = await prisma.cita.findUnique({ where: { id: req.params.id, deletedAt: null } });
+  if (!cita) throw new AppError('Cita no encontrada', 404);
+  const grupo = cita.slotGrupoId
+    ? await prisma.cita.findMany({ where: { slotGrupoId: cita.slotGrupoId, deletedAt: null }, select: { id: true, estadoPago: true, sedeId: true } })
+    : [{ id: cita.id, estadoPago: cita.estadoPago, sedeId: cita.sedeId }];
+  const cambian = grupo.filter((c) => c.estadoPago !== estado);
+  if (cambian.length) {
+    await prisma.$transaction(async (tx) => {
+      for (const c of cambian) {
+        await tx.cita.update({ where: { id: c.id }, data: camposPago(estado, req.user?.userId) });
+        await auditEnTx(tx, {
+          citaId: c.id, usuarioId: req.user?.userId, accion: 'cambiar_estado_pago', entidad: 'cita', entidadId: c.id,
+          antes: { estadoPago: c.estadoPago }, despues: { estadoPago: estado }, sedeId: c.sedeId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
+        });
+      }
+    });
+  }
+  for (const c of cambian) {
+    const completa = await getCitaCompleta(c.id);
+    emitirEventoCita({ tipo: 'cita:actualizada', sedeId: c.sedeId, fecha: cita.fecha.toISOString().split('T')[0]!, cita: completa as never, cambiadoPor: req.user?.userId ?? 'sistema' });
+  }
+  res.json(await getCitaCompleta(cita.id));
+}
+
+// ─── PATCH /citas/:id/comprobante ─────────────────────────────────────────────
+// Comprobante de pago (29-sep-2026): se adjunta, reemplaza o quita después de agendar (el archivo se sube antes con
+// POST /citas/upload-comprobante). Un comprobante por cita; el anterior queda en la auditoría.
+router.patch('/:id/comprobante', requireAuth, requireAcceso('appointments:write', 'citas.estado'), guardSedeCita, async (req, res) => {
+  const data = z.object({
+    url: z.string().regex(/^\/uploads\/comprobantes\/[^/?#]+$/, 'Comprobante inválido').nullable(),
+    nombre: z.string().max(255).optional(),
+    mimeType: z.string().max(100).optional(),
+  }).parse({ ...req.body, url: req.body?.url ? limpiarUrlArchivo(String(req.body.url)) : null });
+  const cita = await prisma.cita.findUnique({ where: { id: req.params.id, deletedAt: null } });
+  if (!cita) throw new AppError('Cita no encontrada', 404);
+  await prisma.$transaction(async (tx) => {
+    await tx.cita.update({
+      where: { id: cita.id },
+      data: data.url
+        ? { comprobanteUrl: data.url, comprobanteNombre: data.nombre ?? null, comprobanteMimeType: data.mimeType ?? null, comprobanteSubidoPor: req.user?.userId ?? null, comprobanteSubidoEn: new Date() }
+        : { comprobanteUrl: null, comprobanteNombre: null, comprobanteMimeType: null, comprobanteSubidoPor: null, comprobanteSubidoEn: null },
+    });
+    await auditEnTx(tx, {
+      citaId: cita.id, usuarioId: req.user?.userId, accion: data.url ? 'adjuntar_comprobante' : 'quitar_comprobante', entidad: 'cita', entidadId: cita.id,
+      antes: { comprobanteUrl: cita.comprobanteUrl, comprobanteNombre: cita.comprobanteNombre },
+      despues: { comprobanteUrl: data.url, comprobanteNombre: data.url ? data.nombre ?? null : null },
+      sedeId: cita.sedeId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
+    });
+  });
+  const completa = await getCitaCompleta(cita.id);
+  emitirEventoCita({ tipo: 'cita:actualizada', sedeId: cita.sedeId, fecha: cita.fecha.toISOString().split('T')[0]!, cita: completa as never, cambiadoPor: req.user?.userId ?? 'sistema' });
+  res.json(completa);
+});
+
+router.patch('/:id/pago', requireAuth, requireAcceso('appointments:write', 'citas.estado'), guardSedeCita, async (req, res) => {
+  const { estadoPago } = z.object({ estadoPago: zEstadoPago }).parse(req.body);
+  await aplicarEstadoPago(req, res, estadoPago);
+});
+
+// Anterior (sí/no): true = pago completo, false = pendiente.
+router.patch('/:id/pagada', requireAuth, requireAcceso('appointments:write', 'citas.estado'), guardSedeCita, async (req, res) => {
+  const { pagada } = z.object({ pagada: z.boolean() }).parse(req.body);
+  await aplicarEstadoPago(req, res, pagada ? 'completo' : 'pendiente');
+});
+
+// ─── POST /citas/intercambiar ─────────────────────────────────────────────────
+// Intercambiar DOS pacientes entre podólogas (26-sep-2026): se arrastra la cita A sobre la cita B y cada una queda en el
+// lugar de la otra (profesional + hora) en un solo paso. Mismo día y misma sede. Cada una se valida como un «mover»:
+// competencia, hora válida, turno, bloqueos y que no choque con OTRA cita (excluyendo a las dos). Citas dobles y baro no.
+router.post('/intercambiar', requireAuth, requireAcceso('appointments:write', 'citas.reprogramar'), async (req, res) => {
+  const { citaIdA, citaIdB } = z.object({ citaIdA: z.string().uuid(), citaIdB: z.string().uuid() }).parse(req.body);
+  if (citaIdA === citaIdB) throw new AppError('Elige dos citas distintas', 400, 'MISMA_CITA');
+  const citas = await prisma.cita.findMany({
+    where: { id: { in: [citaIdA, citaIdB] }, deletedAt: null },
+    include: { unidadNegocio: true, paciente: { select: { nombres: true, apellidoPaterno: true } } },
+  });
+  const a = citas.find((c) => c.id === citaIdA);
+  const b = citas.find((c) => c.id === citaIdB);
+  if (!a || !b) throw new AppError('Cita no encontrada', 404);
+  assertSede(req, a.sedeId);
+  if (a.sedeId !== b.sedeId || fechaAStr(a.fecha) !== fechaAStr(b.fecha)) {
+    throw new AppError('Solo se intercambian citas del mismo día y de la misma sede', 400, 'INTERCAMBIO_INVALIDO');
+  }
+  for (const c of [a, b]) {
+    if ([...ESTADOS_FINALES, 'reprogramada'].includes(c.estado)) throw new AppError('Una de las citas ya terminó, se canceló o no vino: no se intercambia', 400, 'ESTADO_FINAL');
+    if (c.slotGrupoId) throw new AppError('Una de las citas es doble (dos servicios): esas se mueven con su bloque, no se intercambian', 400, 'CITA_DOBLE');
+    if (c.unidadNegocio.modoReserva === 'sin_eleccion') throw new AppError('Las citas de baropodometría van en máquina: no se intercambian', 400, 'INTERCAMBIO_INVALIDO');
+    if (!c.profesionalId) throw new AppError('Una de las citas no tiene profesional', 400, 'SIN_PROFESIONAL');
+  }
+  if (a.profesionalId === b.profesionalId && a.horaInicio === b.horaInicio) throw new AppError('Las dos citas ya están en el mismo lugar', 400, 'INTERCAMBIO_INVALIDO');
+  const fecha = fechaAStr(a.fecha);
+  const ids = [a.id, b.id];
+  // Cada cita va al lugar de la otra.
+  const planes = [
+    { cita: a, profesionalId: b.profesionalId!, horaInicio: b.horaInicio },
+    { cita: b, profesionalId: a.profesionalId!, horaInicio: a.horaInicio },
+  ];
+  for (const pl of planes) {
+    const comp = await prisma.competenciaProfesional.findFirst({ where: { profesionalId: pl.profesionalId, servicioId: pl.cita.servicioId, activa: true } });
+    if (!comp) {
+      const p = await prisma.profesional.findUnique({ where: { id: pl.profesionalId }, select: { nombres: true } });
+      throw new AppError(`${p?.nombres ?? 'La profesional'} no tiene habilitado el servicio de ${pl.cita.paciente.nombres.split(' ')[0]}`, 400, 'SIN_COMPETENCIA');
+    }
+    if (!horaInicioValidaParaDuracion(pl.horaInicio, pl.cita.duracionMinutos)) {
+      throw new AppError(`La cita de ${pl.cita.paciente.nombres.split(' ')[0]} dura 1 hora y solo empieza en hora entera`, 400, 'SLOT_HORA_INVALIDA');
+    }
+    await assertProfesionalActivo(pl.profesionalId);
+    const turno = (await turnosDelDia(a.sedeId, fecha, [pl.profesionalId])).get(pl.profesionalId);
+    if (!turno) throw new AppError('Una de las profesionales no atiende este día', 400, 'SIN_HORARIO');
+    if (pl.horaInicio < turno.horaInicio || pl.horaInicio >= turno.horaFin) throw new AppError(`El horario ${pl.horaInicio} está fuera del turno (${turno.horaInicio}–${turno.horaFin})`, 400, 'SLOT_FUERA_HORARIO');
+    assertTerminaEnTurno(pl.horaInicio, pl.cita.duracionMinutos, turno.horaFin);
+    await validarSinBloqueo(pl.profesionalId, fecha, pl.horaInicio, pl.cita.duracionMinutos, a.sedeId);
+  }
+  // «Solo X» (fuera de baro): si la cita pasa a la columna de OTRA persona, la atiende esa persona (misma regla que mover).
+  const soloFinal = (c: typeof a, destino: string) => (c.solicitadoProfesionalId && destino !== c.profesionalId ? null : c.solicitadoProfesionalId);
+  const atenciones = await prisma.atencionClinica.findMany({ where: { citaId: { in: ids } }, select: { id: true, citaId: true, estado: true } });
+  try {
+    await withDeadlockRetry(() => prisma.$transaction(async (tx) => {
+      for (const pl of planes) {
+        await validarProfesionalLibre(pl.profesionalId, fecha, pl.horaInicio, pl.cita.duracionMinutos, undefined, ids, tx);
+      }
+      // El índice único (profesional, fecha, hora) no deja poner B en el lugar de A mientras A siga ahí: A se aparta un
+      // instante (deletedAt) dentro de la MISMA transacción y vuelve ya en su nuevo lugar.
+      await tx.cita.update({ where: { id: a.id }, data: { deletedAt: new Date() } });
+      for (const pl of [planes[1]!, planes[0]!]) {
+        await tx.cita.update({
+          where: { id: pl.cita.id },
+          data: {
+            profesionalId: pl.profesionalId, horaInicio: pl.horaInicio, deletedAt: null,
+            solicitadoProfesionalId: soloFinal(pl.cita, pl.profesionalId),
+            // Cambió de profesional: ya no es «la que eligió el paciente».
+            ...(pl.profesionalId !== pl.cita.profesionalId && pl.cita.origenAsignacion === 'elegida_por_paciente' ? { origenAsignacion: 'asignada_automaticamente' as const } : {}),
+          },
+        });
+        const at = atenciones.find((x) => x.citaId === pl.cita.id);
+        if (at) await atencionSigueAProfesional(tx, pl.cita.id, pl.profesionalId);
+        await auditEnTx(tx, {
+          citaId: pl.cita.id, usuarioId: req.user?.userId, accion: 'intercambiar', entidad: 'cita', entidadId: pl.cita.id,
+          antes: { profesionalId: pl.cita.profesionalId, horaInicio: pl.cita.horaInicio },
+          despues: { profesionalId: pl.profesionalId, horaInicio: pl.horaInicio, conCita: pl.cita.id === a.id ? b.id : a.id },
+          sedeId: a.sedeId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
+        });
+      }
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
+  } catch (err) {
+    if (esConflictoDeSlot(err)) throw new AppError('Alguien acaba de cambiar esos horarios. Refresque e intente otra vez.', 409, 'SLOT_OCUPADO');
+    throw err;
+  }
+  await invalidateDisponibilidadCache(a.sedeId, fecha);
+  const [ca, cb] = await Promise.all([getCitaCompleta(a.id), getCitaCompleta(b.id)]);
+  for (const c of [ca, cb]) emitirEventoCita({ tipo: 'cita:actualizada', sedeId: a.sedeId, fecha, cita: c as never, cambiadoPor: req.user?.userId ?? 'sistema' });
+  res.json({ a: ca, b: cb });
+});
+
 // ─── PATCH /citas/:id/tratamiento ─────────────────────────────────────────────
 // Cambiar el TRATAMIENTO (servicio) y/o la subcategoría de una cita (24-sep-2026, pedido de la clínica).
 // Quién: admin, coordinación, contact center, especial contact y recepción. Cuándo: agendada / confirmada / llegó; después
@@ -2572,8 +2871,8 @@ router.patch('/:id/tratamiento', requireAuth, requireRol(...ROLES_CAMBIAN_TRATAM
     }
     const turno = (await turnosDelDia(cita.sedeId, fecha, [profesionalId])).get(profesionalId);
     if (turno) assertTerminaEnTurno(cita.horaInicio, duracion, turno.horaFin);
-    await validarSinBloqueo(profesionalId, fecha, cita.horaInicio, duracion);
-    if (cita.solicitadoProfesionalId) await validarSinBloqueo(cita.solicitadoProfesionalId, fecha, cita.horaInicio, duracion);
+    await validarSinBloqueo(profesionalId, fecha, cita.horaInicio, duracion, cita.sedeId);
+    if (cita.solicitadoProfesionalId) await validarSinBloqueo(cita.solicitadoProfesionalId, fecha, cita.horaInicio, duracion, cita.sedeId);
   }
 
   // Membresía / paquete: debe cubrir el nuevo tratamiento; si la sesión ya se descontó, primero se devuelve.

@@ -19,6 +19,7 @@ import { enviarAvisoCoordinacion, enviarRecordatoriosPacientes } from '../servic
 import { registrarAudit } from '../services/audit';
 import { escribirConsentimientoPdf } from '../services/consentimientoPdf';
 import * as cons from '../services/constanciaService';
+import * as erp from '../services/historiaErpService';
 import { escribirConstanciaPdf } from '../services/constanciaPdf';
 import { qrPng, urlVerificacionReceta } from '../services/pdfComun';
 import { filtroRecetaMedica, ocultarRecetasMedicas, puedeVerRecetaMedica } from '../services/recetaVisibilidad';
@@ -31,8 +32,50 @@ const router = Router();
 // La receta médica solo la ven admin, coordinación y médico: filtro en TODA respuesta del router.
 router.use(filtroRecetaMedica);
 
+// Un MÉDICO ve todas las historias, pero solo escribe en las atenciones de SUS citas (26-sep-2026): si la cita ya tiene
+// otro médico, la atención es de solo lectura para él (notas, diagnósticos, procedimientos, escalas, podograma, fotos,
+// consentimientos, constancias, cerrar/reabrir…). Sin médico en la cita, cualquiera puede (y al atender se la toma).
+const UUID_RE = '([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})';
+const atencionDe = (buscar: (id: string) => Promise<{ atencionId: string | null } | null>) => async (id: string) => (await buscar(id))?.atencionId ?? null;
+const RUTAS_DE_ATENCION: [RegExp, (id: string) => Promise<string | null>][] = [
+  [new RegExp(`^/atenciones/${UUID_RE}(/|$)`, 'i'), async (id) => id],
+  [new RegExp(`^/notas/${UUID_RE}$`, 'i'), atencionDe((id) => prisma.notaEvolucion.findUnique({ where: { id }, select: { atencionId: true } }))],
+  [new RegExp(`^/diagnosticos/${UUID_RE}$`, 'i'), atencionDe((id) => prisma.diagnosticoAtencion.findUnique({ where: { id }, select: { atencionId: true } }))],
+  [new RegExp(`^/procedimientos/${UUID_RE}$`, 'i'), atencionDe((id) => prisma.procedimientoAtencion.findUnique({ where: { id }, select: { atencionId: true } }))],
+  [new RegExp(`^/escalas/${UUID_RE}$`, 'i'), atencionDe((id) => prisma.escalaClinica.findUnique({ where: { id }, select: { atencionId: true } }))],
+  [new RegExp(`^/marcas/${UUID_RE}$`, 'i'), atencionDe((id) => prisma.marcaPodograma.findUnique({ where: { id }, select: { atencionId: true } }))],
+  [new RegExp(`^/podograma/imagenes/${UUID_RE}(/|$)`, 'i'), atencionDe((id) => prisma.imagenPodograma.findUnique({ where: { id }, select: { atencionId: true } }))],
+  [new RegExp(`^/fotos/${UUID_RE}$`, 'i'), atencionDe((id) => prisma.fotoClinica.findUnique({ where: { id }, select: { atencionId: true } }))],
+  [new RegExp(`^/constancias/${UUID_RE}(/|$)`, 'i'), atencionDe((id) => prisma.constanciaClinica.findUnique({ where: { id }, select: { atencionId: true } }))],
+  [new RegExp(`^/consentimientos/${UUID_RE}(/|$)`, 'i'), atencionDe((id) => prisma.consentimientoInformado.findUnique({ where: { id }, select: { atencionId: true } }))],
+];
+async function soloSusAtencionesSiEsMedico(req: Request, _res: Response, next: NextFunction) {
+  try {
+    const u = req.user as AuthPayload | undefined;
+    if (!u || u.rol !== 'medico' || req.method === 'GET') return next();
+    for (const [re, aAtencion] of RUTAS_DE_ATENCION) {
+      const m = re.exec(req.path);
+      if (!m) continue;
+      const atencionId = await aAtencion(m[1]!);
+      if (!atencionId) break;
+      const at = await prisma.atencionClinica.findUnique({
+        where: { id: atencionId },
+        select: { cita: { select: { medicoId: true, medico: { select: { nombres: true, apellidos: true } } } } },
+      });
+      const medico = at?.cita.medicoId && at.cita.medicoId !== u.profesionalId ? at.cita.medico : null;
+      if (medico) {
+        throw new AppError(`Esta atención es de ${medico.nombres} ${medico.apellidos}: puedes verla, pero no modificarla`, 403, 'ATENCION_DE_OTRO_MEDICO');
+      }
+      break;
+    }
+    next();
+  } catch (e) {
+    next(e);
+  }
+}
+
 const verHc = [requireAuth, requirePermiso('hc.ver')];
-const registrar = [requireAuth, requirePermiso('hc.registrar')];
+const registrar = [requireAuth, requirePermiso('hc.registrar'), soloSusAtencionesSiEsMedico];
 const anular = [requireAuth, requirePermiso('hc.anular')];
 
 const ctx = (req: Request) => ({ usuarioId: req.user?.userId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined });
@@ -60,11 +103,12 @@ router.get('/paciente/:pacienteId/pdf', ...verHc, async (req, res) => {
 
 const abrirSchema = z.object({
   citaId: uuid,
-  motivoConsulta: z.string().trim().min(2).max(500),
+  motivoConsulta: z.string().trim().max(500).optional(), // 26-sep-2026: opcional al abrir (se llena después)
   profesionalId: uuid.nullable().optional(),
 });
 const editarAtencionSchema = z.object({
-  motivoConsulta: z.string().trim().min(2).max(500).optional(),
+  motivoConsulta: z.string().trim().max(500).optional(),
+  anamnesis: z.string().trim().max(5000).nullable().optional(),
   profesionalId: uuid.nullable().optional(),
 });
 const notaSchema = z.object({
@@ -136,6 +180,13 @@ router.get('/paciente/:pacienteId', ...verHc, async (req, res) => {
   const data = await hc.getHistoriaCompleta(pacienteId);
   await hc.auditarLecturaHC({ ...ctx(req), pacienteId, origen: 'ficha' });
   res.json(data);
+});
+
+// GET /historia-clinica/paciente/:pacienteId/erp — notas clínicas del ERP anterior (congeladas, solo lectura).
+router.get('/paciente/:pacienteId/erp', ...verHc, async (req, res) => {
+  const { pacienteId } = req.params;
+  await hc.assertAccesoPaciente(user(req), pacienteId);
+  res.json(await erp.listarNotasErp(pacienteId));
 });
 
 // GET /historia-clinica/atenciones/:id — una atención completa (audita ver_hc).

@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { format, parseISO } from 'date-fns';
+import { format, parseISO, differenceInCalendarDays } from 'date-fns';
 import { es } from 'date-fns/locale';
 import {
   usePermisosData,
@@ -28,6 +28,8 @@ export function PermisosPage({
     setSedeSelId,
     fecha,
     setFecha,
+    fechaHasta,
+    setFechaHasta,
     modo,
     cambiarModo,
     profesionalIds,
@@ -146,26 +148,80 @@ export function PermisosPage({
               <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/60 p-6 shadow-xs space-y-6">
                 {/* Date Selector (Día Único) - visible salvo en Vacaciones */}
                 {modo !== 'vacaciones' && (
-                  <div className="flex items-center justify-between pb-4 border-b border-outline-variant/40">
-                    <span className="font-label-caps text-label-caps text-on-surface-variant font-bold uppercase tracking-wider">
-                      FECHA DEL BLOQUEO
-                    </span>
+                  <div className="pb-4 border-b border-outline-variant/40 space-y-3">
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <div className="flex items-center gap-3">
+                      <span className="font-label-caps text-label-caps text-on-surface-variant font-bold uppercase tracking-wider">
+                        FECHA DEL BLOQUEO
+                      </span>
+                      {/* Permiso: un día o un RANGO de fechas (mismo horario cada día). */}
+                      {modo === 'individual' && (
+                        <div className="flex rounded-lg border border-outline-variant/60 overflow-hidden text-[11px] font-bold" data-testid="permiso-modo-fechas">
+                          <button
+                            type="button"
+                            onClick={() => setFechaHasta(null)}
+                            className={cn('px-2.5 py-1 cursor-pointer transition-colors', !fechaHasta ? 'bg-primary text-white' : 'bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container-low')}
+                          >
+                            Un día
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setFechaHasta(fechaHasta ?? fecha)}
+                            className={cn('px-2.5 py-1 cursor-pointer transition-colors border-l border-outline-variant/60', fechaHasta ? 'bg-primary text-white' : 'bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container-low')}
+                          >
+                            Varios días
+                          </button>
+                        </div>
+                      )}
+                    </div>
                     <div className="flex items-center gap-3 bg-surface-container-low border border-outline-variant/60 rounded-xl p-1 shadow-2xs">
                       <div className="flex items-center gap-2 px-3 py-1 bg-surface-container-lowest border border-outline-variant/40 rounded-lg shadow-2xs">
                         <span className="material-symbols-outlined text-[18px] text-primary">
                           calendar_month
                         </span>
+                        {modo === 'individual' && fechaHasta && (
+                          <span className="text-[10px] font-bold text-on-surface-variant uppercase">Desde</span>
+                        )}
                         <input
                           type="date"
                           value={fecha}
-                          onChange={(e) => e.target.value && setFecha(e.target.value)}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (!v) return;
+                            setFecha(v);
+                            if (fechaHasta && fechaHasta < v) setFechaHasta(v);
+                          }}
                           className="bg-transparent border-none text-xs font-semibold text-on-surface focus:ring-0 outline-none cursor-pointer"
                         />
                       </div>
-                      <span className="text-xs text-on-surface-variant font-medium pr-2 capitalize">
-                        {format(parseISO(fecha), "EEEE d 'de' MMMM", { locale: es })}
-                      </span>
+                      {modo === 'individual' && fechaHasta ? (
+                        <div className="flex items-center gap-2 px-3 py-1 bg-surface-container-lowest border border-outline-variant/40 rounded-lg shadow-2xs">
+                          <span className="text-[10px] font-bold text-on-surface-variant uppercase">Hasta</span>
+                          <input
+                            type="date"
+                            value={fechaHasta}
+                            min={fecha}
+                            data-testid="permiso-fecha-hasta"
+                            onChange={(e) => e.target.value && setFechaHasta(e.target.value)}
+                            className="bg-transparent border-none text-xs font-semibold text-on-surface focus:ring-0 outline-none cursor-pointer"
+                          />
+                        </div>
+                      ) : (
+                        <span className="text-xs text-on-surface-variant font-medium pr-2 capitalize">
+                          {format(parseISO(fecha), "EEEE d 'de' MMMM", { locale: es })}
+                        </span>
+                      )}
                     </div>
+                  </div>
+                  {modo === 'individual' && fechaHasta && fechaHasta >= fecha && (
+                    <p className="text-xs text-on-surface-variant" data-testid="permiso-rango-resumen">
+                      Se bloqueará <b>{desde}–{hasta}</b> cada día del{' '}
+                      <b>{format(parseISO(fecha), "d 'de' MMMM", { locale: es })}</b> al{' '}
+                      <b>{format(parseISO(fechaHasta), "d 'de' MMMM", { locale: es })}</b>{' '}
+                      ({differenceInCalendarDays(parseISO(fechaHasta), parseISO(fecha)) + 1} día(s)).
+                      Si alguien tiene pacientes en alguno de esos días, a esa persona no se le bloquea nada.
+                    </p>
+                  )}
                   </div>
                 )}
 
@@ -640,7 +696,7 @@ export function PermisosPage({
                             className="flex items-center justify-between gap-2 text-xs bg-surface-container-lowest border border-error/20 rounded-lg p-2 font-medium"
                           >
                             <span className="font-bold text-on-surface font-mono">
-                              {c.horaInicio}
+                              {c.fecha ? `${format(parseISO(c.fecha), 'dd/MM')} ` : ''}{c.horaInicio}
                             </span>
                             <span className="flex-1 text-on-surface truncate font-semibold">
                               {c.paciente}

@@ -17,7 +17,7 @@ import {
   type TipoProcedimiento, type TipoEscala, type TipoLesion, type Pie, type PiePodograma,
   type VistaPodograma, type ImagenPodograma, VISTAS_PODOGRAMA, VISTA_PODOGRAMA_LABEL,
   usePlantillas, TIPO_LESION_LABEL, PIE_LABEL, type PlantillaClinica, type TipoPlantilla, type CamposMarca, type VistaSilueta, atencionKey, COLOR_LESION, useHistorialPodograma,
-  type ControlEntrada,
+  type ControlEntrada, type NotaErp,
 } from '../api/historiaClinica';
 import { recetasApi, verRecetaPdf, imprimirReceta, useRecetasPaciente, favoritasKey, type ItemEntrada, type TipoDocumentoReceta, type RecetaCompleta, type TipoItemReceta } from '../api/recetas';
 import { useTratamientosDiagnostico, type Cie10Item, type MedicamentoItem, type TratamientoDiagnostico } from '../api/catalogos';
@@ -40,10 +40,12 @@ import { useBorradoresStore, useMarcarBorrador, hayBorradores } from '../stores/
 
 export type TabHc = 'evolucion' | 'receta' | 'antecedentes' | 'procedimientos' | 'escalas' | 'podograma' | 'fotos' | 'consentimientos';
 const ESTADOS_ATENDIDA = ['llego', 'en_atencion', 'completada'];
-/** Un renglón de la línea de tiempo: atención nueva o visita del sistema anterior (Genexis). */
+/** Un renglón de la línea de tiempo: atención nueva, visita del sistema anterior (Genexis, con su nota clínica del
+ *  ERP si la tiene) o nota del ERP sin visita de Genexis (28-sep-2026). */
 export type LineaTiempoItem =
   | { tipo: 'hc'; id: string; fecha: string; atencion: AtencionClinica }
-  | { tipo: 'genexis'; id: string; fecha: string; visita: HistorialGenexisRegistro };
+  | { tipo: 'genexis'; id: string; fecha: string; visita: HistorialGenexisRegistro; notaErp: NotaErp | null }
+  | { tipo: 'erp'; id: string; fecha: string; nota: NotaErp };
 
 // Equipo (Baro): por el flag del servidor cuando viene; si no, por el nombre.
 const esEquipoNombre = (p: { nombres: string; esEquipo?: boolean }) => p.esEquipo ?? /^baro\b/i.test(p.nombres.trim());
@@ -67,7 +69,7 @@ export function useHistoriaClinicaPage() {
   const invalidar = useInvalidarHistoriaClinica();
   const usuario = useAuthStore((s) => s.usuario);
   const tiene = useAuthStore((s) => s.tiene);
-  const puedeRegistrar = tiene('hc.registrar');
+  const puedeRegistrarBase = tiene('hc.registrar');
   const puedeAnular = tiene('hc.anular');
   const puedeVerRecetas = tiene('receta.ver');
   const esMedicoPrescriptor = !!usuario?.esMedicoPrescriptor;
@@ -82,6 +84,11 @@ export function useHistoriaClinicaPage() {
   const [atencionSel, setAtencionSel] = useState<string | null>(params.get('atencion'));
   const atencionQ = useAtencionClinica(atencionSel ?? undefined);
   const atencion = atencionQ.data ?? null;
+  // Un médico VE la atención de otro médico (la de una cita que tomó otro), pero no la modifica (26-sep-2026; el
+  // servidor aplica el mismo candado). Sin médico en la cita, o si es suya, escribe como siempre.
+  const miFichaMedico = usuario?.profesional?.tipo === 'medico' ? usuario.profesionalId ?? null : null;
+  const medicoDeOtro = miFichaMedico && atencion?.cita.medicoId && atencion.cita.medicoId !== miFichaMedico ? atencion.cita.medico ?? null : null;
+  const puedeRegistrar = puedeRegistrarBase && !medicoDeOtro;
   const qc = useQueryClient();
   // Si la atención cambió en otra tablet (p. ej. la cerraron), el servidor responde 409: se recarga sola.
   const refrescarSi409 = (e: Error) => { if (ERROR_TIENE_409(e) && atencionSel) void qc.invalidateQueries({ queryKey: atencionKey(atencionSel) }); toast.error(e.message); };
@@ -119,7 +126,7 @@ export function useHistoriaClinicaPage() {
         const r = await historiaClinicaApi.resumenPorCita(citaParam);
         if (cancelado) return;
         if (r.atencionId) { setAtencionSel(r.atencionId); }
-        else if (puedeRegistrar && r.puedeAbrir) { const c = await citasApi.obtener(citaParam); if (!cancelado) setCitaARegistrar(c as unknown as CitaResumen); }
+        else if (puedeRegistrarBase && r.puedeAbrir) { const c = await citasApi.obtener(citaParam); if (!cancelado) await iniciarAtencion(c as unknown as CitaResumen); }
         else toast('La cita aún no fue atendida: registra la atención cuando el paciente llegue', { icon: 'ℹ️' });
       } catch (e) { toast.error((e as Error).message); }
       finally { if (!cancelado) { params.delete('cita'); setParams(params, { replace: true }); } }
@@ -142,14 +149,30 @@ export function useHistoriaClinicaPage() {
   const genexisVisitas = useMemo(() => genexisQ.data?.pages.flatMap((p) => p.data) ?? [], [genexisQ.data]);
   const genexisTotal = genexisQ.data?.pages[0]?.total ?? 0;
   const visitaGenexis = genexisSel ? genexisVisitas.find((v) => v.id === genexisSel) ?? null : null;
+  // Notas clínicas del ERP anterior (28-sep-2026, archivo de solo lectura): van DENTRO de la visita de Genexis del mismo
+  // día; las que no tienen visita salen como renglón propio del «Sistema anterior».
+  const erpQ = useQuery({
+    queryKey: ['hc-erp', pacienteId],
+    queryFn: () => historiaClinicaApi.notasErp(pacienteId!),
+    enabled: !!pacienteId,
+    staleTime: 10 * 60_000, // el archivo no cambia
+  });
+  const notasErp = useMemo(() => erpQ.data ?? [], [erpQ.data]);
+  const notaErpDeVisita = useMemo(() => new Map(notasErp.filter((n) => n.enVisitaGenexis && n.historialGenexisId).map((n) => [n.historialGenexisId!, n] as const)), [notasErp]);
+  const notasErpSueltas = useMemo(() => notasErp.filter((n) => !n.enVisitaGenexis), [notasErp]);
+  /** La nota del ERP de lo que se está mirando: la de la visita de Genexis elegida o la nota suelta elegida. */
+  const notaErpSel = genexisSel
+    ? (visitaGenexis ? notaErpDeVisita.get(visitaGenexis.id) ?? null : notasErpSueltas.find((n) => n.id === genexisSel) ?? null)
+    : null;
   /** Atenciones nuevas y visitas del sistema anterior en una sola lista, de la más reciente a la más antigua. */
   const lineaTiempo = useMemo(() => {
     const items: LineaTiempoItem[] = [
       ...(historia?.atenciones ?? []).map((a) => ({ tipo: 'hc' as const, id: a.id, fecha: a.fecha.slice(0, 10), atencion: a })),
-      ...genexisVisitas.map((v) => ({ tipo: 'genexis' as const, id: v.id, fecha: v.fechaCita, visita: v })),
+      ...genexisVisitas.map((v) => ({ tipo: 'genexis' as const, id: v.id, fecha: v.fechaCita, visita: v, notaErp: notaErpDeVisita.get(v.id) ?? null })),
+      ...notasErpSueltas.map((n) => ({ tipo: 'erp' as const, id: n.id, fecha: n.fecha, nota: n })),
     ];
     return items.sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : 0));
-  }, [historia?.atenciones, genexisVisitas]);
+  }, [historia?.atenciones, genexisVisitas, notaErpDeVisita, notasErpSueltas]);
 
   // Sin selección: la atención más reciente (si se está mirando una visita del sistema anterior, no).
   useEffect(() => {
@@ -195,6 +218,24 @@ export function useHistoriaClinicaPage() {
     limpiarBorradores();
     setAtencionSel(a.id);
     setTab('evolucion'); // una atención RECIÉN creada sí empieza por la evolución
+  };
+
+  // Entrar a la atención SIN modal (26-sep-2026): se abre con el motivo vacío; el motivo y la anamnesis se llenan
+  // después (editables hasta cerrar). Solo si hay que elegir quién atendió (baro sin médico) aparece el formulario.
+  const iniciarAtencion = async (c: CitaResumen) => {
+    if (miFichaMedico && c.medicoId && c.medicoId !== miFichaMedico) {
+      toast('Esta cita la tomó otro médico: puedes ver su historia, pero no abrir su atención', { icon: 'ℹ️' });
+      return;
+    }
+    try {
+      const a = await historiaClinicaApi.abrirAtencion({ citaId: c.id });
+      onAtencionCreada(a);
+      toast.success('Atención iniciada: llena el motivo y la anamnesis cuando quieras');
+    } catch (e) {
+      const code = (e as { data?: { code?: string } }).data?.code;
+      if (code === 'PROFESIONAL_ATENCION_REQUERIDO' || code === 'ATENCION_BARO_REQUIERE_MEDICO') setCitaARegistrar(c);
+      else toast.error((e as Error).message);
+    }
   };
 
   // Formularios de evolución y procedimientos viven AQUÍ (no en su pestaña) para que un borrador
@@ -337,13 +378,13 @@ export function useHistoriaClinicaPage() {
     estadoHcMut, alternarEstadoHc, sugerirPasiva,
     atencion, atencionSel, seleccionarAtencion, cargandoAtencion: atencionQ.isLoading, errorAtencion: atencionQ.error as Error | null,
     puedeReabrir, horasReabrir: HORAS_REABRIR,
-    lineaTiempo, genexisTotal, genexisSel, visitaGenexis, seleccionarGenexis,
+    lineaTiempo, genexisTotal: genexisTotal + notasErpSueltas.length, genexisSel, visitaGenexis, notaErpSel, seleccionarGenexis,
     hayMasGenexis: !!genexisQ.hasNextPage, cargarMasGenexis: () => void genexisQ.fetchNextPage(), cargandoGenexis: genexisQ.isFetchingNextPage,
     tab, setTab, navigate,
     vistaSilueta, setVistaSilueta, modoSilueta, setModoSilueta,
-    puedeRegistrar, puedeAnular, puedeVerRecetas, esMedicoPrescriptor, usuario,
+    puedeRegistrar, puedeRegistrarBase, medicoDeOtro, puedeAnular, puedeVerRecetas, esMedicoPrescriptor, usuario,
     citasCandidatas, mostrarCandidatas, setMostrarCandidatas,
-    citaARegistrar, setCitaARegistrar, onAtencionCreada,
+    citaARegistrar, setCitaARegistrar, onAtencionCreada, iniciarAtencion,
     recetaModal, setRecetaModal, recetaEditar, setRecetaEditar,
     cerrarMut, reabrirMut,
     invalidar,
@@ -366,13 +407,31 @@ export function useRegistrarAtencionForm(cita: CitaResumen, onCreada: (a: Atenci
   const [profesionalId, setProfesionalId] = useState<string>(preselecto);
   const { data: profesionales = [] } = useQuery({ queryKey: ['profesionales-activos'], queryFn: () => profesionalesApi.listar({ activo: true }), staleTime: 300_000 });
   const opciones = useMemo(() => (profesionales as Profesional[]).filter((p) => !esEquipoNombre(p) && (!columnaEsEquipo || p.tipo === 'medico')), [profesionales, columnaEsEquipo]);
-  const puedeGuardar = motivoConsulta.trim().length >= 2 && (!columnaEsEquipo || !!profesionalId);
+  // El motivo ya no es obligatorio al abrir (26-sep-2026): se llena después en la atención.
+  const puedeGuardar = !columnaEsEquipo || !!profesionalId;
   const abrirMut = useMutation({
     mutationFn: () => historiaClinicaApi.abrirAtencion({ citaId: cita.id, motivoConsulta: motivoConsulta.trim(), profesionalId: profesionalId || null }),
     onSuccess: (a) => { toast.success('Atención registrada'); onCreada(a); },
     onError: (e: Error) => toast.error(e.message),
   });
   return { motivoConsulta, setMotivoConsulta, profesionalId, setProfesionalId, opciones, columnaEsEquipo, puedeGuardar, abrirMut };
+}
+
+// ─── Motivo de consulta y anamnesis (26-sep-2026) ──────────────────────────────
+// Dos campos propios de la atención, editables mientras esté abierta. El borrador vive en el componente (se guarda con
+// el botón); al cambiar de atención se recarga lo guardado.
+export function useMotivoAnamnesis(a: AtencionCompleta, editable: boolean) {
+  const invalidar = useInvalidarHistoriaClinica();
+  const [motivo, setMotivo] = useState(a.motivoConsulta ?? '');
+  const [anamnesis, setAnamnesis] = useState(a.anamnesis ?? '');
+  useEffect(() => { setMotivo(a.motivoConsulta ?? ''); setAnamnesis(a.anamnesis ?? ''); }, [a.id, a.motivoConsulta, a.anamnesis]);
+  const cambiado = motivo.trim() !== (a.motivoConsulta ?? '').trim() || anamnesis.trim() !== (a.anamnesis ?? '').trim();
+  const guardarMut = useMutation({
+    mutationFn: () => historiaClinicaApi.editarAtencion(a.id, { motivoConsulta: motivo.trim(), anamnesis: anamnesis.trim() || null }),
+    onSuccess: () => { invalidar({ pacienteId: a.pacienteId, atencionId: a.id }); toast.success('Motivo y anamnesis guardados'); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  return { motivo, setMotivo, anamnesis, setAnamnesis, cambiado, editable, guardarMut };
 }
 
 // ─── Evolución: notas (editables) + diagnósticos ─────────────────────────────

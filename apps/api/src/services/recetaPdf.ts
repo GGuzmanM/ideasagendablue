@@ -20,6 +20,7 @@ import {
   Doc, AZUL, AZUL_C, GRIS, INK, ROJO, ROJO_F, LINEA, SUAVE, FRANJA, SEXO, LOGO, CLINICA,
   fechaLima, edadDe, urlVerificacionReceta, VERIFICACION_PUBLICA,
 } from './pdfComun';
+import { esFichaAdicional } from '../utils/fichaAdicional';
 
 type Item = RecetaCompleta['items'][number];
 
@@ -44,6 +45,21 @@ export function escribirRecetaPdf(doc: Doc, r: RecetaCompleta, opts: { copias?: 
     if (i > 0) doc.addPage();
     escribirCopia(doc, r, copia, opts.qr, opts.firma ?? null, mediaHoja, ajuste);
   });
+}
+
+/**
+ * Podóloga que atendió la cita (26-sep-2026, va debajo de las indicaciones generales): la de la columna; si la cita
+ * estaba en «Adicional», la que se registró como que atendió. Sin nadie (o si es quien firma) → null y no sale.
+ */
+type PersonaCita = { id: string; nombres: string; apellidos: string; tipo: string; esEquipo: boolean } | null | undefined;
+function podologaQueAtendio(r: RecetaCompleta): { etiqueta: string; nombre: string } | null {
+  const c = r.atencion?.cita;
+  const valida = (p: PersonaCita) => !!p && !p.esEquipo && (p.tipo === 'podologa' || p.tipo === 'fisioterapeuta') && !esFichaAdicional(p.nombres);
+  const p = valida(c?.profesional) ? c!.profesional : valida(c?.atendidoPor) ? c!.atendidoPor : null;
+  if (!p || p.id === r.emisor.id) return null;
+  // Solo primer nombre y primer apellido (pedido de la clínica).
+  const primero = (t: string) => t.trim().split(/\s+/)[0] ?? '';
+  return { etiqueta: p.tipo === 'fisioterapeuta' ? 'Fisioterapeuta' : 'Podóloga', nombre: `${primero(p.nombres)} ${primero(p.apellidos)}`.trim() };
 }
 
 /** Escalas de letra/espacios que se prueban en orden (1 = tamaño normal de media hoja; 0.75 ≈ letra de 6 pt). */
@@ -135,7 +151,8 @@ function escribirCopia(doc: Doc, r: RecetaCompleta, copia: CopiaReceta, qr?: Buf
     doc.font(FB).fontSize(11.7 * F).text(numero, RX, yT + 23 * F, { width: RW, align: 'right', lineBreak: false });
     doc.font(FR).fontSize(11.7 * F).text(subtitulo, RX, yT + 37 * F, { width: RW, align: 'right', lineBreak: false, ellipsis: true });
     // Identificación de la clínica (el logo dice «Siempre un paso adelante»): «LimaBlue Centro de Podología Médica · sede · dirección».
-    const datos = [CLINICA.nombre, r.atencion.sede.nombre, r.atencion.sede.direccion, CLINICA.ruc ? `RUC ${CLINICA.ruc}` : null, CLINICA.tel ? `Tel. ${CLINICA.tel}` : null].filter(Boolean).join('  ·  ');
+    // 25-sep-2026: sin «Limablue Centro de Podología Médica» (pedido de la clínica): solo sede y dirección.
+    const datos = [r.atencion.sede.nombre, r.atencion.sede.direccion, CLINICA.ruc ? `RUC ${CLINICA.ruc}` : null, CLINICA.tel ? `Tel. ${CLINICA.tel}` : null].filter(Boolean).join('  ·  ');
     // Con ?copias=2, el rótulo ORIGINAL / COPIA va en la MISMA línea, a la derecha (no empuja el contenido a otra página).
     let wRot = 0;
     if (copia) {
@@ -260,8 +277,10 @@ function escribirCopia(doc: Doc, r: RecetaCompleta, copia: CopiaReceta, qr?: Buf
   const GAP_INF = compacto ? 3 : 40;           // aire bajo la caja de verificación
   const FIRMA_W = 185;
   const FIRMA_H = compacto ? 38 : 52;
-  const IND_H = compacto ? FIRMA_H : 60;
-  const PIE_H = compacto ? FIRMA_H + 6 : IND_H + FIRMA_H + 26;
+  const podologa = podologaQueAtendio(r);
+  const POD_H = podologa ? 14 * F : 0;          // renglón «Podóloga que atendió» debajo de las indicaciones
+  const IND_H = (compacto ? FIRMA_H : 60) + POD_H;
+  const PIE_H = compacto ? Math.max(FIRMA_H, IND_H) + 6 : IND_H + FIRMA_H + 26;
   const yBarra = H - GAP_INF - BARRA;
   const pie = (y: number) => {
     const yF = Math.max(y + 6, yBarra - 8 - PIE_H);
@@ -269,7 +288,13 @@ function escribirCopia(doc: Doc, r: RecetaCompleta, copia: CopiaReceta, qr?: Buf
       || (esReceta ? 'Siga las indicaciones de cada medicamento. Ante molestias intensas, suspenda y consulte.' : 'Los medicamentos de venta bajo receta se prescriben únicamente en la Receta Médica firmada por médico colegiado.');
     const wInd = compacto ? CONTENT_W - FIRMA_W - 20 : CONTENT_W * 0.62;
     doc.font(FB).fontSize(10 * F).fillColor(M_AZUL).text('INDICACIONES GENERALES', M, yF, { width: wInd, lineBreak: false });
-    doc.font(FR).fontSize(10 * F).fillColor(M_AZUL).text(nota, M, yF + 14 * F, { width: wInd, height: IND_H - 14 * F, lineGap: 1.5, ellipsis: true });
+    const altoNota = Math.min(doc.font(FR).fontSize(10 * F).heightOfString(nota, { width: wInd, lineGap: 1.5 }), IND_H - POD_H - 14 * F);
+    doc.font(FR).fontSize(10 * F).fillColor(M_AZUL).text(nota, M, yF + 14 * F, { width: wInd, height: IND_H - POD_H - 14 * F, lineGap: 1.5, ellipsis: true });
+    if (podologa) {
+      const yP = yF + 14 * F + altoNota + 3;
+      doc.font(FB).fontSize(10 * F).fillColor(M_AZUL).text(`${podologa.etiqueta} que atendió: `, M, yP, { width: wInd, continued: true, lineBreak: false })
+        .font(FR).text(podologa.nombre, { lineBreak: false, ellipsis: true });
+    }
 
     // Firma: a la derecha (media hoja) o centrada debajo (hoja completa).
     const xS = compacto ? W - M - FIRMA_W : (W - FIRMA_W) / 2;
@@ -280,7 +305,7 @@ function escribirCopia(doc: Doc, r: RecetaCompleta, copia: CopiaReceta, qr?: Buf
     const yL = yS + 28 * s + 6;
     doc.moveTo(xS, yL).lineTo(xS + FIRMA_W, yL).lineWidth(0.7).strokeColor(M_LINEA).stroke();
     doc.font(FB).fontSize(12 * F).fillColor(M_AZUL).text(r.emisorNombre, xS, yL + 4, { width: FIRMA_W, align: 'center', lineBreak: false, ellipsis: true });
-    const cargo = esReceta ? 'Médico cirujano' : ({ podologa: 'Podóloga', fisioterapeuta: 'Fisioterapeuta', medico: 'Médico' } as Record<string, string>)[r.emisor.tipo] ?? 'Profesional';
+    const cargo = esReceta ? 'Médico' : ({ podologa: 'Podóloga', fisioterapeuta: 'Fisioterapeuta', medico: 'Médico' } as Record<string, string>)[r.emisor.tipo] ?? 'Profesional';
     const regRaw = (r.emisorRegistro ?? '').trim();
     const tienePrefijo = /^(CMP|COP|CTMP|CEP|RNE|REG\.?)\b/i.test(regRaw);
     const reg = regRaw ? (tienePrefijo ? regRaw : (esReceta ? `CMP ${regRaw}` : `Reg. ${regRaw}`)) : '';
