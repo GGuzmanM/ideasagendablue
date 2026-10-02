@@ -17,6 +17,9 @@ import { ToggleDatosPaciente } from '../pacientes/ToggleDatosPaciente';
 import { BadgeAsistencia } from '../pacientes/BadgeAsistencia';
 import { FichaPreviaCard } from '../historiaClinica/FichaPrevia';
 import { MedicoDeLaCita } from './MedicoDeLaCita';
+import { ReboteDeLaCita } from './ReboteDeLaCita';
+import { ComentarioCitaItem } from './ComentarioCitaItem';
+import { citaEnRebote } from '../../api/rebote';
 import { ConsentimientoDeLaCita } from '../consentimientos/ConsentimientoDeLaCita';
 import { formatPromoValor } from '../../api/promociones';
 import { horaLima, fmtMinutos } from '../../api/tiemposTratamiento';
@@ -157,6 +160,8 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
   const puedeReprogramar = permisos.includes('citas.reprogramar');
   const puedeCancelar = permisos.includes('citas.cancelar');
   const puedeCorregir = permisos.includes('citas.revertir');
+  // Rebote (solo admin por ahora): la cita salió de la agenda para volver a llamar al paciente.
+  const enRebote = citaEnRebote(cita);
 
   return (
     <>
@@ -235,7 +240,7 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                     : 'bg-primary/10 text-primary border-primary/20'
                 }`}
               >
-                {ESTADO_LABEL[estadoNorm] ?? cita.estado}
+                {enRebote ? 'En rebote' : (ESTADO_LABEL[estadoNorm] ?? cita.estado)}
               </span>
 
               {/* En bloque combinado, la llegada se marca en el flujo secuencial de abajo (no aquí). */}
@@ -924,16 +929,25 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
 
             {/* REPROGRAMAR — solo AGENDADAS: enviar a otro día/hora con validación de disponibilidad.
                 Cita doble (bloque): se reprograma el bloque COMPLETO, si ninguna de las dos mitades avanzó. */}
-            {puedeReprogramar && (esCombo ? bloqueReprogramable : estadoNorm === 'agendada') && !reprogramando && (
+            {puedeReprogramar && (esCombo ? bloqueReprogramable : (estadoNorm === 'agendada' || enRebote)) && !reprogramando && (
               <button
                 onClick={() => setReprogramando(true)}
                 data-testid="btn-reprogramar"
                 className="w-full flex items-center justify-center gap-2 p-3 border border-primary/40 text-primary bg-primary/5 hover:bg-primary/10 rounded-2xl transition-all font-bold text-sm cursor-pointer"
               >
                 <span className="material-symbols-outlined text-lg">event_repeat</span>
-                {esCombo ? 'Reprogramar cita doble (otro día)' : 'Reprogramar cita (otro día)'}
+                {enRebote
+                  ? (esCombo ? 'Reagendar cita doble (sale del rebote)' : 'Reagendar (sale del rebote)')
+                  : esCombo ? 'Reprogramar cita doble (otro día)' : 'Reprogramar cita (otro día)'}
               </button>
             )}
+
+            {/* REBOTE — solo admin: enviar a rebote, o llamadas/descartar si ya está en rebote */}
+            <ReboteDeLaCita
+              cita={cita}
+              grupo={esCombo ? [bloquePrincipal, bloqueSecundaria].filter((c): c is NonNullable<typeof c> => !!c) : []}
+              onListo={onClose}
+            />
 
             {/* MÉDICO DE LA CITA — el médico se la toma; admin/coordinación asignan */}
             <MedicoDeLaCita cita={cita} />
@@ -1180,18 +1194,8 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                 <div className="space-y-2">
                   {/* Del más nuevo al más viejo (29-sep-2026). */}
                   {[...comentarios].sort((a, b) => (b.creadoEn ?? '').localeCompare(a.creadoEn ?? '')).map((c) => (
-                    <div
-                      key={c.id}
-                      className="bg-surface-container-low rounded-xl p-3.5 border border-outline-variant/20 relative"
-                    >
-                      <p className="text-xs text-on-surface font-medium whitespace-pre-wrap leading-relaxed">
-                        "{c.texto}"
-                      </p>
-                      <div className="flex items-center justify-between text-[10px] text-on-surface-variant/60 font-mono font-medium pt-2.5 mt-2 border-t border-outline-variant/10">
-                        <span>{c.autor?.nombre ?? c.autorEtiqueta ?? 'Sistema'}</span>
-                        <span>{fmtComentario(c.creadoEn)}</span>
-                      </div>
-                    </div>
+                    // Editable (30-sep-2026): el autor los suyos, admin cualquiera.
+                    <ComentarioCitaItem key={c.id} citaId={cita.id} c={c} fmt={fmtComentario} variante="detalle" />
                   ))}
                 </div>
               ) : (

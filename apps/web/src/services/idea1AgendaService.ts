@@ -272,6 +272,8 @@ export function mapearCitasDbACitaAgenda(citasDb: any[] = []): CitaAgenda[] {
   });
   return result.filter((c) => {
     const est = estadoDb(c);
+    // Rebote abierto: la cita salió de la agenda (el horario quedó libre); vive en la bandeja de Rebote.
+    if (est === 'reprogramada' && c.raw?.reboteDesde && !c.raw?.reboteCerradoEn) return false;
     if (est !== 'no_show' && est !== 'cancelada') return true;
     const ini = toMin(c.horaInicio);
     const fin = ini + (c.duracionMinutos || 30);

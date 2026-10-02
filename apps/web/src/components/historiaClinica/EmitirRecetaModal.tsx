@@ -87,7 +87,7 @@ export function EmitirRecetaModal({ atencion, tipoDocumento, recetaAEditar = nul
               )}
 
               {/* Atajo · repetir una anterior del paciente o usar una favorita (se revisa antes de emitir) */}
-              {(f.anteriores.length > 0 || f.favoritas.length > 0) && (
+              {(f.anteriores.length > 0 || f.favoritas.length > 0 || f.gestionaFavoritas) && (
                 <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-low/40 p-4 grid grid-cols-1 md:grid-cols-2 gap-3" data-testid="atajos-receta">
                   <div>
                     <label className={LBL}>Repetir una anterior del paciente</label>
@@ -112,6 +112,12 @@ export function EmitirRecetaModal({ atencion, tipoDocumento, recetaAEditar = nul
                           onClick={() => { if (window.confirm('¿Quitar esta favorita de la lista? Las recetas ya emitidas no cambian.')) { f.eliminarFavoritaMut.mutate(favSel); setFavSel(''); } }}>delete</button>
                       )}
                     </div>
+                    {f.gestionaFavoritas && (
+                      <p className="text-[11px] text-on-surface-variant mt-1 flex items-start gap-1">
+                        <span className="material-symbols-outlined text-[14px] text-primary">star</span>
+                        Para crear una: agrega los tratamientos o medicamentos y, al final de la lista, usa «Guardar como favorita».
+                      </p>
+                    )}
                   </div>
                 </div>
               )}
@@ -268,7 +274,7 @@ export function EmitirRecetaModal({ atencion, tipoDocumento, recetaAEditar = nul
                 </div>
               )}
 
-              {f.items.length > 0 && (
+              {f.items.length > 0 && f.gestionaFavoritas && (
                 <div className="flex flex-wrap items-end gap-2">
                   <div className="flex-1 min-w-[220px]">
                     <label className={LBL}>Guardar como favorita (para reutilizarla)</label>

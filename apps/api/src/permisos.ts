@@ -11,6 +11,8 @@ export const PERMISOS_VALIDOS = [
   'hc.ver', 'hc.registrar', 'hc.anular', 'receta.ver', 'receta_medica.ver', 'receta.emitir',
   // Médico de la cita: autoasignar = el médico se toma / suelta a sí mismo; asignar = a cualquiera.
   'medico.autoasignar', 'medico.asignar',
+  // Recetas FAVORITAS (02-oct-2026): crearlas y quitarlas (estandarizarlas). Los demás solo las usan al emitir.
+  'receta.favoritas.gestionar',
   // Citas
   'citas.ver', 'citas.crear', 'citas.reprogramar', 'citas.cancelar', 'citas.estado', 'citas.revertir',
   // Pacientes
@@ -86,6 +88,11 @@ export const ROLES_SISTEMA: { nombre: string; label: string; descripcion: string
     // Médico colegiado: agenda y pacientes solo lectura, historia clínica completa, receta y se asigna a las citas.
     nombre: 'medico', label: 'Médico', descripcion: 'Médico colegiado: registra historia clínica y emite recetas', esSistema: false,
     permisos: ['citas.ver', 'pacientes.ver', 'membresias.ver', ...CLINICA, 'receta_medica.ver', 'receta.emitir', 'medico.autoasignar'],
+  },
+  {
+    // Médico auditor (02-oct-2026, Dr. Adrián Rojas Gálvez): todo lo del médico + estandariza las recetas favoritas.
+    nombre: 'medico_auditor', label: 'Médico auditor', descripcion: 'Médico colegiado que además estandariza las recetas favoritas', esSistema: false,
+    permisos: ['citas.ver', 'pacientes.ver', 'membresias.ver', ...CLINICA, 'receta_medica.ver', 'receta.emitir', 'medico.autoasignar', 'receta.favoritas.gestionar'],
   },
   {
     // Podóloga con login: ve la agenda de SU sede (la de Movimientos) en solo lectura. Sin historia

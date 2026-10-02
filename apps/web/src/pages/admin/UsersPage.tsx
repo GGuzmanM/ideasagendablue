@@ -10,6 +10,7 @@ import {
   type FormUsuarioState,
 } from '../../services/usersService';
 import { cn } from '../../utils/cn';
+import { esRolMedico } from '../../utils/rolesMedico';
 import { sedesApi, profesionalesApi, type Usuario, type Profesional } from '../../api';
 import { composicionSedeApi } from '../../api/composicionSede';
 
@@ -77,6 +78,7 @@ function FormularioUsuarioModal({
   const ROL_FICHA: Record<string, { titulo: string; donde: string }> = {
     recepcionista: { titulo: 'Su ficha de recepción', donde: 'Movimientos › recepción' },
     medico: { titulo: 'Su ficha de médico', donde: 'Movimientos › doctores' },
+    medico_auditor: { titulo: 'Su ficha de médico', donde: 'Movimientos › doctores' },
     podologa: { titulo: 'Su ficha de podóloga', donde: 'Movimientos y la agenda de su sede' },
   };
   const infoFicha = ROL_FICHA[form.rol];
@@ -85,7 +87,7 @@ function FormularioUsuarioModal({
     : infoFicha && form.profesionalId
       ? (editing?.profesional ? `${editing.profesional.nombres} ${editing.profesional.apellidos}`.trim() : 'ficha de profesional')
       : null;
-  const esMedico = form.rol === 'medico';
+  const esMedico = esRolMedico(form.rol);
   const [crearFicha, setCrearFicha] = useState(!editing);
   const [sedeFicha, setSedeFicha] = useState('');
   const [cmp, setCmp] = useState('');
@@ -106,7 +108,7 @@ function FormularioUsuarioModal({
     e.preventDefault();
     if (conFichaNueva && !sedeFicha) { toast.error('Elige la sede donde empieza a trabajar'); return; }
     // Si cambió de rol, no arrastrar el vínculo del rol anterior (una recepcionista no lleva ficha de médico).
-    const limpio: FormUsuarioState = { ...form, recepcionistaId: form.rol === 'recepcionista' ? form.recepcionistaId : null, profesionalId: form.rol === 'medico' || form.rol === 'podologa' ? form.profesionalId : null };
+    const limpio: FormUsuarioState = { ...form, recepcionistaId: form.rol === 'recepcionista' ? form.recepcionistaId : null, profesionalId: esRolMedico(form.rol) || form.rol === 'podologa' ? form.profesionalId : null };
     if (editaCmp && cmpFicha.trim() !== cmpInicial.trim()) limpio.colegiatura = cmpFicha.trim();
     onSave(conFichaNueva
       ? { ...limpio, sedeIds: sedesPorMovimientos ? [] : limpio.sedeIds, crearFicha: { sedeId: sedeFicha, ...(esMedico && cmp.trim() ? { colegiatura: cmp.trim() } : {}) } }

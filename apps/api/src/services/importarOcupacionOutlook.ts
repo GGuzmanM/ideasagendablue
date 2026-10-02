@@ -29,6 +29,13 @@ import { invalidateDisponibilidadCache } from '../redis';
 
 const SHOWAS_OCUPADO = new Set(['busy', 'oof']); // "Ocupado" + "Fuera de oficina"
 const MOTIVO_PREFIJO = 'Ocupado (Outlook)';
+// Asuntos que pone la propia Agenda al escribir en Outlook (citas y reuniones): NUNCA son ocupación externa.
+const ASUNTO_DE_LA_AGENDA = /^(Cita|Reuni[oó]n): /;
+// Marcas en `outlookSyncError` de un bloqueo importado y borrado (01-oct-2026):
+//  - MARCA_MANUAL: lo borró una persona en Permisos → no se vuelve a traer aunque el evento siga «ocupado».
+//  - MARCA_SYNC:   lo quitó esta sincronización (el evento pasó a «Libre» o se borró) → si vuelve a estar ocupado, se repone.
+export const MARCA_MANUAL = 'descartado_manual';
+const MARCA_SYNC = 'sync:evento_libre';
 
 // Instante UTC → { fecha 'YYYY-MM-DD', hora 'HH:mm' } en America/Lima.
 function aLima(utc: Date): { fecha: string; hora: string } {
@@ -43,24 +50,26 @@ function aLima(utc: Date): { fecha: string; hora: string } {
 
 interface ProfMailbox { id: string; nombres: string; apellidos: string; email: string }
 
+/** Bloqueos importados borrados ANTES de existir la marca: si hay auditoría de borrado en Permisos, fue a mano. */
+async function borradoAMano(bloqueoId: string): Promise<boolean> {
+  return !!(await prisma.auditLog.findFirst({ where: { entidad: 'bloqueo_agenda', entidadId: bloqueoId, accion: 'PERMISO_ELIMINADO' }, select: { id: true } }));
+}
+
 async function importarDeProfesional(prof: ProfMailbox, inicioIso: string, finIso: string) {
   const eventos = await listarEventosCalendario(prof.email, inicioIso, finIso);
 
-  // Eventos que Limablue empujó (citas + reuniones) para ESTE profesional → nunca se re-importan.
-  const [citas, reuniones] = await Promise.all([
-    prisma.cita.findMany({
-      where: { OR: [{ profesionalId: prof.id }, { solicitadoProfesionalId: prof.id }], outlookEventId: { not: null } },
-      select: { outlookEventId: true },
-    }),
-    prisma.bloqueoAgenda.findMany({
-      where: { profesionalId: prof.id, esReunion: true, outlookEventId: { not: null } },
-      select: { outlookEventId: true },
-    }),
-  ]);
+  // Eventos que Limablue empujó (citas + reuniones) → nunca se re-importan. Se buscan por id en TODAS las citas (no solo
+  // las de este profesional: si la cita pasó a otra podóloga, su evento viejo seguía aquí y entraba como «ocupado»), y
+  // además por el asunto que pone la Agenda («Cita: …», «Reunión: …»).
+  const ids = eventos.map((e) => e.id);
+  const [citas, reuniones] = ids.length ? await Promise.all([
+    prisma.cita.findMany({ where: { outlookEventId: { in: ids } }, select: { outlookEventId: true } }),
+    prisma.bloqueoAgenda.findMany({ where: { esReunion: true, outlookEventId: { in: ids } }, select: { outlookEventId: true } }),
+  ]) : [[], []];
   const propios = new Set<string>([...citas, ...reuniones].map((x) => x.outlookEventId!).filter(Boolean));
 
   // Solo eventos "ocupado" del doctor (no nuestros).
-  const ocupados = eventos.filter((e) => !propios.has(e.id) && SHOWAS_OCUPADO.has(e.showAs));
+  const ocupados = eventos.filter((e) => !propios.has(e.id) && !ASUNTO_DE_LA_AGENDA.test(e.subject) && SHOWAS_OCUPADO.has(e.showAs));
 
   let creados = 0, actualizados = 0, borrados = 0;
   const vistos = new Set<string>();
@@ -89,12 +98,14 @@ async function importarDeProfesional(prof: ProfMailbox, inicioIso: string, finIs
 
     const existente = await prisma.bloqueoAgenda.findFirst({
       where: { profesionalId: prof.id, outlookEventId: e.id, tipo: 'PERMISO', esReunion: false },
-      select: { id: true },
+      select: { id: true, deletedAt: true, outlookSyncError: true },
     });
+    // Borrado A MANO en Permisos → se respeta: no se revive (antes cada lectura lo volvía a poner).
+    if (existente?.deletedAt && (existente.outlookSyncError === MARCA_MANUAL || await borradoAMano(existente.id))) continue;
     if (existente) {
       await prisma.bloqueoAgenda.update({
         where: { id: existente.id },
-        data: { deletedAt: null, sedeId: asig.sedeId, fechaInicio: fechaInicioDt, fechaFin: fechaFinDt, horaInicio, horaFin, motivo },
+        data: { deletedAt: null, outlookSyncError: null, sedeId: asig.sedeId, fechaInicio: fechaInicioDt, fechaFin: fechaFinDt, horaInicio, horaFin, motivo },
       });
       actualizados++;
     } else {
@@ -120,7 +131,7 @@ async function importarDeProfesional(prof: ProfMailbox, inicioIso: string, finIs
   });
   for (const b of importadosVivos) {
     if (b.outlookEventId && !vistos.has(b.outlookEventId)) {
-      await prisma.bloqueoAgenda.update({ where: { id: b.id }, data: { deletedAt: new Date() } });
+      await prisma.bloqueoAgenda.update({ where: { id: b.id }, data: { deletedAt: new Date(), outlookSyncError: MARCA_SYNC } });
       borrados++;
       if (b.sedeId) sedesTocadas.add(`${b.sedeId}|${b.fechaInicio.toISOString().slice(0, 10)}`);
     }

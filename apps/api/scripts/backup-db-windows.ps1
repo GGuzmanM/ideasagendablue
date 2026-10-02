@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Backup de PostgreSQL para Limablue Agenda en WINDOWS (equivalente a backup-postgres.sh).
 
@@ -14,6 +14,11 @@
   powershell -ExecutionPolicy Bypass -File apps\api\scripts\backup-db-windows.ps1
 
 .EXAMPLE
+  # 30-sep-2026 — lo que usa la clínica: 2 respaldos diarios (13:00 y 20:00) en Documentos\Respaldos Agenda\Automaticos,
+  # 14 diarios (= 7 días) + 4 semanales + 6 mensuales, y copia opcional en OneDrive (-CopiaDir). Ver registrar-respaldos-windows.ps1.
+  powershell -ExecutionPolicy Bypass -File apps\api\scripts\backup-db-windows.ps1 -BackupRoot "C:\Users\User\Documents\Respaldos Agenda\Automaticos" -KeepDiarios 14 -KeepMensuales 6
+
+.EXAMPLE
   # Programar diario 02:30 (una sola vez, como administrador):
   $acc = New-ScheduledTaskAction -Execute 'powershell.exe' `
     -Argument '-ExecutionPolicy Bypass -File "C:\Users\User\Documents\Desarrollo LimaBlue\Agenda-lb\apps\api\scripts\backup-db-windows.ps1"'
@@ -27,7 +32,11 @@ param(
   [string]$BackupRoot,
   [int]$KeepDiarios = 7,
   [int]$KeepSemanales = 4,
-  [int]$KeepMensuales = 3
+  [int]$KeepMensuales = 3,
+  # Copia extra FUERA de esta PC (el NAS de la clínica \\192.168.0.77\it limablue\BK Agenda). Vacío = sin copia.
+  [string]$CopiaDir,
+  # Cuántos respaldos se conservan en la copia (60 = 30 días a 2 por día).
+  [int]$KeepCopia = 60
 )
 
 $ErrorActionPreference = 'Stop'
@@ -71,12 +80,17 @@ $dirSemanales = Join-Path $BackupRoot 'semanales'
 $dirMensuales = Join-Path $BackupRoot 'mensuales'
 foreach ($d in @($dirDiarios, $dirSemanales, $dirMensuales)) { New-Item -ItemType Directory -Force -Path $d | Out-Null }
 
+# Registro de cada corrida (para saber si falló sin mirar la tarea programada).
+$log = Join-Path $BackupRoot 'respaldos.log'
+function Log([string]$msg) { $l = '{0}  {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $msg; Write-Output $l; Add-Content -Path $log -Value $l -Encoding UTF8 }
+trap { Log "ERROR: $($_.Exception.Message)"; break }
+
 $ts     = Get-Date -Format 'yyyyMMdd-HHmmss'
 $semana = '{0}-W{1:00}' -f (Get-Date -UFormat '%G'), [int](Get-Date -UFormat '%V')
 $mes    = Get-Date -Format 'yyyy-MM'
 $arch   = Join-Path $dirDiarios "$pgDb-$ts.dump"
 
-Write-Output "Backup $ts -> $arch  (db=$pgDb host=${pgHost}:$pgPort)"
+Log "Backup $ts -> $arch  (db=$pgDb host=${pgHost}:$pgPort)"
 
 # ── Dump ─────────────────────────────────────────────────────────────────────
 $env:PGPASSWORD = $pgPass
@@ -88,7 +102,7 @@ try {
   & $pgRestore -l $arch | Out-Null
   if ($LASTEXITCODE -ne 0) { Remove-Item $arch -Force -ErrorAction SilentlyContinue; throw "Backup corrupto: pg_restore -l falló." }
   $mb = [math]::Round((Get-Item $arch).Length / 1MB, 1)
-  Write-Output "OK verificado ($mb MB)"
+  Log "OK verificado ($mb MB)"
 }
 finally {
   Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue
@@ -102,11 +116,24 @@ if (-not (Test-Path $men)) { Copy-Item $arch $men; Write-Output "Mensual -> $men
 
 # ── Rotación (conserva los N más recientes) ──────────────────────────────────
 function Rotar([string]$dir, [int]$keep) {
-  Get-ChildItem $dir -Filter '*.dump' | Sort-Object LastWriteTime -Descending |
+  # Solo NUESTROS respaldos (Agendav2-*.dump): nunca toca otros archivos de la carpeta (importa en el NAS).
+  Get-ChildItem -LiteralPath $dir -Filter "$pgDb-*.dump" | Sort-Object LastWriteTime -Descending |
     Select-Object -Skip $keep | Remove-Item -Force -ErrorAction SilentlyContinue
 }
 Rotar $dirDiarios   $KeepDiarios
 Rotar $dirSemanales $KeepSemanales
 Rotar $dirMensuales $KeepMensuales
-Write-Output "Rotacion OK (diarios<=$KeepDiarios, semanales<=$KeepSemanales, mensuales<=$KeepMensuales)"
-Write-Output "Listo."
+Log "Rotacion OK (diarios<=$KeepDiarios, semanales<=$KeepSemanales, mensuales<=$KeepMensuales)"
+
+# ── Copia fuera de esta carpeta (OneDrive / disco externo) ───────────────────
+if ($CopiaDir) {
+  try {
+    if (-not (Test-Path -LiteralPath $CopiaDir)) { New-Item -ItemType Directory -Force -Path $CopiaDir | Out-Null }
+    $dest = Join-Path $CopiaDir (Split-Path $arch -Leaf)
+    Copy-Item -LiteralPath $arch -Destination $dest -Force
+    if ((Get-Item -LiteralPath $dest).Length -ne (Get-Item -LiteralPath $arch).Length) { throw 'la copia quedó incompleta' }
+    Rotar $CopiaDir $KeepCopia
+    Log "Copia -> $CopiaDir"
+  } catch { Log "AVISO: no se pudo copiar a $CopiaDir ($($_.Exception.Message)); el respaldo local sí quedó." }
+}
+Log "Listo."

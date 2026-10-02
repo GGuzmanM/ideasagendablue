@@ -50,12 +50,16 @@ export interface CamposConstancia {
   dias?: number | null; // descanso: 1..30
   diagnosticoCie10Codigo?: string | null; // descanso: por defecto el principal de la atención
   observacion?: string | null; // texto adicional (opcional) que se agrega al cuerpo
+  // Constancia de atención (30-sep-2026): horario REAL de la atención (el paciente llegó antes o después).
+  // Vacío = el de la cita (hora de inicio + duración del servicio), como antes.
+  horaDesde?: string | null; // HH:mm
+  horaHasta?: string | null; // HH:mm
 }
 
 /** Arma el texto del documento (snapshot). Sirve también para previsualizar antes de emitir. */
 export function textoConstancia(p: {
   tipo: TipoConstancia; paciente: { nombres: string; apellidoPaterno: string; apellidoMaterno: string; tipoDocumento: string; numeroDocumento: string };
-  sede: string; fechaAtencion: string; horaInicio?: string | null; duracionMinutos?: number | null; servicio: string; emisor: string; cargo: string;
+  sede: string; fechaAtencion: string; horaInicio?: string | null; horaFin?: string | null; duracionMinutos?: number | null; servicio: string; emisor: string; cargo: string;
   desde?: string | null; hasta?: string | null; dias?: number | null; diagnostico?: string | null; observacion?: string | null;
 }): string {
   const nombre = `${p.paciente.nombres} ${p.paciente.apellidoPaterno} ${p.paciente.apellidoMaterno}`.replace(/\s+/g, ' ').trim();
@@ -70,7 +74,7 @@ export function textoConstancia(p: {
       `Se expide el presente a solicitud del/de la interesado/a para los fines que estime conveniente.`,
     ].filter(Boolean).join('\n\n');
   }
-  const horario = p.horaInicio ? ` de ${p.horaInicio} a ${horaFin(p.horaInicio, p.duracionMinutos ?? 30)} horas` : '';
+  const horario = p.horaInicio ? ` de ${p.horaInicio} a ${p.horaFin ?? horaFin(p.horaInicio, p.duracionMinutos ?? 30)} horas` : '';
   return [
     `Se deja constancia de que el/la paciente ${nombre}, identificado/a con ${doc}, fue atendido/a en ${CLINICA.nombre}, sede ${p.sede}, el día ${fechaLarga(p.fechaAtencion)}${horario}, por el servicio de ${p.servicio}, a cargo de ${p.emisor}, ${p.cargo}.`,
     obs ? obs : null,
@@ -120,9 +124,19 @@ export async function emitirConstancia(p: Ctx & { user: AuthPayload; atencionId:
     const m = await asegurarFirmanteReceta(medicoId);
     emisor = { id: m.id, nombre: m.nombre, registro: m.registro, cargo: 'Médico' };
   }
+  // Horario de la constancia: el que indiquen (llegó antes o después) o el de la cita.
+  const HH = /^([01]\d|2[0-3]):[0-5]\d$/;
+  let horaIni: string | null = at.cita?.horaInicio ?? null;
+  let horaFinTxt: string | null = null;
+  if (p.tipo === 'constancia_atencion' && (p.horaDesde || p.horaHasta)) {
+    if (!p.horaDesde || !HH.test(p.horaDesde) || (p.horaHasta && !HH.test(p.horaHasta))) throw new AppError('Indica la hora con el formato HH:MM', 400, 'HORA_INVALIDA');
+    if (p.horaHasta && p.horaHasta <= p.horaDesde) throw new AppError('La hora de fin debe ser posterior a la de inicio', 400, 'HORARIO_INVALIDO');
+    horaIni = p.horaDesde;
+    horaFinTxt = p.horaHasta ?? null;
+  }
   const quien = atendio ?? emisor; // en el texto: quién atendió (constancia) o quién suscribe (descanso)
   const texto = textoConstancia({
-    tipo: p.tipo, paciente: at.paciente, sede: at.sede.nombre, fechaAtencion: fechaAt, horaInicio: at.cita?.horaInicio ?? null, duracionMinutos: at.servicio.duracionMinutos,
+    tipo: p.tipo, paciente: at.paciente, sede: at.sede.nombre, fechaAtencion: fechaAt, horaInicio: horaIni, horaFin: horaFinTxt, duracionMinutos: at.servicio.duracionMinutos,
     servicio: at.servicio.nombre, emisor: quien.nombre, cargo: quien.cargo, desde, hasta, dias, diagnostico: dxTexto, observacion: p.observacion,
   });
   const etiqueta = await etiquetaUsuario(prisma, p.usuarioId);
@@ -138,7 +152,7 @@ export async function emitirConstancia(p: Ctx & { user: AuthPayload; atencionId:
     });
     await auditEnTx(tx, {
       ...ctxAudit(p), citaId: at.citaId, sedeId: at.sedeId, accion: 'emitir_constancia', entidad: 'constancia', entidadId: c.id,
-      despues: { numero: c.numero, tipo: p.tipo, desde, hasta, dias, diagnostico: dxCodigo, emisor: emisor.nombre, registradoPor: etiqueta },
+      despues: { numero: c.numero, tipo: p.tipo, desde, hasta, dias, diagnostico: dxCodigo, emisor: emisor.nombre, registradoPor: etiqueta, ...(horaIni !== (at.cita?.horaInicio ?? null) || horaFinTxt ? { horario: `${horaIni}–${horaFinTxt ?? '(según duración)'}`, horaCita: at.cita?.horaInicio ?? null } : {}) },
     });
     return c;
   });

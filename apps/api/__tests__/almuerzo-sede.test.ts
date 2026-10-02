@@ -49,3 +49,31 @@ describe('Almuerzo solo en la sede donde está la profesional', () => {
     expect(bloqueoCreate).toHaveBeenCalledTimes(1);
   });
 });
+
+// 30-sep-2026 (caso Doris Marquina): el break del mes no rige sábado ni domingo, así que una cita del SÁBADO a esa
+// hora no frena el almuerzo; una de lunes a viernes sí.
+describe('Almuerzo del mes: sábado y domingo no cuentan como choque', () => {
+  const cita = (fecha: string, horaInicio: string) => ({ fecha: new Date(`${fecha}T00:00:00.000Z`), horaInicio, duracionMinutos: 60, paciente: { nombres: 'Eileen', apellidoPaterno: 'SOTO' } });
+  const doris = { profesionalId: 'doris', sedeId: 'one', horaInicio: '13:00', creadoPor: 'u1', fecha: '2026-10-01' };
+
+  it('cita el sábado 03/10 a las 13:00 → el break de 13:00 se asigna igual', async () => {
+    asignacionFindFirst.mockResolvedValueOnce({ fechaFin: null });
+    citaFindMany.mockResolvedValue([cita('2026-10-03', '13:00')]);
+    await crearAlmuerzo(doris);
+    expect(bloqueoCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('cita el domingo a las 13:00 → tampoco frena', async () => {
+    asignacionFindFirst.mockResolvedValueOnce({ fechaFin: null });
+    citaFindMany.mockResolvedValue([cita('2026-10-04', '13:00')]);
+    await crearAlmuerzo(doris);
+    expect(bloqueoCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('cita un viernes a las 13:00 → sí frena (tapa a un paciente)', async () => {
+    asignacionFindFirst.mockResolvedValueOnce({ fechaFin: null });
+    citaFindMany.mockResolvedValue([cita('2026-10-02', '13:00')]);
+    await expect(crearAlmuerzo(doris)).rejects.toMatchObject({ statusCode: 409, code: 'CITAS_EN_RANGO' });
+    expect(bloqueoCreate).not.toHaveBeenCalled();
+  });
+});

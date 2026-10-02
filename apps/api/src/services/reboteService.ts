@@ -41,11 +41,6 @@ export function reboteAbierto(c: { reboteDesde: Date | null; reboteCerradoEn: Da
   return !!c.reboteDesde && !c.reboteCerradoEn;
 }
 
-/** El rebote se habilita por entorno (REBOTE_HABILITADO=1). Apagado → las rutas responden 404. */
-export function reboteHabilitado(): boolean {
-  return process.env.REBOTE_HABILITADO === '1';
-}
-
 interface Actor {
   usuarioId?: string;
   ip?: string;
@@ -131,13 +126,16 @@ export async function enviarARebote(
 }
 
 // ─── Bandeja ──────────────────────────────────────────────────────────────────
-/** Rebotes activos. `sedeIds` null = todas; en un bloque solo sale la cita PRINCIPAL. */
-export async function listarRebotes(filtro: { sedeIds: string[] | null; sedeId?: string }) {
+/** Rebotes activos. `sedeIds` null = todas; en un bloque solo sale la cita PRINCIPAL. Filtro opcional por unidad. */
+export async function listarRebotes(filtro: { sedeIds: string[] | null; sedeId?: string; unidadNegocioId?: string }) {
   const sedeWhere: Prisma.CitaWhereInput = filtro.sedeId
     ? { sedeId: filtro.sedeId }
     : filtro.sedeIds ? { sedeId: { in: filtro.sedeIds } } : {};
   const citas = await prisma.cita.findMany({
-    where: { ...REBOTE_ACTIVO, ...sedeWhere, OR: [{ slotRol: null }, { slotRol: 'PRINCIPAL' }] },
+    where: {
+      ...REBOTE_ACTIVO, ...sedeWhere, OR: [{ slotRol: null }, { slotRol: 'PRINCIPAL' }],
+      ...(filtro.unidadNegocioId ? { unidadNegocioId: filtro.unidadNegocioId } : {}),
+    },
     orderBy: [{ reboteVenceEl: 'asc' }],
     select: {
       id: true, fecha: true, horaInicio: true, duracionMinutos: true, slotGrupoId: true, canal: true, estadoPago: true,
@@ -146,6 +144,9 @@ export async function listarRebotes(filtro: { sedeIds: string[] | null; sedeId?:
       paciente: { select: { id: true, nombres: true, apellidoPaterno: true, apellidoMaterno: true, numeroDocumento: true, telefono: true, email: true } },
       servicio: { select: { id: true, nombre: true } },
       sede: { select: { id: true, nombre: true } },
+      unidadNegocio: { select: { id: true, nombre: true, color: true } },
+      // Baro «Solo X»: la cita va en una MÁQUINA; el médico pedido se muestra aparte.
+      solicitadoProfesional: { select: { nombres: true, apellidos: true } },
       rebotePor: { select: { id: true, nombre: true } },
       reboteLlamadas: { orderBy: { creadoEn: 'desc' }, take: 1, select: { resultado: true, nota: true, creadoEn: true, usuario: { select: { nombre: true } } } },
       _count: { select: { reboteLlamadas: true } },
@@ -166,8 +167,9 @@ export async function listarRebotes(filtro: { sedeIds: string[] | null; sedeId?:
   const extraDe = new Map(secundarias.map((s) => [s.slotGrupoId!, s.servicio.nombre]));
 
   const ahora = Date.now();
-  return citas.map(({ _count, reboteLlamadas, ...c }) => ({
+  return citas.map(({ _count, reboteLlamadas, solicitadoProfesional, ...c }) => ({
     ...c,
+    medicoPedidoNombre: solicitadoProfesional ? `${solicitadoProfesional.nombres} ${solicitadoProfesional.apellidos}`.trim() : null,
     fecha: fechaAStr(c.fecha),
     reboteLlamarDesde: c.reboteLlamarDesde ? fechaAStr(c.reboteLlamarDesde) : null,
     servicioExtra: c.slotGrupoId ? extraDe.get(c.slotGrupoId) ?? null : null,

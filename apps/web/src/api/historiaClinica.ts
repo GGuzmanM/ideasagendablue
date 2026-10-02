@@ -73,6 +73,7 @@ export interface AtencionClinica {
 export type RelacionFirmante = 'paciente' | 'apoderado';
 export interface Consentimiento {
   id: string; numero: number; procedimiento: string; firmanteNombre: string; firmanteDocumento: string | null; firmanteRelacion: RelacionFirmante;
+  formato?: number; // 3 = foto del formato en papel firmado (02-oct-2026): se ve con «Ver foto», no con PDF
   estado: 'firmado' | 'revocado'; firmadoEn: string; revocadoEn: string | null; motivoRevocacion: string | null; registradoEtiqueta: string | null;
 }
 // ─── Constancias y descansos médicos (5.4) ───────────────────────────────────
@@ -83,7 +84,10 @@ export interface Constancia {
   desde: string | null; hasta: string | null; dias: number | null; diagnosticoCie10Codigo: string | null;
   emisorNombre: string; emisorUsuarioId: string | null; codigoVerificacion: string; anuladaEn: string | null; motivoAnulacion: string | null;
 }
-export interface CamposConstancia { tipo: TipoConstancia; desde?: string | null; dias?: number | null; diagnosticoCie10Codigo?: string | null; observacion?: string | null }
+export interface CamposConstancia {
+  tipo: TipoConstancia; desde?: string | null; dias?: number | null; diagnosticoCie10Codigo?: string | null; observacion?: string | null;
+  horaDesde?: string | null; horaHasta?: string | null; // constancia de atención: horario real (vacío = el de la cita)
+}
 export const MAX_DIAS_DESCANSO = 30;
 
 /** Trazo de la firma: puntos normalizados 0..1 sobre el lienzo (ancho × alto). */
@@ -280,6 +284,7 @@ export interface HistoriaCompleta {
   historia: {
     id: string; numero: number; estado: 'activa' | 'pasiva'; fechaApertura: string;
     alergias: Alergia[]; antecedentes: Antecedente[]; atenciones: AtencionClinica[];
+    negaciones?: NegacionHc[]; // «Niega …» vigentes (02-oct-2026)
   } | null;
 }
 
@@ -302,6 +307,15 @@ export const atencionKey = (atencionId: string) => ['atencion-clinica', atencion
 export const atencionPorCitaKey = (citaId: string) => ['atencion-por-cita', citaId] as const;
 
 const B = '/historia-clinica';
+
+// ─── HC v2 (02-oct-2026) ──────────────────────────────────────────────────────
+/** «Niega»: 'alergias' o un tipo de antecedente. */
+export type CategoriaNiega = 'alergias' | TipoAntecedente;
+export interface NegacionHc { categoria: CategoriaNiega; registradoEtiqueta: string | null; actualizadoEn: string }
+/** Nota interna para los próximos médicos del paciente (solo en la HC). */
+export interface NotaMedicoPaciente { id: string; texto: string; autorUsuarioId: string | null; autorEtiqueta: string; creadoEn: string }
+/** Por cita del día: si la atención está «Completada» y si tiene procedimiento (Visor). */
+export interface ResumenClinicoCita { atencionId: string; anamnesis: boolean; diagnosticos: number; procedimientos: number; recetas: number; completada: boolean }
 /** Nota clínica del ERP anterior (28-sep-2026): congelada, solo lectura. Va dentro de la visita de Genexis del mismo
  *  día (`enVisitaGenexis`) o, si no la hay, como tarjeta propia del «Sistema anterior». */
 export interface NotaErp {
@@ -415,6 +429,29 @@ export const historiaClinicaApi = {
     const token = useAuthStore.getState().token;
     const res = await fetch(`/api/v1${B}/fotos/${id}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
     if (!res.ok) throw new Error('No se pudo cargar la foto');
+    return res.blob();
+  },
+  // ── HC v2 (02-oct-2026) ──
+  marcarNegacion: (pacienteId: string, data: { categoria: CategoriaNiega; activa: boolean; sedeId?: string | null }) =>
+    api.put<HistoriaCompleta>(`${B}/paciente/${pacienteId}/negaciones`, data),
+  notasMedico: (pacienteId: string) => api.get<NotaMedicoPaciente[]>(`${B}/paciente/${pacienteId}/notas-medico`),
+  crearNotaMedico: (pacienteId: string, texto: string, sedeId?: string | null) =>
+    api.post<NotaMedicoPaciente[]>(`${B}/paciente/${pacienteId}/notas-medico`, { texto, sedeId: sedeId ?? null }),
+  eliminarNotaMedico: (id: string) => api.delete<NotaMedicoPaciente[]>(`${B}/notas-medico/${id}`),
+  precargarAnterior: (atencionId: string) =>
+    api.post<{ atencion: AtencionCompleta; dxCopiados: number; anamnesisCopiada: boolean }>(`${B}/atenciones/${atencionId}/precargar-anterior`, {}),
+  resumenDelDia: (sedeId: string, fecha: string) => api.get<Record<string, ResumenClinicoCita>>(`${B}/resumen-del-dia`, { sedeId, fecha }),
+  subirConsentimientoFoto: (atencionId: string, archivo: File, campos: { procedimiento?: string; plantillaId?: string | null }) => {
+    const fd = new FormData();
+    fd.append('foto', archivo);
+    if (campos.procedimiento?.trim()) fd.append('procedimiento', campos.procedimiento.trim());
+    if (campos.plantillaId) fd.append('plantillaId', campos.plantillaId);
+    return api.upload<{ id: string; numero: number; atencion: AtencionCompleta }>(`${B}/atenciones/${atencionId}/consentimientos-foto`, fd);
+  },
+  blobConsentimientoFoto: async (id: string): Promise<Blob> => {
+    const token = useAuthStore.getState().token;
+    const res = await fetch(`/api/v1${B}/consentimientos/${id}/archivo`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (!res.ok) throw new Error('No se pudo cargar la foto del consentimiento');
     return res.blob();
   },
   // PDF COMPLETO de la historia (7.6): se abre en otra pestaña; su descarga queda auditada.

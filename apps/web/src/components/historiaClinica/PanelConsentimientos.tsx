@@ -10,10 +10,11 @@ import { consentimientosApi, consentimientosPacienteKey, pendientesCitaKey } fro
 import { verConsentimientoPdf } from '../../services/firmarConsentimientoService';
 import { FirmarConsentimientoDialog } from '../consentimientos/FirmarConsentimientoDialog';
 import { DialogoMotivo } from './DialogoMotivo';
+import { SubirConsentimientoFoto, verConsentimientoFoto } from './HcV2';
 
 const fmtFechaHora = (iso: string) => new Date(iso).toLocaleString('es-PE', { timeZone: 'America/Lima', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
-export function PanelConsentimientos({ a, puedeRegistrar }: { a: AtencionCompleta; puedeRegistrar: boolean }) {
+export function PanelConsentimientos({ a, puedeRegistrar, v2 = false }: { a: AtencionCompleta; puedeRegistrar: boolean; v2?: boolean }) {
   const qc = useQueryClient();
   const [firmando, setFirmando] = useState<{ plantillaId: string | null } | null>(null);
   const [revocando, setRevocando] = useState<string | null>(null);
@@ -40,10 +41,14 @@ export function PanelConsentimientos({ a, puedeRegistrar }: { a: AtencionComplet
         </div>
       ))}
       {puedeRegistrar && (
-        <button onClick={() => setFirmando({ plantillaId: null })} data-testid="nuevo-consentimiento"
-          className="px-5 py-2.5 bg-primary text-on-primary rounded-xl text-sm font-bold shadow-md shadow-primary/20 hover:opacity-90 flex items-center gap-2">
-          <span className="material-symbols-outlined text-base">contract_edit</span>Nuevo consentimiento
-        </button>
+        <div className="flex flex-wrap items-start gap-2">
+          <button onClick={() => setFirmando({ plantillaId: null })} data-testid="nuevo-consentimiento"
+            className="px-5 py-2.5 bg-primary text-on-primary rounded-xl text-sm font-bold shadow-md shadow-primary/20 hover:opacity-90 flex items-center gap-2">
+            <span className="material-symbols-outlined text-base">contract_edit</span>Nuevo consentimiento
+          </button>
+          {/* v2 (02-oct-2026): foto del formato en papel firmado, mientras se estandariza el formato digital */}
+          {v2 && a.estado !== 'cerrada' && <SubirConsentimientoFoto a={a} pendientes={pendientes.map((p) => ({ id: p.id, nombre: p.nombre }))} />}
+        </div>
       )}
 
       {isLoading ? <p className="text-sm text-on-surface-variant">Cargando…</p> : lista.length === 0 ? (
@@ -64,7 +69,11 @@ export function PanelConsentimientos({ a, puedeRegistrar }: { a: AtencionComplet
                   {x.estado === 'revocado' && <> · {x.motivoRevocacion ? `motivo: ${x.motivoRevocacion}` : 'sin expresar motivo'}</>}
                 </div>
               </div>
-              <button onClick={() => verConsentimientoPdf(x.id)} className="px-3 py-1.5 border border-outline-variant rounded-lg text-xs font-semibold hover:bg-surface-container-high flex items-center gap-1"><span className="material-symbols-outlined text-base">picture_as_pdf</span>Ver</button>
+              {x.formato === 3 ? (
+                <button onClick={() => verConsentimientoFoto(x.id)} className="px-3 py-1.5 border border-outline-variant rounded-lg text-xs font-semibold hover:bg-surface-container-high flex items-center gap-1"><span className="material-symbols-outlined text-base">image</span>Ver foto</button>
+              ) : (
+                <button onClick={() => verConsentimientoPdf(x.id)} className="px-3 py-1.5 border border-outline-variant rounded-lg text-xs font-semibold hover:bg-surface-container-high flex items-center gap-1"><span className="material-symbols-outlined text-base">picture_as_pdf</span>Ver</button>
+              )}
               {x.estado === 'firmado' && puedeRegistrar && <button onClick={() => setRevocando(x.id)} className="px-3 py-1.5 text-rose-600 text-xs font-semibold hover:underline">Revocar</button>}
             </div>
           ))}

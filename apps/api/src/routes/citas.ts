@@ -1893,8 +1893,18 @@ router.post('/reportar-enfermedad', requireAuth, requirePermiso('movimientos.edi
     horaInicio: z.string().regex(/^\d{2}:\d{2}$/).default('08:00'),
     horaFin: z.string().regex(/^\d{2}:\d{2}$/).default('20:00'),
     motivo: z.string().min(3).max(200).default('Enfermedad'),
+    // Varios días (02-oct-2026): el mismo horario cada día desde `fecha` hasta `fechaFin` (inclusive).
+    fechaFin: zFechaCita.optional(),
   }).parse(req.body);
   if (data.horaFin <= data.horaInicio) throw new AppError('La hora de fin debe ser mayor que la de inicio', 400);
+  const fechaHasta = data.fechaFin ?? data.fecha;
+  if (fechaHasta < data.fecha) throw new AppError('La fecha final no puede ser anterior a la inicial', 400);
+  const diasRango: string[] = [];
+  for (let d = new Date(`${data.fecha}T00:00:00Z`); d <= new Date(`${fechaHasta}T00:00:00Z`) && diasRango.length < 32; d.setUTCDate(d.getUTCDate() + 1)) {
+    diasRango.push(d.toISOString().slice(0, 10));
+  }
+  // Cancela citas: tope de un mes por reporte (para más días, otro reporte).
+  if (diasRango.length > 31) throw new AppError('Reporta la enfermedad por un máximo de 31 días a la vez', 400, 'RANGO_DEMASIADO_LARGO');
   assertSede(req, data.sedeId); // era la única escritura de citas sin control de sede (cancela la agenda de un día entero)
 
   const usuarioId = req.user?.userId;
@@ -1915,23 +1925,20 @@ router.post('/reportar-enfermedad', requireAuth, requirePermiso('movimientos.edi
   const toMin = (s: string) => { const [h, m] = s.split(':').map(Number); return h! * 60 + m!; };
   const desdeMin = toMin(data.horaInicio);
   const hastaMin = toMin(data.horaFin);
-  // Límites del día anclados a UTC (no dependen de la TZ del proceso); `fecha` es @db.Date.
-  const dayStart = new Date(`${data.fecha}T00:00:00.000Z`);
-  const dayEnd = new Date(`${data.fecha}T23:59:59.999Z`);
   const citasDelDia = await prisma.cita.findMany({
     where: {
       OR: [{ profesionalId: data.profesionalId }, { solicitadoProfesionalId: data.profesionalId }],
       sedeId: data.sedeId,
-      fecha: fechaDb(data.fecha),
+      fecha: { gte: fechaDb(data.fecha), lte: fechaDb(fechaHasta) },
       deletedAt: null,
       estado: { notIn: ['cancelada', 'no_show', 'reprogramada', 'completada'] },
     },
     select: {
-      id: true, estado: true, horaInicio: true, duracionMinutos: true, sedeId: true, motivoCancelacion: true, slotGrupoId: true,
+      id: true, estado: true, fecha: true, horaInicio: true, duracionMinutos: true, sedeId: true, motivoCancelacion: true, slotGrupoId: true,
       paciente: { select: { nombres: true, apellidoPaterno: true, apellidoMaterno: true, telefono: true } },
       servicio: { select: { nombre: true } },
     },
-    orderBy: { horaInicio: 'asc' },
+    orderBy: [{ fecha: 'asc' }, { horaInicio: 'asc' }],
   });
   const enRangoTodas = citasDelDia.filter((c) => {
     const ini = toMin(c.horaInicio);
@@ -1946,9 +1953,6 @@ router.post('/reportar-enfermedad', requireAuth, requirePermiso('movimientos.edi
   const bloquesAtendidos = new Set(enRangoTodas.filter((c) => idsAtendidas.has(c.id) && c.slotGrupoId).map((c) => c.slotGrupoId as string));
   const yaAtendidas = enRangoTodas.filter((c) => idsAtendidas.has(c.id) || (c.slotGrupoId && bloquesAtendidos.has(c.slotGrupoId)));
   const enRango = enRangoTodas.filter((c) => !yaAtendidas.includes(c));
-
-  const fechaInicio = new Date(`${data.fecha}T${data.horaInicio}:00`);
-  const fechaFin = new Date(`${data.fecha}T${data.horaFin}:00`);
 
   // Transacción atómica: o quedan canceladas TODAS las citas + creado el bloqueo, o nada.
   // Serializable + retry ante deadlock, coherente con el resto de escrituras de citas.
@@ -1965,44 +1969,57 @@ router.post('/reportar-enfermedad', requireAuth, requirePermiso('movimientos.edi
       });
     }
 
-    // Cancela/chanca permisos o bloqueos previos que no sean enfermedad en el rango
-    const bloqueosPrevios = await tx.bloqueoAgenda.findMany({
-      where: {
-        profesionalId: data.profesionalId,
-        esRecurrente: false,
-        deletedAt: null,
-        esEnfermedad: false,
-        esVacaciones: false, // una vacación no se borra por una enfermedad: partía el rango de vacaciones en dos
-        fechaInicio: { lt: dayEnd },
-        fechaFin: { gt: dayStart },
-      },
-    });
-    for (const b of bloqueosPrevios) {
-      if (b.horaInicio && b.horaFin) {
-        const bIni = toMin(b.horaInicio);
-        const bFin = toMin(b.horaFin);
-        if (bIni < hastaMin && bFin > desdeMin) {
+    // Por CADA día del rango: chanca permisos/bloqueos previos que se crucen y crea el bloqueo de enfermedad.
+    let primero: { id: string } | null = null;
+    for (const dia of diasRango) {
+      // Límites del día anclados a UTC (no dependen de la TZ del proceso).
+      const dayStart = new Date(`${dia}T00:00:00.000Z`);
+      const dayEnd = new Date(`${dia}T23:59:59.999Z`);
+      const bloqueosPrevios = await tx.bloqueoAgenda.findMany({
+        where: {
+          profesionalId: data.profesionalId,
+          esRecurrente: false,
+          deletedAt: null,
+          esEnfermedad: false,
+          esVacaciones: false, // una vacación no se borra por una enfermedad: partía el rango de vacaciones en dos
+          fechaInicio: { lt: dayEnd },
+          fechaFin: { gt: dayStart },
+        },
+      });
+      for (const b of bloqueosPrevios) {
+        if (b.horaInicio && b.horaFin) {
+          const bIni = toMin(b.horaInicio);
+          const bFin = toMin(b.horaFin);
+          if (bIni < hastaMin && bFin > desdeMin) {
+            await tx.bloqueoAgenda.update({ where: { id: b.id }, data: { deletedAt: new Date() } });
+          }
+        } else {
           await tx.bloqueoAgenda.update({ where: { id: b.id }, data: { deletedAt: new Date() } });
         }
-      } else {
-        await tx.bloqueoAgenda.update({ where: { id: b.id }, data: { deletedAt: new Date() } });
       }
-    }
 
-    const b = await tx.bloqueoAgenda.create({
-      data: {
-        profesionalId: data.profesionalId, sedeId: data.sedeId, tipo: 'PERMISO', esRecurrente: false,
-        esEnfermedad: true,
-        fechaInicio, fechaFin, horaInicio: data.horaInicio, horaFin: data.horaFin,
-        motivo: data.motivo.startsWith('🤒') ? data.motivo : `🤒 ${data.motivo}`, creadoPor: usuarioId,
-      },
-    });
-    await auditEnTx(tx, {
-      usuarioId, accion: 'crear_bloqueo_enfermedad', entidad: 'bloqueo_agenda', entidadId: b.id,
-      despues: { profesionalId: data.profesionalId, fecha: data.fecha, horaInicio: data.horaInicio, horaFin: data.horaFin, motivo: data.motivo, citasCanceladas: enRango.length, citasConAtencionNoCanceladas: yaAtendidas.length },
-      sedeId: data.sedeId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
-    });
-    return b;
+      const b = await tx.bloqueoAgenda.create({
+        data: {
+          profesionalId: data.profesionalId, sedeId: data.sedeId, tipo: 'PERMISO', esRecurrente: false,
+          esEnfermedad: true,
+          fechaInicio: new Date(`${dia}T${data.horaInicio}:00`), fechaFin: new Date(`${dia}T${data.horaFin}:00`),
+          horaInicio: data.horaInicio, horaFin: data.horaFin,
+          motivo: data.motivo.startsWith('🤒') ? data.motivo : `🤒 ${data.motivo}`, creadoPor: usuarioId,
+        },
+      });
+      primero ??= b;
+      const delDia = (cs: typeof enRangoTodas) => cs.filter((c) => fechaAStr(c.fecha) === dia).length;
+      await auditEnTx(tx, {
+        usuarioId, accion: 'crear_bloqueo_enfermedad', entidad: 'bloqueo_agenda', entidadId: b.id,
+        despues: {
+          profesionalId: data.profesionalId, fecha: dia, horaInicio: data.horaInicio, horaFin: data.horaFin, motivo: data.motivo,
+          citasCanceladas: delDia(enRango), citasConAtencionNoCanceladas: delDia(yaAtendidas),
+          ...(diasRango.length > 1 ? { rango: `${data.fecha} → ${fechaHasta}` } : {}),
+        },
+        sedeId: data.sedeId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
+      });
+    }
+    return primero!;
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable })).catch((err) => {
     // A diferencia de reservar un slot, aquí no hay unicidad en juego: un deadlock que agotó
     // los reintentos (P2034 o el 40P01/40001 CRUDO que Prisma no clasifica) es un choque
@@ -2017,7 +2034,6 @@ router.post('/reportar-enfermedad', requireAuth, requirePermiso('movimientos.edi
   // Side-effects best-effort de cada cita cancelada (idénticos a gestionar-movimiento):
   // reembolso de sesión, recordatorios y videos cancelados, evento Outlook eliminado,
   // webhook a integraciones y evento en tiempo real.
-  const fechaStr = data.fecha;
   for (const c of enRango) {
     await sincronizarSesionPaquete(c.id);
     void cancelarRecordatoriosDeCita(c.id);
@@ -2025,19 +2041,20 @@ router.post('/reportar-enfermedad', requireAuth, requirePermiso('movimientos.edi
     void sincronizarCitaOutlook('cancelar', c.id);
     await dispararWebhooks('appointment.cancelled', c.sedeId, await getCitaCompleta(c.id));
     emitirEventoCita({
-      tipo: 'cita:estadoCambiado', sedeId: c.sedeId, fecha: fechaStr,
+      tipo: 'cita:estadoCambiado', sedeId: c.sedeId, fecha: fechaAStr(c.fecha),
       cita: { id: c.id, estado: 'cancelada' } as never, cambiadoPor: usuarioId ?? 'sistema',
     });
   }
-  await invalidateDisponibilidadCache(data.sedeId, fechaStr);
+  for (const dia of diasRango) await invalidateDisponibilidadCache(data.sedeId, dia);
 
   setImmediate(() => {
-    const d = new Date(`${data.fecha}T00:00:00Z`); const h = new Date(`${data.fecha}T23:59:59Z`);
+    const d = new Date(`${data.fecha}T00:00:00Z`); const h = new Date(`${fechaHasta}T23:59:59Z`);
     agregarRango(d, h).catch(() => {/* silencioso */});
   });
 
   // Lista de pacientes afectados para que recepción los contacte y reagende.
   const fila = (c: typeof enRangoTodas[number]) => ({
+    ...(diasRango.length > 1 ? { fecha: fechaAStr(c.fecha) } : {}),
     horaInicio: c.horaInicio,
     estado: c.estado as string,
     servicio: c.servicio.nombre,
@@ -2050,6 +2067,7 @@ router.post('/reportar-enfermedad', requireAuth, requirePermiso('movimientos.edi
     bloqueoId: bloqueo.id,
     profesional: `${prof.nombres.split(' ')[0]} ${prof.apellidos.split(' ')[0]}`.trim(),
     citasCanceladas: enRango.length,
+    dias: diasRango.length,
     pacientes: enRango.map(fila),
     // Citas del rango que YA tienen atención clínica: no se cancelaron (fueron atendidas).
     citasConAtencion: yaAtendidas.map(fila),
@@ -2627,6 +2645,46 @@ router.patch('/:id/comentario', requireAuth, requireAcceso('appointments:write',
     fecha: cita.fecha.toISOString().split('T')[0]!,
     cita: citaCompleta as never,
     cambiadoPor: req.user?.userId ?? 'sistema',
+  });
+  res.json(citaCompleta);
+});
+
+// ─── PATCH /citas/:id/comentarios/:comentarioId — corregir un comentario ─────
+// 30-sep-2026: cada usuario corrige SOLO los suyos; admin, cualquiera (también los antiguos sin autor).
+// El texto anterior queda en la auditoría (editar_comentario) y la entrada muestra «(editado)».
+router.patch('/:id/comentarios/:comentarioId', requireAuth, requireAcceso('appointments:write', 'citas.estado'), guardSedeCita, async (req, res) => {
+  const { texto: crudo } = z.object({ texto: z.string().max(2000) }).parse(req.body);
+  const texto = crudo.trim();
+  if (!texto) throw new AppError('El comentario está vacío', 400, 'COMENTARIO_VACIO');
+  const usuarioId = req.user?.userId;
+  if (!usuarioId) throw new AppError('Solo un usuario puede corregir comentarios', 403, 'FORBIDDEN');
+
+  const com = await prisma.comentarioCita.findFirst({
+    where: { id: req.params.comentarioId, citaId: req.params.id, deletedAt: null },
+    include: { cita: { select: { id: true, sedeId: true, fecha: true } } },
+  });
+  if (!com) throw new AppError('Comentario no encontrado', 404);
+  if (req.user?.rol !== 'admin' && com.autorId !== usuarioId) {
+    throw new AppError('Solo puedes modificar tus propios comentarios', 403, 'COMENTARIO_AJENO');
+  }
+  if (com.texto === texto) { res.json(await getCitaCompleta(com.citaId)); return; }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.comentarioCita.update({ where: { id: com.id }, data: { texto, editadoEn: new Date(), editadoPorId: usuarioId } });
+    await auditEnTx(tx, {
+      citaId: com.citaId, usuarioId, accion: 'editar_comentario', entidad: 'comentario_cita', entidadId: com.id,
+      antes: { texto: com.texto }, despues: { texto, ...(com.autorId !== usuarioId ? { autor: com.autorEtiqueta } : {}) },
+      sedeId: com.cita.sedeId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
+    });
+  });
+
+  const citaCompleta = await getCitaCompleta(com.citaId);
+  emitirEventoCita({
+    tipo: 'cita:actualizada',
+    sedeId: com.cita.sedeId,
+    fecha: fechaAStr(com.cita.fecha),
+    cita: citaCompleta as never,
+    cambiadoPor: usuarioId,
   });
   res.json(citaCompleta);
 });

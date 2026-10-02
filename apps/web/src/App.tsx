@@ -49,6 +49,7 @@ import { HorariosRestriccionesPage } from './pages/HorariosRestriccionesPage';
 import { HistoriaClinicaPage } from './pages/HistoriaClinicaPage';
 import { BandejaClinicaPage } from './pages/BandejaClinicaPage';
 import { VisorPacientesPage } from './pages/VisorPacientesPage';
+import { ReboteBandejaPage } from './pages/ReboteBandejaPage';
 import { rutaInicio } from './utils/rutaInicio';
 
 // Guard de SESIÓN: sin token → directo a /login. Está suscrito al store, así que al cerrar sesión
@@ -125,6 +126,7 @@ export default function App() {
         <Route path="/pacientes/:id" element={<RequirePermiso permiso="pacientes.ver"><FichaPacientePage /></RequirePermiso>} />
         {/* Historia clínica: módulo aparte (dos paneles), solo con hc.ver */}
         <Route path="/historia-clinica/bandeja" element={<RequirePermiso permiso="hc.ver"><BandejaClinicaPage /></RequirePermiso>} />
+        <Route path="/rebote" element={<RequirePermiso permiso="citas.reprogramar"><ReboteBandejaPage /></RequirePermiso>} />
         <Route path="/pacientes-del-dia" element={<RequirePermiso permiso={['medico.autoasignar', 'medico.asignar']}><VisorPacientesPage /></RequirePermiso>} />
         <Route path="/historia-clinica/:pacienteId" element={<RequirePermiso permiso="hc.ver"><HistoriaClinicaPage /></RequirePermiso>} />
         <Route path="/horarios" element={<RequirePermiso permiso="horarios.ver"><HorariosRestriccionesPage /></RequirePermiso>} />

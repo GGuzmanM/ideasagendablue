@@ -14,9 +14,10 @@ import { Prisma } from '@prisma/client';
 import { AppError } from '../middleware/errorHandler';
 import { auditEnTx } from './audit';
 import { fechaDb, hoyLimaStr } from '../utils/fechaLima';
+import { esRolMedico } from '../utils/rolesMedico';
 
-export type RolConFicha = 'recepcionista' | 'medico' | 'podologa';
-export const ROLES_CON_FICHA: readonly string[] = ['recepcionista', 'medico', 'podologa'];
+export type RolConFicha = 'recepcionista' | 'medico' | 'medico_auditor' | 'podologa';
+export const ROLES_CON_FICHA: readonly string[] = ['recepcionista', 'medico', 'medico_auditor', 'podologa'];
 export const esRolConFicha = (rol: string | undefined | null): rol is RolConFicha => !!rol && ROLES_CON_FICHA.includes(rol);
 
 // ── Reglas puras (con pruebas) ────────────────────────────────────────────────
@@ -104,7 +105,8 @@ export async function registrarMedicoEnBaroEnTx(tx: Prisma.TransactionClient, p:
 export interface PedidoFicha { rol: RolConFicha; nombre: string; sedeId: string; colegiatura?: string | null; creadoPor?: string; ip?: string; userAgent?: string }
 export interface FichaResuelta { recepcionistaId?: string; profesionalId?: string; accion: 'creada' | 'vinculada'; nombreFicha: string }
 
-const TIPO_PROF: Record<'medico' | 'podologa', 'medico' | 'podologa'> = { medico: 'medico', podologa: 'podologa' };
+// El médico auditor (02-oct-2026) lleva la misma ficha de médico.
+const TIPO_PROF: Record<'medico' | 'medico_auditor' | 'podologa', 'medico' | 'podologa'> = { medico: 'medico', medico_auditor: 'medico', podologa: 'podologa' };
 
 export async function resolverFichaEnTx(tx: Prisma.TransactionClient, p: PedidoFicha): Promise<FichaResuelta> {
   const sede = await tx.sede.findFirst({ where: { id: p.sedeId, deletedAt: null }, select: { id: true } });
@@ -140,14 +142,14 @@ export async function resolverFichaEnTx(tx: Prisma.TransactionClient, p: PedidoF
   if (e.tipo === 'ambiguo') throw ambiguo(e.candidatas.map((c) => c.nombre));
   const cmp = p.colegiatura?.trim() || null;
   if (e.tipo === 'vincular') {
-    if (p.rol === 'medico' && cmp) await tx.profesional.update({ where: { id: e.ficha.id }, data: { colegiatura: cmp } });
-    if (p.rol === 'medico') await registrarMedicoEnBaroEnTx(tx, { profesionalId: e.ficha.id, sedeId: p.sedeId, creadoPor: p.creadoPor });
+    if (esRolMedico(p.rol) && cmp) await tx.profesional.update({ where: { id: e.ficha.id }, data: { colegiatura: cmp } });
+    if (esRolMedico(p.rol)) await registrarMedicoEnBaroEnTx(tx, { profesionalId: e.ficha.id, sedeId: p.sedeId, creadoPor: p.creadoPor });
     await auditEnTx(tx, { usuarioId: p.creadoPor, accion: 'vincular_ficha_profesional', entidad: 'profesional', entidadId: e.ficha.id, despues: { nombre: e.ficha.nombre, usuario: p.nombre, ...(cmp ? { colegiatura: cmp } : {}) }, sedeId: p.sedeId, ip: p.ip, userAgent: p.userAgent });
     return { profesionalId: e.ficha.id, accion: 'vinculada', nombreFicha: e.ficha.nombre };
   }
 
   const unidad = await tx.unidadNegocio.findFirst({
-    where: { nombre: { contains: p.rol === 'medico' ? 'aropodometr' : 'odolog', mode: 'insensitive' } }, select: { id: true },
+    where: { nombre: { contains: esRolMedico(p.rol) ? 'aropodometr' : 'odolog', mode: 'insensitive' } }, select: { id: true },
   });
   if (!unidad) throw new AppError('No se encontró la unidad de negocio para crear la ficha', 500, 'UNIDAD_NO_ENCONTRADA');
   const { nombres, apellidos } = partirNombre(p.nombre);
@@ -155,11 +157,11 @@ export async function resolverFichaEnTx(tx: Prisma.TransactionClient, p: PedidoF
     data: {
       nombres, apellidos, tipo, unidadNegocioId: unidad.id, activo: true, creadoPor: p.creadoPor,
       // Los médicos no tienen columna propia: atienden por solicitud (igual que los del alta de producción).
-      ...(p.rol === 'medico' ? { soloPorSolicitud: true, colegiatura: cmp } : {}),
+      ...(esRolMedico(p.rol) ? { soloPorSolicitud: true, colegiatura: cmp } : {}),
     },
     select: { id: true, nombres: true, apellidos: true },
   });
-  if (p.rol === 'medico') {
+  if (esRolMedico(p.rol)) {
     await registrarMedicoEnBaroEnTx(tx, { profesionalId: ficha.id, sedeId: p.sedeId, creadoPor: p.creadoPor });
     await tx.asignacionAdministrativa.create({ data: { sedeId: p.sedeId, profesionalId: ficha.id, fechaInicio: fechaDb(hoy), fechaFin: null, notas: 'Creada junto con su usuario', creadoPor: p.creadoPor } });
   } else {

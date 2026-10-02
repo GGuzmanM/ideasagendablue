@@ -12,6 +12,7 @@ import { generarSlotsDelDia, horaInicioValidaParaDuracion, esCitaInactiva } from
 import { useAuthStore } from '../stores/authStore';
 import { estadoPagoDe, infoEstadoPago, type EstadoPago } from '../utils/estadoPago';
 import { useResumenAtencionCita, useFichaPrevia } from '../api/historiaClinica';
+import { citaEnRebote } from '../api/rebote';
 
 const SLOTS = generarSlotsDelDia('08:00', '20:00', 30);
 const ROLES_CAMBIAN_TRATAMIENTO = ['admin', 'coordinadora_sedes', 'contact_center', 'especial_contact', 'recepcionista'];
@@ -199,9 +200,10 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
 
   // Reprogramar un BLOQUE (cita doble): se mueve completo (/citas/grupo/:id/mover). Solo si ninguna de las dos mitades
   // avanzó (ambas «agendada»); ocupa la duración del bloque y su disponibilidad se mide con el servicio principal.
+  // En rebote (solo admin) el bloque también se reagenda completo, con las dos mitades en rebote.
   const bloqueReprogramable = esCombo
     && grupoBloque.length >= 2
-    && grupoBloque.every((c) => (c.estado ?? '').toLowerCase() === 'agendada');
+    && (grupoBloque.every((c) => (c.estado ?? '').toLowerCase() === 'agendada') || grupoBloque.every((c) => citaEnRebote(c)));
   const duracionBloque = esCombo && grupoBloque.length ? Math.max(...grupoBloque.map((c) => c.duracionMinutos)) : cita.duracionMinutos;
   const idsBloque = new Set(esCombo ? grupoBloque.map((c) => c.id) : [cita.id]);
   const servicioReprog = (esCombo ? bloquePrincipal?.servicio?.id : null) ?? cita.servicio?.id;

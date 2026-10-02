@@ -154,6 +154,45 @@ export async function eliminarEvento(userEmail: string, eventId: string): Promis
   await graph('DELETE', `/users/${encodeURIComponent(userEmail)}/events/${eventId}`);
 }
 
+/** ¿El evento está en ESE buzón? 404 (o 400: id de otro buzón) = no; cualquier otro error se propaga (no se borra nada a ciegas). */
+async function existeEvento(userEmail: string, eventId: string): Promise<boolean> {
+  try {
+    await graph('GET', `/users/${encodeURIComponent(userEmail)}/events/${eventId}?$select=id`);
+    return true;
+  } catch (e) {
+    if (e instanceof Error && /→ (400|404):/.test(e.message)) return false;
+    throw e;
+  }
+}
+
+/** Buzones del tenant que la Agenda escribe (profesionales con emailAgenda @limablue.com + Daniel por nombre). */
+async function buzonesTenant(): Promise<string[]> {
+  const profs = await prisma.profesional.findMany({
+    where: { deletedAt: null, OR: [{ emailAgenda: { endsWith: '@limablue.com', mode: 'insensitive' } }, { apellidos: { contains: 'Doy', mode: 'insensitive' } }] },
+    select: { nombres: true, apellidos: true, emailAgenda: true },
+  });
+  const set = new Set<string>();
+  for (const p of profs) {
+    const e = emailTenantDeProfesional(p.nombres, p.apellidos, p.emailAgenda);
+    if (e) set.add(e.toLowerCase());
+  }
+  return [...set];
+}
+
+/**
+ * 01-oct-2026: la cita cambió de persona (p. ej. la agenda automática la puso con Yasica y luego pasó a Doris): su
+ * evento seguía en el Outlook de Yasica y la sincronización inversa lo traía como «Ocupado (Outlook)», tapando su
+ * agenda. Si el evento no está en el buzón de quien atiende AHORA, se quita del buzón donde quedó y se olvida el id.
+ */
+async function soltarEventoDeOtroBuzon(citaId: string, eventId: string, buzonActual: string | null): Promise<void> {
+  if (buzonActual && await existeEvento(buzonActual, eventId)) return; // sigue en su buzón: nada que hacer
+  for (const b of await buzonesTenant()) {
+    if (buzonActual && b === buzonActual.toLowerCase()) continue;
+    if (await existeEvento(b, eventId)) { await eliminarEvento(b, eventId); break; }
+  }
+  await prisma.cita.update({ where: { id: citaId }, data: { outlookEventId: null } });
+}
+
 // ── Orquestador no bloqueante usado por las rutas ───────────────────────────────
 type Accion = 'crear' | 'actualizar' | 'cancelar';
 
@@ -178,6 +217,15 @@ export async function sincronizarCitaOutlook(accion: Accion, citaId: string): Pr
     //    universal; también el fallback si aún no hay credenciales Azure.
     const destinoAgenda = persona.emailAgenda;
     const esBuzonTenant = !!destinoAgenda && /@limablue\.com$/i.test(destinoAgenda);
+
+    // Evento que quedó en el Outlook de OTRA persona (la cita cambió de profesional) → se quita de ahí.
+    if (cita.outlookEventId && outlookConfigurado()) {
+      const buzonActual = esBuzonTenant ? destinoAgenda! : emailOutlookDeProfesional(persona.nombres, persona.apellidos);
+      await soltarEventoDeOtroBuzon(citaId, cita.outlookEventId, buzonActual);
+      const fresca = await prisma.cita.findUnique({ where: { id: citaId }, select: { outlookEventId: true } });
+      cita.outlookEventId = fresca?.outlookEventId ?? null;
+    }
+
     if (destinoAgenda && !(esBuzonTenant && outlookConfigurado())) {
       await notificarCitaGmailProfesional(accion, cita, destinoAgenda);
       return;

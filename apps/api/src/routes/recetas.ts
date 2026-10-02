@@ -117,6 +117,8 @@ router.get('/favoritas', requireAuth, async (req, res) => {
 router.post('/favoritas', requireAuth, async (req, res) => {
   const data = favoritaSchema.parse(req.body);
   exigirPermiso(req, permisoParaTipo(data.tipoDocumento));
+  // 02-oct-2026: crear favoritas (estandarizarlas) es del médico auditor y admin; los demás solo las usan.
+  exigirPermiso(req, 'receta.favoritas.gestionar');
   res.status(201).json(await rx.crearFavorita({ ...ctx(req), ...data }));
 });
 

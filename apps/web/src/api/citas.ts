@@ -10,6 +10,9 @@ export interface ComentarioCita {
   creadoEn: string;
   autorEtiqueta: string | null;
   autor: { id: string; nombre: string } | null;
+  // Corrección (30-sep-2026): cuándo y quién lo editó. null = nunca editado.
+  editadoEn?: string | null;
+  editadoPor?: { id: string; nombre: string } | null;
 }
 
 export interface TiempoTratamientoCita {
@@ -104,6 +107,16 @@ export interface CitaResumen {
   estadoPago?: EstadoPago; // pendiente / incompleto / completo (manda sobre `pagada`)
   pagadaEn?: string | null;
   pagadaPor?: { id: string; nombre: string } | null;
+  // REBOTE (30-sep-2026): abierto = estado 'reprogramada' + reboteDesde + sin reboteCerradoEn (ver api/rebote.ts).
+  reboteDesde?: string | null;
+  reboteVenceEl?: string | null;
+  reboteMotivo?: string | null;
+  reboteEstadoOrigen?: string | null;
+  reboteTurno?: 'manana' | 'tarde' | 'cualquiera' | null;
+  reboteLlamarDesde?: string | null;
+  reboteCerradoEn?: string | null;
+  reboteResultado?: string | null;
+  rebotePor?: { id: string; nombre: string } | null;
 }
 
 export interface CrearCitaInput {
@@ -246,6 +259,9 @@ export const citasApi = {
   // Agregar/editar el comentario de recepción en cualquier estado (antes, durante o después).
   actualizarComentario: (id: string, comentario: string) =>
     api.patch<CitaResumen>(`/citas/${id}/comentario`, { comentario }),
+  // Corregir un comentario: el autor los suyos, admin cualquiera (el servidor lo exige).
+  editarComentario: (citaId: string, comentarioId: string, texto: string) =>
+    api.patch<CitaResumen>(`/citas/${citaId}/comentarios/${comentarioId}`, { texto }),
 
   // Canal de reserva (de dónde viene el cliente).
   actualizarCanal: (id: string, canal: string) =>
@@ -272,13 +288,15 @@ export const citasApi = {
   // Reporta enfermedad/ausencia de un profesional un día: cancela en lote sus citas
   // activas del rango y crea el bloqueo, en una sola transacción. Devuelve la lista de
   // pacientes afectados para contactarlos.
-  reportarEnfermedad: (data: { profesionalId: string; sedeId: string; fecha: string; horaInicio?: string; horaFin?: string; motivo?: string }) =>
+  // `fechaFin` opcional (02-oct-2026): el mismo horario cada día del rango [fecha, fechaFin], máx 31 días.
+  reportarEnfermedad: (data: { profesionalId: string; sedeId: string; fecha: string; fechaFin?: string; horaInicio?: string; horaFin?: string; motivo?: string }) =>
     api.post<{
       ok: boolean;
       bloqueoId: string;
       profesional: string;
       citasCanceladas: number;
-      pacientes: { horaInicio: string; estado: string; servicio: string; paciente: string; telefono: string }[];
+      dias?: number;
+      pacientes: { fecha?: string; horaInicio: string; estado: string; servicio: string; paciente: string; telefono: string }[];
     }>('/citas/reportar-enfermedad', data),
 
   stats: (sedeId: string, fecha: string) =>

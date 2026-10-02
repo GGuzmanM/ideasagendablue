@@ -8,6 +8,7 @@ const PUEDE_AUSENCIAS = requireAlgunPermiso('horarios.editar', 'ausencias.gestio
 import { AppError } from '../middleware/errorHandler';
 import { invalidateDisponibilidadCache } from '../redis';
 import { sincronizarReunionOutlook } from '../services/outlookCalendarService';
+import { MARCA_MANUAL } from '../services/importarOcupacionOutlook';
 
 const router = Router();
 
@@ -736,7 +737,9 @@ router.delete('/:id', requireAuth, PUEDE_AUSENCIAS, async (req, res) => {
   if (!b || b.deletedAt) throw new AppError('Permiso no encontrado', 404);
   if (b.tipo !== 'PERMISO') throw new AppError('Solo se pueden eliminar permisos aquí', 400);
 
-  await prisma.bloqueoAgenda.update({ where: { id: req.params.id }, data: { deletedAt: new Date() } });
+  // Traído de Outlook (ocupación externa): se marca para que la sincronización no lo vuelva a traer (01-oct-2026).
+  const importado = !!b.outlookEventId && !b.esReunion;
+  await prisma.bloqueoAgenda.update({ where: { id: req.params.id }, data: { deletedAt: new Date(), ...(importado ? { outlookSyncError: MARCA_MANUAL } : {}) } });
 
   await prisma.auditLog.create({
     data: {

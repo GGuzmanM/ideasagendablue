@@ -18,6 +18,7 @@ import { AppError } from '../middleware/errorHandler';
 import { AuthPayload, puedeTodasLasSedes } from '../middleware/auth';
 import { auditEnTx, registrarAudit } from './audit';
 import { esFichaAdicional } from '../utils/fichaAdicional';
+import { esRolMedico } from '../utils/rolesMedico';
 import { validarControles, crearControlesEnTx, type ControlEntrada } from './controlService';
 
 type Tx = Prisma.TransactionClient | PrismaClient;
@@ -48,7 +49,7 @@ export async function assertAccesoPaciente(user: AuthPayload, pacienteId: string
   if (puedeTodasLasSedes(user)) return;
   // 26-sep-2026: los MÉDICOS LEEN toda historia clínica (también la de pacientes atendidos en otra sede o por otro
   // médico). Escribir sigue limitado: su sede (assertSede) y solo las atenciones de sus citas (routes/historiaClinica).
-  if (user.rol === 'medico') return;
+  if (esRolMedico(user.rol)) return;
   if (user.sedes.length > 0) {
     // Una cita cancelada, reprogramada o "no vino" no convierte al paciente en paciente de la sede.
     const ok = await prisma.cita.findFirst({
@@ -231,7 +232,7 @@ export async function getAtencionCompleta(id: string) {
       // Consentimientos informados (5.1): sin la firma (pesa; va solo en su PDF).
       consentimientos: {
         orderBy: { firmadoEn: 'asc' },
-        select: { id: true, numero: true, procedimiento: true, firmanteNombre: true, firmanteDocumento: true, firmanteRelacion: true, estado: true, firmadoEn: true, revocadoEn: true, motivoRevocacion: true, registradoEtiqueta: true },
+        select: { id: true, numero: true, procedimiento: true, formato: true, firmanteNombre: true, firmanteDocumento: true, firmanteRelacion: true, estado: true, firmadoEn: true, revocadoEn: true, motivoRevocacion: true, registradoEtiqueta: true },
       },
       // Controles sugeridos al cerrar (4.1).
       controles: { orderBy: { fechaSugerida: 'asc' }, select: { id: true, fechaSugerida: true, motivo: true, origen: true, estado: true } },
@@ -268,6 +269,8 @@ export async function getHistoriaCompleta(pacienteId: string) {
       alergias: { where: { deletedAt: null }, orderBy: { creadoEn: 'asc' } },
       antecedentes: { where: { deletedAt: null }, orderBy: [{ tipo: 'asc' }, { creadoEn: 'asc' }] },
       atenciones: { orderBy: [{ fecha: 'desc' }, { creadoEn: 'desc' }], take: 100, include: atencionInclude },
+      // «Niega …» vigentes (02-oct-2026): se preguntó y el paciente niega alergias / ese tipo de antecedente.
+      negaciones: { where: { activa: true }, select: { categoria: true, registradoEtiqueta: true, actualizadoEn: true } },
     },
   });
   return { paciente, historia };
@@ -691,6 +694,8 @@ export async function registrarAntecedente(p: Ctx & { pacienteId: string; tipo: 
   const etiqueta = await etiquetaUsuario(prisma, p.usuarioId);
   await prisma.$transaction(async (tx) => {
     const a = await tx.antecedentePaciente.create({ data: { historiaClinicaId: hc.id, tipo: p.tipo, descripcion: desc, registradoPorUsuarioId: p.usuarioId ?? null, registradoEtiqueta: etiqueta } });
+    // Si estaba marcado «Niega» ese tipo, deja de valer: ahora sí tiene un antecedente (02-oct-2026).
+    await tx.negacionHc.updateMany({ where: { historiaClinicaId: hc.id, categoria: p.tipo, activa: true }, data: { activa: false } });
     await auditEnTx(tx, { ...ctxAudit(p), accion: 'registrar_antecedente', entidad: 'historia_clinica', entidadId: p.pacienteId, sedeId: p.sedeId ?? undefined, despues: { antecedenteId: a.id, tipo: a.tipo, descripcion: a.descripcion } });
   });
   return getHistoriaCompleta(p.pacienteId);
@@ -728,6 +733,8 @@ export async function registrarAlergia(p: Ctx & { pacienteId: string; sustancia:
   const etiqueta = await etiquetaUsuario(prisma, p.usuarioId);
   await prisma.$transaction(async (tx) => {
     const a = await tx.alergiaPaciente.create({ data: { historiaClinicaId: hc.id, sustancia: sust, reaccion: limpiar(p.reaccion), severidad: p.severidad ?? 'moderada', registradoPorUsuarioId: p.usuarioId ?? null, registradoEtiqueta: etiqueta } });
+    // Si estaba marcado «Niega alergias», deja de valer: ahora sí tiene una (02-oct-2026).
+    await tx.negacionHc.updateMany({ where: { historiaClinicaId: hc.id, categoria: 'alergias', activa: true }, data: { activa: false } });
     await auditEnTx(tx, { ...ctxAudit(p), accion: 'registrar_alergia', entidad: 'historia_clinica', entidadId: p.pacienteId, sedeId: p.sedeId ?? undefined, despues: { alergiaId: a.id, sustancia: a.sustancia, severidad: a.severidad } });
   });
   return getHistoriaCompleta(p.pacienteId);

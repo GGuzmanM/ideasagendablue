@@ -8,6 +8,8 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import toast from 'react-hot-toast';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
+import { esRolMedico } from '../utils/rolesMedico';
+import { leerHcV2 } from '../utils/vistaHc';
 import { pacientesApi, profesionalesApi, serviciosApi, historialGenexisApi, type Profesional, type HistorialGenexisRegistro } from '../api';
 import { citasApi, type CitaResumen } from '../api/citas';
 import {
@@ -38,7 +40,7 @@ import { useAutotextoStore } from '../stores/autotextoStore';
 import { useFotosPendientesStore, usePendientesDe, useTotalPendientes, type FotoPendiente, type CamposPendiente } from '../stores/fotosPendientesStore';
 import { useBorradoresStore, useMarcarBorrador, hayBorradores } from '../stores/borradoresStore';
 
-export type TabHc = 'evolucion' | 'receta' | 'antecedentes' | 'procedimientos' | 'escalas' | 'podograma' | 'fotos' | 'consentimientos';
+export type TabHc = 'evolucion' | 'receta' | 'antecedentes' | 'procedimientos' | 'escalas' | 'podograma' | 'fotos' | 'consentimientos' | 'constancias';
 const ESTADOS_ATENDIDA = ['llego', 'en_atencion', 'completada'];
 /** Un renglón de la línea de tiempo: atención nueva, visita del sistema anterior (Genexis, con su nota clínica del
  *  ERP si la tiene) o nota del ERP sin visita de Genexis (28-sep-2026). */
@@ -94,7 +96,7 @@ export function useHistoriaClinicaPage() {
   const refrescarSi409 = (e: Error) => { if (ERROR_TIENE_409(e) && atencionSel) void qc.invalidateQueries({ queryKey: atencionKey(atencionSel) }); toast.error(e.message); };
 
   // ?tab=receta (desde «Pacientes del día») abre directo en esa pestaña.
-  const TABS_HC: TabHc[] = ['evolucion', 'receta', 'antecedentes', 'procedimientos', 'escalas', 'podograma', 'fotos', 'consentimientos'];
+  const TABS_HC: TabHc[] = ['evolucion', 'receta', 'antecedentes', 'procedimientos', 'escalas', 'podograma', 'fotos', 'consentimientos', 'constancias'];
   const tabParam = params.get('tab') as TabHc | null;
   const [tab, setTab] = useState<TabHc>(tabParam && TABS_HC.includes(tabParam) ? tabParam : 'evolucion');
   // La vista del podograma (planta / dorso) y su modo (punto, pintar, historial) viven AQUÍ y no en el
@@ -218,6 +220,14 @@ export function useHistoriaClinicaPage() {
     limpiarBorradores();
     setAtencionSel(a.id);
     setTab('evolucion'); // una atención RECIÉN creada sí empieza por la evolución
+    // HC v2 (02-oct-2026, en validación): los diagnósticos y la anamnesis de la consulta anterior quedan puestos (editables).
+    if (leerHcV2()) {
+      void historiaClinicaApi.precargarAnterior(a.id).then((r) => {
+        if (!r.dxCopiados && !r.anamnesisCopiada) return;
+        invalidar({ pacienteId, atencionId: a.id });
+        toast.success(`De la consulta anterior: ${[r.dxCopiados ? `${r.dxCopiados} diagnóstico(s)` : '', r.anamnesisCopiada ? 'la anamnesis' : ''].filter(Boolean).join(' y ')} (puedes cambiarlos)`);
+      }).catch(() => { /* si falla, la atención igual quedó abierta */ });
+    }
   };
 
   // Entrar a la atención SIN modal (26-sep-2026): se abre con el motivo vacío; el motivo y la anamnesis se llenan
@@ -252,7 +262,7 @@ export function useHistoriaClinicaPage() {
   const { data: autotextos } = usePlantillas('autotexto');
   const setAtajos = useAutotextoStore((s) => s.setAtajos);
   useEffect(() => { setAtajos(Object.fromEntries((autotextos ?? []).filter((a) => a.clave).map((a) => [a.clave!.toLowerCase(), a.contenido.texto ?? '']))); }, [autotextos, setAtajos]);
-  const gestionaPlantillas = ['admin', 'coordinadora_sedes', 'medico'].includes(usuario?.rol ?? '');
+  const gestionaPlantillas = ['admin', 'coordinadora_sedes'].includes(usuario?.rol ?? '') || esRolMedico(usuario?.rol);
   // Lesión dictada ("lesión heloma quinto dedo izquierdo") → marca del podograma en la zona dicha.
   const marcaDictadoMut = useMutation({
     mutationFn: (d: CamposMarca) => historiaClinicaApi.agregarMarca(atencionSel!, d),
@@ -603,6 +613,9 @@ export function useEmitirRecetaForm(atencion: AtencionCompleta, tipoDocumento: T
   const [emisorProfesionalId, setEmisorProfesionalId] = useState<string>(atencion.profesionalId);
   const usuario = useAuthStore((s) => s.usuario);
   const puedeAnularHc = useAuthStore((s) => s.tiene('hc.anular'));
+  // Favoritas estandarizadas (02-oct-2026): solo quien tiene «receta.favoritas.gestionar» (médico auditor y admin) las crea;
+  // los demás solo las USAN. Quitar: admin, médico auditor o quien puede anular → cualquiera; los demás, solo las suyas.
+  const gestionaFavoritas = useAuthStore((s) => s.tiene('receta.favoritas.gestionar'));
   const [emitida, setEmitida] = useState<RecetaCompleta | null>(null);
   const { data: servicios = [] } = useQuery({ queryKey: ['servicios-todos'], queryFn: () => serviciosApi.listar({ activo: true }), staleTime: 300_000 });
 
@@ -718,7 +731,10 @@ export function useEmitirRecetaForm(atencion: AtencionCompleta, tipoDocumento: T
     return !!fav && cargarItems(fav.items, { indicacionesGenerales: fav.indicacionesGenerales, vigenciaDias: fav.vigenciaDias }, `«${fav.nombre}»`);
   };
   // Una favorita la quita quien la creó o quien puede anular (misma regla que el servidor).
-  const puedeQuitarFavorita = (id: string) => { const fav = favoritas.find((x) => x.id === id); return !!fav && (puedeAnularHc || (!!usuario && fav.creadoPorUsuarioId === usuario.id)); };
+  const puedeQuitarFavorita = (id: string) => {
+    const fav = favoritas.find((x) => x.id === id);
+    return !!fav && gestionaFavoritas && (puedeAnularHc || usuario?.rol === 'admin' || usuario?.rol === 'medico_auditor' || (!!usuario && fav.creadoPorUsuarioId === usuario.id));
+  };
   const guardarFavoritaMut = useMutation({
     mutationFn: (nombre: string) => recetasApi.crearFavorita({
       nombre, tipoDocumento, indicacionesGenerales: indicacionesGenerales.trim() || null, vigenciaDias: esReceta ? vigenciaDias : null,
@@ -785,7 +801,7 @@ export function useEmitirRecetaForm(atencion: AtencionCompleta, tipoDocumento: T
     tratamientosDx, cargandoTratamientosDx, tratamientoPermitido, agregarTratamientos,
     indicacionesGenerales, setIndicacionesGenerales, vigenciaDias, setVigenciaDias, vigenciaTexto, setVigenciaTexto, confirmarVigencia, emisorProfesionalId, setEmisorProfesionalId, opcionesEmisor,
     puedeGuardar, emitirMut, emitir, chequeando, emitida, abrirPdf, imprimir, alergias: atencion.historiaClinica.alergias,
-    anteriores, repetirMut, favoritas, usarFavorita, puedeQuitarFavorita, guardarFavoritaMut, eliminarFavoritaMut,
+    anteriores, repetirMut, favoritas, usarFavorita, puedeQuitarFavorita, gestionaFavoritas, guardarFavoritaMut, eliminarFavoritaMut,
     editando, dxNuevo, setDxNuevo, dxNuevoTipo, setDxNuevoTipo, agregarDxMut,
   };
 }

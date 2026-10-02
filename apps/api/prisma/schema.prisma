@@ -868,11 +868,11 @@ model Cita {
   reboteDesde         DateTime?
   reboteVenceEl       DateTime?
   reboteMotivo        String?
-  rebotePorId         String?    @db.Uuid
+  rebotePorId         String?     @db.Uuid
   reboteEstadoOrigen  EstadoCita? // agendada | confirmada | no_show
   reboteTurno         String? // preferencia del paciente: manana | tarde | cualquiera
-  reboteLlamarDesde   DateTime?  @db.Date // no llamarlo antes de esta fecha (opcional)
-  reboteProfesionalId String?    @db.Uuid // podóloga con la que estaba (snapshot al enviar)
+  reboteLlamarDesde   DateTime?   @db.Date // no llamarlo antes de esta fecha (opcional)
+  reboteProfesionalId String?     @db.Uuid // podóloga con la que estaba (snapshot al enviar)
   reboteCerradoEn     DateTime?
   reboteResultado     String? // reagendada | vencida | descartada
 
@@ -1056,9 +1056,14 @@ model ComentarioCita {
   texto         String
   creadoEn      DateTime  @default(now())
   deletedAt     DateTime?
+  // 30-sep-2026: el autor (o admin) puede corregir el texto. La versión anterior queda en la auditoría
+  // (accion editar_comentario); aquí solo cuándo y quién editó para mostrar «(editado)».
+  editadoEn     DateTime?
+  editadoPorId  String?   @db.Uuid
 
-  cita  Cita     @relation(fields: [citaId], references: [id], onDelete: Restrict)
-  autor Usuario? @relation(fields: [autorId], references: [id], onDelete: SetNull)
+  cita       Cita     @relation(fields: [citaId], references: [id], onDelete: Restrict)
+  autor      Usuario? @relation(fields: [autorId], references: [id], onDelete: SetNull)
+  editadoPor Usuario? @relation("ComentariosEditados", fields: [editadoPorId], references: [id], onDelete: SetNull)
 
   @@index([citaId, creadoEn])
   @@map("comentarios_cita")
@@ -1331,6 +1336,7 @@ model Usuario {
   citasRebote           Cita[]              @relation("CitasRebote")
   reboteLlamadas        ReboteLlamada[]     @relation("ReboteLlamadas")
   comentariosCita       ComentarioCita[]
+  comentariosEditados   ComentarioCita[]    @relation("ComentariosEditados")
 
   creadoPor     String?  @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
@@ -1886,12 +1892,12 @@ model Medicamento {
   actualizadoEn      DateTime @updatedAt
 
   // Receta: true = venta bajo receta (solo puede ir en RECETA_MEDICA, firmada por médico).
-  requiereReceta    Boolean      @default(false)
+  requiereReceta          Boolean                  @default(false)
   // true = producto de cuidado (Sanytol, quitaesmalte, loción), no un fármaco.
-  esProducto        Boolean      @default(false)
+  esProducto              Boolean                  @default(false)
   // Texto de posología por defecto que se precarga al agregarlo a una receta (3.4).
-  posologiaSugerida String?
-  recetaItems       RecetaItem[]
+  posologiaSugerida       String?
+  recetaItems             RecetaItem[]
   tratamientosDiagnostico TratamientoDiagnostico[]
 
   @@index([dci])
@@ -1975,19 +1981,19 @@ model TratamientoDiagnostico {
   id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   cie10Codigo   String
   orden         Int            @default(0)
-  tratamiento   String         // «Itraconazol 100mg (Itramicol®)», «Profilaxis»
-  presentacion  String?        // «Cápsulas #28», «Frasco 100ml #01» → se imprime como Cantidad
-  aplicacion    String?        // texto original del ERP («01 tab vía oral c/8h por 3 días»), de referencia
+  tratamiento   String // «Itraconazol 100mg (Itramicol®)», «Profilaxis»
+  presentacion  String? // «Cápsulas #28», «Frasco 100ml #01» → se imprime como Cantidad
+  aplicacion    String? // texto original del ERP («01 tab vía oral c/8h por 3 días»), de referencia
   // Posología por defecto (separada de la aplicación): la receta sale llena y el médico solo valida o ajusta.
-  dosis         String?        // «1» (la unidad la pone el vademécum) o «1 gota», «2 puff»
-  via           String?        // «oral», «intramuscular»; null = la del vademécum
-  frecuencia    String?        // «cada 8 horas», «1 vez al día», «solo si hay dolor»
-  duracion      String?        // «3 días», «2 semanas», «1 mes»
-  indicaciones  String?        // lo que queda de la aplicación («Después del almuerzo») → se imprime como Indicaciones
+  dosis         String? // «1» (la unidad la pone el vademécum) o «1 gota», «2 puff»
+  via           String? // «oral», «intramuscular»; null = la del vademécum
+  frecuencia    String? // «cada 8 horas», «1 vez al día», «solo si hay dolor»
+  duracion      String? // «3 días», «2 semanas», «1 mes»
+  indicaciones  String? // lo que queda de la aplicación («Después del almuerzo») → se imprime como Indicaciones
   tipo          TipoItemReceta @default(MEDICAMENTO_OTC)
-  medicamentoId String?        // vínculo al vademécum cuando se reconoce (trae receta/venta libre y alergias)
+  medicamentoId String? // vínculo al vademécum cuando se reconoce (trae receta/venta libre y alergias)
   servicioId    String?        @db.Uuid
-  marca         String?        // marca a imprimir si el vademécum trae el genérico («Itramicol»)
+  marca         String? // marca a imprimir si el vademécum trae el genérico («Itramicol»)
   activo        Boolean        @default(true)
   codigoErp     String?        @unique // «B35.1#12» — idempotencia de la importación del ERP
   creadoEn      DateTime       @default(now())
@@ -2018,6 +2024,8 @@ model HistoriaClinica {
   antecedentes AntecedentePaciente[]
   alergias     AlergiaPaciente[]
   recetas      Receta[]
+  negaciones   NegacionHc[]
+  notasMedico  NotaMedicoPaciente[]
 
   @@map("historias_clinicas")
 }
@@ -2156,6 +2164,43 @@ model AntecedentePaciente {
   @@map("antecedentes_paciente")
 }
 
+// «NIEGA» (02-oct-2026): el paciente niega alergias / un tipo de antecedente. Distingue «se preguntó y niega» de «no
+// se registró nada». Una fila por (historia, categoría); `activa=false` = se quitó la marca. categoria = 'alergias' o
+// un TipoAntecedente (patologico, quirurgico, familiar, farmacologico, habito, otro).
+model NegacionHc {
+  id                     String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  historiaClinicaId      String   @db.Uuid
+  categoria              String
+  activa                 Boolean  @default(true)
+  registradoPorUsuarioId String?  @db.Uuid
+  registradoEtiqueta     String?
+  creadoEn               DateTime @default(now())
+  actualizadoEn          DateTime @updatedAt
+
+  historiaClinica HistoriaClinica @relation(fields: [historiaClinicaId], references: [id], onDelete: Restrict)
+
+  @@unique([historiaClinicaId, categoria])
+  @@map("negaciones_hc")
+}
+
+// NOTAS PARA DOCTORES (02-oct-2026): recomendaciones internas sobre el paciente para los próximos médicos a cargo.
+// Solo se ven en la historia clínica. Append-only (no se editan; se ocultan con deletedAt).
+model NotaMedicoPaciente {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  historiaClinicaId   String    @db.Uuid
+  texto               String
+  autorUsuarioId      String?   @db.Uuid
+  autorEtiqueta       String
+  creadoEn            DateTime  @default(now())
+  deletedAt           DateTime?
+  deletedPorUsuarioId String?   @db.Uuid
+
+  historiaClinica HistoriaClinica @relation(fields: [historiaClinicaId], references: [id], onDelete: Restrict)
+
+  @@index([historiaClinicaId, creadoEn])
+  @@map("notas_medico_paciente")
+}
+
 // Alergias (RAM). Se muestran destacadas en HC, atención y receta (seguridad al prescribir).
 model AlergiaPaciente {
   id                     String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -2282,7 +2327,12 @@ model ConsentimientoInformado {
   firma                  Json
   firmaAspecto           Float     @default(3)
   // Formato 2 = documento oficial por secciones (plantilla estructurada). 1 = texto plano (antiguo).
+  // Formato 3 = FOTO del formato en papel firmado (02-oct-2026), mientras se estandariza el formato digital:
+  // `firma` va vacía y el archivo en archivoRuta (nunca expuesto; se sirve por endpoint autenticado).
   formato                Int       @default(1)
+  archivoRuta            String?
+  archivoMime            String?
+  archivoTamano          Int?
   plantillaId            String?   @db.Uuid
   plantillaClave         String? // procedimiento de la plantilla (ej. «matricectomia»): para saber si ya firmó
   contenido              Json? // snapshot de la plantilla por secciones tal como se leyó

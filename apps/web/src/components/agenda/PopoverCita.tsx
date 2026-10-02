@@ -17,6 +17,7 @@ import { CuadroFamiliares } from '../pacientes/CuadroFamiliares';
 import { ToggleDatosPaciente } from '../pacientes/ToggleDatosPaciente';
 import { BadgeAsistencia } from '../pacientes/BadgeAsistencia';
 import { BotonHistorialGenexis } from '../pacientes/HistorialGenexis';
+import { ComentarioCitaItem } from './ComentarioCitaItem';
 import { SaldoPaquetes, DialogoConsumo } from '../pacientes/SaldoPaquetes';
 import { usePaquetesPaciente, paquetesElegibles, paquetesOtraSede, paquetesSesionesApi } from '../../api/paquetesSesiones';
 import { useState } from 'react';
@@ -803,12 +804,8 @@ export function PopoverCita({ cita, onClose, onReprogramar }: PopoverCitaProps) 
               <ul className="space-y-2 mb-2">
                 {/* Del más nuevo al más viejo (29-sep-2026). */}
                 {[...comentarios].sort((a, b) => (b.creadoEn ?? '').localeCompare(a.creadoEn ?? '')).map(c => (
-                  <li key={c.id} className="text-sm bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
-                    <p className="text-slate-700 whitespace-pre-wrap break-words">{c.texto}</p>
-                    <p className="text-[11px] text-slate-400 mt-1">
-                      {c.autor?.nombre ?? c.autorEtiqueta ?? 'Sistema'} · {fmtComentario(c.creadoEn)}
-                    </p>
-                  </li>
+                  // Editable (30-sep-2026): el autor los suyos, admin cualquiera.
+                  <ComentarioCitaItem key={c.id} citaId={cita.id} c={c} fmt={fmtComentario} variante="popover" />
                 ))}
               </ul>
             ) : (

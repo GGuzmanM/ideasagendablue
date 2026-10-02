@@ -74,6 +74,7 @@ router.get('/permisos', requireAuth, async (_req, res) => {
       { id: 'receta.emitir', label: 'Emitir recetas médicas: el médico a su nombre; admin/coordinación a nombre del médico de la cita' },
       { id: 'medico.autoasignar', label: 'Tomar o soltar una cita como su médico (solo a sí mismo)' },
       { id: 'medico.asignar', label: 'Asignar o cambiar el médico de cualquier cita' },
+      { id: 'receta.favoritas.gestionar', label: 'Crear y quitar recetas FAVORITAS (estandarizarlas); los demás solo las usan' },
     ],
     'Membresías': [
       { id: 'membresias.ver', label: 'Ver catálogo vendible' },

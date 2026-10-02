@@ -78,7 +78,7 @@ export function usePermisosData(overrideSedeId?: string) {
 
   // Pacientes cuyas citas se CANCELARON al reportar enfermedad
   const [pacientesAfectados, setPacientesAfectados] = useState<
-    { horaInicio: string; paciente: string; telefono: string; servicio: string; estado: string }[]
+    { fecha?: string; horaInicio: string; paciente: string; telefono: string; servicio: string; estado: string }[]
     | null
   >(null);
 
@@ -269,12 +269,13 @@ export function usePermisosData(overrideSedeId?: string) {
         profesionalId: profesionalIds[0]!,
         sedeId,
         fecha,
+        ...(fechaHasta && fechaHasta > fecha ? { fechaFin: fechaHasta } : {}),
         horaInicio: desde,
         horaFin: hasta,
         motivo: motivo.trim() || 'Enfermedad',
       }),
     onSuccess: (r) => {
-      qc.invalidateQueries({ queryKey: ['permisos', sedeId, fecha] });
+      qc.invalidateQueries({ queryKey: ['permisos'] });
       qc.invalidateQueries({ queryKey: ['permisos-agenda'] });
       qc.invalidateQueries({ queryKey: ['citas'] });
       setPacientesAfectados(r.pacientes);
@@ -283,8 +284,8 @@ export function usePermisosData(overrideSedeId?: string) {
       setMotivo('');
       toast.success(
         r.citasCanceladas > 0
-          ? `${r.profesional} marcado enfermo · ${r.citasCanceladas} cita(s) cancelada(s) — contacta a los pacientes`
-          : `${r.profesional} marcado enfermo · día bloqueado (no tenía citas)`,
+          ? `${r.profesional} marcado enfermo${(r.dias ?? 1) > 1 ? ` · ${r.dias} días` : ''} · ${r.citasCanceladas} cita(s) cancelada(s) — contacta a los pacientes`
+          : `${r.profesional} marcado enfermo · ${(r.dias ?? 1) > 1 ? `${r.dias} días bloqueados` : 'día bloqueado'} (no tenía citas)`,
       );
     },
     onError: (e: Error) => {
@@ -376,7 +377,12 @@ export function usePermisosData(overrideSedeId?: string) {
   };
 
   const rangoOk = !!desde && !!hasta && hasta > desde;
-  const fechasOk = modo !== 'individual' || !fechaHasta || fechaHasta >= fecha;
+  // Rango de fechas: Permiso y Enfermedad (Enfermedad cancela citas: máx 31 días, como el servidor).
+  const admiteRango = modo === 'individual' || modo === 'enfermedad';
+  const diasRango = admiteRango && fechaHasta && fechaHasta >= fecha
+    ? Math.round((new Date(`${fechaHasta}T12:00:00Z`).getTime() - new Date(`${fecha}T12:00:00Z`).getTime()) / 86_400_000) + 1
+    : 1;
+  const fechasOk = !admiteRango || !fechaHasta || (fechaHasta >= fecha && (modo !== 'enfermedad' || diasRango <= 31));
   const valido =
     modo === 'vacaciones'
       ? profesionalIds.length > 0 &&
@@ -387,7 +393,7 @@ export function usePermisosData(overrideSedeId?: string) {
         (modo === 'reunion'
           ? motivo.trim().length >= 3
           : modo === 'enfermedad'
-          ? profesionalIds.length === 1
+          ? profesionalIds.length === 1 && fechasOk
           : profesionalIds.length > 0 && motivo.trim().length >= 3 && fechasOk);
 
   const enviando =
@@ -405,7 +411,9 @@ export function usePermisosData(overrideSedeId?: string) {
         ? `${prof.nombres.split(' ')[0]} ${prof.apellidos.split(' ')[0]}`
         : 'el profesional';
       const ok = window.confirm(
-        `Se CANCELARÁN todas las citas activas de ${nombre} entre ${desde} y ${hasta} del ${fecha} y se bloqueará su agenda ese rango.\n\n` +
+        (diasRango > 1
+          ? `Se CANCELARÁN todas las citas activas de ${nombre} entre ${desde} y ${hasta}, CADA DÍA del ${fecha} al ${fechaHasta} (${diasRango} días), y se bloqueará su agenda en ese horario.\n\n`
+          : `Se CANCELARÁN todas las citas activas de ${nombre} entre ${desde} y ${hasta} del ${fecha} y se bloqueará su agenda ese rango.\n\n`) +
           'Los pacientes afectados quedarán listados para que los contactes y reagendes. ¿Continuar?',
       );
       if (ok) enfermedadMut.mutate();
@@ -425,6 +433,8 @@ export function usePermisosData(overrideSedeId?: string) {
     setFecha,
     fechaHasta,
     setFechaHasta,
+    admiteRango,
+    diasRango,
     modo,
     cambiarModo,
     profesionalIds,

@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import { esRolMedico } from '../utils/rolesMedico';
 import { prisma } from '../db';
 import { AppError } from './errorHandler';
 
@@ -101,7 +102,7 @@ export async function sedesVigentesDeMedico(profesionalId: string): Promise<stri
 export async function sedesDerivadasDeFicha(u: { rol: string; recepcionistaId: string | null; profesionalId: string | null }): Promise<string[] | null> {
   if (u.recepcionistaId) return sedesVigentesDeRecepcionista(u.recepcionistaId);
   if (u.rol === 'podologa' && u.profesionalId) return sedesVigentesDePodologa(u.profesionalId);
-  if (u.rol === 'medico' && u.profesionalId) {
+  if (esRolMedico(u.rol) && u.profesionalId) {
     const sedes = await sedesVigentesDeMedico(u.profesionalId);
     return sedes.length ? sedes : null;
   }

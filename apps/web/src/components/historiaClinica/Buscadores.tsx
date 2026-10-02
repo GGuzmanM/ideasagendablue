@@ -5,7 +5,7 @@ import { catalogosApi, useBuscarCie10, useBuscarMedicamentos, useCie10Frecuentes
 import { useAuthStore } from '../../stores/authStore';
 
 // Quién puede agregar un diagnóstico que no está en el catálogo (misma regla que el servidor: Catálogo CIE-10).
-const ROLES_AGREGAN_DX = ['admin', 'coordinadora_sedes', 'medico'];
+const ROLES_AGREGAN_DX = ['admin', 'coordinadora_sedes', 'medico', 'medico_auditor'];
 
 const INPUT = 'w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2 text-sm text-on-surface outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all';
 

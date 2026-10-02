@@ -20,9 +20,11 @@ import { registrarAudit } from '../services/audit';
 import { escribirConsentimientoPdf } from '../services/consentimientoPdf';
 import * as cons from '../services/constanciaService';
 import * as erp from '../services/historiaErpService';
+import * as v2 from '../services/hcV2Service';
 import { escribirConstanciaPdf } from '../services/constanciaPdf';
 import { qrPng, urlVerificacionReceta } from '../services/pdfComun';
 import { filtroRecetaMedica, ocultarRecetasMedicas, puedeVerRecetaMedica } from '../services/recetaVisibilidad';
+import { esRolMedico } from '../utils/rolesMedico';
 
 // ─── Historia clínica (Fase 1) ────────────────────────────────────────────────
 // Todas las rutas exigen usuario + permiso (`requirePermiso`, nunca `requireAcceso`: las API keys
@@ -52,7 +54,7 @@ const RUTAS_DE_ATENCION: [RegExp, (id: string) => Promise<string | null>][] = [
 async function soloSusAtencionesSiEsMedico(req: Request, _res: Response, next: NextFunction) {
   try {
     const u = req.user as AuthPayload | undefined;
-    if (!u || u.rol !== 'medico' || req.method === 'GET') return next();
+    if (!u || !esRolMedico(u.rol) || req.method === 'GET') return next();
     for (const [re, aAtencion] of RUTAS_DE_ATENCION) {
       const m = re.exec(req.path);
       if (!m) continue;
@@ -265,7 +267,7 @@ router.get('/atenciones/:id/controles-sugeridos', ...registrar, async (req, res)
 // Alcance igual que la bandeja: sedes del usuario; el médico ve los de sus atenciones.
 const alcanceControles = (req: Request) => {
   const u = user(req);
-  return { sedeIds: puedeTodasLasSedes(u) ? null : u.sedes, profesionalId: u.rol === 'medico' ? u.profesionalId ?? null : null };
+  return { sedeIds: puedeTodasLasSedes(u) ? null : u.sedes, profesionalId: esRolMedico(u.rol) ? u.profesionalId ?? null : null };
 };
 router.get('/controles', ...verHc, async (req, res) => {
   const horizonteDias = Math.min(90, Math.max(0, Number(req.query.dias) || 14));
@@ -441,6 +443,8 @@ const constanciaSchema = z.object({
   dias: z.number().int().min(1).max(cons.MAX_DIAS_DESCANSO).nullable().optional(),
   diagnosticoCie10Codigo: z.string().trim().max(10).nullable().optional(),
   observacion: texto(1000),
+  horaDesde: z.string().regex(/^\d{2}:\d{2}$/).nullable().optional(),
+  horaHasta: z.string().regex(/^\d{2}:\d{2}$/).nullable().optional(),
 });
 router.post('/atenciones/:id/constancias', ...registrar, async (req, res) => {
   const data = constanciaSchema.parse(req.body);
@@ -558,6 +562,86 @@ router.delete('/alergias/:id', ...anular, async (req, res) => {
   res.json(await hc.eliminarAlergia({ ...ctx(req), alergiaId: req.params.id }));
 });
 
+// ─── HC v2 (02-oct-2026): «Niega», notas para doctores, precarga, resumen del día, consentimiento por foto ───
+// PUT /paciente/:pacienteId/negaciones { categoria, activa } — marca o quita «Niega alergias / Niega <tipo>».
+router.put('/paciente/:pacienteId/negaciones', ...registrar, async (req, res) => {
+  const pacienteId = uuid.parse(req.params.pacienteId);
+  const data = z.object({ categoria: z.enum(v2.CATEGORIAS_NIEGA), activa: z.boolean(), sedeId: uuid.nullable().optional() }).parse(req.body);
+  await hc.assertAccesoPaciente(user(req), pacienteId);
+  if (data.sedeId) assertSede(req, data.sedeId);
+  res.json(await v2.marcarNegacion({ ...ctx(req), pacienteId, ...data }));
+});
+
+// Notas para doctores: solo médicos (y el auditor), administración y coordinación. Se auditan como lectura de la HC.
+const exigirNotasMedico = (req: Request) => {
+  if (!v2.puedeNotasMedico(user(req))) throw new AppError('Las notas para doctores son solo del equipo médico', 403, 'SIN_PERMISO');
+};
+router.get('/paciente/:pacienteId/notas-medico', ...verHc, async (req, res) => {
+  const pacienteId = uuid.parse(req.params.pacienteId);
+  exigirNotasMedico(req);
+  await hc.assertAccesoPaciente(user(req), pacienteId);
+  res.json(await v2.listarNotasMedico(pacienteId));
+});
+router.post('/paciente/:pacienteId/notas-medico', ...registrar, async (req, res) => {
+  const pacienteId = uuid.parse(req.params.pacienteId);
+  const data = z.object({ texto: z.string().trim().min(3).max(2000), sedeId: uuid.nullable().optional() }).parse(req.body);
+  exigirNotasMedico(req);
+  await hc.assertAccesoPaciente(user(req), pacienteId);
+  if (data.sedeId) assertSede(req, data.sedeId);
+  res.status(201).json(await v2.crearNotaMedico({ ...ctx(req), pacienteId, ...data }));
+});
+router.delete('/notas-medico/:id', ...registrar, async (req, res) => {
+  exigirNotasMedico(req);
+  const n = await prisma.notaMedicoPaciente.findUnique({ where: { id: uuid.parse(req.params.id) }, select: { historiaClinica: { select: { pacienteId: true } } } });
+  if (!n) throw new AppError('Nota no encontrada', 404);
+  await hc.assertAccesoPaciente(user(req), n.historiaClinica.pacienteId);
+  res.json(await v2.eliminarNotaMedico({ ...ctx(req), user: user(req), notaId: req.params.id }));
+});
+
+// POST /atenciones/:id/precargar-anterior — deja puestos (editables) los dx y la anamnesis de la consulta anterior.
+router.post('/atenciones/:id/precargar-anterior', ...registrar, async (req, res) => {
+  const { sedeId } = await sedeDeAtencion(req.params.id);
+  assertSede(req, sedeId);
+  res.json(await v2.precargarAnterior({ ...ctx(req), atencionId: req.params.id }));
+});
+
+// GET /resumen-del-dia?sedeId&fecha — por cita: atención completada y si tiene procedimiento (Visor). Solo banderas.
+router.get('/resumen-del-dia', ...verHc, async (req, res) => {
+  const q = z.object({ sedeId: uuid, fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).parse(req.query);
+  assertSede(req, q.sedeId);
+  res.json(await v2.resumenClinicoDelDia(q.sedeId, q.fecha));
+});
+
+// POST /atenciones/:id/consentimientos-foto (multipart: foto, procedimiento?, plantillaId?) — formato en papel firmado.
+router.post(
+  '/atenciones/:id/consentimientos-foto',
+  ...registrar,
+  async (req, _res, next) => {
+    try { const { sedeId } = await sedeDeAtencion(req.params.id); assertSede(req, sedeId); next(); } catch (e) { next(e); }
+  },
+  subirFotoClinica,
+  validarFotoClinicaReal,
+  async (req, res) => {
+    const archivo = req.file;
+    if (!archivo) throw new AppError('Adjunta la foto en el campo "foto"', 400, 'ARCHIVO_REQUERIDO');
+    try {
+      const data = z.object({ procedimiento: z.string().trim().max(200).optional(), plantillaId: uuid.optional().or(z.literal('').transform(() => undefined)) }).parse(req.body ?? {});
+      res.status(201).json(await v2.crearConsentimientoFoto({ ...ctx(req), atencionId: req.params.id, archivo, ...data }));
+    } catch (e) {
+      fs.unlink(archivo.path, () => { /* sin huérfanos si falló el registro en BD */ });
+      throw e;
+    }
+  },
+);
+router.get('/consentimientos/:id/archivo', ...verHc, async (req, res) => {
+  const c = await v2.archivoConsentimiento(uuid.parse(req.params.id));
+  assertSede(req, c.sedeId);
+  await hc.auditarLecturaHC({ ...ctx(req), pacienteId: c.pacienteId, origen: 'consentimiento', atencionId: c.atencionId ?? undefined, sedeId: c.sedeId });
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.type(c.mime);
+  res.sendFile(c.rutaAbsoluta);
+});
+
 // ─── Bloque 3 · Procedimientos, escalas y podograma ──────────────────────────
 // Datos de trabajo clínico EDITABLES (decisión médica "editable sin tachones"): añadir,
 // editar y quitar van bajo hc.registrar (el borrado es suave + auditado, no una anulación
@@ -617,7 +701,7 @@ router.get('/bandeja', ...verHc, async (req, res) => {
   const dias = Math.min(365, Math.max(7, Number(req.query.dias) || 45));
   res.json(await b3.bandejaDelDia({
     sedeIds: puedeTodasLasSedes(u) ? null : u.sedes,
-    profesionalId: u.rol === 'medico' ? u.profesionalId ?? null : null,
+    profesionalId: esRolMedico(u.rol) ? u.profesionalId ?? null : null,
     diasSinVolver: dias,
   }));
 });
@@ -668,7 +752,7 @@ const plantillaSchema = z.object({
   contenido: z.record(z.any()),
   activa: z.boolean().optional(),
 });
-const ROLES_PLANTILLAS = ['admin', 'coordinadora_sedes', 'medico'];
+const ROLES_PLANTILLAS = ['admin', 'coordinadora_sedes', 'medico', 'medico_auditor'];
 const gestionaPlantillas = (req: Request, _res: Response, next: NextFunction) => {
   if (!ROLES_PLANTILLAS.includes(user(req).rol)) throw new AppError('Solo administración, coordinación o médicos gestionan plantillas', 403, 'SIN_PERMISO');
   next();

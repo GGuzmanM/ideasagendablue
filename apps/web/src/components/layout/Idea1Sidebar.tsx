@@ -15,6 +15,7 @@ export interface NavItem {
   label: string;
   icon: string;
   permiso?: string | string[];
+  soloRol?: string; // además del permiso: solo este rol lo ve
 }
 
 // Conjuntos de permisos que hacen visible un hub (basta CUALQUIERA).
@@ -27,6 +28,8 @@ export const idea1NavItems: NavItem[] = [
   // Vista rápida de quienes ya llegaron hoy (médicos, administración y coordinación).
   { to: '/pacientes-del-dia', label: 'Visor de Pacientes', icon: 'clinical_notes', permiso: ['medico.autoasignar', 'medico.asignar'] },
   { to: '/historia-clinica/bandeja', label: 'Bandeja clínica', icon: 'inbox', permiso: 'hc.ver' },
+  // Rebote: citas por volver a llamar. Quienes reprograman (admin, coordinación, contact, especial contact, recepción).
+  { to: '/rebote', label: 'Rebote', icon: 'phone_callback', permiso: 'citas.reprogramar' },
   { to: '/horarios', label: 'Horarios y Restricciones', icon: 'schedule', permiso: 'horarios.ver' },
   { to: '/herramientas', label: 'Herramientas', icon: 'home_repair_service', permiso: HERRAMIENTAS_PERMS },
   { to: '/movimientos', label: 'Movimientos', icon: 'sync_alt', permiso: 'movimientos.ver' },
@@ -41,14 +44,15 @@ export function Idea1Sidebar() {
   const perms = usuario?.permisos ?? [];
 
   // Si hay permisos en el usuario, filtramos por ellos; si no hay objeto usuario cargado aún, mostramos los items
-  const items = perms.length > 0
+  const items = (perms.length > 0
     ? idea1NavItems.filter(n => {
         if (!n.permiso) return true;
         return Array.isArray(n.permiso)
           ? n.permiso.some(p => perms.includes(p))
           : perms.includes(n.permiso);
       })
-    : idea1NavItems;
+    : idea1NavItems
+  ).filter(n => !n.soloRol || usuario?.rol === n.soloRol);
   // Alerta de controles (4.2): vencidos + los que vencen en 7 días, sobre «Bandeja clínica».
   const controles = useContadorControles();
   const [plegado, setPlegado] = useState(leerPlegado);

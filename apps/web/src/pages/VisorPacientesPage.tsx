@@ -3,6 +3,7 @@
 // Vista PURA: la lógica vive en services/visorPacientesService.ts.
 import { type CitaResumen } from '../api/citas';
 import { type RecetaDelDia } from '../api/recetas';
+import { type ResumenClinicoCita } from '../api/historiaClinica';
 import { nombreMedico } from '../api/medicoCita';
 import { Skeleton } from '../components/ui/Skeleton';
 import { useVisorPacientes, type FiltroVisor } from '../services/visorPacientesService';
@@ -21,6 +22,26 @@ function ChipReceta({ rx }: { rx: RecetaDelDia }) {
     <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-emerald-600 text-white flex items-center gap-0.5" data-testid="visor-con-receta">
       <span className="material-symbols-outlined text-[13px]">prescriptions</span>{texto}
     </span>
+  );
+}
+
+/** HC v2 (en validación): «Procedimiento realizado» y «Completado» (la historia de la visita quedó llena). */
+function ChipsResumenHc({ r }: { r: ResumenClinicoCita | null }) {
+  if (!r) return null;
+  return (
+    <>
+      {r.procedimientos > 0 && (
+        <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-indigo-600 text-white flex items-center gap-0.5" data-testid="visor-procedimiento">
+          <span className="material-symbols-outlined text-[13px]">healing</span>Procedimiento realizado
+        </span>
+      )}
+      {r.completada && (
+        <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-teal-700 text-white flex items-center gap-0.5" data-testid="visor-completado"
+          title="Historia completa: anamnesis, diagnóstico y procedimiento o receta">
+          <span className="material-symbols-outlined text-[13px]">task_alt</span>Completado
+        </span>
+      )}
+    </>
   );
 }
 
@@ -115,6 +136,7 @@ export function VisorPacientesPage() {
                         {a.esperaMin !== null && a.esperaMin >= 15 && <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-rose-100 text-rose-700">{a.esperaMin} min esperando</span>}
                         {c.consultorioNumero ? <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">C{c.consultorioNumero}</span> : null}
                         {rx && <ChipReceta rx={rx} />}
+                        <ChipsResumenHc r={v.resumenDe(c)} />
                       </div>
                       <p className="text-xs text-on-surface-variant mt-0.5 truncate">
                         {c.horaInicio} · {c.servicio.nombre}{c.subcategoria ? ` · ${c.subcategoria.nombre}` : ''} · {c.unidadNegocio.nombre}
@@ -166,6 +188,7 @@ export function VisorPacientesPage() {
                     <span className="text-sm font-semibold text-on-surface">{nombrePaciente(c)}</span>
                     <span className="text-xs text-on-surface-variant">{c.horaInicio} · {c.servicio.nombre}{c.medico ? ` · ${nombreMedico(c.medico)}` : ''}</span>
                     {v.recetaDe(c) && <ChipReceta rx={v.recetaDe(c)!} />}
+                    <ChipsResumenHc r={v.resumenDe(c)} />
                     <span className="flex-1" />
                     {v.acciones(c).puedeAtender && <button onClick={() => void v.atender(c)} className={BTN_SEC}><span className="material-symbols-outlined text-base">description</span>Ver historia</button>}
                   </div>

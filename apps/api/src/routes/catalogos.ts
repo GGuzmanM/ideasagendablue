@@ -108,7 +108,7 @@ router.get('/medicamentos', requireAuth, busquedaLimiter, async (req, res) => {
 // ─── Gestión del catálogo CIE-10 (D3) ─────────────────────────────────────────
 // Administración, coordinación y médicos agregan códigos y los activan / desactivan. Nada se borra:
 // un código ya usado en diagnósticos solo se desactiva (deja de salir en la búsqueda). Auditado.
-const ROLES_CATALOGO = ['admin', 'coordinadora_sedes', 'medico'];
+const ROLES_CATALOGO = ['admin', 'coordinadora_sedes', 'medico', 'medico_auditor'];
 // Códigos CIE-10 y los propios de la clínica que vienen del ERP («000» Otros, «000.1» Tratamiento preventivo).
 const RE_CIE10 = /^([A-Z][0-9]{2}|[0-9]{3})(\.[0-9A-Z]{1,4})?$/;
 function gestionaCatalogo(req: Request, _res: Response, next: NextFunction) {

@@ -36,7 +36,11 @@ function perfilClinico(profesional: ProfesionalPerfil, permisos: string[]) {
 }
 
 // Barrera anti fuerza bruta: máx 5 intentos fallidos por IP cada 15 min (ver rateLimits.ts).
-router.post('/login', loginLimiter, async (req, res) => {
+// 02-oct-2026: DESACTIVADA a pedido del usuario. Todas las PCs de la clínica llegan al API con la MISMA IP (el proxy de
+// la web no reenvía la IP real), así que los intentos fallidos de varias personas se sumaban y bloqueaban a todos 15 min.
+// Pendiente: reenviar la IP real (xfwd) o contar por correo + IP, y volver a activarla.
+// router.post('/login', loginLimiter, async (req, res) => {
+router.post('/login', async (req, res) => {
   const { email, password } = loginSchema.parse(req.body);
 
   const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || req.socket.remoteAddress;

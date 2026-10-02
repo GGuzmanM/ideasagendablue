@@ -1,8 +1,9 @@
 /**
  * /api/v1/rebote — bandeja de citas en rebote (ver services/reboteService.ts).
- * Lo usan los mismos roles que reprograman (permiso citas.reprogramar). Reagendar = el mover de
- * siempre (PATCH /citas/:id/mover o /citas/grupo/:slotGrupoId/mover), que cierra el rebote.
- * Mientras REBOTE_HABILITADO != '1' todas las rutas responden 404 (nadie lo ve).
+ * Reagendar = el mover de siempre (PATCH /citas/:id/mover o /citas/grupo/:slotGrupoId/mover), que
+ * cierra el rebote.
+ * 01-oct-2026: abierto a quienes REPROGRAMAN (permiso citas.reprogramar = admin, coordinación, contact center, especial
+ * contact y recepción). Bandeja general (hoy todos ellos ven todas las sedes) con filtros de sede y unidad.
  */
 import { Router, Request } from 'express';
 import { z } from 'zod';
@@ -11,16 +12,12 @@ import { requireAuth, requirePermiso, assertSede, puedeTodasLasSedes } from '../
 import { AppError } from '../middleware/errorHandler';
 import { zFechaCita } from '../utils/validacionCita';
 import {
-  reboteHabilitado, enviarARebote, listarRebotes, registrarLlamada, listarLlamadas, descartarRebote,
+  enviarARebote, listarRebotes, registrarLlamada, listarLlamadas, descartarRebote,
   TURNOS_REBOTE, RESULTADOS_LLAMADA, DIAS_REBOTE,
 } from '../services/reboteService';
 
 const router = Router();
 
-router.use((_req, _res, next) => {
-  if (!reboteHabilitado()) return next(new AppError('No encontrado', 404, 'NOT_FOUND'));
-  next();
-});
 router.use(requireAuth, requirePermiso('citas.reprogramar'));
 
 function actor(req: Request) {
@@ -34,12 +31,13 @@ async function assertSedeDeCita(req: Request, citaId: string): Promise<void> {
   assertSede(req, c.sedeId);
 }
 
-// GET /rebote?sedeId= — bandeja (general; el combo de sede es opcional)
+// GET /rebote?sedeId=&unidadNegocioId= — bandeja (general; los combos de sede y unidad son opcionales)
 router.get('/', async (req, res) => {
   const sedeId = z.string().uuid().optional().parse(req.query.sedeId || undefined);
+  const unidadNegocioId = z.string().uuid().optional().parse(req.query.unidadNegocioId || undefined);
   if (sedeId) assertSede(req, sedeId);
   const sedeIds = puedeTodasLasSedes(req.user!) ? null : req.user!.sedes;
-  res.json({ diasRebote: DIAS_REBOTE, citas: await listarRebotes({ sedeIds, sedeId }) });
+  res.json({ diasRebote: DIAS_REBOTE, citas: await listarRebotes({ sedeIds, sedeId, unidadNegocioId }) });
 });
 
 // POST /rebote/:citaId — enviar a rebote

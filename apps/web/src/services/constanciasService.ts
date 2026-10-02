@@ -21,11 +21,17 @@ export function useConstancias(atencion: AtencionCompleta, puedeRegistrar: boole
   const [dxCodigo, setDxCodigo] = useState('');
   const [observacion, setObservacion] = useState('');
   const [anulando, setAnulando] = useState<string | null>(null);
+  // Horario de la constancia de atención (30-sep-2026): por defecto el de la cita; editable si llegó antes o después.
+  const sumarMin = (hhmm: string, min: number) => { const [h, m] = hhmm.split(':').map(Number); const t = (h ?? 0) * 60 + (m ?? 0) + min; return `${String(Math.floor(t / 60) % 24).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`; };
+  const horaCita = atencion.cita?.horaInicio ?? '';
+  const finCita = horaCita ? sumarMin(horaCita, atencion.cita?.duracionMinutos ?? 30) : '';
+  const [horaDesde, setHoraDesde] = useState(horaCita);
+  const [horaHasta, setHoraHasta] = useState(finCita);
   const [emitida, setEmitida] = useState<{ id: string; numero: number; tipo: TipoConstancia } | null>(null);
 
   const diagnosticos = atencion.diagnosticos;
   const dxPrincipal = diagnosticos.find((d) => d.principal) ?? diagnosticos[0] ?? null;
-  const abrir = (t: TipoConstancia) => { setTipo(t); setDesde(hoyLima()); setDias('1'); setDxCodigo(dxPrincipal?.cie10Codigo ?? ''); setObservacion(''); setEmitida(null); };
+  const abrir = (t: TipoConstancia) => { setTipo(t); setDesde(hoyLima()); setDias('1'); setDxCodigo(dxPrincipal?.cie10Codigo ?? ''); setObservacion(''); setEmitida(null); setHoraDesde(horaCita); setHoraHasta(finCita); };
   const cerrar = () => setTipo(null);
   const diasNum = Number(dias);
   const diasOk = Number.isInteger(diasNum) && diasNum >= 1 && diasNum <= MAX_DIAS_DESCANSO;
@@ -36,11 +42,17 @@ export function useConstancias(atencion: AtencionCompleta, puedeRegistrar: boole
     if (!diasOk) faltantes.push(`los días (1 a ${MAX_DIAS_DESCANSO})`);
     if (!dxCodigo) faltantes.push('un diagnóstico registrado en la atención');
   }
+  const horarioCambiado = horaDesde !== horaCita || horaHasta !== finCita;
+  if (tipo === 'constancia_atencion' && horarioCambiado) {
+    if (!/^\d{2}:\d{2}$/.test(horaDesde) || !/^\d{2}:\d{2}$/.test(horaHasta)) faltantes.push('la hora de inicio y de fin');
+    else if (horaHasta <= horaDesde) faltantes.push('una hora de fin posterior a la de inicio');
+  }
   const puedeEmitir = !!tipo && faltantes.length === 0;
 
   const emitirMut = useMutation({
     mutationFn: () => historiaClinicaApi.emitirConstancia(atencion.id, {
       tipo: tipo!, ...(tipo === 'descanso_medico' ? { desde, dias: diasNum, diagnosticoCie10Codigo: dxCodigo || null } : {}), observacion: observacion.trim() || null,
+      ...(tipo === 'constancia_atencion' && horarioCambiado ? { horaDesde, horaHasta } : {}),
     }),
     onSuccess: (c) => {
       invalidar({ pacienteId: atencion.pacienteId, atencionId: atencion.id, citaId: atencion.citaId });
@@ -60,6 +72,7 @@ export function useConstancias(atencion: AtencionCompleta, puedeRegistrar: boole
   return {
     lista: atencion.constancias ?? [], puedeConstancia: puedeRegistrar, puedeDescanso: puedeRegistrar && esMedicoPrescriptor,
     tipo, abrir, cerrar, desde, setDesde, dias, setDias, hasta, dxCodigo, setDxCodigo, diagnosticos, observacion, setObservacion,
+    horaDesde, setHoraDesde, horaHasta, setHoraHasta, horaCita, finCita, horarioCambiado,
     faltantes, puedeEmitir, emitirMut, emitida, ver, anulando, setAnulando, anularMut, puedeAnular,
   };
 }

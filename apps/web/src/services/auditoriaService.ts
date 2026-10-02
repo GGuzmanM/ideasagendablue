@@ -112,11 +112,16 @@ export const ACCION_LABEL: Record<string, AccionStyle> = {
   click_reprogramar:            def('Paciente pidió reprogramar', 'phone_forwarded', 'ambar'),
   cambiar_consultorio:          def('Consultorio asignado', 'meeting_room', 'primario'),
   agregar_comentario:           def('Comentario agregado', 'chat', 'primario'),
+  editar_comentario:            def('Comentario corregido', 'edit_note', 'primario'),
   editar_canal:                 def('Canal de reserva cambiado', 'call', 'primario'),
   marcar_pagada:                def('Cita marcada como pagada', 'payments', 'primario'),
   desmarcar_pagada:             def('Se quitó la marca de pagada', 'payments', 'primario'),
   cambiar_estado_pago:          def('Estado de pago cambiado', 'payments', 'primario'),
   adjuntar_comprobante:         def('Comprobante de pago adjuntado', 'attach_file', 'primario'),
+  enviar_rebote:                def('Enviada a rebote', 'phone_callback', 'violeta'),
+  rebote_llamada:               def('Llamada de rebote', 'call', 'violeta'),
+  rebote_descartado:            def('Rebote descartado (cancelada)', 'phone_disabled', 'rojo'),
+  rebote_vencido:               def('Rebote vencido (cancelada a los 30 días)', 'timer_off', 'rojo'),
   quitar_comprobante:           def('Comprobante de pago quitado', 'attach_file', 'primario'),
   editar_promocion:             def('Promoción de la cita cambiada', 'sell', 'primario'),
   asignar_medico:               def('Médico asignado', 'stethoscope', 'teal'),
@@ -583,6 +588,8 @@ function detalleCita(log: AuditLog, nombresPorId: Record<string, string>, legibl
       return `Promoción ${val('promocionId', a.promocionId)} → ${val('promocionId', d.promocionId)}`;
     case 'agregar_comentario':
       return d.texto ? `«${String(d.texto)}»` : undefined;
+    case 'editar_comentario':
+      return `«${String(a.texto ?? '')}» → «${String(d.texto ?? '')}»${d.autor ? ` (comentario de ${String(d.autor)})` : ''}`;
     case 'asignar_medico': case 'tomar_cita_medico': case 'soltar_cita_medico': {
       const de = (a.medico as string) || nombre(a.medicoId) || 'sin médico';
       const hasta = (d.medico as string) || nombre(d.medicoId) || 'sin médico';

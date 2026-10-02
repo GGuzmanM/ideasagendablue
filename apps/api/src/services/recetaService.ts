@@ -85,12 +85,19 @@ export async function crearFavorita(p: Ctx & {
   });
 }
 
-/** La quita quien la creó o coordinación/admin (`hc.anular`). Borrado suave. */
+/**
+ * Quitar una favorita (borrado suave). 02-oct-2026: exige `receta.favoritas.gestionar`; el médico auditor y admin quitan
+ * cualquiera; quien solo tenga el permiso, las suyas (o con `hc.anular`, como antes).
+ */
 export async function eliminarFavorita(p: Ctx & { user: AuthPayload; id: string }) {
   const f = await prisma.recetaFavorita.findFirst({ where: { id: p.id, deletedAt: null } });
   if (!f) throw new AppError('Favorita no encontrada', 404);
-  if (f.creadoPorUsuarioId !== p.user.userId && !p.user.permisos?.includes('hc.anular')) {
-    throw new AppError('Solo quien creó la favorita o coordinación puede quitarla', 403, 'SIN_PERMISO');
+  if (!p.user.permisos?.includes('receta.favoritas.gestionar')) {
+    throw new AppError('Las favoritas las gestiona el médico auditor', 403, 'SIN_PERMISO');
+  }
+  const total = p.user.rol === 'admin' || p.user.rol === 'medico_auditor' || p.user.permisos.includes('hc.anular');
+  if (!total && f.creadoPorUsuarioId !== p.user.userId) {
+    throw new AppError('Solo quien creó la favorita, el médico auditor o coordinación puede quitarla', 403, 'SIN_PERMISO');
   }
   await prisma.$transaction(async (tx) => {
     await tx.recetaFavorita.update({ where: { id: f.id }, data: { deletedAt: new Date() } });

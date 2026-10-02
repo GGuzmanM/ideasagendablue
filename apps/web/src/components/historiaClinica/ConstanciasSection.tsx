@@ -29,7 +29,21 @@ export function ConstanciasSection({ a, puedeRegistrar, esMedicoPrescriptor }: {
         <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3" data-testid="form-constancia">
           <p className="text-sm font-semibold text-on-surface">{TIPO_CONSTANCIA_LABEL[c.tipo]}</p>
           {c.tipo === 'constancia_atencion'
-            ? <p className="text-xs text-on-surface-variant">Deja constancia de que el paciente fue atendido hoy en esta sede, por este servicio y a cargo del profesional que lo atendió. La firma y sella el médico de la cita, con su CMP. El texto lo arma el sistema; puedes agregar una nota.</p>
+            ? (
+              <>
+                <p className="text-xs text-on-surface-variant">Deja constancia de que el paciente fue atendido hoy en esta sede, por este servicio y a cargo del profesional que lo atendió. La firma y sella el médico de la cita, con su CMP. El texto lo arma el sistema; puedes agregar una nota.</p>
+                {/* Horario real (30-sep-2026): viene el de la cita; se corrige si el paciente llegó antes o después. */}
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 items-end">
+                  <div><label className={LBL}>Atendido desde</label><input type="time" step={300} value={c.horaDesde} onChange={(e) => c.setHoraDesde(e.target.value)} className={INPUT} data-testid="constancia-hora-desde" /></div>
+                  <div><label className={LBL}>Hasta</label><input type="time" step={300} value={c.horaHasta} min={c.horaDesde || undefined} onChange={(e) => c.setHoraHasta(e.target.value)} className={INPUT} data-testid="constancia-hora-hasta" /></div>
+                  <div className="col-span-2 md:col-span-1 text-xs text-on-surface-variant pb-2">
+                    {c.horarioCambiado
+                      ? <button type="button" onClick={() => { c.setHoraDesde(c.horaCita); c.setHoraHasta(c.finCita); }} className="text-primary font-semibold hover:underline">Volver al horario de la cita ({c.horaCita}–{c.finCita})</button>
+                      : c.horaCita ? <span>Horario de la cita. Cámbialo si llegó antes o después.</span> : null}
+                  </div>
+                </div>
+              </>
+            )
             : (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div><label className={LBL}>Desde el día</label><input type="date" value={c.desde} onChange={(e) => c.setDesde(e.target.value)} className={INPUT} data-testid="descanso-desde" /></div>

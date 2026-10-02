@@ -30,6 +30,8 @@ export function PermisosPage({
     setFecha,
     fechaHasta,
     setFechaHasta,
+    admiteRango,
+    diasRango,
     modo,
     cambiarModo,
     profesionalIds,
@@ -154,8 +156,8 @@ export function PermisosPage({
                       <span className="font-label-caps text-label-caps text-on-surface-variant font-bold uppercase tracking-wider">
                         FECHA DEL BLOQUEO
                       </span>
-                      {/* Permiso: un día o un RANGO de fechas (mismo horario cada día). */}
-                      {modo === 'individual' && (
+                      {/* Permiso y Enfermedad: un día o un RANGO de fechas (mismo horario cada día). */}
+                      {admiteRango && (
                         <div className="flex rounded-lg border border-outline-variant/60 overflow-hidden text-[11px] font-bold" data-testid="permiso-modo-fechas">
                           <button
                             type="button"
@@ -179,7 +181,7 @@ export function PermisosPage({
                         <span className="material-symbols-outlined text-[18px] text-primary">
                           calendar_month
                         </span>
-                        {modo === 'individual' && fechaHasta && (
+                        {admiteRango && fechaHasta && (
                           <span className="text-[10px] font-bold text-on-surface-variant uppercase">Desde</span>
                         )}
                         <input
@@ -194,7 +196,7 @@ export function PermisosPage({
                           className="bg-transparent border-none text-xs font-semibold text-on-surface focus:ring-0 outline-none cursor-pointer"
                         />
                       </div>
-                      {modo === 'individual' && fechaHasta ? (
+                      {admiteRango && fechaHasta ? (
                         <div className="flex items-center gap-2 px-3 py-1 bg-surface-container-lowest border border-outline-variant/40 rounded-lg shadow-2xs">
                           <span className="text-[10px] font-bold text-on-surface-variant uppercase">Hasta</span>
                           <input
@@ -213,13 +215,15 @@ export function PermisosPage({
                       )}
                     </div>
                   </div>
-                  {modo === 'individual' && fechaHasta && fechaHasta >= fecha && (
-                    <p className="text-xs text-on-surface-variant" data-testid="permiso-rango-resumen">
-                      Se bloqueará <b>{desde}–{hasta}</b> cada día del{' '}
+                  {admiteRango && fechaHasta && fechaHasta >= fecha && (
+                    <p className={cn('text-xs', modo === 'enfermedad' && diasRango > 31 ? 'text-error font-semibold' : 'text-on-surface-variant')} data-testid="permiso-rango-resumen">
+                      {modo === 'enfermedad' ? 'Se cancelarán las citas de' : 'Se bloqueará'} <b>{desde}–{hasta}</b> cada día del{' '}
                       <b>{format(parseISO(fecha), "d 'de' MMMM", { locale: es })}</b> al{' '}
                       <b>{format(parseISO(fechaHasta), "d 'de' MMMM", { locale: es })}</b>{' '}
                       ({differenceInCalendarDays(parseISO(fechaHasta), parseISO(fecha)) + 1} día(s)).
-                      Si alguien tiene pacientes en alguno de esos días, a esa persona no se le bloquea nada.
+                      {modo === 'enfermedad'
+                        ? diasRango > 31 ? ' Máximo 31 días por reporte.' : ' Y se bloqueará su agenda en ese horario.'
+                        : ' Si alguien tiene pacientes en alguno de esos días, a esa persona no se le bloquea nada.'}
                     </p>
                   )}
                   </div>
@@ -524,7 +528,7 @@ export function PermisosPage({
                   {modo === 'enfermedad' && (
                     <div className="rounded-xl border border-[#d97706]/40 bg-[#d97706]/10 p-4 text-xs font-semibold text-[#d97706] leading-relaxed shadow-2xs">
                       🤒 Al reportar la enfermedad se cancelarán automáticamente las citas activas
-                      del profesional entre {desde} y {hasta}, y se bloqueará su agenda ese rango.
+                      del profesional entre {desde} y {hasta}{diasRango > 1 ? `, cada día durante ${diasRango} días` : ''}, y se bloqueará su agenda ese rango.
                       Los pacientes afectados aparecerán listados para que los contactes y reagendes.
                     </div>
                   )}
@@ -718,8 +722,8 @@ export function PermisosPage({
                     <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 space-y-2">
                       <p className="text-xs font-bold text-emerald-900">
                         {pacientesAfectados.length > 0
-                          ? `Día liberado · ${pacientesAfectados.length} cita(s) cancelada(s). Contacta a estos pacientes para reagendar:`
-                          : 'Día liberado. El profesional no tenía citas en el rango.'}
+                          ? `${pacientesAfectados.some((c) => c.fecha) ? 'Días liberados' : 'Día liberado'} · ${pacientesAfectados.length} cita(s) cancelada(s). Contacta a estos pacientes para reagendar:`
+                          : 'Liberado. El profesional no tenía citas en el rango.'}
                       </p>
                       {pacientesAfectados.length > 0 && (
                         <ul className="space-y-1">
@@ -729,7 +733,7 @@ export function PermisosPage({
                               className="flex items-center justify-between gap-2 text-xs bg-surface-container-lowest border border-emerald-500/20 rounded-lg p-2"
                             >
                               <span className="font-bold text-on-surface font-mono">
-                                {c.horaInicio}
+                                {c.fecha ? `${format(parseISO(c.fecha), 'dd/MM')} ` : ''}{c.horaInicio}
                               </span>
                               <span className="flex-1 text-on-surface font-semibold truncate">
                                 {c.paciente}

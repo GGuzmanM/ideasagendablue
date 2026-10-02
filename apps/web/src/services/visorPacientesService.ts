@@ -10,6 +10,8 @@ import { citasApi, type CitaResumen } from '../api/citas';
 import { sedesApi } from '../api';
 import { medicoCitaApi } from '../api/medicoCita';
 import { recetasApi, type RecetaDelDia } from '../api/recetas';
+import { historiaClinicaApi, type ResumenClinicoCita } from '../api/historiaClinica';
+import { leerHcV2 } from '../utils/vistaHc';
 import { citaLlevaMedico } from './medicoCitaService';
 import { useAuthStore } from '../stores/authStore';
 import { useAgendaStore } from '../stores/agendaStore';
@@ -62,6 +64,17 @@ export function useVisorPacientes() {
   });
   const recetaPorCita = useMemo(() => new Map((recetasQ.data ?? []).map((r) => [r.citaId, r] as const)), [recetasQ.data]);
   const recetaDe = (c: CitaResumen): RecetaDelDia | null => recetaPorCita.get(c.id) ?? null;
+
+  // HC v2 (02-oct-2026, en validación: solo con ?hc=v2 en este navegador): «Procedimiento realizado» y «Completado»
+  // (anamnesis o SOAP + diagnóstico + procedimiento o receta) por cita.
+  const v2 = useMemo(() => leerHcV2(), []);
+  const resumenQ = useQuery({
+    queryKey: ['citas', 'visor-resumen-hc', sedeId, fecha],
+    queryFn: () => historiaClinicaApi.resumenDelDia(sedeId, fecha),
+    enabled: v2 && !!sedeId && puedeVerHc,
+    refetchInterval: 30_000,
+  });
+  const resumenDe = (c: CitaResumen): ResumenClinicoCita | null => (v2 ? resumenQ.data?.[c.id] ?? null : null);
 
   const [filtro, setFiltro] = useState<FiltroVisor>(soyMedico ? 'todos' : 'todos');
   const [busqueda, setBusqueda] = useState('');
@@ -137,8 +150,8 @@ export function useVisorPacientes() {
     sedes, sedeId, setSedeId, sedeNombre: sedes.find((s) => s.id === sedeId)?.nombre ?? '',
     fecha, cargando: citasQ.isLoading, error: citasQ.error as Error | null,
     filtro, setFiltro, busqueda, setBusqueda, verAtendidos, setVerAtendidos,
-    enSede, atendidos, porVenir, asignables, acciones, recetaDe,
+    enSede, atendidos, porVenir, asignables, acciones, recetaDe, resumenDe,
     tomar, soltar, asignar, atender, pendiente: medicoMut.isPending,
-    refrescar: () => { void citasQ.refetch(); void recetasQ.refetch(); },
+    refrescar: () => { void citasQ.refetch(); void recetasQ.refetch(); if (v2) void resumenQ.refetch(); },
   };
 }

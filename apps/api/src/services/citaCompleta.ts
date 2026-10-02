@@ -16,7 +16,10 @@ export const promoCitaSelect = { id: true, nombre: true, tipo: true, valor: true
 export const comentariosInclude = {
   where: { deletedAt: null },
   orderBy: { creadoEn: 'asc' },
-  select: { id: true, texto: true, creadoEn: true, autorEtiqueta: true, autor: { select: { id: true, nombre: true } } },
+  select: {
+    id: true, texto: true, creadoEn: true, autorEtiqueta: true, autor: { select: { id: true, nombre: true } },
+    editadoEn: true, editadoPor: { select: { id: true, nombre: true } }, // «(editado)» en la pantalla
+  },
 } as const;
 
 // Promo HEREDADA de una cita SECUNDARIO de un bloque: la de su portadora (PRINCIPAL).
@@ -49,6 +52,7 @@ export async function getCitaCompleta(id: string) {
       promocion: { select: promoCitaSelect },
       creadoPorUsuario: { select: { id: true, nombre: true } },
       pagadaPor: { select: { id: true, nombre: true } }, // quién marcó la cita como pagada
+      rebotePor: { select: { id: true, nombre: true } }, // quién la envió a rebote (solo lo muestra el admin)
       comentarios: comentariosInclude,
       // Aparato del consultorio: el tiempo real vigente del tratamiento (máx 1, índice parcial).
       tiemposTratamiento: {

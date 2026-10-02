@@ -131,7 +131,10 @@ export async function crearAlmuerzo(data: {
     orderBy: [{ fecha: 'asc' }, { horaInicio: 'asc' }],
   });
   const aMin = (h: string) => Number(h.slice(0, 2)) * 60 + Number(h.slice(3, 5));
-  const choques = citasTapadas.filter((c) => aMin(c.horaInicio) < aMin(turno.horaFin) && aMin(c.horaInicio) + c.duracionMinutos > aMin(turno.horaInicio));
+  // 30-sep-2026: el almuerzo del mes (recurrente) NO rige sábado ni domingo (agenda, disponibilidad y agendar ya lo
+  // ignoran esos días): una cita del sábado a esa hora no es choque. Antes frenaba el break de Doris por un sábado.
+  const choques = citasTapadas.filter((c) => (!esRec || ![0, 6].includes(c.fecha.getUTCDay()))
+    && aMin(c.horaInicio) < aMin(turno.horaFin) && aMin(c.horaInicio) + c.duracionMinutos > aMin(turno.horaInicio));
   if (choques.length > 0) {
     const lista = choques.slice(0, 5).map((c) => `${c.fecha.toISOString().slice(8, 10)}/${c.fecha.toISOString().slice(5, 7)} ${c.horaInicio} ${c.paciente?.nombres?.split(' ')[0] ?? ''} ${c.paciente?.apellidoPaterno ?? ''}`.trim()).join(', ');
     throw new AppError(`Hay ${choques.length} cita(s) agendada(s) en ese horario de almuerzo (${lista}${choques.length > 5 ? '…' : ''}). Muévelas primero o elige otro turno.`, 409, 'CITAS_EN_RANGO');

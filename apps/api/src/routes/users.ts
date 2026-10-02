@@ -5,6 +5,7 @@ import { prisma } from '../db';
 import { requireAuth, requirePermiso, AuthPayload } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { esRolConFicha, resolverFichaEnTx, FichaResuelta, nombreDeUsuarioAFichaEnTx } from '../services/fichaUsuarioService';
+import { esRolMedico } from '../utils/rolesMedico';
 import { auditEnTx } from '../services/audit';
 
 const router = Router();
@@ -111,14 +112,14 @@ router.get('/:id', ...soloAdmins, async (req, res) => {
  * candado de receta exige Usuario.profesionalId → tipo=medico, !esEquipo, colegiatura cargada).
  */
 async function validarRolMedico(rol: string | undefined, profesionalId: string | null | undefined, creaFicha = false): Promise<void> {
-  if (rol !== 'medico' && rol !== 'podologa') return;
+  if (!esRolMedico(rol) && rol !== 'podologa') return;
   if (creaFicha) return; // la ficha se crea (o se vincula por nombre) en este mismo guardado
   if (!profesionalId) {
     if (rol === 'podologa') return; // una podóloga puede quedar sin ficha (no ve ninguna agenda hasta tenerla)
     throw new AppError('Un usuario con rol médico necesita su ficha de médico: indica la sede donde empieza para crearla', 400, 'MEDICO_REQUIERE_PROFESIONAL');
   }
   const prof = await prisma.profesional.findFirst({ where: { id: profesionalId, deletedAt: null }, select: { tipo: true } });
-  if (rol === 'medico' && prof?.tipo !== 'medico') {
+  if (esRolMedico(rol) && prof?.tipo !== 'medico') {
     throw new AppError('El profesional vinculado a un usuario médico debe ser de tipo médico', 400, 'MEDICO_REQUIERE_PROFESIONAL_MEDICO');
   }
   if (rol === 'podologa' && prof?.tipo === 'medico') {
