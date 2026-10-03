@@ -6,7 +6,7 @@ import { useEffect, useRef, useState, type PointerEvent as EventoPuntero, type R
 import { MedicoDeLaCita } from '../components/agenda/MedicoDeLaCita';
 import { esRolMedico } from '../utils/rolesMedico';
 import { leerVistaUnica, leerHcV2 } from '../utils/vistaHc';
-import { NiegaChecks, CATEGORIAS_ANTECEDENTE_NIEGA, PanelNotasMedico, puedeVerNotasMedico } from '../components/historiaClinica/HcV2';
+import { NiegaChecks, PanelNotasMedico, puedeVerNotasMedico } from '../components/historiaClinica/HcV2';
 import { citaLlevaMedico } from '../services/medicoCitaService';
 import { MiFirmaBoton } from '../components/historiaClinica/MiFirmaDialog';
 import { Skeleton } from '../components/ui/Skeleton';
@@ -96,13 +96,12 @@ export function HistoriaClinicaPage() {
             {h.historia && <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[11px] font-bold font-mono-label">HC N° {String(h.historia.numero).padStart(6, '0')}</span>}
             {h.historia?.estado === 'pasiva' && <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[11px] font-bold uppercase" title="Historia en archivo pasivo (sin atenciones recientes)">En archivo</span>}
           </span>
-          {/* Vista de una sola pestaña, en prueba: cada quien la prueba y vuelve cuando quiera (queda recordado en su navegador) */}
-          <button onClick={() => h.navigate({ search: `?vista=${vistaUnica ? 'clasica' : 'unica'}` })} data-testid="alternar-vista-hc"
-            title={vistaUnica ? 'Volver a la vista de pestañas de siempre' : 'Todo en una sola pestaña: antecedentes, motivo, diagnóstico, receta y procedimientos en orden'}
+          {/* 03-oct-2026: la vista de una sola pestaña es la predeterminada; la clásica se elige aquí (queda recordado en ese navegador). */}
+          <button onClick={() => { if (vistaUnica && h.tab === 'constancias') h.setTab('evolucion'); h.navigate({ search: `?vista=${vistaUnica ? 'clasica' : 'unica'}` }); }} data-testid="alternar-vista-hc"
+            title={vistaUnica ? 'Ver la historia con las pestañas de siempre' : 'Volver a la vista nueva (todo en una sola pestaña)'}
             className="hidden md:flex min-h-[36px] px-3 rounded-full border border-primary/30 bg-primary/5 text-primary text-xs font-semibold items-center gap-1.5 hover:bg-primary/10 whitespace-nowrap">
             <span className="material-symbols-outlined text-base">{vistaUnica ? 'tab' : 'view_agenda'}</span>
-            {vistaUnica ? 'Volver a la vista clásica' : 'Probar vista nueva'}
-            {!vistaUnica && <span className="px-1.5 py-0.5 rounded-full bg-primary text-on-primary text-[9px] font-bold uppercase">Nuevo</span>}
+            {vistaUnica ? 'Vista clásica' : 'Vista nueva'}
           </button>
         </div>
         {h.puedeRegistrarBase && (
@@ -253,8 +252,9 @@ export function HistoriaClinicaPage() {
               </button>
             ))}
           </div>
-          <div className="p-3 sm:p-4 lg:p-6 max-w-[1100px]">
-            {h.tab === 'antecedentes' && <PanelAntecedentes h={h} />}
+          <div className="p-3 sm:p-4 lg:p-6 min-[1700px]:grid min-[1700px]:grid-cols-[minmax(0,1100px)_440px] min-[1700px]:gap-6 min-[1700px]:items-start">
+          <div className="max-w-[1100px] min-w-0">
+            {h.tab === 'antecedentes' && <PanelAntecedentes h={h} v2 />}
             {h.tab !== 'antecedentes' && h.genexisSel && <VisitaGenexisCard visita={h.visitaGenexis} nota={h.notaErpSel} />}
             {(h.tab === 'evolucion' || h.tab === 'receta' || h.tab === 'procedimientos' || h.tab === 'escalas' || h.tab === 'podograma' || h.tab === 'fotos' || h.tab === 'consentimientos') && !h.genexisSel && (
               !h.atencionSel ? (
@@ -279,6 +279,9 @@ export function HistoriaClinicaPage() {
                 </>
               )
             )}
+          </div>
+          {/* 03-oct-2026: también en la clásica, al costado: notas para doctores + diagnósticos previos */}
+          <LadoClasico h={h} />
           </div>
           </>)}
         </main>
@@ -560,7 +563,7 @@ function PanelDiagnosticos({ h, a }: { h: H; a: AtencionCompleta }) {
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-headline-sm text-headline-sm font-semibold text-on-surface flex items-center"><span className="material-symbols-outlined mr-2 text-primary">diagnosis</span>Diagnósticos</h3>
           <div className="flex items-center gap-3">
-            {h.gestionaPlantillas && <button onClick={() => setCatalogoAbierto(true)} title="Agregar los códigos CIE-10 que falten o desactivar los que no se usan" className="min-h-[44px] lg:min-h-0 text-on-surface-variant text-xs font-semibold hover:text-primary hover:underline flex items-center gap-1"><span className="material-symbols-outlined text-base">menu_book</span>Catálogo CIE-10</button>}
+            {h.gestionaCatalogo && <button onClick={() => setCatalogoAbierto(true)} title="Agregar los códigos CIE-10 que falten o desactivar los que no se usan" className="min-h-[44px] lg:min-h-0 text-on-surface-variant text-xs font-semibold hover:text-primary hover:underline flex items-center gap-1"><span className="material-symbols-outlined text-base">menu_book</span>Catálogo CIE-10</button>}
             {editable && e.tieneDxAnteriores && <button onClick={e.copiarDxAnteriores} disabled={e.copiandoDx} className="min-h-[44px] lg:min-h-0 text-primary text-xs font-semibold hover:underline flex items-center gap-1 disabled:opacity-50"><span className="material-symbols-outlined text-base">content_copy</span>{e.copiandoDx ? 'Copiando…' : 'Copiar los de la visita anterior'}</button>}
           </div>
         </div>
@@ -802,7 +805,7 @@ function PanelAntecedentes({ h, v2 = false }: { h: H; v2?: boolean }) {
   const antecedentes = h.historia?.antecedentes ?? [];
   const negaciones = h.historia?.negaciones ?? [];
   const niegaAlergias = negaciones.some((n) => n.categoria === 'alergias');
-  const tiposConRegistro = new Set(antecedentes.filter((x) => x.activo).map((x) => x.tipo));
+  const conAntecedentes = antecedentes.some((x) => x.activo);
   const SEV: Record<SeveridadAlergia, string> = { leve: 'bg-amber-100 text-amber-800', moderada: 'bg-orange-100 text-orange-800', severa: 'bg-rose-100 text-rose-800' };
   const quitar = useConfirmarQuitar();
   return (
@@ -843,8 +846,8 @@ function PanelAntecedentes({ h, v2 = false }: { h: H; v2?: boolean }) {
         {antecedentes.length === 0 && !v2 && <p className="text-sm text-on-surface-variant mb-3">Ninguno registrado.</p>}
         {v2 && (
           <div className="mb-3">
-            <NiegaChecks pacienteId={h.pacienteId} negaciones={negaciones} categorias={CATEGORIAS_ANTECEDENTE_NIEGA} titulo="Niega:"
-              conRegistros={tiposConRegistro} editable={h.puedeRegistrar} />
+            <NiegaChecks pacienteId={h.pacienteId} negaciones={negaciones} categorias={[{ id: 'antecedentes', label: 'Niega antecedentes (se le preguntó)' }]}
+              conRegistros={new Set(conAntecedentes ? ['antecedentes' as const] : [])} editable={h.puedeRegistrar} />
           </div>
         )}
         <div className="space-y-1.5 mb-4">
@@ -1941,12 +1944,27 @@ function esPrimeraConsulta(h: H, a: AtencionCompleta): boolean {
 const ICONO_SECCION: Partial<Record<SeccionUnicaId, string>> = { escalas: 'monitor_heart', notas: 'sticky_note_2', previos: 'history' };
 
 /** v2 · Atenciones ANTERIORES a la actual (este sistema), de la más reciente a la más antigua. */
-function atencionesPrevias(h: H, a: AtencionCompleta) {
-  return (h.historia?.atenciones ?? []).filter((x) => x.id !== a.id && (x.fecha < a.fecha || (x.fecha === a.fecha && x.creadoEn < a.creadoEn)));
+function atencionesPrevias(h: H, a: AtencionCompleta | null) {
+  const todas = h.historia?.atenciones ?? [];
+  return a ? todas.filter((x) => x.id !== a.id && (x.fecha < a.fecha || (x.fecha === a.fecha && x.creadoEn < a.creadoEn))) : todas;
+}
+
+/** Vista clásica (03-oct-2026): columna al costado (≥1700 px; si no, debajo) con notas para doctores y diagnósticos previos. */
+function LadoClasico({ h }: { h: H }) {
+  if (!h.pacienteId || !h.historia) return null;
+  const a = h.atencion && h.atencionSel && !h.genexisSel && !h.errorAtencion && !h.cargandoAtencion ? h.atencion : null;
+  return (
+    <aside className="mt-8 min-[1700px]:mt-0 min-[1700px]:sticky min-[1700px]:top-20 min-[1700px]:max-h-[calc(100vh-7rem)] min-[1700px]:overflow-y-auto pr-1 space-y-8 max-w-[1100px]" data-testid="lado-clasico">
+      {puedeVerNotasMedico(h.usuario?.rol) && (
+        <SeccionUnica id="notas" titulo="Notas para doctores"><PanelNotasMedico pacienteId={h.pacienteId} puedeEscribir={h.puedeRegistrar} /></SeccionUnica>
+      )}
+      <SeccionUnica id="previos" titulo={a ? 'Diagnósticos previos' : 'Diagnósticos de sus consultas'}><PanelDiagnosticosPrevios h={h} a={a} /></SeccionUnica>
+    </aside>
+  );
 }
 
 /** v2 · «Diagnósticos previos»: cada consulta anterior con sus diagnósticos y su anamnesis (solo lectura). */
-function PanelDiagnosticosPrevios({ h, a }: { h: H; a: AtencionCompleta }) {
+function PanelDiagnosticosPrevios({ h, a }: { h: H; a: AtencionCompleta | null }) {
   const [todas, setTodas] = useState(false);
   const previas = atencionesPrevias(h, a);
   const visibles = todas ? previas : previas.slice(0, 5);

@@ -694,8 +694,8 @@ export async function registrarAntecedente(p: Ctx & { pacienteId: string; tipo: 
   const etiqueta = await etiquetaUsuario(prisma, p.usuarioId);
   await prisma.$transaction(async (tx) => {
     const a = await tx.antecedentePaciente.create({ data: { historiaClinicaId: hc.id, tipo: p.tipo, descripcion: desc, registradoPorUsuarioId: p.usuarioId ?? null, registradoEtiqueta: etiqueta } });
-    // Si estaba marcado «Niega» ese tipo, deja de valer: ahora sí tiene un antecedente (02-oct-2026).
-    await tx.negacionHc.updateMany({ where: { historiaClinicaId: hc.id, categoria: p.tipo, activa: true }, data: { activa: false } });
+    // Si estaba marcado «Niega antecedentes» (o ese tipo), deja de valer: ahora sí tiene un antecedente (02/03-oct-2026).
+    await tx.negacionHc.updateMany({ where: { historiaClinicaId: hc.id, categoria: { in: [p.tipo, 'antecedentes'] }, activa: true }, data: { activa: false } });
     await auditEnTx(tx, { ...ctxAudit(p), accion: 'registrar_antecedente', entidad: 'historia_clinica', entidadId: p.pacienteId, sedeId: p.sedeId ?? undefined, despues: { antecedenteId: a.id, tipo: a.tipo, descripcion: a.descripcion } });
   });
   return getHistoriaCompleta(p.pacienteId);

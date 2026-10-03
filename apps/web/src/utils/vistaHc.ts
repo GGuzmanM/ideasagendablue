@@ -1,26 +1,21 @@
-// Marcas POR NAVEGADOR de la historia clínica (quedan recordadas en ese equipo):
-//  · ?vista=unica | ?vista=clasica → la vista de una sola pestaña (Atención / Podograma / Fotos) o la clásica.
-//  · ?hc=v2 | ?hc=v1 (02-oct-2026) → las MEJORAS EN VALIDACIÓN («Niega», notas para doctores, consulta anterior
-//    precargada, consentimiento por foto, marcas del Visor…). Solo se ven en el navegador donde se activó, para que el
-//    usuario las valide antes de mostrárselas al resto. Necesitan la vista de una sola pestaña.
-const CLAVE_VISTA_HC = 'limablue-hc-vista';
-const CLAVE_HC_V2 = 'limablue-hc-v2';
+// Vista de la historia clínica.
+// 03-oct-2026: la vista de una sola pestaña (Atención / Podograma / Fotos / Constancias) es la PREDETERMINADA para todos.
+// Quien prefiera la de pestañas de siempre la elige con el botón «Vista clásica» (o ?vista=clasica) y queda recordado en
+// ESE navegador; «Vista nueva» (o ?vista=unica) la devuelve. Clave nueva a propósito: la anterior (limablue-hc-vista)
+// podía tener «clasica» guardado de las pruebas de setiembre y no debe devolver a nadie a la clásica sin que lo pida.
+const CLAVE_VISTA_HC = 'limablue-hc-vista-v2';
 
-function leerMarca(param: string, clave: string, valores: [string, string], activa: string): boolean {
+export function leerVistaUnica(): boolean {
   try {
-    const q = new URLSearchParams(window.location.search).get(param);
-    if (q && valores.includes(q)) localStorage.setItem(clave, q);
-    return localStorage.getItem(clave) === activa;
+    const q = new URLSearchParams(window.location.search).get('vista');
+    if (q === 'unica' || q === 'clasica') localStorage.setItem(CLAVE_VISTA_HC, q);
+    return localStorage.getItem(CLAVE_VISTA_HC) !== 'clasica';
   } catch {
-    return false;
+    return true;
   }
 }
 
-export function leerVistaUnica(): boolean {
-  return leerMarca('vista', CLAVE_VISTA_HC, ['unica', 'clasica'], 'unica');
-}
-
-/** Mejoras de la HC en validación: solo con ?hc=v2 en este navegador (y en la vista de una sola pestaña). */
+/** Mejoras «HC v2» (precarga de la consulta anterior, marcas del Visor, sin barra de dictado…): activas para todos. */
 export function leerHcV2(): boolean {
-  return leerMarca('hc', CLAVE_HC_V2, ['v2', 'v1'], 'v2') && leerVistaUnica();
+  return true;
 }

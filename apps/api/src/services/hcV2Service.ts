@@ -21,7 +21,8 @@ import { fechaDb } from '../utils/fechaLima';
 import { esRolMedico } from '../utils/rolesMedico';
 
 // ─── «Niega» ──────────────────────────────────────────────────────────────────
-export const CATEGORIAS_NIEGA = ['alergias', 'patologico', 'quirurgico', 'familiar', 'farmacologico', 'habito', 'otro'] as const;
+// 03-oct-2026: en antecedentes se usa UN solo check («antecedentes»); los de cada tipo quedan aceptados por compatibilidad.
+export const CATEGORIAS_NIEGA = ['alergias', 'antecedentes', 'patologico', 'quirurgico', 'familiar', 'farmacologico', 'habito', 'otro'] as const;
 export type CategoriaNiega = (typeof CATEGORIAS_NIEGA)[number];
 
 /** Marca o quita «Niega …» para una categoría. Devuelve la historia completa (como el resto de antecedentes). */
@@ -31,7 +32,9 @@ export async function marcarNegacion(p: Ctx & { pacienteId: string; categoria: C
     // Contradicción: no se puede «negar» lo que ya tiene registrado y activo.
     const hay = p.categoria === 'alergias'
       ? await prisma.alergiaPaciente.count({ where: { historiaClinicaId: hc.id, deletedAt: null, activa: true } })
-      : await prisma.antecedentePaciente.count({ where: { historiaClinicaId: hc.id, deletedAt: null, activo: true, tipo: p.categoria } });
+      : p.categoria === 'antecedentes'
+        ? await prisma.antecedentePaciente.count({ where: { historiaClinicaId: hc.id, deletedAt: null, activo: true } })
+        : await prisma.antecedentePaciente.count({ where: { historiaClinicaId: hc.id, deletedAt: null, activo: true, tipo: p.categoria } });
     if (hay > 0) throw new AppError('Ya tiene registros activos de ese tipo: no se puede marcar «Niega»', 409, 'NIEGA_CON_REGISTROS');
   }
   const etiqueta = await etiquetaUsuario(prisma, p.usuarioId);

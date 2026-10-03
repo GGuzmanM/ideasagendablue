@@ -262,7 +262,10 @@ export function useHistoriaClinicaPage() {
   const { data: autotextos } = usePlantillas('autotexto');
   const setAtajos = useAutotextoStore((s) => s.setAtajos);
   useEffect(() => { setAtajos(Object.fromEntries((autotextos ?? []).filter((a) => a.clave).map((a) => [a.clave!.toLowerCase(), a.contenido.texto ?? '']))); }, [autotextos, setAtajos]);
-  const gestionaPlantillas = ['admin', 'coordinadora_sedes'].includes(usuario?.rol ?? '') || esRolMedico(usuario?.rol);
+  // Plantillas y autotextos: solo el médico auditor y admin los crean/editan (03-oct-2026); los demás solo los usan.
+  const gestionaPlantillas = ['admin', 'medico_auditor'].includes(usuario?.rol ?? '');
+  // Catálogo CIE-10: sigue con la regla de siempre (administración, coordinación y médicos).
+  const gestionaCatalogo = ['admin', 'coordinadora_sedes'].includes(usuario?.rol ?? '') || esRolMedico(usuario?.rol);
   // Lesión dictada ("lesión heloma quinto dedo izquierdo") → marca del podograma en la zona dicha.
   const marcaDictadoMut = useMutation({
     mutationFn: (d: CamposMarca) => historiaClinicaApi.agregarMarca(atencionSel!, d),
@@ -398,7 +401,7 @@ export function useHistoriaClinicaPage() {
     recetaModal, setRecetaModal, recetaEditar, setRecetaEditar,
     cerrarMut, reabrirMut,
     invalidar,
-    evolucion, procedimientos, dictado, consulta, dxDictado, limpiarDxDictado, gestionaPlantillas,
+    evolucion, procedimientos, dictado, consulta, dxDictado, limpiarDxDictado, gestionaPlantillas, gestionaCatalogo,
     // Dictado guardado + revisión antes de llenar los campos
     propuestaDictado, revisarDictado, abrirRevisionDictado, cerrarRevisionDictado: () => setRevisarDictado(false),
     aplicarDictado, limpiarDictadoMut, dictadoSinAplicar, guardandoDictado: guardarDictadoMut.isPending,

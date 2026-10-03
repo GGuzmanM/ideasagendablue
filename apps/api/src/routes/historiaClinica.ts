@@ -752,9 +752,11 @@ const plantillaSchema = z.object({
   contenido: z.record(z.any()),
   activa: z.boolean().optional(),
 });
-const ROLES_PLANTILLAS = ['admin', 'coordinadora_sedes', 'medico', 'medico_auditor'];
+// 03-oct-2026: plantillas de nota, autotextos y textos de consentimiento los ESTANDARIZA el médico auditor (y admin);
+// los demás médicos solo los usan (aplicar plantilla, escribir el atajo, firmar el consentimiento).
+const ROLES_PLANTILLAS = ['admin', 'medico_auditor'];
 const gestionaPlantillas = (req: Request, _res: Response, next: NextFunction) => {
-  if (!ROLES_PLANTILLAS.includes(user(req).rol)) throw new AppError('Solo administración, coordinación o médicos gestionan plantillas', 403, 'SIN_PERMISO');
+  if (!ROLES_PLANTILLAS.includes(user(req).rol)) throw new AppError('Solo el médico auditor o administración modifican plantillas y autotextos', 403, 'SIN_PERMISO');
   next();
 };
 router.get('/plantillas', ...verHc, async (req, res) => {

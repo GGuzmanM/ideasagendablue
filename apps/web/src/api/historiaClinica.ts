@@ -310,7 +310,7 @@ const B = '/historia-clinica';
 
 // ─── HC v2 (02-oct-2026) ──────────────────────────────────────────────────────
 /** «Niega»: 'alergias' o un tipo de antecedente. */
-export type CategoriaNiega = 'alergias' | TipoAntecedente;
+export type CategoriaNiega = 'alergias' | 'antecedentes' | TipoAntecedente;
 export interface NegacionHc { categoria: CategoriaNiega; registradoEtiqueta: string | null; actualizadoEn: string }
 /** Nota interna para los próximos médicos del paciente (solo en la HC). */
 export interface NotaMedicoPaciente { id: string; texto: string; autorUsuarioId: string | null; autorEtiqueta: string; creadoEn: string }
