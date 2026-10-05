@@ -15,6 +15,8 @@ export const PERMISOS_VALIDOS = [
   'receta.favoritas.gestionar',
   // Citas
   'citas.ver', 'citas.crear', 'citas.reprogramar', 'citas.cancelar', 'citas.estado', 'citas.revertir',
+  // Solo cambiar el CANAL de una cita ya registrada (05-oct-2026), sin tocar estado ni promoción (eso es citas.revertir).
+  'citas.canal',
   // Pacientes
   'pacientes.ver', 'pacientes.crear', 'pacientes.editar',
   // Membresías
@@ -82,7 +84,7 @@ export const ROLES_SISTEMA: { nombre: string; label: string; descripcion: string
     // venta de membresías, todas las sedes) MÁS Horarios y Restricciones completo: horarios base y excepciones de
     // sede, almuerzos, permisos, vacaciones, enfermedad y reunión. Sin acceso clínico ni a administración.
     nombre: 'especial_contact', label: 'Especial Contact', descripcion: 'Contact center con gestión completa de Horarios y Restricciones (todas las sedes)', esSistema: false,
-    permisos: [...CITAS, ...PACIENTES, 'membresias.ver', 'membresias.vender', 'horarios.ver', 'horarios.editar', 'ausencias.gestionar'],
+    permisos: [...CITAS, 'citas.canal', ...PACIENTES, 'membresias.ver', 'membresias.vender', 'horarios.ver', 'horarios.editar', 'ausencias.gestionar'],
   },
   {
     // Médico colegiado: agenda y pacientes solo lectura, historia clínica completa, receta y se asigna a las citas.

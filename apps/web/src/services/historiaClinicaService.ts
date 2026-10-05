@@ -613,7 +613,8 @@ export function useEmitirRecetaForm(atencion: AtencionCompleta, tipoDocumento: T
   // El campo se edita como texto (se puede borrar y volver a escribir); al salir se acota a 1–365.
   const [vigenciaTexto, setVigenciaTexto] = useState('30');
   const confirmarVigencia = () => { const n = Math.min(365, Math.max(1, Number(vigenciaTexto) || 30)); setVigenciaDias(n); setVigenciaTexto(String(n)); };
-  const [emisorProfesionalId, setEmisorProfesionalId] = useState<string>(atencion.profesionalId);
+  // Al EDITAR unas indicaciones se conserva a nombre de quién salieron (05-oct-2026).
+  const [emisorProfesionalId, setEmisorProfesionalId] = useState<string>(recetaAEditar && recetaAEditar.tipoDocumento !== 'RECETA_MEDICA' ? recetaAEditar.emisorProfesionalId : atencion.profesionalId);
   const usuario = useAuthStore((s) => s.usuario);
   const puedeAnularHc = useAuthStore((s) => s.tiene('hc.anular'));
   // Favoritas estandarizadas (02-oct-2026): solo quien tiene «receta.favoritas.gestionar» (médico auditor y admin) las crea;
@@ -772,7 +773,7 @@ export function useEmitirRecetaForm(atencion: AtencionCompleta, tipoDocumento: T
     onSuccess: (r) => {
       setEmitida(r);
       invalidar({ pacienteId: atencion.pacienteId, atencionId: atencion.id, citaId: atencion.citaId });
-      if (editando) toast.success(`Corregida: N° ${r.numero} emitida y la N° ${editando.numero} quedó anulada`, { duration: 6000 });
+      if (editando) toast.success(`N° ${r.numero} actualizada (mismo número y QR)`, { duration: 6000 });
       else toast.success(esReceta ? `Receta N° ${r.numero} emitida` : `Indicaciones N° ${r.numero} emitidas`);
       if (r.advertencias?.length) r.advertencias.forEach((a) => toast(`⚠️ Alergia registrada a ${a.sustancia} (${a.item})`, { duration: 8000 }));
     },
@@ -805,6 +806,7 @@ export function useEmitirRecetaForm(atencion: AtencionCompleta, tipoDocumento: T
     indicacionesGenerales, setIndicacionesGenerales, vigenciaDias, setVigenciaDias, vigenciaTexto, setVigenciaTexto, confirmarVigencia, emisorProfesionalId, setEmisorProfesionalId, opcionesEmisor,
     puedeGuardar, emitirMut, emitir, chequeando, emitida, abrirPdf, imprimir, alergias: atencion.historiaClinica.alergias,
     anteriores, repetirMut, favoritas, usarFavorita, puedeQuitarFavorita, gestionaFavoritas, guardarFavoritaMut, eliminarFavoritaMut,
+    esAdmin: usuario?.rol === 'admin',
     editando, dxNuevo, setDxNuevo, dxNuevoTipo, setDxNuevoTipo, agregarDxMut,
   };
 }

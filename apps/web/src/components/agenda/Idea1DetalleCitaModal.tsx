@@ -160,6 +160,8 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
   const puedeReprogramar = permisos.includes('citas.reprogramar');
   const puedeCancelar = permisos.includes('citas.cancelar');
   const puedeCorregir = permisos.includes('citas.revertir');
+  // Solo el CANAL (05-oct-2026): permiso «citas.canal» (p. ej. contact especial), sin desbloquear estado ni promoción.
+  const puedeCambiarCanal = puedeCorregir || permisos.includes('citas.canal');
   // Rebote (solo admin por ahora): la cita salió de la agenda para volver a llamar al paciente.
   const enRebote = citaEnRebote(cita);
 
@@ -604,7 +606,7 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
               )}
 
               <div className="font-label-caps text-label-caps text-amber-800 uppercase tracking-wider font-bold">Canal</div>
-              {puedeCorregir ? (
+              {puedeCambiarCanal ? (
                 <div className="relative">
                   <select
                     value={canalSel}

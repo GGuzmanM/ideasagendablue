@@ -302,7 +302,10 @@ export async function historiaParaPdf(pacienteId: string) {
           diagnosticos: diagnosticosInclude,
           procedimientos: procedimientosInclude,
           escalas: escalasInclude,
+          // 05-oct-2026: el PDF de la historia completa NO muestra lo anulado (recetas, indicaciones y constancias);
+          // lo anulado sigue en la historia en pantalla y en Auditoría.
           recetas: {
+            where: { estado: 'emitida' },
             orderBy: { fechaEmision: 'asc' },
             select: {
               numero: true, tipoDocumento: true, estado: true, fechaEmision: true, emisorNombre: true,
@@ -310,7 +313,7 @@ export async function historiaParaPdf(pacienteId: string) {
             },
           },
           consentimientos: { orderBy: { firmadoEn: 'asc' }, select: { numero: true, procedimiento: true, firmanteNombre: true, firmanteRelacion: true, estado: true, firmadoEn: true } },
-          constancias: { orderBy: { fechaEmision: 'asc' }, select: { numero: true, tipo: true, estado: true, fechaEmision: true, desde: true, hasta: true, dias: true, emisorNombre: true, diagnosticoCie10Codigo: true } },
+          constancias: { where: { NOT: { estado: 'anulada' } }, orderBy: { fechaEmision: 'asc' }, select: { numero: true, tipo: true, estado: true, fechaEmision: true, desde: true, hasta: true, dias: true, emisorNombre: true, diagnosticoCie10Codigo: true } },
           fotos: { where: { deletedAt: null }, orderBy: { tomadaEn: 'asc' }, select: { id: true, ruta: true, mime: true, tamano: true, zona: true, pie: true, categoria: true, tomadaEn: true } },
         },
       },

@@ -14,6 +14,28 @@ const router = Router();
 
 const motivoEnum = z.nativeEnum(MotivoMovimiento);
 
+// 05-oct-2026: cuando un movimiento no se puede acortar/eliminar por citas, el mensaje dice CUÁLES (fecha, hora,
+// paciente). Antes solo decía «hay N citas» y el panel de la pantalla (pensado para CAMBIAR de sede) las ocultaba
+// porque están en la misma sede → «no tiene citas» pero igual no dejaba guardar.
+const DIAS_CORTOS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
+async function detalleCitasBloqueantes(where: { profesionalId: string; sedeId: string; fecha: { gt?: Date; gte?: Date; lte?: Date } }): Promise<{ total: number; texto: string; citas: { id: string; fecha: string; horaInicio: string; paciente: string }[] }> {
+  const filtro = { ...where, deletedAt: null, estado: { in: ['agendada', 'confirmada', 'llego', 'en_atencion'] as ('agendada' | 'confirmada' | 'llego' | 'en_atencion')[] } };
+  const [total, citas] = await Promise.all([
+    prisma.cita.count({ where: filtro }),
+    prisma.cita.findMany({
+      where: filtro, orderBy: [{ fecha: 'asc' }, { horaInicio: 'asc' }], take: 8,
+      select: { id: true, fecha: true, horaInicio: true, paciente: { select: { nombres: true, apellidoPaterno: true } } },
+    }),
+  ]);
+  const lista = citas.map((c) => {
+    const iso = c.fecha.toISOString().slice(0, 10);
+    const [y, m, d] = iso.split('-');
+    return { id: c.id, fecha: iso, horaInicio: c.horaInicio, paciente: `${c.paciente.nombres} ${c.paciente.apellidoPaterno}`.trim(), etiqueta: `${DIAS_CORTOS[c.fecha.getUTCDay()]} ${d}/${m}${y !== String(new Date().getFullYear()) ? `/${y}` : ''} ${c.horaInicio} · ${c.paciente.nombres} ${c.paciente.apellidoPaterno}` };
+  });
+  const texto = lista.map((c) => c.etiqueta).join('; ') + (total > lista.length ? ` y ${total - lista.length} más` : '');
+  return { total, texto, citas: lista.map(({ etiqueta: _e, ...c }) => c) };
+}
+
 const crearSchema = z.object({
   profesionalId: z.string().uuid(),
   sedeId: z.string().uuid(),
@@ -357,18 +379,16 @@ router.put('/:id', requireAuth, requirePermiso('movimientos.editar'), async (req
   // Acortar el movimiento: las citas ya agendadas en ESTA sede después del nuevo «hasta» se quedarían
   // en una sede donde la profesional ya no está (al crear y al cambiar de sede sí se revisaba; aquí no).
   if (cambiaFechaFin && nuevaFechaFin && (!existente.fechaFin || nuevaFechaFin < existente.fechaFin)) {
-    const huerfanas = await prisma.cita.count({
-      where: {
-        profesionalId: existente.profesionalId, sedeId: existente.sedeId, deletedAt: null,
-        estado: { in: ['agendada', 'confirmada', 'llego', 'en_atencion'] },
-        fecha: { gt: nuevaFechaFin, ...(existente.fechaFin ? { lte: existente.fechaFin } : {}) },
-      },
+    const det = await detalleCitasBloqueantes({
+      profesionalId: existente.profesionalId, sedeId: existente.sedeId,
+      fecha: { gt: nuevaFechaFin, ...(existente.fechaFin ? { lte: existente.fechaFin } : {}) },
     });
-    if (huerfanas > 0) {
+    if (det.total > 0) {
       return res.status(409).json({
-        error: 'CITAS_PENDIENTES',
-        message: `Hay ${huerfanas} cita(s) agendada(s) en esta sede después de la nueva fecha «hasta»; muévelas o cancélalas antes de acortar el movimiento.`,
-        totalCitas: huerfanas, sedeOrigenId: existente.sedeId,
+        // Código propio: la pantalla muestra este mensaje (con las citas) en vez del panel de «cambiar de sede».
+        error: 'CITAS_DESPUES_DEL_FIN',
+        message: `No se puede poner fin: ${det.total === 1 ? 'queda 1 cita' : `quedan ${det.total} citas`} en esta sede después de la nueva fecha «hasta» (${det.texto}). Muévelas a otra persona o cancélalas y vuelve a guardar.`,
+        totalCitas: det.total, sedeOrigenId: existente.sedeId, citas: det.citas,
       });
     }
   }
@@ -537,19 +557,13 @@ router.delete('/:id', requireAuth, requirePermiso('movimientos.editar'), async (
   const desde = asignacion.fechaInicio > hoy ? asignacion.fechaInicio : hoy;
   const hasta = asignacion.fechaFin ?? addDays(desde, 365);
   if (hasta >= desde) {
-    const citasPendientes = await prisma.cita.count({
-      where: {
-        profesionalId: asignacion.profesionalId,
-        sedeId: asignacion.sedeId,
-        fecha: { gte: desde, lte: hasta },
-        estado: { in: ['agendada', 'confirmada', 'llego', 'en_atencion'] },
-        deletedAt: null,
-      },
-    });
+    const det = await detalleCitasBloqueantes({ profesionalId: asignacion.profesionalId, sedeId: asignacion.sedeId, fecha: { gte: desde, lte: hasta } });
+    const citasPendientes = det.total;
     if (citasPendientes > 0) {
       return res.status(409).json({
         error: 'CITAS_PENDIENTES',
-        message: `Hay ${citasPendientes} cita(s) activa(s) del período en esa sede; gestiónalas antes de eliminar el movimiento.`,
+        message: `No se puede eliminar: ${citasPendientes === 1 ? 'tiene 1 cita activa' : `tiene ${citasPendientes} citas activas`} en esa sede dentro del período (${det.texto}). Muévelas a otra persona o cancélalas primero.`,
+        citas: det.citas,
         totalCitas: citasPendientes,
         sedeOrigenId: asignacion.sedeId,
       });

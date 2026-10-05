@@ -250,7 +250,8 @@ function escribirCopia(doc: Doc, r: RecetaCompleta, copia: CopiaReceta, qr?: Buf
     // Alto de la línea principal: 1 renglón si entra todo; si no, se mide en negrita (cota segura para paginar).
     doc.font(FB).fontSize(FN);
     const altoLinea = nombreW + restoW <= wT ? FN + 2 : doc.heightOfString(nombre + resto, { width: wT });
-    return { nombre, resto, altoLinea, ind: (it.indicaciones ?? '').trim() };
+    // Retornos de carro sueltos (texto pegado desde Windows) salen como «Đ» en el PDF: se pasan a salto de línea (05-oct-2026).
+    return { nombre, resto, altoLinea, ind: (it.indicaciones ?? '').replace(/\r\n?/g, '\n').trim() };
   };
   const altoItem = (it: Item): number => {
     const p = partesItem(it);
@@ -284,7 +285,7 @@ function escribirCopia(doc: Doc, r: RecetaCompleta, copia: CopiaReceta, qr?: Buf
   const yBarra = H - GAP_INF - BARRA;
   const pie = (y: number) => {
     const yF = Math.max(y + 6, yBarra - 8 - PIE_H);
-    const nota = r.indicacionesGenerales
+    const nota = r.indicacionesGenerales?.replace(/\r\n?/g, '\n')
       || (esReceta ? 'Siga las indicaciones de cada medicamento. Ante molestias intensas, suspenda y consulte.' : 'Los medicamentos de venta bajo receta se prescriben únicamente en la Receta Médica firmada por médico colegiado.');
     const wInd = compacto ? CONTENT_W - FIRMA_W - 20 : CONTENT_W * 0.62;
     doc.font(FB).fontSize(10 * F).fillColor(M_AZUL).text('INDICACIONES GENERALES', M, yF, { width: wInd, lineBreak: false });

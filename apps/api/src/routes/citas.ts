@@ -2692,6 +2692,11 @@ router.patch('/:id/comentarios/:comentarioId', requireAuth, requireAcceso('appoi
 // ─── PATCH /citas/:id/canal ───────────────────────────────────────────────────
 // Canal de reserva (de dónde viene el cliente). Editable en cualquier estado.
 router.patch('/:id/canal', requireAuth, requireAcceso('appointments:write', 'citas.estado'), guardSedeCita, async (req, res) => {
+  // 05-oct-2026: cambiar el canal de una cita ya registrada es de quien tiene «citas.canal» o «citas.revertir»
+  // (igual que en la pantalla); antes bastaba «citas.estado». Las llaves de API siguen con su scope.
+  if (!req.apiKey && !req.user?.permisos?.some((p) => p === 'citas.canal' || p === 'citas.revertir')) {
+    throw new AppError('Necesitas el permiso «Cambiar el canal de la cita» para esta acción', 403, 'SIN_PERMISO');
+  }
   const { canal } = z.object({ canal: z.string() }).parse(req.body);
   await validarCanal(canal);
   const cita = await prisma.cita.findUnique({ where: { id: req.params.id, deletedAt: null } });

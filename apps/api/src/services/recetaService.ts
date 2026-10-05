@@ -206,8 +206,9 @@ export async function emitirReceta(p: Ctx & {
   indicacionesGenerales?: string | null;
   vigenciaDias?: number | null;
   items: ItemEntrada[];
-  /** EDITAR (23-sep-2026): la receta emitida no se sobreescribe (tiene número y QR). Se emite la corregida y la
-   *  anterior queda ANULADA en la misma transacción con «Corregida: la reemplaza la N° X». */
+  /** EDITAR (05-oct-2026): se corrige EN LA MISMA receta (mismo número, QR y fecha de emisión): se reemplazan los ítems
+   *  y las indicaciones; lo anterior queda completo en la auditoría («editar_receta»). Antes (23-sep) se emitía otra y
+   *  se anulaba esta; la clínica pidió conservar el número porque se edita para completar lo que faltó. */
   reemplazaRecetaId?: string | null;
 }) {
   const at = await prisma.atencionClinica.findUnique({
@@ -215,25 +216,33 @@ export async function emitirReceta(p: Ctx & {
     select: { id: true, citaId: true, sedeId: true, pacienteId: true, historiaClinicaId: true, profesionalId: true, estado: true },
   });
   if (!at) throw new AppError('Atención no encontrada', 404);
-  exigirAbierta(at);
+  // 05-oct-2026: el ADMIN corrige («Editar») siempre, aunque la atención esté cerrada o la cita ya no tenga médico.
+  const correccionAdmin = !!p.reemplazaRecetaId && p.user.rol === 'admin';
+  if (!correccionAdmin) exigirAbierta(at);
   if (!p.items.length) throw new AppError('La receta necesita al menos un ítem', 400, 'RECETA_SIN_ITEMS');
 
   const esReceta = p.tipoDocumento === 'RECETA_MEDICA';
 
   // Corrección de una receta ya emitida: misma atención, mismo tipo, todavía vigente, y quien corrige debe poder anularla.
   let reemplaza: { id: string; numero: number } | null = null;
+  // Al editar una RECETA MÉDICA sigue a nombre del MISMO médico (con sus datos impresos); las indicaciones, del mismo
+  // profesional salvo que se elija otro.
+  let emisorOriginal: { id: string; nombre: string; registro: string | null } | null = null;
+  let emisorPrevioId: string | null = null;
   if (p.reemplazaRecetaId) {
-    const vieja = await prisma.receta.findUnique({ where: { id: p.reemplazaRecetaId }, select: { id: true, numero: true, estado: true, atencionId: true, tipoDocumento: true, emisorUsuarioId: true, emisorProfesionalId: true } });
+    const vieja = await prisma.receta.findUnique({ where: { id: p.reemplazaRecetaId }, select: { id: true, numero: true, estado: true, atencionId: true, tipoDocumento: true, emisorUsuarioId: true, emisorProfesionalId: true, emisorNombre: true, emisorRegistro: true } });
     if (!vieja) throw new AppError('La receta a corregir no existe', 404);
     if (vieja.atencionId !== at.id) throw new AppError('La receta a corregir es de otra atención', 400, 'RECETA_OTRA_ATENCION');
     if (vieja.tipoDocumento !== p.tipoDocumento) throw new AppError('La corrección debe ser del mismo tipo de documento', 400, 'TIPO_DISTINTO');
     if (vieja.estado !== 'emitida') throw new AppError('Esa receta ya está anulada: no se puede corregir', 409, 'YA_ANULADA');
     if (!puedeAnularReceta(p.user, vieja)) throw new AppError('Solo quien la emitió, el médico a cuyo nombre salió o un usuario con permiso de anulación puede corregirla', 403, 'SIN_PERMISO');
     reemplaza = { id: vieja.id, numero: vieja.numero };
+    if (esReceta) emisorOriginal = { id: vieja.emisorProfesionalId, nombre: vieja.emisorNombre, registro: vieja.emisorRegistro };
+    emisorPrevioId = vieja.emisorProfesionalId;
   }
 
-  const firmante = esReceta ? await resolverFirmante(p.user, at.citaId) : null;
-  const emisor = firmante ? firmante.emisor : await asegurarEmisorIndicaciones(p.emisorProfesionalId ?? at.profesionalId);
+  const firmante = esReceta && !emisorOriginal ? await resolverFirmante(p.user, at.citaId) : null;
+  const emisor = emisorOriginal ?? (firmante ? firmante.emisor : await asegurarEmisorIndicaciones(p.emisorProfesionalId ?? emisorPrevioId ?? at.profesionalId));
 
   // Resolver ítems: snapshots desde el catálogo + validaciones de tipo.
   const itemsData: Prisma.RecetaItemCreateWithoutRecetaInput[] = [];
@@ -282,6 +291,32 @@ export async function emitirReceta(p: Ctx & {
     });
   }
 
+  // EDITAR EN LA MISMA RECETA: con guarda de estado (si alguien la anuló en el mismo instante, no se toca nada).
+  if (reemplaza) {
+    const r0 = reemplaza;
+    const previa = await prisma.receta.findUnique({ where: { id: r0.id }, include: { items: { orderBy: { orden: 'asc' } } } });
+    const resumenItem = (i: { tipo: string; nombre: string; dosis?: string | null; via?: string | null; frecuencia?: string | null; duracion?: string | null; cantidad?: string | null; indicaciones?: string | null }) =>
+      ({ tipo: i.tipo, nombre: i.nombre, dosis: i.dosis ?? null, via: i.via ?? null, frecuencia: i.frecuencia ?? null, duracion: i.duracion ?? null, cantidad: i.cantidad ?? null, indicaciones: i.indicaciones ?? null });
+    await prisma.$transaction(async (tx) => {
+      const u = await tx.receta.updateMany({
+        where: { id: r0.id, estado: 'emitida' },
+        data: { indicacionesGenerales: limpiar(p.indicacionesGenerales), vigenciaDias: p.vigenciaDias ?? (esReceta ? 30 : null), emisorProfesionalId: emisor.id, emisorNombre: emisor.nombre, emisorRegistro: emisor.registro },
+      });
+      if (u.count === 0) throw new AppError('Esa receta ya fue anulada: vuelve a abrirla', 409, 'YA_ANULADA');
+      await tx.receta.update({ where: { id: r0.id }, data: { items: { deleteMany: {}, create: itemsData } } });
+      await auditEnTx(tx, {
+        ...ctxAudit(p), citaId: at.citaId, accion: 'editar_receta', entidad: 'receta', entidadId: r0.id, sedeId: at.sedeId,
+        antes: { numero: r0.numero, emisor: previa?.emisorNombre ?? null, indicacionesGenerales: previa?.indicacionesGenerales ?? null, vigenciaDias: previa?.vigenciaDias ?? null, items: (previa?.items ?? []).map(resumenItem) },
+        despues: {
+          numero: r0.numero, emisor: emisor.nombre, indicacionesGenerales: limpiar(p.indicacionesGenerales), vigenciaDias: p.vigenciaDias ?? (esReceta ? 30 : null),
+          items: itemsData.map((i) => resumenItem({ tipo: String(i.tipo), nombre: i.nombre, dosis: i.dosis, via: i.via, frecuencia: i.frecuencia, duracion: i.duracion, cantidad: i.cantidad, indicaciones: i.indicaciones })),
+          ...(correccionAdmin ? { correccionPorAdministracion: true, ...(at.estado === 'cerrada' ? { conAtencionCerrada: true } : {}) } : {}),
+        },
+      });
+    });
+    return getRecetaCompleta(r0.id);
+  }
+
   // Citas del bloque (profilaxis + extra comparten médico) por si hay que asignarlo al emitir.
   const idsBloque = firmante?.autoasignar
     ? (firmante.cita.slotGrupoId
@@ -326,20 +361,9 @@ export async function emitirReceta(p: Ctx & {
         ...(!esReceta && emisor.id !== at.profesionalId ? { emisorDistintoDelQueAtendio: true } : {}),
         // Receta médica registrada por admin/coordinación a nombre del médico de la cita.
         ...(firmante?.delegada ? { registradaPorTerceroANombreDelMedico: true } : {}),
-        ...(reemplaza ? { corrigeA: reemplaza.numero } : {}),
         items: itemsData.map((i) => ({ tipo: i.tipo, nombre: i.nombre })),
       },
     });
-    if (reemplaza) {
-      // Con guarda: si alguien la anuló en el mismo instante, no se emite la corrección (toda la tx se deshace).
-      const motivo = `Corregida: la reemplaza la N° ${String(r.numero).padStart(6, '0')}`;
-      const u = await tx.receta.updateMany({ where: { id: reemplaza.id, estado: 'emitida' }, data: { estado: 'anulada', anuladaEn: new Date(), anuladaPorUsuarioId: p.usuarioId ?? null, motivoAnulacion: motivo } });
-      if (u.count === 0) throw new AppError('Esa receta ya fue anulada: vuelve a abrirla', 409, 'YA_ANULADA');
-      await auditEnTx(tx, {
-        ...ctxAudit(p), citaId: at.citaId, accion: 'corregir_receta', entidad: 'receta', entidadId: reemplaza.id, sedeId: at.sedeId,
-        despues: { numero: reemplaza.numero, motivo, reemplazadaPor: r.numero, nuevaRecetaId: r.id },
-      });
-    }
     return r;
   });
   if (firmante?.autoasignar) {

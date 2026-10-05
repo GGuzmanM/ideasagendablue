@@ -7,6 +7,7 @@ import { Idea1Sidebar } from '../components/layout/Idea1Sidebar';
 import { useSocket } from '../hooks/useSocket';
 import { Idea1NuevaCitaModal } from '../components/agenda/Idea1NuevaCitaModal';
 import { Idea1DetalleCitaModal } from '../components/agenda/Idea1DetalleCitaModal';
+import { ReservasWebEnCurso } from '../components/agenda/ReservasWebEnCurso';
 import { Idea1ModalHorarioSemanal } from '../components/agenda/Idea1ModalHorarioSemanal';
 import { BuscadorPacientesModal } from '../components/agenda/BuscadorPacientesModal';
 import { citasApi } from '../api/citas';
@@ -396,6 +397,8 @@ export function Idea1AgendaPage() {
                     )}
                   </button>
                 )}
+                {/* Reserva web: horarios apartados mientras el paciente paga (solo aparece si hay alguno) */}
+                <ReservasWebEnCurso sedeId={sedeId} fecha={fechaStr()} />
               </div>
 
               {/* Leyenda de Estados de Citas */}

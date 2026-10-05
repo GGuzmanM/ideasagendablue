@@ -59,6 +59,7 @@ router.get('/permisos', requireAuth, async (_req, res) => {
       { id: 'citas.cancelar', label: 'Cancelar citas' },
       { id: 'citas.estado', label: 'Cambiar estado (llegó / en atención / completar / no-show)' },
       { id: 'citas.revertir', label: 'Revertir una cita ya atendida' },
+      { id: 'citas.canal', label: 'Cambiar el canal de la cita (sin tocar estado ni promoción)' },
     ],
     'Pacientes': [
       { id: 'pacientes.ver', label: 'Ver pacientes' },

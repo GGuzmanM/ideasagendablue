@@ -50,9 +50,9 @@ export function EmitirRecetaModal({ atencion, tipoDocumento, recetaAEditar = nul
         {f.emitida ? (
           <div className="p-8 flex flex-col items-center text-center gap-4">
             <span className="material-symbols-outlined text-6xl text-emerald-600" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
-            <h4 className="font-headline-sm text-headline-sm font-bold text-on-surface">{TIPO_DOC_LABEL[tipoDocumento]} N° {String(f.emitida.numero).padStart(6, '0')} emitida</h4>
+            <h4 className="font-headline-sm text-headline-sm font-bold text-on-surface">{TIPO_DOC_LABEL[tipoDocumento]} N° {String(f.emitida.numero).padStart(6, '0')} {f.editando ? 'actualizada' : 'emitida'}</h4>
             <p className="text-sm text-on-surface-variant">Código de verificación <b className="font-mono-label">{f.emitida.codigoVerificacion}</b> · {f.emitida.items.length} ítem(s)</p>
-            {f.editando && <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 -mt-1" data-testid="receta-corregida">Reemplaza a la N° {numEditando}, que quedó anulada (se conserva en la historia).</p>}
+            {f.editando && <p className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-1.5 -mt-1" data-testid="receta-corregida">Se guardaron los cambios en la misma N° {numEditando} (mismo número y QR). Lo anterior queda registrado en Auditoría.</p>}
             {f.esReceta && <p className="text-xs text-on-surface-variant -mt-2">El PDF sale en la mitad superior de una hoja A4 (para cortar), una sola copia, con QR de verificación.</p>}
             {!!f.emitida.advertencias?.length && (
               <div className="w-full max-w-md rounded-xl border border-error/30 bg-error-container text-on-error-container text-xs px-4 py-3 text-left">
@@ -71,10 +71,14 @@ export function EmitirRecetaModal({ atencion, tipoDocumento, recetaAEditar = nul
               <AlergiasBanner alergias={f.alergias} />
               {f.editando && (
                 <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2" data-testid="aviso-editando-receta">
-                  Estás corrigiendo la <b>N° {numEditando}</b>. Cambia lo que haga falta y emite: sale una nueva con su propio número y QR, y la <b>N° {numEditando}</b> queda anulada (no se borra).
+                  Estás editando la <b>N° {numEditando}</b>. Agrega o cambia lo que haga falta y guarda: los cambios quedan en <b>esta misma receta</b> (mismo número y QR). Si ya la imprimiste, vuelve a imprimirla.
                 </p>
               )}
-              {f.esReceta && atencion.cita.medico && (
+              {f.esReceta && f.editando ? (
+                <p className="text-xs text-sky-900 bg-sky-50 border border-sky-200 rounded-xl px-3 py-2" data-testid="receta-a-nombre-de">
+                  Sale a nombre de <b>{f.editando.emisorNombre}</b>{f.editando.emisorRegistro ? <> · {f.editando.emisorRegistro}</> : null}, igual que la N° {numEditando}.
+                </p>
+              ) : f.esReceta && atencion.cita.medico && (
                 <p className="text-xs text-sky-900 bg-sky-50 border border-sky-200 rounded-xl px-3 py-2" data-testid="receta-a-nombre-de">
                   Sale a nombre de <b>{atencion.cita.medico.nombres} {atencion.cita.medico.apellidos}</b>{atencion.cita.medico.colegiatura ? <> · {atencion.cita.medico.colegiatura}</> : null}, el médico de la cita.
                 </p>
@@ -257,7 +261,9 @@ export function EmitirRecetaModal({ atencion, tipoDocumento, recetaAEditar = nul
                               <div><label className={LBL}>Frecuencia</label><input value={it.frecuencia ?? ''} onChange={(e) => f.actualizarItem(it.key, { frecuencia: e.target.value })} placeholder={it.tipo === 'SERVICIO' ? '1 vez por semana' : '12 (= cada 12 h) · 2 (= 2 veces al día)'} className={INPUT} /></div>
                               <div><label className={LBL}>Duración</label><input value={it.duracion ?? ''} onChange={(e) => f.actualizarItem(it.key, { duracion: e.target.value })} placeholder={it.tipo === 'SERVICIO' ? '12 semanas' : '7 (= 7 días) · 2 sem'} className={INPUT} /></div>
                               <div className="col-span-2 md:col-span-6"><label className={LBL}>Indicaciones {it.tipo === 'SERVICIO' ? 'del servicio' : ''}</label>
-                                <input value={it.indicaciones ?? ''} onChange={(e) => f.actualizarItem(it.key, { indicaciones: e.target.value })} placeholder={it.tipo === 'SERVICIO' ? 'Ej. Aplicar 1 vez por semana; evaluar respuesta al mes.' : 'Ej. Tomar con el desayuno y la cena.'} className={INPUT} />
+                                {/* Varias líneas (05-oct-2026): p. ej. «Medidas preventivas» trae una recomendación por renglón; un <input> las pegaba. */}
+                                <textarea value={it.indicaciones ?? ''} onChange={(e) => f.actualizarItem(it.key, { indicaciones: e.target.value })} placeholder={it.tipo === 'SERVICIO' ? 'Ej. Aplicar 1 vez por semana; evaluar respuesta al mes.' : 'Ej. Tomar con el desayuno y la cena.'}
+                                  rows={Math.min(9, Math.max(1, (it.indicaciones ?? '').split('\n').length))} maxLength={800} className={`${INPUT} resize-y`} />
                               </div>
                               {/* Así se imprime: los números sueltos reciben su unidad (1 → 1 cápsula; 12 → cada 12 horas; 7 → 7 días) */}
                               {(() => { const linea = lineaPosologia(it); const cant = textoCantidad(it.cantidad, it.formaFarmaceutica ?? '', it.tipo ?? ''); return (linea || cant) ? (
@@ -297,7 +303,7 @@ export function EmitirRecetaModal({ atencion, tipoDocumento, recetaAEditar = nul
               <button type="button" onClick={onClose} className="flex-1 px-5 py-2.5 border border-outline-variant rounded-xl font-bold text-sm text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer">Cancelar</button>
               <button type="button" onClick={() => void f.emitir()} disabled={!f.puedeGuardar || f.emitirMut.isPending || f.chequeando}
                 className="flex-1 px-5 py-2.5 bg-primary text-on-primary rounded-xl font-bold text-sm shadow-md shadow-primary/20 hover:opacity-90 active:scale-[0.98] transition-all disabled:opacity-50 disabled:pointer-events-none cursor-pointer">
-                {f.chequeando ? 'Revisando alergias…' : f.emitirMut.isPending ? 'Emitiendo…' : f.editando ? `Emitir corrección (anula la N° ${numEditando})` : f.esReceta ? 'Emitir receta médica' : 'Emitir indicaciones'}
+                {f.chequeando ? 'Revisando alergias…' : f.emitirMut.isPending ? 'Emitiendo…' : f.editando ? `Guardar cambios en la N° ${numEditando}` : f.esReceta ? 'Emitir receta médica' : 'Emitir indicaciones'}
               </button>
             </div>
           </>

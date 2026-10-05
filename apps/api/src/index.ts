@@ -7,6 +7,9 @@ import reportesClinicosRouter from './routes/reportesClinicos';
 import medicoCitaRouter from './routes/medicoCita';
 import firmaMedicoRouter from './routes/firmaMedico';
 import verificacionPublicaRouter from './routes/verificacionPublica';
+import reservaWebRouter from './routes/reservaWeb';
+import reservaWebAgendaRouter from './routes/reservaWebAgenda';
+import { reservaWebHabilitada, mantenimientoReservasWeb } from './services/reservaWeb/reservaWebService';
 import { cerrarTiemposAbandonados } from './services/tiempoTratamientoService';
 
 // Zona horaria del PROCESO fija a UTC: toda fecha @db.Date se ancla a UTC (mediodía
@@ -243,6 +246,8 @@ app.use(`${v1}/mi-firma`, firmaMedicoRouter); // Firma y sello digitalizados del
 app.use(`${v1}/medico-cita`, medicoCitaRouter); // Médico de la cita: el médico se toma/suelta; admin y coordinación asignan
 app.use(`${v1}/reportes-clinicos`, reportesClinicosRouter); // Diagnosticos, productividad y calidad del registro (conteos, sin datos del paciente)
 app.use(`${v1}/verificar`, verificacionPublicaRouter); // PÚBLICO (sin login): verificación de recetas por el QR
+app.use(`${v1}/publico/reservas`, reservaWebRouter); // PÚBLICO: reserva web con pago (apagada salvo RESERVA_WEB_HABILITADA=1)
+app.use(`${v1}/reservas-web`, reservaWebAgendaRouter); // Interno: reservas web en curso para la agenda (lista vacía si está apagada)
 
 // ─── Error handler ────────────────────────────────────────────────────────────
 app.use(errorHandler);
@@ -321,6 +326,11 @@ const autocompletar = () => void cerrarTiemposAbandonados()
   .catch((e) => console.error('[rebote] error al vencer:', e));
 setTimeout(autocompletar, 15_000); // al arrancar (deja que la BD/redis estén listos)
 setInterval(autocompletar, 5 * 60_000).unref();
+
+// ─── Reserva web: vence cada minuto los horarios apartados que no se pagaron (solo si está habilitada) ───
+if (reservaWebHabilitada()) {
+  setInterval(() => void mantenimientoReservasWeb().catch((e) => console.error('[reserva-web] mantenimiento:', e)), 60_000).unref();
+}
 
 // ─── Auto-renovación mensual de asignaciones (baro + recepción) ───────────────
 // Al cambiar de mes, el personal continúa en su misma sede salvo que lo muevan o den de baja.

@@ -150,6 +150,9 @@ interface DisponibilidadParams {
   servicioId: string;
   fecha: string; // YYYY-MM-DD
   profesionalId?: string | null;
+  /** Reserva web (05-oct-2026): true = NO colapsar por hora; devuelve un slot por profesional para saber
+   *  CUÁNTOS están libres en cada hora. Sin este flag el comportamiento es el de siempre. */
+  desglosado?: boolean;
 }
 
 interface SlotResult {
@@ -344,7 +347,7 @@ export async function calcularDisponibilidad(params: DisponibilidadParams): Prom
 
   // Si modo sin_eleccion o preferencia_opcional (sin profesional específico):
   // colapsar por slot, disponible si al menos un profesional lo tiene libre
-  if (!profesionalId || unidad.modoReserva === 'sin_eleccion') {
+  if ((!profesionalId || unidad.modoReserva === 'sin_eleccion') && !params.desglosado) {
     const slotsAgregados = new Map<string, SlotResult>();
     for (const r of resultados) {
       const key = r.horaInicio;

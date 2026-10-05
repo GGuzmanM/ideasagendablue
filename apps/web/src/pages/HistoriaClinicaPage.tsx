@@ -740,7 +740,9 @@ function PanelReceta({ h, a, v2 = false }: { h: H; a: AtencionCompleta; v2?: boo
   const r = useRecetasAtencion(a);
   const cerrada = a.estado === 'cerrada';
   // Editar = corregir (sale una nueva y esta queda anulada). En v2, si se puede editar, NO se ofrece «Anular» aparte.
-  const puedeEditar = (x: Parameters<typeof r.puedeAnular>[0]) => !cerrada && r.puedeAnular(x) && (x.tipoDocumento === 'RECETA_MEDICA' ? r.emitirReceta.puede : h.puedeRegistrar);
+  // 05-oct-2026: el admin edita SIEMPRE (atención cerrada o sin médico en la cita); la corrección sale a nombre del mismo médico.
+  const esAdmin = h.usuario?.rol === 'admin';
+  const puedeEditar = (x: Parameters<typeof r.puedeAnular>[0]) => r.puedeAnular(x) && (esAdmin || (!cerrada && (x.tipoDocumento === 'RECETA_MEDICA' ? r.emitirReceta.puede : h.puedeRegistrar)));
   return (
     <div className="space-y-4">
       {cerrada ? (

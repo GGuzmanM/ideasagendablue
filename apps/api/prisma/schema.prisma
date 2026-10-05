@@ -556,6 +556,10 @@ model Servicio {
   // como "Promociones", que deben mostrarse en una secuencia específica, no alfabética.
   orden             Int       @default(0)
   deletedAt         DateTime?
+  // Reserva web (05-oct-2026): si se ofrece en la página pública de reservas y, opcional, su precio online
+  // (si es null se cobra el precio de la variante o el referencial).
+  reservaOnline     Boolean   @default(false)
+  precioOnline      Decimal?  @db.Decimal(10, 2)
 
   unidadNegocio             UnidadNegocio            @relation(fields: [unidadNegocioId], references: [id])
   competencias              CompetenciaProfesional[]
@@ -595,6 +599,8 @@ model SubcategoriaServicio {
   orden             Int       @default(0)
   activo            Boolean   @default(true)
   deletedAt         DateTime?
+  // Reserva web (05-oct-2026): la variante se ofrece online si su servicio lo está y esta marca sigue en true.
+  reservaOnline     Boolean   @default(true)
 
   servicio Servicio @relation(fields: [servicioId], references: [id])
   citas    Cita[]
@@ -2647,4 +2653,50 @@ model FirmaProfesional {
   profesional Profesional @relation(fields: [profesionalId], references: [id], onDelete: Cascade)
 
   @@map("firmas_profesional")
+}
+
+// ─── Reserva web (05-oct-2026) ───────────────────────────────────────────────
+// Cada intento de reserva desde la página pública. Aparta el horario unos minutos (`expiraEn`) mientras el
+// paciente paga; la cita recién se crea en la Agenda cuando la pasarela confirma el pago. Los datos del
+// paciente son los que él escribió (sin RENIEC). Sin relaciones Prisma a propósito (no toca otros modelos).
+// estado: esperando_pago | pagada | confirmada | expirada | fallida | reembolsar
+model ReservaWeb {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  codigo           String    @unique // «LB-123456», lo ve el paciente
+  tokenConsulta    String // secreto para consultar el estado (va en la URL de «gracias»)
+  estado           String    @default("esperando_pago")
+  tipoDocumento    String    @default("DNI")
+  numeroDocumento  String
+  nombres          String
+  apellidoPaterno  String
+  apellidoMaterno  String?
+  telefono         String
+  email            String
+  sedeId           String    @db.Uuid
+  unidadNegocioId  String    @db.Uuid
+  servicioId       String    @db.Uuid
+  subcategoriaId   String?   @db.Uuid
+  fecha            DateTime  @db.Date
+  horaInicio       String
+  duracionMinutos  Int
+  monto            Decimal   @db.Decimal(10, 2)
+  moneda           String    @default("PEN")
+  pasarela         String?
+  pagoReferencia   String?
+  pagoEstado       String?
+  pagoDetalle      Json?
+  pagadoEn         DateTime?
+  expiraEn         DateTime
+  pacienteId       String?   @db.Uuid
+  citaId           String?   @db.Uuid
+  error            String?
+  ip               String?
+  userAgent        String?
+  creadoEn         DateTime  @default(now())
+  actualizadoEn    DateTime  @updatedAt
+
+  @@index([sedeId, fecha, estado])
+  @@index([numeroDocumento])
+  @@index([pagoReferencia])
+  @@map("reservas_web")
 }

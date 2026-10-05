@@ -264,6 +264,7 @@ export const ACCION_LABEL: Record<string, AccionStyle> = {
   emitir_indicaciones:          def('Indicaciones emitidas', 'prescriptions', 'teal'),
   anular_receta:                def('Receta anulada', 'block', 'rojo'),
   corregir_receta:              def('Receta corregida (reemplazada)', 'edit_note', 'ambar'),
+  editar_receta:                def('Receta editada (misma N°)', 'edit_note', 'azul'),
   asignar_atendido_por:         def('Podóloga que atendió (Adicional)', 'person_check', 'azul'),
   corregir_subcategoria:        def('Subcategoría corregida', 'edit', 'ambar'),
   cambiar_tratamiento:          def('Tratamiento cambiado', 'edit', 'ambar'),

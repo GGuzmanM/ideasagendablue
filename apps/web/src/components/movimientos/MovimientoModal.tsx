@@ -317,13 +317,15 @@ export function MovimientoModal({ onClose, movimientoEditar, prefillSedeId }: Pr
             sedeId,
           });
           setVerificacion(ver);
-          toast.error('Gestiona las citas del período antes de cambiar la sede');
+          // Si el panel no muestra nada (las citas que estorban están en la misma sede), que hable el servidor.
+          toast.error(ver.totalCitas > 0 ? 'Gestiona las citas del período antes de cambiar la sede' : (e.data as unknown as { message?: string } | undefined)?.message ?? e.message, { duration: 10000 });
         } catch {
           toast.error(`${e.data.totalCitas} citas pendientes deben gestionarse primero`);
         }
         return;
       }
-      toast.error(e.message);
+      // Acortar con citas después del nuevo «hasta»: el mensaje del servidor dice cuáles (fecha, hora, paciente).
+      toast.error(e.message, { duration: e.data?.error === 'CITAS_DESPUES_DEL_FIN' ? 12000 : 4000 });
     },
   });
 
