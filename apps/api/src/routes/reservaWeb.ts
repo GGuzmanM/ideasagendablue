@@ -6,6 +6,8 @@
  *  GET  /catalogo                               sedes, servicios reservables, variantes y precios
  *  GET  /dias?sedeId&servicioId&desde&hasta      días con horas libres (calendario)
  *  GET  /horas?sedeId&servicioId&fecha           horas libres de un día
+ *  POST /intentos                                primer «Continuar»: guarda los datos y arranca los 10 min
+ *  PATCH /intentos/:id   { token, paso, … }      guarda el avance (sede, servicio, fecha, hora)
  *  POST /                                        crea la reserva y aparta el horario
  *  POST /:codigo/pago      { token }             inicia el pago en la pasarela
  *  GET  /:codigo?token=                          estado (página de «gracias»)
@@ -20,6 +22,7 @@ import {
   reservaWebHabilitada, catalogo, horasLibres, diasDisponibles, crearReserva, iniciarPago, estadoReserva, procesarAvisoPago,
 } from '../services/reservaWeb/reservaWebService';
 import { pasarelaPorNombre } from '../services/reservaWeb/pasarelas';
+import { crearIntento, actualizarIntento, PASOS_INTENTO } from '../services/reservaWeb/intentos';
 
 const router = Router();
 
@@ -38,7 +41,7 @@ router.use(cors({
     if (process.env.NODE_ENV !== 'production' && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return cb(null, true);
     return cb(null, false);
   },
-  methods: ['GET', 'POST'],
+  methods: ['GET', 'POST', 'PATCH'],
 }));
 
 const limite = (limit: number, windowMs: number, message: string) => rateLimit({
@@ -78,17 +81,43 @@ router.get('/horas', limiteConsultas, async (req, res) => {
   res.json({ fecha: q.fecha, horas: await horasLibres(q.sedeId, q.servicioId, q.fecha) });
 });
 
-const crearSchema = z.object({
+const datosPacienteSchema = z.object({
   numeroDocumento: z.string().regex(/^\d{8}$/, 'El DNI tiene 8 dígitos'),
   nombres: z.string().trim().min(2).max(80),
   apellidoPaterno: z.string().trim().min(2).max(60),
   apellidoMaterno: z.string().trim().max(60).optional().nullable(),
   telefono: z.string().regex(/^9\d{8}$/, 'Celular de 9 dígitos'),
   email: z.string().trim().email('Correo inválido').max(120),
+});
+const aceptaDatos = z.literal(true, { errorMap: () => ({ message: 'Debes aceptar el tratamiento de datos personales' }) });
+const crearSchema = datosPacienteSchema.extend({
   sedeId: uuid, servicioId: uuid, subcategoriaId: uuid.optional().nullable(),
   fecha, horaInicio: hora,
-  aceptaDatos: z.literal(true, { errorMap: () => ({ message: 'Debes aceptar el tratamiento de datos personales' }) }),
+  aceptaDatos,
   captcha: z.string().max(4000).optional(),
+  // 06-oct-2026: intento de la página (el apartado vence cuando vence el intento)
+  intentoId: uuid.optional().nullable(),
+  intentoToken: z.string().min(10).max(100).optional().nullable(),
+});
+
+// ─── Intentos (06-oct-2026): avance del paciente desde el primer «Continuar» ──
+const limiteIntentos = limite(60, 15 * 60_000, 'Demasiados intentos desde esta conexión. Espera unos minutos.');
+router.post('/intentos', limiteIntentos, async (req, res) => {
+  const d = datosPacienteSchema.extend({ aceptaDatos, captcha: z.string().max(4000).optional() }).parse(req.body);
+  await verificarCaptcha(d.captcha, req.ip);
+  res.status(201).json(await crearIntento(d, { ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined }));
+});
+
+router.patch('/intentos/:id', limiteConsultas, async (req, res) => {
+  const id = uuid.parse(req.params.id);
+  const c = datosPacienteSchema.partial().extend({
+    token: z.string().min(10).max(100),
+    paso: z.enum(PASOS_INTENTO).optional(),
+    sedeId: uuid.nullable().optional(), servicioId: uuid.nullable().optional(), subcategoriaId: uuid.nullable().optional(),
+    fecha: fecha.nullable().optional(), horaInicio: hora.nullable().optional(),
+  }).parse(req.body);
+  const { token, ...cambios } = c;
+  res.json(await actualizarIntento(id, token, cambios));
 });
 
 router.post('/', limiteReservas, async (req, res) => {

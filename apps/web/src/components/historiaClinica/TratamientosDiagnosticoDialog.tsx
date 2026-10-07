@@ -1,6 +1,6 @@
 // Gestión de los tratamientos habituales de un diagnóstico (se abre desde el catálogo CIE-10). Vista pura; la lógica
 // vive en services/tratamientosDiagnosticoService.ts.
-import { useGestionTratamientosDx } from '../../services/tratamientosDiagnosticoService';
+import { useGestionTratamientosDx, usePuedeGestionarTratamientosDx } from '../../services/tratamientosDiagnosticoService';
 import { BuscadorMedicamento } from './Buscadores';
 import { lineaPosologia } from '../../utils/posologiaTexto';
 
@@ -10,6 +10,12 @@ const LBL = 'block text-[10px] font-semibold uppercase tracking-wide text-on-sur
 export function TratamientosDiagnosticoDialog({ codigo, descripcion, onClose }: { codigo: string; descripcion: string; onClose: () => void }) {
   const g = useGestionTratamientosDx(codigo);
   const f = g.form;
+  // 06-oct-2026: solo administración y el médico auditor cambian la lista; el resto la ve (solo lectura).
+  const gestiona = usePuedeGestionarTratamientosDx();
+  const quitarOVolver = (t: (typeof g.items)[number]) => {
+    if (t.activo && !window.confirm(`¿Quitar «${t.tratamiento}» de los tratamientos habituales de ${codigo}?\n\nDeja de salir en la receta. No se borra: se puede volver a usar con «Ver quitados».`)) return;
+    g.activoMut.mutate(t);
+  };
   return (
     <div className="fixed inset-0 z-[130] bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-surface-container-lowest rounded-2xl shadow-2xl w-full max-w-5xl max-h-[92vh] overflow-y-auto p-6" onClick={(ev) => ev.stopPropagation()} data-testid="gestion-tratamientos-dx">
@@ -19,14 +25,19 @@ export function TratamientosDiagnosticoDialog({ codigo, descripcion, onClose }: 
           </h3>
           <button onClick={onClose} className="material-symbols-outlined text-on-surface-variant hover:text-on-surface">close</button>
         </div>
-        <p className="text-xs text-on-surface-variant mb-4">Son los que la receta ofrece con checks al elegir este diagnóstico. <b>Presentación</b> se imprime como Cantidad; la <b>posología</b> (dosis, vía, cada cuánto y por cuánto tiempo) sale ya llena y el médico solo la valida. Los que ya no se usan se desactivan (no se borran).</p>
+        <p className="text-xs text-on-surface-variant mb-4">Son los que la receta ofrece con checks al elegir este diagnóstico. <b>Presentación</b> se imprime como Cantidad; la <b>posología</b> (dosis, vía, cada cuánto y por cuánto tiempo) sale ya llena y el médico solo la valida. Los que ya no se usan se <b>quitan</b> (no se borran: se pueden volver a usar).</p>
+        {!gestiona && (
+          <p className="mb-4 text-xs font-medium text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-center gap-2">
+            <span className="material-symbols-outlined text-base">lock</span>Solo administración y el médico auditor pueden cambiar esta lista. Tú puedes elegirlos en la receta.
+          </p>
+        )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-5">
+        <div className={`grid grid-cols-1 gap-5 ${gestiona ? 'lg:grid-cols-[1.5fr_1fr]' : ''}`}>
           <section>
             <div className="flex items-center gap-3 mb-2">
-              <button onClick={g.nuevo} className="px-3 py-1.5 bg-primary text-on-primary rounded-lg text-xs font-bold flex items-center gap-1"><span className="material-symbols-outlined text-base">add</span>Nuevo tratamiento</button>
+              {gestiona && <button onClick={g.nuevo} className="px-3 py-1.5 bg-primary text-on-primary rounded-lg text-xs font-bold flex items-center gap-1" data-accion="nuevo-tratamiento"><span className="material-symbols-outlined text-base">add</span>Nuevo tratamiento</button>}
               <span className="flex-1" />
-              <label className="flex items-center gap-1.5 text-xs text-on-surface-variant"><input type="checkbox" checked={g.verInactivos} onChange={(e) => g.setVerInactivos(e.target.checked)} className="accent-primary" />Ver inactivos</label>
+              {gestiona && <label className="flex items-center gap-1.5 text-xs text-on-surface-variant"><input type="checkbox" checked={g.verInactivos} onChange={(e) => g.setVerInactivos(e.target.checked)} className="accent-primary" />Ver quitados</label>}
             </div>
             {g.cargando && <p className="text-xs text-on-surface-variant">Cargando…</p>}
             {!g.cargando && !g.items.length && <p className="text-xs text-on-surface-variant py-4">Este diagnóstico aún no tiene tratamientos habituales.</p>}
@@ -44,9 +55,14 @@ export function TratamientosDiagnosticoDialog({ codigo, descripcion, onClose }: 
                         })()}
                         <p className="text-[10px] text-on-surface-variant/80">{t.medicamento ? `Vademécum: ${t.medicamento.dci} ${t.medicamento.concentracion ?? ''}` : t.servicio ? `Servicio: ${t.servicio.nombre}` : 'Texto libre (no vinculado)'}</p>
                       </div>
-                      <button onClick={() => g.editar(t)} className="text-primary text-xs font-semibold hover:underline shrink-0">Editar</button>
-                      <button onClick={() => g.activoMut.mutate(t)} disabled={g.activoMut.isPending}
-                        className={`text-[10px] font-bold uppercase px-2 py-1 rounded shrink-0 ${t.activo ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-surface-container text-on-surface-variant hover:bg-surface-container-high'}`}>{t.activo ? 'Activo' : 'Inactivo'}</button>
+                      {gestiona && (<>
+                        <button onClick={() => g.editar(t)} className="text-primary text-xs font-semibold hover:underline shrink-0">Editar</button>
+                        <button onClick={() => quitarOVolver(t)} disabled={g.activoMut.isPending} data-accion={t.activo ? 'quitar-tratamiento' : 'volver-tratamiento'}
+                          title={t.activo ? 'Deja de salir en la receta (no se borra)' : 'Vuelve a salir en la receta'}
+                          className={`text-[11px] font-semibold px-2 py-1 rounded-lg shrink-0 flex items-center gap-1 ${t.activo ? 'text-rose-700 hover:bg-rose-50' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'}`}>
+                          <span className="material-symbols-outlined text-sm">{t.activo ? 'delete' : 'undo'}</span>{t.activo ? 'Quitar' : 'Volver a usar'}
+                        </button>
+                      </>)}
                     </div>
                   </div>
                 );
@@ -54,7 +70,7 @@ export function TratamientosDiagnosticoDialog({ codigo, descripcion, onClose }: 
             </div>
           </section>
 
-          <section className="rounded-2xl border border-outline-variant/30 p-4 h-fit space-y-3">
+          {gestiona && <section className="rounded-2xl border border-outline-variant/30 p-4 h-fit space-y-3">
             {!f ? (
               <p className="text-xs text-on-surface-variant">Elige «Editar» en un tratamiento o «Nuevo tratamiento».</p>
             ) : (
@@ -111,7 +127,7 @@ export function TratamientosDiagnosticoDialog({ codigo, descripcion, onClose }: 
                 </div>
               </>
             )}
-          </section>
+          </section>}
         </div>
       </div>
     </div>

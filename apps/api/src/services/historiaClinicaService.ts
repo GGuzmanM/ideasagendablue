@@ -771,6 +771,69 @@ export async function assertSinAtencionClinica(citaId: string): Promise<void> {
   if (at) throw new AppError('La cita ya tiene una atención clínica registrada: no se puede cancelar ni marcar como no asistida', 409, 'CITA_CON_ATENCION_CLINICA');
 }
 
+// 06-oct-2026 — cambio LIBRE de estado del admin: puede cancelar / marcar «no vino» una cita con atención SOLO si esa
+// atención está VACÍA (se abrió por error: sin motivo, anamnesis, notas, diagnósticos, recetas, fotos, podograma,
+// consentimientos, constancias, controles ni dictado). Con cualquier registro clínico sigue bloqueado (409).
+// 07-oct-2026: «vacía» = sin registros VIGENTES. Lo quitado / anulado (deletedAt, receta o constancia anulada,
+// consentimiento revocado, control descartado) no cuenta como contenido. Pero esas filas siguen apuntando a la
+// atención, así que en ese caso la atención se CIERRA en vez de borrarse (no se toca ese historial).
+const conteoVigente = {
+  notas: { where: { deletedAt: null } }, diagnosticos: { where: { deletedAt: null } }, recetas: { where: { estado: 'emitida' as const } },
+  procedimientos: { where: { deletedAt: null } }, escalas: { where: { deletedAt: null } }, marcasPodograma: { where: { deletedAt: null } },
+  imagenesPodograma: { where: { deletedAt: null } }, fotos: { where: { deletedAt: null } }, dibujosSilueta: { where: { deletedAt: null } },
+  consentimientos: { where: { estado: 'firmado' } }, constancias: { where: { estado: 'emitida' } }, controles: { where: { NOT: { estado: 'descartado' } } },
+} as const;
+const conteoTotal = {
+  notas: true, diagnosticos: true, recetas: true, procedimientos: true, escalas: true, marcasPodograma: true, imagenesPodograma: true,
+  fotos: true, dibujosSilueta: true, consentimientos: true, constancias: true, controles: true,
+} as const;
+async function atencionesConContenido(client: Tx | typeof prisma, ids: string[]) {
+  const sel = { id: true, citaId: true, estado: true, motivoConsulta: true, anamnesis: true, profesionalId: true, fecha: true, creadoEn: true, dictado: { select: { texto: true } } } as const;
+  const [vivas, todas] = await Promise.all([
+    client.atencionClinica.findMany({ where: { citaId: { in: ids } }, select: { ...sel, _count: { select: conteoVigente } } }),
+    client.atencionClinica.findMany({ where: { citaId: { in: ids } }, select: { id: true, _count: { select: conteoTotal } } }),
+  ]);
+  const filasTotales = new Map(todas.map((t) => [t.id, Object.values(t._count).reduce((s, n) => s + n, 0)]));
+  return vivas.map((a) => ({
+    ...a,
+    vacia: !a.motivoConsulta.trim() && !a.anamnesis?.trim() && !a.dictado?.texto?.trim() && Object.values(a._count).every((n) => n === 0),
+    // ¿Quedan filas (quitadas/anuladas) apuntando a la atención? Entonces no se puede borrar: se cierra.
+    conHistorial: (filasTotales.get(a.id) ?? 0) > 0 || !!a.dictado,
+  }));
+}
+/** Atenciones VACÍAS del bloque de la cita (para retirarlas). Si alguna tiene registros clínicos → 409. */
+export async function atencionesVaciasDelBloque(citaId: string): Promise<string[]> {
+  const ats = await atencionesConContenido(prisma, await idsDelBloque(citaId));
+  if (ats.some((a) => !a.vacia)) {
+    throw new AppError('La cita tiene una atención clínica con registros (notas, diagnósticos, recetas, fotos…): no se puede cancelar ni marcar como no asistida', 409, 'CITA_CON_ATENCION_CLINICA');
+  }
+  return ats.map((a) => a.id);
+}
+/** Retira una atención VACÍA dentro de la transacción del cambio de estado (vuelve a comprobar que siga vacía). */
+export async function retirarAtencionVaciaEnTx(tx: Tx, atencionId: string, actor: { usuarioId?: string | null; ip?: string; userAgent?: string }) {
+  const [a] = await atencionesConContenido(tx, (await tx.atencionClinica.findMany({ where: { id: atencionId }, select: { citaId: true } })).map((x) => x.citaId));
+  if (!a) return;
+  if (!a.vacia) throw new AppError('Se registró algo en la atención mientras tanto: ya no se puede cancelar la cita', 409, 'CITA_CON_ATENCION_CLINICA');
+  if (a.conHistorial) {
+    // Solo tiene registros quitados/anulados: no se borra (perderían su atención); se cierra y queda sin contenido vigente.
+    if (a.estado !== 'cerrada') {
+      await tx.atencionClinica.update({ where: { id: a.id }, data: { estado: 'cerrada', cerradaEn: new Date(), cerradaPorUsuarioId: actor.usuarioId ?? null } });
+    }
+    await auditEnTx(tx, {
+      citaId: a.citaId, usuarioId: actor.usuarioId ?? undefined, accion: 'cerrar_atencion_vacia', entidad: 'atencion_clinica', entidadId: a.id,
+      antes: { estado: a.estado }, despues: { estado: 'cerrada', motivo: 'Cita cancelada / no vino por administración; la atención no tenía registros vigentes (solo quitados o anulados)' },
+      ip: actor.ip, userAgent: actor.userAgent,
+    });
+    return;
+  }
+  await tx.atencionClinica.delete({ where: { id: a.id } });
+  await auditEnTx(tx, {
+    citaId: a.citaId, usuarioId: actor.usuarioId ?? undefined, accion: 'retirar_atencion_vacia', entidad: 'atencion_clinica', entidadId: a.id,
+    antes: { estado: a.estado, profesionalId: a.profesionalId, fecha: a.fecha, abiertaEn: a.creadoEn, registros: 0 }, despues: { motivo: 'Cita cancelada / no vino por administración; la atención estaba vacía' },
+    ip: actor.ip, userAgent: actor.userAgent,
+  });
+}
+
 /** Al MOVER una cita con atención (acción oculta de coordinación/admin), la atención acompaña la fecha. */
 export async function sincronizarFechaAtencion(tx: Tx, citaId: string, nuevaFecha: Date): Promise<boolean> {
   const at = await tx.atencionClinica.findUnique({ where: { citaId }, select: { id: true } });

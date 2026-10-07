@@ -4,6 +4,7 @@ import { cn } from '../../utils/cn';
 import { useAuthStore } from '../../stores/authStore';
 import { rutaInicio } from '../../utils/rutaInicio';
 import { useContadorControles } from '../../services/controlesService';
+import { useReservaWebHabilitada } from '../../services/reservaWebService';
 
 // Menú plegado (solo iconos): preferencia del equipo que se usa, guardada en el navegador.
 const CLAVE_PLEGADO = 'limablue-sidebar-plegado';
@@ -16,6 +17,7 @@ export interface NavItem {
   icon: string;
   permiso?: string | string[];
   soloRol?: string; // además del permiso: solo este rol lo ve
+  soloReservaWeb?: boolean; // solo si la reserva web está encendida en el servidor
 }
 
 // Conjuntos de permisos que hacen visible un hub (basta CUALQUIERA).
@@ -30,6 +32,8 @@ export const idea1NavItems: NavItem[] = [
   { to: '/historia-clinica/bandeja', label: 'Bandeja clínica', icon: 'inbox', permiso: 'hc.ver' },
   // Rebote: citas por volver a llamar. Quienes reprograman (admin, coordinación, contact, especial contact, recepción).
   { to: '/rebote', label: 'Rebote', icon: 'phone_callback', permiso: 'citas.reprogramar' },
+  // Reserva web (06-oct-2026): quién empezó a reservar en la página y no terminó. Solo con la reserva web encendida.
+  { to: '/reservas-web', label: 'Reservas web', icon: 'language', permiso: 'citas.crear', soloReservaWeb: true },
   { to: '/horarios', label: 'Horarios y Restricciones', icon: 'schedule', permiso: 'horarios.ver' },
   { to: '/herramientas', label: 'Herramientas', icon: 'home_repair_service', permiso: HERRAMIENTAS_PERMS },
   { to: '/movimientos', label: 'Movimientos', icon: 'sync_alt', permiso: 'movimientos.ver' },
@@ -42,6 +46,7 @@ export function Idea1Sidebar() {
   const { usuario, logout } = useAuthStore();
 
   const perms = usuario?.permisos ?? [];
+  const reservaWebOn = useReservaWebHabilitada(perms.includes('citas.crear'));
 
   // Si hay permisos en el usuario, filtramos por ellos; si no hay objeto usuario cargado aún, mostramos los items
   const items = (perms.length > 0
@@ -52,7 +57,8 @@ export function Idea1Sidebar() {
           : perms.includes(n.permiso);
       })
     : idea1NavItems
-  ).filter(n => !n.soloRol || usuario?.rol === n.soloRol);
+  ).filter(n => !n.soloRol || usuario?.rol === n.soloRol)
+    .filter(n => !n.soloReservaWeb || reservaWebOn);
   // Alerta de controles (4.2): vencidos + los que vencen en 7 días, sobre «Bandeja clínica».
   const controles = useContadorControles();
   const [plegado, setPlegado] = useState(leerPlegado);

@@ -1,8 +1,12 @@
 /**
- * Reservas web EN CURSO para la agenda (05-oct-2026) — /api/v1/reservas-web/en-curso?sedeId&fecha
- * Uso interno (con login): recepción ve los horarios que la web tiene apartados mientras el paciente paga, y las
- * reservas pagadas que no pudieron convertirse en cita (para reubicar o devolver el dinero). Si la reserva web está
- * apagada devuelve una lista vacía (la agenda nunca falla por esto).
+ * Reserva web — uso INTERNO (con login) (05/06-oct-2026)
+ *
+ *  GET   /api/v1/reservas-web/estado                  { habilitada } (para mostrar o no el menú)
+ *  GET   /api/v1/reservas-web/en-curso?sedeId&fecha   horarios apartados mientras el paciente paga (aviso de la agenda)
+ *  GET   /api/v1/reservas-web/intentos?desde&hasta&pendientes=1   quién empezó a reservar y hasta dónde llegó
+ *  PATCH /api/v1/reservas-web/intentos/:id/contacto   { contactado, nota }   marcar que ya se le llamó
+ *
+ * Si la reserva web está apagada, las listas vienen vacías (la agenda nunca falla por esto).
  */
 import { Router } from 'express';
 import { z } from 'zod';
@@ -10,11 +14,17 @@ import { prisma } from '../db';
 import { requireAuth, requirePermiso, assertSede } from '../middleware/auth';
 import { fechaDb } from '../utils/fechaLima';
 import { reservaWebHabilitada } from '../services/reservaWeb/reservaWebService';
+import { listarIntentos, marcarContactado } from '../services/reservaWeb/intentos';
 
 const router = Router();
+const fechaQ = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+router.get('/estado', requireAuth, (_req, res) => {
+  res.json({ habilitada: reservaWebHabilitada() });
+});
 
 router.get('/en-curso', requireAuth, requirePermiso('citas.ver'), async (req, res) => {
-  const q = z.object({ sedeId: z.string().uuid(), fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).parse(req.query);
+  const q = z.object({ sedeId: z.string().uuid(), fecha: fechaQ }).parse(req.query);
   assertSede(req, q.sedeId);
   if (!reservaWebHabilitada()) { res.json([]); return; }
   const ahora = new Date();
@@ -38,6 +48,19 @@ router.get('/en-curso', requireAuth, requirePermiso('citas.ver'), async (req, re
     paciente: `${f.nombres} ${f.apellidoPaterno}`.trim(), numeroDocumento: f.numeroDocumento, telefono: f.telefono,
     monto: Number(f.monto), expiraEn: f.expiraEn, error: f.estado === 'reembolsar' ? f.error : null,
   })));
+});
+
+// Seguimiento de intentos (06-oct-2026): lo usan quienes agendan (recepción, contact center, coordinación).
+router.get('/intentos', requireAuth, requirePermiso('citas.crear'), async (req, res) => {
+  const q = z.object({ desde: fechaQ, hasta: fechaQ, pendientes: z.enum(['0', '1']).optional() }).parse(req.query);
+  if (!reservaWebHabilitada()) { res.json([]); return; }
+  res.json(await listarIntentos({ desde: q.desde, hasta: q.hasta, soloPendientes: q.pendientes === '1' }));
+});
+
+router.patch('/intentos/:id/contacto', requireAuth, requirePermiso('citas.crear'), async (req, res) => {
+  const id = z.string().uuid().parse(req.params.id);
+  const b = z.object({ contactado: z.boolean(), nota: z.string().trim().max(500).optional().nullable() }).parse(req.body);
+  res.json(await marcarContactado(id, req.user!.userId, b.nota || null, b.contactado));
 });
 
 export default router;

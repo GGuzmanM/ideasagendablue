@@ -15,6 +15,12 @@
       "env": { "PORT": "5182", "VITE_PROXY_TARGET": "http://localhost:3004" },
       "port": 5182,
       "url": "https://localhost:5182"
+    },
+    {
+      "name": "Reserva web · demo (API de pruebas 3004)",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["C:/Users/User/Documents/Desarrollo LimaBlue/entorno-pruebas/reserva-web-demo/server.js"],
+      "port": 5183
     }
   ]
 }

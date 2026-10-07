@@ -510,6 +510,61 @@ export function renderPlantillaResumenAtencion(d: { paciente: string; sede: stri
   </body></html>`;
 }
 
+/**
+ * Correo de ENCUESTA DE SATISFACCIÓN (07-oct-2026): sale 2 h después de completar la cita. Mismo diseño que la
+ * reserva (tarjeta blanca, cabecera azul con logo). Un solo botón a la encuesta. Nada clínico en el cuerpo.
+ */
+export function renderPlantillaEncuesta(d: {
+  nombre: string; servicio: string; sede: string; profesional: string | null; fechaDate: Date; hora: string; url: string;
+}): string {
+  const t = horaAmPm(d.hora);
+  const fecha = capitalizar(formatFechaLargaEs(d.fechaDate));
+  const fila = (etq: string, valor: string, primera = false) => `
+            <tr><td style="padding:12px 0;${primera ? '' : 'border-top:1px solid #e6ecf6;'}"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+              <td valign="top" style="font-size:13px;font-weight:600;color:#8a93a6;">${etq}</td>
+              <td align="right" style="font-size:13px;font-weight:700;color:#0f1f3d;line-height:1.5;">${valor}</td>
+            </tr></table></td></tr>`;
+  return `<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no"/></head>
+<body style="margin:0;padding:0;background:#e7e5df;">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:#e7e5df;">Cuéntanos en 1 minuto qué tal te atendimos en ${escapar(d.sede)}.</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#e7e5df;padding:40px 16px;">
+    <tr><td align="center">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:440px;background:#ffffff;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(16,40,79,.12),0 14px 50px rgba(16,40,79,.12);">
+        ${headerNuevo()}
+        <tr><td style="padding:32px 30px 28px;font-family:'Manrope',Arial,Helvetica,sans-serif;">
+          <table role="presentation" cellpadding="0" cellspacing="0" style="margin-bottom:18px;"><tr>
+            <td style="background:#eef2ff;border:1px solid #c7d2fe;border-radius:999px;padding:6px 13px;">
+              <span style="color:#1e3a8a;font-size:12px;font-weight:700;letter-spacing:.02em;">★&nbsp; Tu opinión nos importa</span>
+            </td>
+          </tr></table>
+          <h1 style="margin:0 0 10px;font-size:24px;font-weight:800;color:#0f1f3d;letter-spacing:-.02em;line-height:1.2;">Hola ${escapar(d.nombre)}, ¿cómo te fue?</h1>
+          <p style="margin:0;font-size:15px;line-height:1.6;color:#4b5563;">Gracias por atenderte en <strong style="color:#1e3a8a;">Limablue</strong>. Cuéntanos qué tal fue tu experiencia: te toma un minuto y nos ayuda a atenderte cada vez mejor.</p>
+
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:22px;background:#f6f8fc;border:1px solid #e6ecf6;border-radius:12px;">
+            <tr><td style="padding:4px 18px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                ${fila('Servicio', escapar(d.servicio), true)}
+                ${fila('Sede', escapar(d.sede))}
+                ${d.profesional ? fila('Te atendió', escapar(d.profesional)) : ''}
+                ${fila('Fecha', `${escapar(fecha)} · ${t.hora}&nbsp;${t.suf}`)}
+              </table>
+            </td></tr>
+          </table>
+
+          <a href="${d.url}" style="display:block;margin-top:24px;background:#1e3a8a;color:#ffffff;text-decoration:none;text-align:center;font-size:15px;font-weight:700;letter-spacing:.01em;padding:15px;border-radius:10px;">Responder la encuesta</a>
+          <p style="margin:16px 0 0;font-size:13px;line-height:1.6;color:#9aa3b2;text-align:center;">Son unas pocas preguntas. Tus respuestas las lee el equipo de calidad de Limablue.</p>
+        </td></tr>
+        <tr><td style="padding:20px 30px 24px;border-top:1px solid #eef1f6;text-align:center;font-family:'Manrope',Arial,Helvetica,sans-serif;">
+          <div style="font-size:12px;line-height:1.6;color:#aab2c0;">Este correo fue enviado por <strong style="color:#8a93a6;">Limablue Podología</strong> porque te atendiste el ${escapar(formatFechaLargaEs(d.fechaDate))}. Si no fuiste tú, ignora este mensaje.</div>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+}
+
 // ─── Módulo Videos por Servicio ───────────────────────────────────────────────
 /**
  * Sustituye las variables {paciente} / {servicio} / {fecha} en un texto (asunto,

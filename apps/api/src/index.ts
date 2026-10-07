@@ -11,6 +11,7 @@ import reservaWebRouter from './routes/reservaWeb';
 import reservaWebAgendaRouter from './routes/reservaWebAgenda';
 import { reservaWebHabilitada, mantenimientoReservasWeb } from './services/reservaWeb/reservaWebService';
 import { cerrarTiemposAbandonados } from './services/tiempoTratamientoService';
+import { iniciarBarridoEncuestas } from './services/encuestaSatisfaccionService';
 
 // Zona horaria del PROCESO fija a UTC: toda fecha @db.Date se ancla a UTC (mediodía
 // para días, ver utils/fechaLima). Así el sistema se comporta IGUAL en cualquier host
@@ -331,6 +332,9 @@ setInterval(autocompletar, 5 * 60_000).unref();
 if (reservaWebHabilitada()) {
   setInterval(() => void mantenimientoReservasWeb().catch((e) => console.error('[reserva-web] mantenimiento:', e)), 60_000).unref();
 }
+
+// ─── Encuesta de satisfacción: correo 2 h después de completar la cita (barrido cada 5 min, 8:00–21:00) ───
+iniciarBarridoEncuestas();
 
 // ─── Auto-renovación mensual de asignaciones (baro + recepción) ───────────────
 // Al cambiar de mes, el personal continúa en su misma sede salvo que lo muevan o den de baja.

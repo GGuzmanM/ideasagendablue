@@ -2,8 +2,11 @@
 // tabla con checks — Tratamiento · Presentación · Aplicación — y «Agregar seleccionados». Vista pura; la lógica de cómo
 // se convierte cada fila en un ítem de la receta vive en useEmitirRecetaForm (agregarTratamientos).
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { TratamientoDiagnostico } from '../../api/catalogos';
 import { lineaPosologia } from '../../utils/posologiaTexto';
+import { usePuedeGestionarTratamientosDx } from '../../services/tratamientosDiagnosticoService';
+import { TratamientosDiagnosticoDialog } from './TratamientosDiagnosticoDialog';
 
 const norm = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
 
@@ -16,6 +19,9 @@ export function TratamientosDiagnosticoPanel({ codigo, descripcion, tratamientos
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [q, setQ] = useState('');
   const [abierto, setAbierto] = useState(true);
+  // 06-oct-2026: administración y el médico auditor agregan / quitan tratamientos de este diagnóstico desde aquí.
+  const gestiona = usePuedeGestionarTratamientosDx();
+  const [gestionando, setGestionando] = useState(false);
   useEffect(() => { setSel(new Set()); setQ(''); }, [codigo]); // otro diagnóstico → otra lista
 
   const visibles = useMemo(() => {
@@ -28,19 +34,47 @@ export function TratamientosDiagnosticoPanel({ codigo, descripcion, tratamientos
   const alternarTodos = () => setSel((s) => { const n = new Set(s); if (todosMarcados) elegibles.forEach((x) => n.delete(x.id)); else elegibles.forEach((x) => n.add(x.id)); return n; });
   const agregar = () => { onAgregar(tratamientos.filter((x) => sel.has(x.id))); setSel(new Set()); };
 
+  // En un portal: la receta es un modal con animación/recorte y la gestión debe ir encima de toda la pantalla.
+  const dialogo = gestionando && createPortal(
+    <TratamientosDiagnosticoDialog codigo={codigo} descripcion={descripcion} onClose={() => setGestionando(false)} />,
+    document.body,
+  );
+  const botonGestionar = gestiona && (
+    <button type="button" onClick={() => setGestionando(true)} data-accion="gestionar-tratamientos-dx"
+      title="Agregar, corregir o quitar los tratamientos habituales de este diagnóstico"
+      className="shrink-0 inline-flex items-center gap-1 rounded-lg border border-primary/30 bg-surface-container-lowest px-2.5 py-1 text-[11px] font-semibold text-primary hover:bg-primary/5">
+      <span className="material-symbols-outlined text-sm">edit_note</span>Gestionar
+    </button>
+  );
+
   if (cargando) return <div className="rounded-2xl border border-outline-variant/30 p-4 text-xs text-on-surface-variant">Cargando tratamientos habituales…</div>;
-  if (!tratamientos.length) return null;
+  if (!tratamientos.length) {
+    // Sin tratamientos: los gestores pueden cargar los primeros; el resto no ve nada (como antes).
+    if (!gestiona) return null;
+    return (
+      <div className="rounded-2xl border border-dashed border-primary/30 px-4 py-3 flex items-center gap-2" data-testid="tratamientos-dx-vacio">
+        <span className="material-symbols-outlined text-primary text-lg">checklist</span>
+        <span className="text-xs text-on-surface-variant flex-1 min-w-0"><b className="text-primary">{codigo}</b> aún no tiene tratamientos habituales.</span>
+        {botonGestionar}
+        {dialogo}
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-2xl border border-primary/25 bg-primary/[0.02] overflow-hidden" data-testid="tratamientos-dx">
-      <button type="button" onClick={() => setAbierto(!abierto)} className="w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-primary/5 transition-colors">
-        <span className="material-symbols-outlined text-primary text-lg">checklist</span>
-        <span className="font-semibold text-on-surface text-sm flex-1 min-w-0 truncate">
-          Tratamientos habituales · <b className="text-primary">{codigo}</b> {descripcion}
-        </span>
-        <span className="text-[11px] font-bold text-on-surface-variant bg-surface-container border border-outline-variant/30 rounded-full px-2 py-0.5">{tratamientos.length}</span>
-        <span className="material-symbols-outlined text-on-surface-variant">{abierto ? 'expand_less' : 'expand_more'}</span>
-      </button>
+      <div className="flex items-center gap-2 pr-3 hover:bg-primary/5 transition-colors">
+        <button type="button" onClick={() => setAbierto(!abierto)} className="flex-1 min-w-0 flex items-center gap-2 pl-4 py-3 text-left">
+          <span className="material-symbols-outlined text-primary text-lg">checklist</span>
+          <span className="font-semibold text-on-surface text-sm flex-1 min-w-0 truncate">
+            Tratamientos habituales · <b className="text-primary">{codigo}</b> {descripcion}
+          </span>
+          <span className="text-[11px] font-bold text-on-surface-variant bg-surface-container border border-outline-variant/30 rounded-full px-2 py-0.5">{tratamientos.length}</span>
+          <span className="material-symbols-outlined text-on-surface-variant">{abierto ? 'expand_less' : 'expand_more'}</span>
+        </button>
+        {botonGestionar}
+      </div>
+      {dialogo}
       {abierto && (
         <div className="px-4 pb-4 space-y-2">
           {tratamientos.length > 8 && (

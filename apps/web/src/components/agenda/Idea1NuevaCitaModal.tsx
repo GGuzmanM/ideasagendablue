@@ -1092,7 +1092,7 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
               <p className="font-body-md text-xs text-on-surface-variant/70 italic">
                 {medicosBaro.length === 0
                   ? 'No hay médicos en la lista por solicitud. Usa “Gestionar” para agregar quién atiende baropodometría.'
-                  : 'La máquina (Baro 1/2) se asigna automáticamente. El médico es opcional: si no lo eliges, el médico que atienda ese día en la sede toma la cita y queda asignado.'}
+                  : 'Va en la máquina (Baro 1/2) de la columna donde hiciste clic; si está ocupada o no elegiste, en la libre. El médico es opcional: si no lo eliges, el médico que atienda ese día en la sede toma la cita y queda asignado.'}
               </p>
             </div>
           ) : (

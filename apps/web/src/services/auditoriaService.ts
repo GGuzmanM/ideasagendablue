@@ -129,6 +129,7 @@ export const ACCION_LABEL: Record<string, AccionStyle> = {
   soltar_cita_medico:           def('Médico soltó la cita', 'person_remove', 'teal'),
   recordatorio_reserva_enviado: def('Correo de reserva enviado', 'mark_email_read', 'violeta'),
   recordatorio_enviado:         def('Recordatorio enviado', 'notifications_active', 'violeta'),
+  encuesta_enviada:             def('Encuesta de satisfacción enviada', 'reviews', 'violeta'),
   recordatorio_reenvio_manual:  def('Correo reenviado a mano', 'forward_to_inbox', 'violeta'),
   reenviar_confirmacion_correo: def('Correo reenviado a mano', 'forward_to_inbox', 'violeta'),
   ajustar_hora_atencion:        def('Hora de atención corregida', 'schedule', 'ambar'),
@@ -596,7 +597,7 @@ function detalleCita(log: AuditLog, nombresPorId: Record<string, string>, legibl
       const hasta = (d.medico as string) || nombre(d.medicoId) || 'sin médico';
       return `Médico: ${de} → ${hasta}`;
     }
-    case 'recordatorio_enviado': case 'recordatorio_reserva_enviado':
+    case 'recordatorio_enviado': case 'recordatorio_reserva_enviado': case 'encuesta_enviada':
       return d.destinatario ? `a ${d.destinatario}` : undefined;
     case 'recordatorio_reenvio_manual': case 'reenviar_confirmacion_correo':
       return d.to ? `a ${d.to}` : undefined;

@@ -115,6 +115,13 @@ function gestionaCatalogo(req: Request, _res: Response, next: NextFunction) {
   if (!ROLES_CATALOGO.includes(req.user?.rol ?? '')) throw new AppError('Solo administración, coordinación o médicos gestionan el catálogo CIE-10', 403, 'SIN_PERMISO');
   next();
 }
+// 06-oct-2026: los TRATAMIENTOS HABITUALES por diagnóstico solo los cambian administración y el médico auditor
+// (los demás médicos los eligen en la receta). El catálogo CIE-10 en sí sigue con ROLES_CATALOGO.
+const ROLES_TRATAMIENTOS_DX = ['admin', 'medico_auditor'];
+function gestionaTratamientos(req: Request, _res: Response, next: NextFunction) {
+  if (!ROLES_TRATAMIENTOS_DX.includes(req.user?.rol ?? '')) throw new AppError('Solo administración y el médico auditor cambian los tratamientos habituales', 403, 'SIN_PERMISO');
+  next();
+}
 /** AuditLog.entidadId es uuid: se deriva uno ESTABLE del código (mismo código → mismo id, agrupa su historial). */
 function uuidDeTexto(texto: string): string {
   const h = createHash('sha1').update(texto).digest('hex');
@@ -273,7 +280,7 @@ router.post('/tratamientos-diagnostico/extraer-posologia', requireAuth, (req, re
 
 const ctxAudit = (req: Request) => ({ usuarioId: req.user?.userId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined });
 
-router.post('/tratamientos-diagnostico', requireAuth, requirePermiso('hc.registrar'), gestionaCatalogo, async (req, res) => {
+router.post('/tratamientos-diagnostico', requireAuth, requirePermiso('hc.registrar'), gestionaTratamientos, async (req, res) => {
   const d = tratamientoSchema.parse(req.body);
   const dx = await prisma.cie10.findUnique({ where: { codigo: d.cie10Codigo }, select: { codigo: true } });
   if (!dx) throw new AppError('Ese diagnóstico no está en el catálogo', 404, 'CIE10_INVALIDO');
@@ -294,7 +301,7 @@ router.post('/tratamientos-diagnostico', requireAuth, requirePermiso('hc.registr
   res.status(201).json(row);
 });
 
-router.patch('/tratamientos-diagnostico/:id', requireAuth, requirePermiso('hc.registrar'), gestionaCatalogo, async (req, res) => {
+router.patch('/tratamientos-diagnostico/:id', requireAuth, requirePermiso('hc.registrar'), gestionaTratamientos, async (req, res) => {
   const d = tratamientoSchema.partial().omit({ cie10Codigo: true }).parse(req.body);
   const antes = await prisma.tratamientoDiagnostico.findUnique({ where: { id: String(req.params.id) } });
   if (!antes) throw new AppError('Tratamiento no encontrado', 404);

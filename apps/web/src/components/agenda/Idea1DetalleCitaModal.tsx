@@ -8,6 +8,7 @@ import {
   useIdea1DetalleCita,
   type UseIdea1DetalleCitaProps,
   estadosPermitidos,
+  esCambioEspecial,
 } from '../../services/idea1DetalleCitaService';
 import { DialogoConsumo, SaldoPaquetes } from '../pacientes/SaldoPaquetes';
 import { BotonHistorialGenexis } from '../pacientes/HistorialGenexis';
@@ -482,12 +483,21 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                 <div className="relative">
                   <select
                     value={estadoNorm}
-                    onChange={(e) => estadoMutation.mutate({ estado: e.target.value })}
+                    onChange={(e) => {
+                      const destino = e.target.value;
+                      // Admin: un salto fuera del flujo normal (p. ej. En atención → Cancelada) se confirma antes.
+                      if (esCambioEspecial(estadoNorm, destino) && !window.confirm(
+                        `Cambio especial de administrador: ${ESTADO_LABEL[estadoNorm] ?? estadoNorm} → ${ESTADO_LABEL[destino] ?? destino}.\n\n` +
+                        (['cancelada', 'no_show'].includes(destino) ? 'Si la cita tiene una atención clínica VACÍA, se retira. Con registros clínicos no se puede.\n\n' : '') +
+                        '¿Continuar?')) return;
+                      estadoMutation.mutate({ estado: destino });
+                    }}
                     disabled={estadoMutation.isPending}
                     className="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-xl px-3 py-1.5 text-xs font-bold text-on-surface outline-none focus:ring-2 focus:ring-primary/20 appearance-none hover:border-primary/40 transition-colors uppercase"
                   >
-                    {/* Solo los pasos que el servidor acepta desde el estado actual (nada de «Transición inválida»). */}
-                    {estadosPermitidos(estadoNorm).map((e) => (
+                    {/* Solo los pasos que el servidor acepta desde el estado actual (nada de «Transición inválida»).
+                        El admin ve TODOS (06-oct-2026); se lee el rol sin hook para no cambiar los hooks de este modal. */}
+                    {estadosPermitidos(estadoNorm, useAuthStore.getState().usuario?.rol === 'admin').map((e) => (
                       <option key={e} value={e}>{(ESTADO_LABEL[e] ?? e).toUpperCase()}</option>
                     ))}
                   </select>

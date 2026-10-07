@@ -28,7 +28,7 @@ import { sincronizarCitaOutlook } from './outlookCalendarService';
 import { cancelarRecordatoriosDeCita } from './recordatorioService';
 import { cancelarVideosDeCita } from './videoEnvioService';
 import { sincronizarSesionPaquete } from './paqueteSesionService';
-import { assertSinAtencionClinica } from './historiaClinicaService';
+import { assertSinAtencionClinica, atencionesVaciasDelBloque, retirarAtencionVaciaEnTx } from './historiaClinicaService';
 import { getCitaCompleta, crearComentarioEnTx, CitaCompleta } from './citaCompleta';
 
 export const ESTADOS_FINALES = ['completada', 'no_show', 'cancelada'];
@@ -62,6 +62,11 @@ export interface ActorCambio {
    * enlace del correo): la auditoría distingue el ORIGEN sin duplicar la lógica del cambio.
    */
   accion?: string;
+  /**
+   * 06-oct-2026: ADMINISTRADOR — puede pasar la cita a CUALQUIER estado (sin la máquina de estados). Cancelar o
+   * «no vino» con una atención clínica solo si la atención está vacía (se retira); con registros, sigue bloqueado.
+   */
+  libre?: boolean;
 }
 
 export interface SolicitudCambio {
@@ -86,11 +91,14 @@ export interface PlanTransicion {
   comentario?: string;
   motivoCancelacion?: string;
   hora: Date;
+  /** Atenciones clínicas VACÍAS que se retiran al cancelar / «no vino» (solo cambio libre del admin). */
+  atencionesVacias: string[];
 }
 
 /** Valida la transición `actual → destino`. Mismo estado = permitido (solo agrega comentario). */
-export function validarTransicion(actual: string, destino: string, permisos?: string[]): void {
+export function validarTransicion(actual: string, destino: string, permisos?: string[], libre = false): void {
   if (destino === actual) return;
+  if (libre) return; // admin: cualquier estado (06-oct-2026)
   if (!(TRANSICIONES_VALIDAS[actual] ?? []).includes(destino)) {
     throw new AppError(`Transición inválida: ${actual} → ${destino}`, 400, 'TRANSICION_INVALIDA');
   }
@@ -143,18 +151,23 @@ export function anclasDeTiempo(actual: string, estado: string, hora: Date) {
 /** Lee la cita, valida y arma el plan del cambio (sin escribir). */
 export async function prepararTransicion(
   sol: SolicitudCambio,
-  actor: Pick<ActorCambio, 'permisos'>,
+  actor: Pick<ActorCambio, 'permisos' | 'libre'>,
   client: Prisma.TransactionClient | typeof prisma = prisma,
 ): Promise<PlanTransicion> {
   const cita = await client.cita.findUnique({ where: { id: sol.citaId, deletedAt: null } });
   if (!cita) throw new AppError('Cita no encontrada', 404);
-  validarTransicion(cita.estado, sol.estado, actor.permisos);
+  validarTransicion(cita.estado, sol.estado, actor.permisos, !!actor.libre);
 
   const esCancelacion = sol.estado === 'cancelada';
   const cambioReal = sol.estado !== cita.estado;
   // Historia clínica: una cita con atención registrada fue atendida de verdad → no se cancela ni se
   // marca "no vino" (409 CITA_CON_ATENCION_CLINICA). Único punto donde la agenda consulta a la HC.
-  if (cambioReal && (esCancelacion || sol.estado === 'no_show')) await assertSinAtencionClinica(cita.id);
+  // Admin (libre): se permite si la atención está VACÍA (se abrió por error) y se retira en la misma transacción.
+  let atencionesVacias: string[] = [];
+  if (cambioReal && (esCancelacion || sol.estado === 'no_show')) {
+    if (actor.libre) atencionesVacias = await atencionesVaciasDelBloque(cita.id);
+    else await assertSinAtencionClinica(cita.id);
+  }
 
   // Solo cascadea un CAMBIO REAL (re-enviar el mismo estado para comentar NO mueve a las hermanas
   // ni re-consume sesiones). `soloEsta` desactiva la cascada.
@@ -178,6 +191,7 @@ export async function prepararTransicion(
     comentario,
     motivoCancelacion: sol.motivoCancelacion,
     hora: sol.hora ?? new Date(),
+    atencionesVacias,
   };
 }
 
@@ -196,6 +210,7 @@ export async function transicionarEnTx(tx: Prisma.TransactionClient, plan: PlanT
   if (r.count === 0) {
     throw new AppError('La cita cambió de estado mientras tanto. Actualiza la agenda y vuelve a intentar.', 409, 'ESTADO_CAMBIADO');
   }
+  for (const atId of plan.atencionesVacias) await retirarAtencionVaciaEnTx(tx, atId, actor);
   await auditEnTx(tx, {
     citaId: cita.id,
     usuarioId: actor.usuarioId ?? undefined,

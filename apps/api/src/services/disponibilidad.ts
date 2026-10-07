@@ -370,7 +370,9 @@ export async function seleccionarProfesionalOptimo(
   unidadNegocioId: string,
   servicioId: string,
   fecha: string,
-  horaInicio: string
+  horaInicio: string,
+  // 06-oct-2026: si recepción eligió una (p. ej. la máquina Baro 1 al hacer clic en su columna) y está libre, se usa esa.
+  preferidoId?: string | null,
 ): Promise<string | null> {
   const fechaDate = fechaDb(fecha);
   // Obtener candidatos válidos. NO se exige `horarios` del día de semana en el filtro:
@@ -500,6 +502,7 @@ export async function seleccionarProfesionalOptimo(
   }
 
   if (candidatos.length === 0) return null;
+  if (preferidoId && candidatos.some((c) => c.profesionalId === preferidoId)) return preferidoId;
 
   // Elegir el profesional con menos citas hoy (balanceo de carga)
   candidatos.sort((a, b) => a.citasHoy - b.citasHoy);

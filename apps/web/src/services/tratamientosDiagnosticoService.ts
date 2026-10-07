@@ -1,11 +1,20 @@
 // Tratamientos habituales por diagnóstico — GESTIÓN (23-sep-2026). Se abre desde el catálogo CIE-10 de la historia
-// clínica. Administración, coordinación y médicos agregan, corrigen o desactivan los tratamientos que la receta ofrece
-// con checks. Nada se borra: se desactiva (las recetas ya emitidas guardan su propia copia).
+// clínica y (06-oct-2026) desde la propia receta con «Gestionar». Desde el 06-oct solo ADMINISTRACIÓN y el MÉDICO
+// AUDITOR agregan, corrigen o quitan los tratamientos que la receta ofrece con checks; los demás solo los eligen.
+// Nada se borra: «Quitar» lo desactiva (las recetas ya emitidas guardan su propia copia).
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { catalogosApi, useTratamientosDiagnostico, type MedicamentoItem, type TipoTratamiento, type TratamientoDiagnostico } from '../api/catalogos';
 import { serviciosApi } from '../api';
+import { useAuthStore } from '../stores/authStore';
+
+/** Roles que pueden cambiar los tratamientos habituales (el servidor exige lo mismo). */
+export const ROLES_TRATAMIENTOS_DX = ['admin', 'medico_auditor'];
+export function usePuedeGestionarTratamientosDx(): boolean {
+  const rol = useAuthStore((s) => s.usuario?.rol);
+  return !!rol && ROLES_TRATAMIENTOS_DX.includes(rol);
+}
 
 export interface FormTratamiento {
   id: string | null; // null = nuevo

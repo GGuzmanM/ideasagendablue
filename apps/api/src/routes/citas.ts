@@ -1061,12 +1061,14 @@ router.post('/', requireAuth, requireAcceso('appointments:write', 'citas.crear')
   let origenAsignacion: 'elegida_por_paciente' | 'asignada_automaticamente' | null = null;
 
   if (unidad.modoReserva === 'sin_eleccion') {
-    // Baropodometría: la cita ocupa una MÁQUINA libre (Baro 1/2) asignada automáticamente…
+    // Baropodometría: la cita ocupa una MÁQUINA libre (Baro 1/2). 06-oct-2026: si recepción hizo clic en la columna
+    // de una máquina (llega como profesionalId) y está libre, va en ESA; si no eligió o está ocupada, la más libre.
+    const maquinaElegida = data.profesionalId ?? null;
     profesionalId = await seleccionarProfesionalOptimo(
-      data.sedeId, data.unidadNegocioId, data.servicioId, data.fecha, data.horaInicio
+      data.sedeId, data.unidadNegocioId, data.servicioId, data.fecha, data.horaInicio, maquinaElegida
     );
     if (!profesionalId) throw new AppError('No hay máquina disponible para este slot', 409, 'NO_DISPONIBLE');
-    origenAsignacion = 'asignada_automaticamente';
+    origenAsignacion = maquinaElegida && profesionalId === maquinaElegida ? 'elegida_por_paciente' : 'asignada_automaticamente';
     // …y el MÉDICO que atiende (baro es "solo por solicitud": p.ej. Daniel) se guarda en
     // solicitadoProfesionalId para que quede registrado quién atendió y para que su tiempo
     // quede ocupado también en su columna de podología (anti doble-booking bidireccional).
@@ -1778,6 +1780,9 @@ router.patch('/:id/estado', requireAuth, requireAcceso('appointments:write', 'ci
       cambiadoPor: req.user?.userId ?? 'sistema',
       ip: req.ip,
       userAgent: req.headers['user-agent'] as string | undefined,
+      // 06-oct-2026: el ADMINISTRADOR pasa la cita a cualquier estado (el rol admin manda por su rol).
+      libre: req.user?.rol === 'admin',
+      ...(req.user?.rol === 'admin' ? { auditExtra: { cambioLibreAdmin: true } } : {}),
     },
   );
   res.json(citaCompleta);

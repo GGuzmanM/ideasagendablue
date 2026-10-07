@@ -99,35 +99,89 @@ const ESTADO_CITA_LABEL: Record<string, string> = {
 };
 const ESTADO_PAGO_LABEL: Record<string, string> = { completo: 'Pago completo', incompleto: 'Pago incompleto', pendiente: 'Pendiente de pago' };
 
+// 06-oct-2026: también por RANGO (?desde=YYYY-MM-DD&hasta=YYYY-MM-DD, máx. 92 días); en rango se agrega la columna «Fecha».
+const MAX_DIAS_RANGO_EXCEL = 92;
+// 08-oct-2026: filtro de ASISTENCIA (?asistencia=llegaron|no_llegaron; sin el parámetro = todas).
+//  · llegaron    = Llegó, En atención y Completada (el paciente vino).
+//  · no_llegaron = todo lo demás: No vino, Cancelada, Reprogramada y las que quedaron Agendada/Confirmada sin marcar.
+const ESTADOS_LLEGARON = ['llego', 'en_atencion', 'completada'] as const;
+const ASISTENCIA_LABEL: Record<string, string> = { llegaron: 'Llegaron', no_llegaron: 'No llegaron' };
+// 08-oct-2026: filtro por QUIÉN AGENDÓ (rol del usuario que creó la cita). Sin el parámetro = todas (incluye las de
+// administración, que a veces son pruebas, y las automáticas: reserva web / importadas).
+const ROLES_AGENDADO_POR: Record<string, { roles: string[]; label: string }> = {
+  equipo: { roles: ['contact_center', 'especial_contact', 'recepcionista', 'coordinadora_sedes'], label: 'Agendó: contact center y recepción' },
+  contact: { roles: ['contact_center', 'especial_contact'], label: 'Agendó: contact center' },
+  recepcion: { roles: ['recepcionista', 'coordinadora_sedes'], label: 'Agendó: recepción y coordinación' },
+};
 router.get('/citas-excel', requireAuth, async (req, res) => {
-  const { fecha, sedeId } = req.query as { fecha?: string; sedeId?: string };
-  if (!fecha || !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
-    throw new AppError('Parámetro fecha requerido (YYYY-MM-DD)', 400, 'FECHA_REQUERIDA');
+  const { fecha, desde, hasta, sedeId, asistencia: asistenciaRaw, agendadoPor: agendadoPorRaw } = req.query as {
+    fecha?: string; desde?: string; hasta?: string; sedeId?: string; asistencia?: string; agendadoPor?: string;
+  };
+  const asistencia = asistenciaRaw === 'llegaron' || asistenciaRaw === 'no_llegaron' ? asistenciaRaw : null;
+  const grupoAgendo = agendadoPorRaw ? ROLES_AGENDADO_POR[agendadoPorRaw] ?? null : null;
+  const esFecha = (v?: string): v is string => !!v && /^\d{4}-\d{2}-\d{2}$/.test(v);
+  const esRango = esFecha(desde) && esFecha(hasta);
+  if (!esRango && !esFecha(fecha)) {
+    throw new AppError('Indica una fecha (YYYY-MM-DD) o un rango desde/hasta', 400, 'FECHA_REQUERIDA');
   }
-  const fechaDate = new Date(fecha + 'T12:00:00');
+  const ini = esRango ? desde : fecha!;
+  const fin = esRango ? hasta : fecha!;
+  if (fin < ini) throw new AppError('La fecha «hasta» no puede ser anterior a «desde»', 400, 'RANGO_INVALIDO');
+  const dias = Math.round((Date.parse(fin + 'T00:00:00Z') - Date.parse(ini + 'T00:00:00Z')) / 86_400_000) + 1;
+  if (dias > MAX_DIAS_RANGO_EXCEL) {
+    throw new AppError(`El rango puede ser de hasta ${MAX_DIAS_RANGO_EXCEL} días (elegiste ${dias}). Divídelo en partes.`, 400, 'RANGO_MUY_LARGO');
+  }
+  const fechaDate = new Date(ini + 'T12:00:00');
+  const finDate = new Date(fin + 'T12:00:00');
   const sede = sedeId ? await prisma.sede.findUnique({ where: { id: sedeId }, select: { nombre: true } }) : null;
 
   const citas = await prisma.cita.findMany({
-    where: { fecha: fechaDate, deletedAt: null, ...(sedeId ? { sedeId } : {}) },
+    where: {
+      fecha: esRango ? { gte: fechaDate, lte: finDate } : fechaDate, deletedAt: null, ...(sedeId ? { sedeId } : {}),
+      ...(asistencia === 'llegaron' ? { estado: { in: [...ESTADOS_LLEGARON] } } : asistencia === 'no_llegaron' ? { estado: { notIn: [...ESTADOS_LLEGARON] } } : {}),
+      ...(grupoAgendo ? { creadoPorUsuario: { rol: { in: grupoAgendo.roles } } } : {}),
+    },
     include: {
       paciente: { select: { nombres: true, apellidoPaterno: true, apellidoMaterno: true, telefono: true, tipoDocumento: true, numeroDocumento: true } },
       sede: { select: { nombre: true } },
       servicio: { select: { nombre: true } },
       subcategoria: { select: { nombre: true } },
+      creadoPorUsuario: { select: { nombre: true } },
     },
-    orderBy: [{ sede: { nombre: 'asc' } }, { horaInicio: 'asc' }],
+    orderBy: [...(esRango ? [{ fecha: 'asc' as const }] : []), { sede: { nombre: 'asc' } }, { horaInicio: 'asc' }],
   });
+  type FilaCita = (typeof citas)[number];
+  // Quién la agendó (06-oct-2026). Sin usuario = la creó una integración (reserva web, agente) o vino del sistema anterior.
+  const agendadoPor = (c: FilaCita) =>
+    c.creadoPorUsuario?.nombre.trim() || (c.canal === 'web' ? 'Reserva web (internet)' : 'Sin usuario (automática o importada)');
+  const ddmmyyyy = (iso: string) => iso.split('-').reverse().join('/');
+  const conDia = (iso: string) => {
+    const d = new Intl.DateTimeFormat('es-PE', { weekday: 'long', timeZone: 'UTC' }).format(new Date(iso + 'T12:00:00Z'));
+    return `${d.charAt(0).toUpperCase()}${d.slice(1)} ${ddmmyyyy(iso)}`;
+  };
 
-  const diaStr = fecha.split('-').reverse().join('/');
-  const diaSemana = new Intl.DateTimeFormat('es-PE', { weekday: 'long', timeZone: 'UTC' }).format(fechaDate);
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('Citas');
-  const COLS = ['DNI', 'Nombre completo', 'Sede', 'Servicio', 'Hora cita', 'Teléfono', 'Estado', '¿Pagado?'];
-  ws.columns = [{ width: 14 }, { width: 38 }, { width: 14 }, { width: 42 }, { width: 11 }, { width: 16 }, { width: 14 }, { width: 19 }];
+  // Columnas (en rango se agrega «Fecha» antes de la hora)
+  const columnas: { titulo: string; ancho: number; valor: (c: FilaCita) => string; texto?: boolean; pago?: boolean }[] = [
+    { titulo: 'DNI', ancho: 14, valor: (c) => c.paciente.numeroDocumento ?? '', texto: true },
+    { titulo: 'Nombre completo', ancho: 38, valor: (c) => `${c.paciente.nombres} ${c.paciente.apellidoPaterno} ${c.paciente.apellidoMaterno}`.replace(/\s+/g, ' ').trim() },
+    { titulo: 'Sede', ancho: 14, valor: (c) => c.sede.nombre },
+    { titulo: 'Servicio', ancho: 42, valor: (c) => (c.subcategoria ? `${c.servicio.nombre} · ${c.subcategoria.nombre}` : c.servicio.nombre) },
+    ...(esRango ? [{ titulo: 'Fecha', ancho: 12, valor: (c: FilaCita) => ddmmyyyy(c.fecha.toISOString().slice(0, 10)) }] : []),
+    { titulo: 'Hora cita', ancho: 11, valor: (c) => c.horaInicio },
+    { titulo: 'Teléfono', ancho: 16, valor: (c) => formatearNumero(c.paciente.telefono), texto: true },
+    { titulo: 'Estado', ancho: 14, valor: (c) => ESTADO_CITA_LABEL[c.estado] ?? c.estado },
+    { titulo: '¿Pagado?', ancho: 19, valor: (c) => ESTADO_PAGO_LABEL[c.estadoPago] ?? c.estadoPago, pago: true },
+    { titulo: 'Agendado por', ancho: 32, valor: agendadoPor },
+  ];
+  const COLS = columnas.map((x) => x.titulo);
+  ws.columns = columnas.map((x) => ({ width: x.ancho }));
 
   // Filtros aplicados (arriba del listado)
   ws.mergeCells(1, 1, 1, COLS.length);
-  ws.getCell(1, 1).value = `Lista de citas · ${diaSemana.charAt(0).toUpperCase()}${diaSemana.slice(1)} ${diaStr} · Sede: ${sede?.nombre ?? 'Todas las sedes'}`;
+  const periodo = esRango ? `Del ${conDia(ini)} al ${conDia(fin)}` : conDia(ini);
+  ws.getCell(1, 1).value = `Lista de citas · ${periodo} · Sede: ${sede?.nombre ?? 'Todas las sedes'} · ${asistencia ? ASISTENCIA_LABEL[asistencia] : 'Todas'}${grupoAgendo ? ` · ${grupoAgendo.label}` : ''} · ${citas.length} citas`;
   ws.getCell(1, 1).font = { name: 'Arial', bold: true, size: 13 };
 
   const FILA_CAB = 3; // título, una fila en blanco y el encabezado
@@ -144,23 +198,15 @@ router.get('/citas-excel', requireAuth, async (req, res) => {
   const COLOR_PAGO: Record<string, string> = { completo: 'FFD1FAE5', incompleto: 'FFFEF3C7', pendiente: 'FFFFE4E6' };
   citas.forEach((c, i) => {
     const fila = ws.getRow(FILA_CAB + 1 + i);
-    fila.values = [
-      c.paciente.numeroDocumento ?? '',
-      `${c.paciente.nombres} ${c.paciente.apellidoPaterno} ${c.paciente.apellidoMaterno}`.replace(/\s+/g, ' ').trim(),
-      c.sede.nombre,
-      c.subcategoria ? `${c.servicio.nombre} · ${c.subcategoria.nombre}` : c.servicio.nombre,
-      c.horaInicio,
-      formatearNumero(c.paciente.telefono),
-      ESTADO_CITA_LABEL[c.estado] ?? c.estado,
-      ESTADO_PAGO_LABEL[c.estadoPago] ?? c.estadoPago,
-    ];
+    fila.values = columnas.map((x) => x.valor(c));
     fila.font = { name: 'Arial', size: 10 };
-    fila.getCell(1).numFmt = '@'; // DNI y teléfono como TEXTO (sin notación científica ni ceros perdidos)
-    fila.getCell(6).numFmt = '@';
-    fila.getCell(8).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_PAGO[c.estadoPago] ?? 'FFFFFFFF' } };
+    columnas.forEach((x, k) => {
+      if (x.texto) fila.getCell(k + 1).numFmt = '@'; // DNI y teléfono como TEXTO (sin notación científica ni ceros perdidos)
+      if (x.pago) fila.getCell(k + 1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_PAGO[c.estadoPago] ?? 'FFFFFFFF' } };
+    });
   });
 
-  const nombreArchivo = `citas-limablue-${fecha}${sede ? `-${sede.nombre.replace(/\s+/g, '-').toLowerCase()}` : ''}.xlsx`;
+  const nombreArchivo = `citas-limablue-${esRango ? `${ini}_a_${fin}` : ini}${sede ? `-${sede.nombre.replace(/\s+/g, '-').toLowerCase()}` : ''}${asistencia ? `-${asistencia.replace('_', '-')}` : ''}${grupoAgendo && agendadoPorRaw !== 'equipo' ? `-${agendadoPorRaw}` : ''}.xlsx`;
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(nombreArchivo)}"`);
   await wb.xlsx.write(res);

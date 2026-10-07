@@ -2700,3 +2700,61 @@ model ReservaWeb {
   @@index([pagoReferencia])
   @@map("reservas_web")
 }
+
+// Intento de reserva web (06-oct-2026): se crea al PRIMER «Continuar» (datos del paciente) y se va actualizando en
+// cada paso (sede, servicio, fecha, hora). Desde ahí corren los 10 minutos (`expiraEn`); el apartado del horario
+// (ReservaWeb) hereda ese mismo vencimiento. Sirve para ver quién empezó y hasta dónde llegó, y contactarlo.
+// pasoAlcanzado = la PANTALLA más avanzada a la que llegó (dónde se quedó): sede | servicio | fecha | hora | pago
+model ReservaWebIntento {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  token           String // secreto que solo tiene el navegador del paciente
+  numeroDocumento String
+  nombres         String
+  apellidoPaterno String
+  apellidoMaterno String?
+  telefono        String
+  email           String
+  pasoAlcanzado   String    @default("datos")
+  sedeId          String?   @db.Uuid
+  servicioId      String?   @db.Uuid
+  subcategoriaId  String?   @db.Uuid
+  fecha           DateTime? @db.Date
+  horaInicio      String?
+  reservaId       String?   @db.Uuid // el apartado/pago (reservas_web) cuando llegó a pagar
+  expiraEn        DateTime
+  contactadoEn    DateTime?
+  contactadoPorId String?   @db.Uuid
+  notaContacto    String?
+  ip              String?
+  userAgent       String?
+  creadoEn        DateTime  @default(now())
+  actualizadoEn   DateTime  @updatedAt
+
+  @@index([creadoEn])
+  @@index([numeroDocumento])
+  @@map("reservas_web_intentos")
+}
+
+// Encuesta de satisfacción (07-oct-2026): correo con el botón a la encuesta, 2 h después de que la cita pasa a
+// «Completada». Una fila por VISITA (paciente + día): enviada, omitida (sin correo, enviada hace poco…) o con error.
+// Sin relaciones Prisma a propósito (no toca otros modelos).
+// estado: enviando | enviada | omitida | error
+model EncuestaSatisfaccion {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  citaId        String    @unique @db.Uuid
+  pacienteId    String    @db.Uuid
+  fecha         DateTime  @db.Date // día de la visita
+  sedeId        String    @db.Uuid
+  email         String?
+  estado        String
+  motivo        String? // por qué se omitió o el error
+  resendEmailId String?
+  intentos      Int       @default(0)
+  enviadoEn     DateTime?
+  creadoEn      DateTime  @default(now())
+  actualizadoEn DateTime  @updatedAt
+
+  @@unique([pacienteId, fecha])
+  @@index([estado, creadoEn])
+  @@map("encuestas_satisfaccion")
+}

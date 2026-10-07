@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { format, addDays, isWeekend, startOfDay } from 'date-fns';
+import { format, addDays, isWeekend, startOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subMonths, differenceInCalendarDays } from 'date-fns';
 import { es } from 'date-fns/locale';
 import toast from 'react-hot-toast';
 import { useQuery } from '@tanstack/react-query';
@@ -470,7 +470,15 @@ export function HerramientasPage() {
 function ExcelTool() {
   const token = useAuthStore(s => s.token);
   const [fecha, setFecha] = useState<Date>(() => proximoDiaHabil(startOfDay(new Date())));
+  // 06-oct-2026: un día o un RANGO de fechas (máx. 92 días, igual que el servidor).
+  const [modo, setModo] = useState<'dia' | 'rango'>('dia');
+  const [desde, setDesde] = useState<Date>(() => startOfMonth(new Date()));
+  const [hasta, setHasta] = useState<Date>(() => startOfDay(new Date()));
   const [sedeId, setSedeId] = useState<string>('');
+  // 08-oct-2026: asistencia — todas, solo las que llegaron (llegó / en atención / completada) o las que no llegaron.
+  const [asistencia, setAsistencia] = useState<'' | 'llegaron' | 'no_llegaron'>('');
+  // Quién agendó (08-oct-2026): por defecto el equipo (contact + recepción), sin las pruebas de administración.
+  const [agendadoPor, setAgendadoPor] = useState<'equipo' | 'contact' | 'recepcion'>('equipo');
   const [exportando, setExportando] = useState<false | 'csv' | 'excel'>(false);
 
   const { data: sedes = [] } = useQuery<Sede[]>({
@@ -480,28 +488,41 @@ function ExcelTool() {
   });
 
   const fechaStr = fechaLocal(fecha);
-  const fechaDisplay = format(fecha, "EEEE d 'de' MMMM, yyyy", { locale: es });
+  const desdeStr = fechaLocal(desde);
+  const hastaStr = fechaLocal(hasta);
+  const diasRango = differenceInCalendarDays(hasta, desde) + 1;
+  const errorRango = modo !== 'rango' ? '' : diasRango < 1 ? 'La fecha «hasta» no puede ser anterior a «desde».' : diasRango > 92 ? `El rango puede ser de hasta 92 días (elegiste ${diasRango}).` : '';
+  const fechaDisplay = modo === 'rango'
+    ? `Del ${format(desde, "EEEE d 'de' MMMM", { locale: es })} al ${format(hasta, "EEEE d 'de' MMMM, yyyy", { locale: es })} · ${diasRango > 0 ? diasRango : 0} día${diasRango === 1 ? '' : 's'}`
+    : format(fecha, "EEEE d 'de' MMMM, yyyy", { locale: es });
   const sedeSeleccionada = sedes.find(s => s.id === sedeId);
+  const leerFecha = (v: string) => { const d = new Date(v + 'T12:00:00'); return isNaN(d.getTime()) ? null : d; };
 
   // `excel` (29-sep-2026): DNI, nombre, sede, servicio, hora, teléfono, estado y ¿pagado?, con los mismos filtros.
   const descargar = async (formato: 'csv' | 'excel' = 'csv') => {
+    if (errorRango) { toast.error(errorRango); return; }
     setExportando(formato);
     try {
-      const params = new URLSearchParams({ fecha: fechaStr });
+      const params = new URLSearchParams(modo === 'rango' && formato === 'excel' ? { desde: desdeStr, hasta: hastaStr } : { fecha: fechaStr });
       if (sedeId) params.set('sedeId', sedeId);
+      if (asistencia && formato === 'excel') params.set('asistencia', asistencia);
+      if (agendadoPor && formato === 'excel') params.set('agendadoPor', agendadoPor);
       const res = await fetch(`/api/v1/exportar/${formato === 'excel' ? 'citas-excel' : 'citas'}?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || 'Error al generar el archivo');
+        throw new Error(err.message || err.error || 'Error al generar el archivo');
       }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       const sufijo = sedeSeleccionada ? `-${sedeSeleccionada.nombre.replace(/\s+/g, '-').toLowerCase()}` : '';
-      a.download = `citas-limablue-${fechaStr}${sufijo}.${formato === 'excel' ? 'xlsx' : 'csv'}`;
+      const periodo = modo === 'rango' && formato === 'excel' ? `${desdeStr}_a_${hastaStr}` : fechaStr;
+      const sufAsistencia = asistencia && formato === 'excel' ? `-${asistencia.replace('_', '-')}` : '';
+      const sufAgendo = (agendadoPor === 'contact' || agendadoPor === 'recepcion') && formato === 'excel' ? `-${agendadoPor}` : '';
+      a.download = `citas-limablue-${periodo}${sufijo}${sufAsistencia}${sufAgendo}.${formato === 'excel' ? 'xlsx' : 'csv'}`;
       a.click();
       URL.revokeObjectURL(url);
       const sedeLabel = sedeSeleccionada ? ` · ${sedeSeleccionada.nombre}` : ' · Todas las sedes';
@@ -533,11 +554,59 @@ function ExcelTool() {
 
       {/* Card body */}
       <div className="p-5 space-y-5">
-        {/* Selector de fecha */}
+        {/* Selector de fecha: un día o un rango */}
         <div>
-          <label className="block text-xs font-semibold text-slate-700 mb-2 uppercase tracking-wide">
-            Fecha de la agenda a exportar
-          </label>
+          <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
+            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wide">
+              {modo === 'rango' ? 'Rango de fechas a exportar' : 'Fecha de la agenda a exportar'}
+            </label>
+            <div className="inline-flex rounded-lg bg-slate-100 p-0.5" role="group" aria-label="Exportar un día o un rango" data-testid="excel-modo">
+              {([['dia', 'Un día'], ['rango', 'Rango de fechas']] as const).map(([v, t]) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setModo(v)}
+                  aria-pressed={modo === v}
+                  className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors ${modo === v ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
+          {modo === 'rango' ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <label className="flex items-center gap-2 flex-1 min-w-[180px]">
+                  <span className="text-xs font-medium text-slate-500 w-11">Desde</span>
+                  <input type="date" value={desdeStr} max={hastaStr} onChange={e => { const d = leerFecha(e.target.value); if (d) setDesde(d); }} className="input flex-1" data-testid="excel-desde" />
+                </label>
+                <label className="flex items-center gap-2 flex-1 min-w-[180px]">
+                  <span className="text-xs font-medium text-slate-500 w-11">Hasta</span>
+                  <input type="date" value={hastaStr} min={desdeStr} onChange={e => { const d = leerFecha(e.target.value); if (d) setHasta(d); }} className="input flex-1" data-testid="excel-hasta" />
+                </label>
+              </div>
+              <div className="flex gap-1.5 flex-wrap">
+                {[
+                  { label: 'Esta semana', r: () => [startOfWeek(new Date(), { weekStartsOn: 1 }), endOfWeek(new Date(), { weekStartsOn: 1 })] },
+                  { label: 'Semana pasada', r: () => [startOfWeek(addDays(new Date(), -7), { weekStartsOn: 1 }), endOfWeek(addDays(new Date(), -7), { weekStartsOn: 1 })] },
+                  { label: 'Este mes', r: () => [startOfMonth(new Date()), endOfMonth(new Date())] },
+                  { label: 'Mes pasado', r: () => [startOfMonth(subMonths(new Date(), 1)), endOfMonth(subMonths(new Date(), 1))] },
+                ].map(({ label, r }) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => { const [a, b] = r(); setDesde(startOfDay(a!)); setHasta(startOfDay(b!)); }}
+                    className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-100 text-slate-600 hover:bg-emerald-50 hover:text-emerald-700 transition-colors whitespace-nowrap"
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <p className={`text-xs first-letter:uppercase ${errorRango ? 'text-red-600 font-medium' : 'text-slate-500'}`}>{errorRango || fechaDisplay}</p>
+            </div>
+          ) : (
+          <>
           <div className="flex items-center gap-3">
             <input
               type="date"
@@ -571,6 +640,8 @@ function ExcelTool() {
             </div>
           </div>
           <p className="mt-2 text-xs text-slate-500 capitalize">{fechaDisplay}</p>
+          </>
+          )}
         </div>
 
         {/* Filtro de sede */}
@@ -606,24 +677,90 @@ function ExcelTool() {
           </div>
         </div>
 
+        {/* Asistencia (08-oct-2026): para reportes de quiénes vinieron y quiénes no */}
+        <div>
+          <label className="block text-xs font-semibold text-slate-700 mb-2 uppercase tracking-wide">
+            Asistencia
+          </label>
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Asistencia" data-testid="excel-asistencia">
+            {([
+              ['', 'Todas', 'list'],
+              ['llegaron', 'Llegaron', 'how_to_reg'],
+              ['no_llegaron', 'No llegaron', 'person_off'],
+            ] as const).map(([v, t, icono]) => (
+              <button
+                key={v || 'todas'}
+                type="button"
+                onClick={() => setAsistencia(v)}
+                aria-pressed={asistencia === v}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                  asistencia === v
+                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                    : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-300 hover:text-emerald-700'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[16px]">{icono}</span>{t}
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-slate-500">
+            {asistencia === 'llegaron'
+              ? 'Solo las citas en Llegó, En atención o Completada.'
+              : asistencia === 'no_llegaron'
+                ? 'No vino, Cancelada, Reprogramada y las que quedaron Agendada o Confirmada sin marcar llegada.'
+                : 'Todas las citas, vengan o no.'}
+          </p>
+        </div>
+
+        {/* Agendado por (08-oct-2026): contact center (contact + contact especial) / recepción (recepción + coordinación) */}
+        <div>
+          <label className="block text-xs font-semibold text-slate-700 mb-2 uppercase tracking-wide">
+            Agendado por
+          </label>
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Agendado por" data-testid="excel-agendado-por">
+            {([
+              ['equipo', 'Todos', 'groups'],
+              ['contact', 'Contact center', 'support_agent'],
+              ['recepcion', 'Recepción', 'storefront'],
+            ] as const).map(([v, t, icono]) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setAgendadoPor(v)}
+                aria-pressed={agendadoPor === v}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                  agendadoPor === v
+                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                    : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-300 hover:text-emerald-700'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[16px]">{icono}</span>{t}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Columnas del Excel (29-sep-2026: único formato; mismos filtros de día y sede de arriba) */}
         <div className="rounded-xl bg-slate-50 border border-slate-100 p-3.5" data-testid="excel-control">
           <p className="text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wide">Columnas del Excel</p>
           <div className="grid grid-cols-2 gap-y-1 gap-x-4">
-            {['DNI', 'Nombre completo', 'Sede', 'Servicio', 'Hora cita', 'Teléfono', 'Estado', '¿Pagado?'].map(c => (
+            {['DNI', 'Nombre completo', 'Sede', 'Servicio', ...(modo === 'rango' ? ['Fecha'] : []), 'Hora cita', 'Teléfono', 'Estado', '¿Pagado?', 'Agendado por'].map(c => (
               <div key={c} className="flex items-center gap-1.5 text-xs text-slate-600">
                 <span className="w-3.5 h-3.5 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold text-xxs flex-shrink-0">✓</span>
                 {c}
               </div>
             ))}
           </div>
-          <p className="mt-2 text-xxs text-slate-400">Todas las citas del día (también canceladas y no vino: la columna Estado lo indica) · Encabezado con filtros de Excel</p>
+          <p className="mt-2 text-xxs text-slate-400">
+            {asistencia === 'llegaron' ? 'Las citas que llegaron' : asistencia === 'no_llegaron' ? 'Las citas que no llegaron' : 'Todas las citas'}{' '}
+            {modo === 'rango' ? 'del rango, ordenadas por fecha' : 'del día'} (la columna Estado dice cuál es cada una) · Encabezado con filtros de Excel
+          </p>
         </div>
 
         {/* Botón */}
         <button
           onClick={() => descargar('excel')}
-          disabled={!!exportando}
+          disabled={!!exportando || !!errorRango}
           className="w-full flex items-center justify-center gap-2 py-3 rounded-xl font-semibold text-sm bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 transition-all shadow-sm shadow-emerald-900/20"
         >
           {exportando ? (

@@ -18,6 +18,7 @@ import { fechaDb, fechaAStr, hoyLimaStr, LIMA_OFFSET_H } from '../../utils/fecha
 import { registrarAudit } from '../audit';
 import { timeToMinutes } from '@limablue/shared';
 import { pasarelaActiva, type AvisoPago, type DatosCheckout } from './pasarelas';
+import { intentoConToken, enlazarReserva } from './intentos';
 
 const num = (v: string | undefined, def: number) => (v && Number.isFinite(Number(v)) ? Number(v) : def);
 const MINUTOS_APARTADO = () => num(process.env.RESERVA_WEB_MINUTOS_APARTADO, 10);
@@ -156,22 +157,30 @@ export interface NuevaReservaWeb {
 
 function nuevoCodigo(): string { return 'LB-' + String(crypto.randomInt(100000, 1000000)); }
 
-export async function crearReserva(d: NuevaReservaWeb, meta: { ip?: string; userAgent?: string }) {
+export async function crearReserva(d: NuevaReservaWeb & { intentoId?: string | null; intentoToken?: string | null }, meta: { ip?: string; userAgent?: string }) {
+  // 06-oct-2026: si viene de un intento (página nueva), el apartado vence cuando vence el intento (10 min desde el
+  // primer «Continuar»), no 10 min desde aquí.
+  const intento = d.intentoId && d.intentoToken ? await intentoConToken(d.intentoId, d.intentoToken) : null;
   const { servicio, variante, monto } = await servicioReservable(d.sedeId, d.servicioId, d.subcategoriaId);
   const ahora = new Date();
   // Freno de abuso: pocas reservas abiertas a la vez por documento y por IP.
+  const otraQueLaPropia = intento?.reservaId ? { id: { not: intento.reservaId } } : {}; // la que este intento va a soltar no cuenta
   const [porDni, porIp] = await Promise.all([
-    prisma.reservaWeb.count({ where: { numeroDocumento: d.numeroDocumento, estado: 'esperando_pago', expiraEn: { gt: ahora } } }),
-    meta.ip ? prisma.reservaWeb.count({ where: { ip: meta.ip, estado: 'esperando_pago', expiraEn: { gt: ahora } } }) : Promise.resolve(0),
+    prisma.reservaWeb.count({ where: { numeroDocumento: d.numeroDocumento, estado: 'esperando_pago', expiraEn: { gt: ahora }, ...otraQueLaPropia } }),
+    meta.ip ? prisma.reservaWeb.count({ where: { ip: meta.ip, estado: 'esperando_pago', expiraEn: { gt: ahora }, ...otraQueLaPropia } }) : Promise.resolve(0),
   ]);
   if (porDni >= 2 || porIp >= 5) throw new AppError('Ya tienes una reserva en curso. Termina de pagarla o espera unos minutos.', 429, 'RESERVAS_EN_CURSO');
 
   const reserva = await prisma.$transaction(async (tx) => {
     // Un solo «apartado» a la vez por sede y día: dos personas no pueden tomar el último cupo al mismo tiempo.
     await tx.$executeRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))', `reserva-web|${d.sedeId}|${d.fecha}`);
+    // Si volvió atrás y eligió otra hora: suelta el apartado anterior de ESTE intento (no ocupa dos horarios).
+    if (intento?.reservaId) {
+      await tx.reservaWeb.updateMany({ where: { id: intento.reservaId, estado: 'esperando_pago' }, data: { estado: 'expirada', expiraEn: ahora } });
+    }
     const libres = await horasLibres(d.sedeId, d.servicioId, d.fecha);
     if (!libres.includes(d.horaInicio)) throw new AppError('Esa hora acaba de ocuparse. Elige otra.', 409, 'HORA_NO_DISPONIBLE');
-    for (let intento = 0; intento < 5; intento++) {
+    for (let vuelta = 0; vuelta < 5; vuelta++) {
       const codigo = nuevoCodigo();
       if (await tx.reservaWeb.findUnique({ where: { codigo }, select: { id: true } })) continue;
       return tx.reservaWeb.create({
@@ -182,7 +191,7 @@ export async function crearReserva(d: NuevaReservaWeb, meta: { ip?: string; user
           telefono: d.telefono, email: d.email.trim().toLowerCase(),
           sedeId: d.sedeId, unidadNegocioId: servicio.unidadNegocioId, servicioId: d.servicioId, subcategoriaId: variante.id,
           fecha: fechaDb(d.fecha), horaInicio: d.horaInicio, duracionMinutos: servicio.duracionMinutos,
-          monto, expiraEn: new Date(ahora.getTime() + MINUTOS_APARTADO() * 60_000),
+          monto, expiraEn: intento ? intento.expiraEn : new Date(ahora.getTime() + MINUTOS_APARTADO() * 60_000),
           ip: meta.ip ?? null, userAgent: meta.userAgent?.slice(0, 300) ?? null,
         },
       });
@@ -190,6 +199,9 @@ export async function crearReserva(d: NuevaReservaWeb, meta: { ip?: string; user
     throw new AppError('No se pudo generar el código de reserva, intenta de nuevo', 500, 'CODIGO_RESERVA');
   }, { timeout: 20_000 });
   cacheDias.clear();
+  if (intento) {
+    await enlazarReserva(intento.id, reserva.id, { sedeId: d.sedeId, servicioId: d.servicioId, subcategoriaId: variante.id, fecha: d.fecha, horaInicio: d.horaInicio });
+  }
   void registrarAudit({ accion: 'reserva_web_creada', entidad: 'reserva_web', entidadId: reserva.id, sedeId: reserva.sedeId, ip: meta.ip, userAgent: meta.userAgent,
     despues: { codigo: reserva.codigo, fecha: d.fecha, horaInicio: d.horaInicio, servicio: servicio.nombre, variante: variante.nombre, monto } });
   return reserva;

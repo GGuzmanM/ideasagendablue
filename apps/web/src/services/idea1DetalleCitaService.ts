@@ -32,8 +32,15 @@ export const TRANSICIONES_VALIDAS: Record<string, string[]> = {
 };
 
 /** Estados a los que puede pasar una cita desde `estado` (incluido el propio, para comentar). */
-export function estadosPermitidos(estado: string): string[] {
+export function estadosPermitidos(estado: string, libre = false): string[] {
+  // 06-oct-2026: el ADMINISTRADOR puede pasarla a cualquier estado (el servidor lo permite solo a su rol).
+  if (libre) return [estado, ...TODOS_LOS_ESTADOS.filter((e) => e !== estado)];
   return [estado, ...(TRANSICIONES_VALIDAS[estado] ?? [])];
+}
+export const TODOS_LOS_ESTADOS = ['agendada', 'confirmada', 'llego', 'en_atencion', 'completada', 'no_show', 'cancelada'];
+/** ¿Es un salto fuera del flujo normal? (solo lo hace el admin; se le pide confirmar) */
+export function esCambioEspecial(actual: string, destino: string): boolean {
+  return actual !== destino && !(TRANSICIONES_VALIDAS[actual] ?? []).includes(destino);
 }
 
 /**
