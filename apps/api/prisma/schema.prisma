@@ -285,6 +285,9 @@ model Profesional {
   // solo es seleccionable al reservar (médicos de baropodometría y Daniel Doy) y su columna
   // aparece únicamente el día que tiene citas. Puede atender en cualquier sede.
   soloPorSolicitud Boolean           @default(false)
+  // 09-oct-2026: false = NUNCA se le asigna una cita sola («sin preferencia», reserva web, agente); solo si alguien
+  // la elige. Su columna sigue normal en la agenda (a diferencia de soloPorSolicitud). Ej.: Daniel y Yasica Doy.
+  asignacionAutomatica Boolean       @default(true)
   // Orden manual de la columna en la agenda: null = alfabético normal; un valor mayor
   // empuja la columna a la DERECHA (después de las normales y de las "Adicional").
   ordenAgenda      Int?
@@ -560,6 +563,9 @@ model Servicio {
   // (si es null se cobra el precio de la variante o el referencial).
   reservaOnline     Boolean   @default(false)
   precioOnline      Decimal?  @db.Decimal(10, 2)
+  // 09-oct-2026: cuántas citas de ESTE servicio pueden cruzarse a la vez en una MISMA sede (salas/equipos).
+  // null = sin límite (solo cuenta el profesional). 1 = una sola sala (ej. Evaluación postural - Motiphysio).
+  cupoSimultaneo    Int?
 
   unidadNegocio             UnidadNegocio            @relation(fields: [unidadNegocioId], references: [id])
   competencias              CompetenciaProfesional[]

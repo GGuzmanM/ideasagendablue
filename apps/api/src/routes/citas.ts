@@ -6,6 +6,7 @@ import path from 'path';
 import { prisma } from '../db';
 import { acquireSlotLock, releaseSlotLock, invalidateDisponibilidadCache } from '../redis';
 import { seleccionarProfesionalOptimo, turnosDelDia } from '../services/disponibilidad';
+import { validarCupoServicio } from '../services/cupoServicio';
 import { registrarAudit, auditEnTx } from '../services/audit';
 import { esFichaAdicional } from '../utils/fichaAdicional';
 import { dispararWebhooks } from '../services/webhooks';
@@ -1090,19 +1091,10 @@ router.post('/', requireAuth, requireAcceso('appointments:write', 'citas.crear')
       if (!profesionalId) throw new AppError('No hay profesionales disponibles para este slot', 409, 'NO_DISPONIBLE');
       origenAsignacion = 'asignada_automaticamente';
     } else {
-      // Si el elegido atiende este servicio SOLO POR SOLICITUD (médicos de baro, Daniel en
-      // baro), NO se le crea columna: la cita ocupa una MÁQUINA libre (Baro 1/2) y se guarda
-      // el médico pedido para mostrar "Solo X". Solo hay tantas máquinas como slots existan.
-      const compElegida = await prisma.competenciaProfesional.findFirst({
-        where: { profesionalId, servicioId: data.servicioId, activa: true },
-      });
-      if (compElegida?.soloPorSolicitud) {
-        solicitadoProfesionalId = profesionalId;
-        profesionalId = await seleccionarProfesionalOptimo(
-          data.sedeId, data.unidadNegocioId, data.servicioId, data.fecha, data.horaInicio
-        );
-        if (!profesionalId) throw new AppError('No hay máquina disponible para baropodometría en este horario', 409, 'NO_DISPONIBLE');
-      }
+      // Elegida a mano: la cita va con ESA persona, aunque su competencia sea «solo por solicitud» (eso solo la saca
+      // del automático). 10-oct-2026: antes se mandaba a una máquina libre como el baro «Solo X», y una cita de
+      // Ortésicos (Podología) pedida con Carla Castro terminó en «Baro 2» dentro de Podología. Las máquinas solo
+      // operan en Baropodometría, que va por la rama de arriba.
       origenAsignacion = 'elegida_por_paciente';
     }
   } else {
@@ -1128,7 +1120,9 @@ router.post('/', requireAuth, requireAcceso('appointments:write', 'citas.crear')
     // Si la competencia usada es "solo por solicitud" (médicos de baro, Daniel en baro), el
     // profesional atiende en CUALQUIER sede a pedido del paciente, sin asignación fija. Para
     // competencias normales (p.ej. Daniel en podología) sí debe estar asignado a la sede.
-    if (!competencia.soloPorSolicitud) {
+    // 10-oct-2026: fuera de Baropodometría la persona elegida SIEMPRE debe estar asignada a la sede ese día,
+    // aunque su competencia sea «solo por solicitud» (si no, se le podía agendar en una sede donde no está).
+    if (!competencia.soloPorSolicitud || unidad.modoReserva !== 'sin_eleccion') {
       const fechaAsignacion = fechaDb(data.fecha);
       const asignacionSede = await prisma.asignacionSede.findFirst({
         where: {
@@ -1180,6 +1174,8 @@ router.post('/', requireAuth, requireAcceso('appointments:write', 'citas.crear')
     // a esa hora. (El índice de slot solo cubre el mismo profesionalId; esto cubre el
     // caso Daniel en Podología ↔ Baropodometría.)
     await validarProfesionalLibre(profesionalId!, data.fecha, data.horaInicio, servicio.duracionMinutos);
+    // Servicio con sala/equipo único en la sede (p. ej. Motiphysio): no puede cruzarse con otra cita del mismo servicio.
+    await validarCupoServicio(prisma, { servicioId: data.servicioId, sedeId: data.sedeId, fecha: data.fecha, horaInicio: data.horaInicio, duracionMin: servicio.duracionMinutos });
     if (solicitadoProfesionalId) {
       await validarProfesionalLibre(solicitadoProfesionalId, data.fecha, data.horaInicio, servicio.duracionMinutos);
       // El médico pedido "Solo X" (p.ej. Daniel en baro) también debe estar libre de BLOQUEOS
@@ -1358,6 +1354,7 @@ router.post('/', requireAuth, requireAcceso('appointments:write', 'citas.crear')
       if (solicitadoProfesionalId && solicitadoProfesionalId !== profesionalId) {
         await validarProfesionalLibre(solicitadoProfesionalId, data.fecha, data.horaInicio, servicio.duracionMinutos, undefined, [], tx);
       }
+      await validarCupoServicio(tx, { servicioId: data.servicioId, sedeId: data.sedeId, fecha: data.fecha, horaInicio: data.horaInicio, duracionMin: servicio.duracionMinutos });
       const c = await tx.cita.create({
         data: {
           pacienteId: data.pacienteId,
@@ -1476,7 +1473,8 @@ async function validarLegBloque(opts: {
   });
   if (!competencia) throw new AppError('El profesional no tiene habilitado ese servicio', 400, 'SIN_COMPETENCIA');
 
-  if (!competencia.soloPorSolicitud) {
+  const unidadLeg = await prisma.unidadNegocio.findUnique({ where: { id: opts.unidadNegocioId }, select: { modoReserva: true } });
+  if (!competencia.soloPorSolicitud || unidadLeg?.modoReserva !== 'sin_eleccion') {
     const fechaAsignacion = fechaDb(opts.fecha);
     const asignacionSede = await prisma.asignacionSede.findFirst({
       where: {
@@ -1680,6 +1678,9 @@ router.post('/combinada', requireAuth, requireAcceso('appointments:write', 'cita
         if (extraProfesionalId !== anclaProfesionalId) {
           await validarProfesionalLibre(extraProfesionalId, data.fecha, data.horaInicio, duracionSlot, undefined, [], tx);
         }
+        // Servicios con sala/equipo único en la sede (Motiphysio): ninguna de las dos mitades puede cruzarse con otra cita suya.
+        await validarCupoServicio(tx, { servicioId: data.servicioId, sedeId: data.sedeId, fecha: data.fecha, horaInicio: data.horaInicio, duracionMin: duracionSlot });
+        await validarCupoServicio(tx, { servicioId: data.extra.servicioId, sedeId: data.sedeId, fecha: data.fecha, horaInicio: data.horaInicio, duracionMin: duracionSlot });
 
         const ancla = await tx.cita.create({
           data: {
@@ -2155,6 +2156,13 @@ router.patch('/:id/mover', requireAuth, requireAcceso('appointments:write', 'cit
     if (!competencia) {
       throw new AppError('El profesional destino no tiene habilitado el servicio de esta cita', 400, 'SIN_COMPETENCIA');
     }
+    // 10-oct-2026: una máquina (Baro 1/2) solo recibe citas de su propia unidad.
+    if (cita.unidadNegocio.modoReserva !== 'sin_eleccion' && nuevoProfesionalId !== cita.profesionalId) {
+      const destinoEq = await prisma.profesional.findUnique({ where: { id: nuevoProfesionalId }, select: { esEquipo: true, unidadNegocioId: true } });
+      if (destinoEq?.esEquipo && destinoEq.unidadNegocioId !== cita.unidadNegocioId) {
+        throw new AppError('Esta cita no puede ir a una máquina de baropodometría: elige a una persona', 400, 'EQUIPO_INVALIDO');
+      }
+    }
   }
 
   // Re-validar AsignacionSede: el profesional destino debe estar asignado a esta sede en la fecha destino
@@ -2166,7 +2174,7 @@ router.patch('/:id/mover', requireAuth, requireAcceso('appointments:write', 'cit
     const competenciaMover = await prisma.competenciaProfesional.findFirst({
       where: { profesionalId: nuevoProfesionalId, servicioId: cita.servicioId, activa: true },
     });
-    if (!competenciaMover?.soloPorSolicitud) {
+    if (!competenciaMover?.soloPorSolicitud || cita.unidadNegocio.modoReserva !== 'sin_eleccion') {
       const asignacion = await prisma.asignacionSede.findFirst({
         where: {
           profesionalId: nuevoProfesionalId,
@@ -2220,6 +2228,7 @@ router.patch('/:id/mover', requireAuth, requireAcceso('appointments:write', 'cit
 
     // Anti doble-booking cruzado entre unidades (excluyendo la propia cita que se mueve).
     await validarProfesionalLibre(nuevoProfesionalId!, data.fecha, data.horaInicio, cita.duracionMinutos, cita.id);
+    await validarCupoServicio(prisma, { servicioId: cita.servicioId, sedeId: cita.sedeId, fecha: data.fecha, horaInicio: data.horaInicio, duracionMin: cita.duracionMinutos, excluirCitaIds: [cita.id] });
     if (solicitadoFinal) {
       await validarProfesionalLibre(solicitadoFinal, data.fecha, data.horaInicio, cita.duracionMinutos, cita.id);
       // El médico solicitado ("Solo Daniel") tampoco puede quedar sobre un bloqueo suyo
@@ -2242,6 +2251,7 @@ router.patch('/:id/mover', requireAuth, requireAcceso('appointments:write', 'cit
       if (solicitadoFinal && solicitadoFinal !== nuevoProfesionalId) {
         await validarProfesionalLibre(solicitadoFinal, data.fecha, data.horaInicio, cita.duracionMinutos, cita.id, [], tx);
       }
+      await validarCupoServicio(tx, { servicioId: cita.servicioId, sedeId: cita.sedeId, fecha: data.fecha, horaInicio: data.horaInicio, duracionMin: cita.duracionMinutos, excluirCitaIds: [cita.id] });
       const u = await tx.cita.update({
         where: { id: req.params.id },
         data: {
@@ -2385,6 +2395,9 @@ router.patch('/grupo/:slotGrupoId/mover', requireAuth, requireAcceso('appointmen
       // Anti-doble-booking atómico dentro de la tx Serializable (excluye el propio grupo, que
       // comparte el slot a propósito). Frena reprogramaciones concurrentes solapadas.
       await validarProfesionalLibre(nuevoProfesionalId!, data.fecha, data.horaInicio, ancla.duracionMinutos, undefined, grupoIds, tx);
+      for (const c of citas) {
+        await validarCupoServicio(tx, { servicioId: c.servicioId, sedeId, fecha: data.fecha, horaInicio: data.horaInicio, duracionMin: ancla.duracionMinutos, excluirCitaIds: grupoIds });
+      }
       for (const c of citas) {
         await tx.cita.update({
           where: { id: c.id },
@@ -2849,6 +2862,7 @@ router.post('/intercambiar', requireAuth, requireAcceso('appointments:write', 'c
     await withDeadlockRetry(() => prisma.$transaction(async (tx) => {
       for (const pl of planes) {
         await validarProfesionalLibre(pl.profesionalId, fecha, pl.horaInicio, pl.cita.duracionMinutos, undefined, ids, tx);
+        await validarCupoServicio(tx, { servicioId: pl.cita.servicioId, sedeId: a.sedeId, fecha, horaInicio: pl.horaInicio, duracionMin: pl.cita.duracionMinutos, excluirCitaIds: ids });
       }
       // El índice único (profesional, fecha, hora) no deja poner B en el lugar de A mientras A siga ahí: A se aparta un
       // instante (deletedAt) dentro de la MISMA transacción y vuelve ya en su nuevo lugar.
@@ -2976,6 +2990,8 @@ router.patch('/:id/tratamiento', requireAuth, requireRol(...ROLES_CAMBIAN_TRATAM
         }
       }
       if (cita.paquetePacienteId) await validarCupoItemAlAgendar(tx, cita.paquetePacienteId, servicio.id, subcategoriaId, cita.id);
+      // Si el nuevo tratamiento usa una sala única (Motiphysio), esa sala debe estar libre a esa hora.
+      await validarCupoServicio(tx, { servicioId: servicio.id, sedeId: cita.sedeId, fecha, horaInicio: cita.horaInicio, duracionMin: duracion, excluirCitaIds: [cita.id] });
       await tx.cita.update({
         where: { id: cita.id },
         data: { servicioId: servicio.id, subcategoriaId, duracionMinutos: duracion, precioLista, montoDescuento, montoFinal },

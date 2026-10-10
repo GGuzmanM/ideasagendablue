@@ -161,6 +161,7 @@ router.get('/', requireAuth, async (req, res) => {
     emailAgenda: p.emailAgenda ?? null,
     colorAvatar: p.colorAvatar,
     activo: p.activo,
+    asignacionAutomatica: p.asignacionAutomatica,
     unidadNegocio: p.unidadNegocio,
     ...(() => {
       // Asignación relevante para ESTA sede+fecha: la que apunta a la sede vista (si hay).
@@ -333,6 +334,8 @@ const profesionalSchema = z.object({
   emailAgenda: z.string().email('Correo de agenda inválido').or(z.literal('')).nullable().optional(),
   colorAvatar: z.string().optional(),
   activo: z.boolean().optional(),
+  // 09-oct-2026: false = nunca se le asigna una cita sola; solo si la eligen (Daniel y Yasica Doy).
+  asignacionAutomatica: z.boolean().optional(),
   // Sede BASE de la ficha (desde hoy, sin fecha de fin). Vacío/null = no cambiar. Es la única vía para dar sede a las
   // fichas fijas («Adicional», Baro), que Movimientos rechaza a propósito; a las demás les aplica las mismas reglas.
   sedeId: z.string().uuid().nullable().optional(),

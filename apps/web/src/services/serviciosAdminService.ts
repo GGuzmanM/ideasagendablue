@@ -10,7 +10,10 @@ export interface FormServicio {
   color: string;
   precioReferencial: string;
   unidadNegocioId: string;
+  /** '' = sin límite; '1' = una sola sala en la sede (09-oct-2026). */
+  cupoSimultaneo: string;
 }
+const cupo = (v: string) => (parseInt(v) > 0 ? parseInt(v) : null);
 
 export function useServiciosAdminData() {
   const qc = useQueryClient();
@@ -38,6 +41,7 @@ export function useServiciosAdminData() {
       color: data.color,
       unidadNegocioId: data.unidadNegocioId,
       ...(parseFloat(data.precioReferencial) > 0 ? { precioReferencial: parseFloat(data.precioReferencial) } : {}),
+      cupoSimultaneo: cupo(data.cupoSimultaneo),
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['servicios'] });
@@ -57,6 +61,7 @@ export function useServiciosAdminData() {
       color: data.color,
       unidadNegocioId: data.unidadNegocioId,
       ...(parseFloat(data.precioReferencial) > 0 ? { precioReferencial: parseFloat(data.precioReferencial) } : {}),
+      cupoSimultaneo: cupo(data.cupoSimultaneo),
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['servicios'] });

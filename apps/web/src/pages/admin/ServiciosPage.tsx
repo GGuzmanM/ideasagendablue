@@ -23,13 +23,14 @@ function FormularioServicio({
   const [color, setColor] = useState(inicial?.color ?? '#6B7F9E');
   const [precioReferencial, setPrecioReferencial] = useState(inicial?.precioReferencial ?? '');
   const [unidadNegocioId, setUnidadNegocioId] = useState(inicial?.unidadNegocioId ?? '');
+  const [cupoSimultaneo, setCupoSimultaneo] = useState(inicial?.cupoSimultaneo ?? '');
 
   const submit = () => {
     if (!nombre.trim() || !unidadNegocioId || !duracionMinutos) {
       toast.error('Completa nombre, área y duración');
       return;
     }
-    onGuardar({ nombre: nombre.trim(), codigo: codigo.trim(), duracionMinutos, color, precioReferencial, unidadNegocioId });
+    onGuardar({ nombre: nombre.trim(), codigo: codigo.trim(), duracionMinutos, color, precioReferencial, unidadNegocioId, cupoSimultaneo });
   };
 
   const DURACIONES = [30, 60];
@@ -107,6 +108,19 @@ function FormularioServicio({
                 value={precioReferencial}
                 onChange={e => setPrecioReferencial(e.target.value)}
               />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-semibold text-slate-500 mb-1">Citas a la vez por sede (opcional)</label>
+              <input
+                className="input w-full text-sm"
+                type="number" min="1" max="50" placeholder="Sin límite"
+                value={cupoSimultaneo}
+                onChange={e => setCupoSimultaneo(e.target.value)}
+                data-testid="cupo-simultaneo"
+              />
+              <p className="text-[11px] text-slate-400 mt-1 leading-snug">
+                Para servicios que usan una sala o equipo único. Con 1, no se pueden agendar dos citas de este servicio a la misma hora en una sede, aunque haya profesionales libres. Vacío = sin límite.
+              </p>
             </div>
             <div className="col-span-2">
               <label className="block text-xs font-semibold text-slate-500 mb-1.5">Color en agenda</label>
@@ -313,6 +327,14 @@ export function ServiciosPage() {
                             <span>⏱ {s.duracionMinutos} min</span>
                             <span className="text-slate-300">•</span>
                             <span>{s.precioReferencial ? `S/ ${Number(s.precioReferencial).toFixed(2)}` : 'Sin precio ref.'}</span>
+                            {s.cupoSimultaneo ? (
+                              <>
+                                <span className="text-slate-300">•</span>
+                                <span className="font-medium text-amber-700 bg-amber-50 px-1.5 py-0.2 rounded-full" title="Citas de este servicio que pueden cruzarse a la vez en una sede">
+                                  {s.cupoSimultaneo === 1 ? '1 sala por sede' : `${s.cupoSimultaneo} a la vez por sede`}
+                                </span>
+                              </>
+                            ) : null}
                             {(s.subcategorias?.length ?? 0) > 0 && (
                               <>
                                 <span className="text-slate-300">•</span>
@@ -378,6 +400,7 @@ export function ServiciosPage() {
             color: srvEditando.color,
             precioReferencial: srvEditando.precioReferencial ? String(Number(srvEditando.precioReferencial)) : '',
             unidadNegocioId: srvEditando.unidadNegocioId,
+            cupoSimultaneo: srvEditando.cupoSimultaneo ? String(srvEditando.cupoSimultaneo) : '',
           } : undefined}
           unidades={unidades}
           onGuardar={(data) => {

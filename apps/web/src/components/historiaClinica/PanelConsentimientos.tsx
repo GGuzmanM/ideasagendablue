@@ -12,6 +12,7 @@ import { FirmarConsentimientoDialog } from '../consentimientos/FirmarConsentimie
 import { DialogoMotivo } from './DialogoMotivo';
 import { SubirConsentimientoFoto, verConsentimientoFoto } from './HcV2';
 
+const MOSTRAR_NUEVO_CONSENTIMIENTO = false;
 const fmtFechaHora = (iso: string) => new Date(iso).toLocaleString('es-PE', { timeZone: 'America/Lima', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
 export function PanelConsentimientos({ a, puedeRegistrar, v2 = false }: { a: AtencionCompleta; puedeRegistrar: boolean; v2?: boolean }) {
@@ -42,10 +43,14 @@ export function PanelConsentimientos({ a, puedeRegistrar, v2 = false }: { a: Ate
       ))}
       {puedeRegistrar && (
         <div className="flex flex-wrap items-start gap-2">
-          <button onClick={() => setFirmando({ plantillaId: null })} data-testid="nuevo-consentimiento"
-            className="px-5 py-2.5 bg-primary text-on-primary rounded-xl text-sm font-bold shadow-md shadow-primary/20 hover:opacity-90 flex items-center gap-2">
-            <span className="material-symbols-outlined text-base">contract_edit</span>Nuevo consentimiento
-          </button>
+          {/* 09-oct-2026: «Nuevo consentimiento» oculto a pedido; se firma desde «Firmar ahora» (pendientes del tratamiento)
+              o se sube la foto del formato en papel. Para volver a mostrarlo, MOSTRAR_NUEVO_CONSENTIMIENTO = true. */}
+          {MOSTRAR_NUEVO_CONSENTIMIENTO && (
+            <button onClick={() => setFirmando({ plantillaId: null })} data-testid="nuevo-consentimiento"
+              className="px-5 py-2.5 bg-primary text-on-primary rounded-xl text-sm font-bold shadow-md shadow-primary/20 hover:opacity-90 flex items-center gap-2">
+              <span className="material-symbols-outlined text-base">contract_edit</span>Nuevo consentimiento
+            </button>
+          )}
           {/* v2 (02-oct-2026): foto del formato en papel firmado, mientras se estandariza el formato digital */}
           {v2 && a.estado !== 'cerrada' && <SubirConsentimientoFoto a={a} pendientes={pendientes.map((p) => ({ id: p.id, nombre: p.nombre }))} />}
         </div>

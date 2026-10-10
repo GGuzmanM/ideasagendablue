@@ -7,6 +7,7 @@ import { MedicoDeLaCita } from '../components/agenda/MedicoDeLaCita';
 import { esRolMedico } from '../utils/rolesMedico';
 import { leerVistaUnica, leerHcV2 } from '../utils/vistaHc';
 import { NiegaChecks, PanelNotasMedico, puedeVerNotasMedico } from '../components/historiaClinica/HcV2';
+import { BotonPlegarSeccion } from '../components/historiaClinica/BotonPlegarSeccion';
 import { citaLlevaMedico } from '../services/medicoCitaService';
 import { MiFirmaBoton } from '../components/historiaClinica/MiFirmaDialog';
 import { Skeleton } from '../components/ui/Skeleton';
@@ -717,7 +718,7 @@ function BotonPdfHistoria({ pacienteId }: { pacienteId: string }) {
     try {
       const url = URL.createObjectURL(await historiaClinicaApi.descargarHistoriaPdf(pacienteId, conFotos));
       window.open(url, '_blank');
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      setTimeout(() => URL.revokeObjectURL(url), 2 * 60 * 60_000); // 2 h: que se pueda descargar desde el visor
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -2050,14 +2051,17 @@ function IndiceVistaUnica({ h }: { h: H }) {
 }
 
 /** Título numerado de cada sección; `scroll-mt` deja espacio para la barra pegada de arriba al saltar. */
-function SeccionUnica({ id, n, titulo, children }: { id: SeccionUnicaId; n?: number; titulo: string; children: ReactNode }) {
+// 09-oct-2026: `plegable` (puntos 1, 2 y 3) agrega «Ocultar / Mostrar». Oculto = solo no se ve (CSS); el contenido
+// sigue montado, así no se pierde lo que se esté escribiendo.
+function SeccionUnica({ id, n, titulo, plegable = false, children }: { id: SeccionUnicaId; n?: number; titulo: string; plegable?: boolean; children: ReactNode }) {
   return (
-    <section id={`hc-sec-${id}`} className="scroll-mt-32 space-y-3" data-testid={`seccion-${id}`}>
+    <section id={`hc-sec-${id}`} className="scroll-mt-32 space-y-3 [&[data-plegada=si]>:not(h2)]:hidden" data-testid={`seccion-${id}`}>
       <h2 className="flex items-center gap-2.5 text-base font-bold text-on-surface">
         <span className="w-7 h-7 rounded-full bg-primary text-on-primary text-sm flex items-center justify-center shrink-0">
           {n ?? <span className="material-symbols-outlined text-base">{ICONO_SECCION[id] ?? 'monitor_heart'}</span>}
         </span>
         {titulo}
+        {plegable && <BotonPlegarSeccion id={id} />}
       </h2>
       {children}
     </section>
@@ -2118,21 +2122,21 @@ function ContenidoVistaUnica({ h }: { h: H }) {
     <div className={`p-3 sm:p-4 lg:p-6 ${escalasAlCostado && a ? 'grid grid-cols-[minmax(0,1fr)_460px] gap-6 items-start' : ''}`}>
       <div className="space-y-8 min-w-0 max-w-[1100px]">
         {a && <CabeceraAtencion h={h} a={a} sinMotivo />}
-        <SeccionUnica id="antecedentes" n={1} titulo="Antecedentes y alergias"><PanelAntecedentes h={h} v2={v2} /></SeccionUnica>
+        <SeccionUnica id="antecedentes" n={1} plegable titulo="Antecedentes y alergias"><PanelAntecedentes h={h} v2={v2} /></SeccionUnica>
         {a ? (
           <>
             {v2 && !primeraConsulta ? (
-              <SeccionUnica id="motivo" n={2} titulo="Evolución (SOAP)">
+              <SeccionUnica id="motivo" n={2} plegable titulo="Evolución (SOAP)">
                 <CamposMotivoAnamnesis h={h} a={a} soloAnamnesis />
                 <PanelNotas h={h} a={a} />
               </SeccionUnica>
             ) : (
-              <SeccionUnica id="motivo" n={2} titulo="Motivo de consulta y anamnesis">
+              <SeccionUnica id="motivo" n={2} plegable titulo="Motivo de consulta y anamnesis">
                 <CamposMotivoAnamnesis h={h} a={a} />
                 <PanelNotas h={h} a={a} />
               </SeccionUnica>
             )}
-            <SeccionUnica id="diagnostico" n={3} titulo="Diagnóstico"><PanelDiagnosticos h={h} a={a} /></SeccionUnica>
+            <SeccionUnica id="diagnostico" n={3} plegable titulo="Diagnóstico"><PanelDiagnosticos h={h} a={a} /></SeccionUnica>
             <SeccionUnica id="receta" n={4} titulo="Tratamiento (receta)"><PanelReceta h={h} a={a} v2={v2} /></SeccionUnica>
             <SeccionUnica id="procedimientos" n={5} titulo="Procedimientos y consentimientos">
               <PanelProcedimientos h={h} a={a} v2={v2} />

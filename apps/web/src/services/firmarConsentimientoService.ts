@@ -150,7 +150,7 @@ export async function verConsentimientoPdf(id: string, copias?: 1 | 2) {
   try {
     const url = URL.createObjectURL(await consentimientosApi.pdfBlob(id, copias));
     if (ventana) ventana.location.href = url; else window.open(url, '_blank');
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    setTimeout(() => URL.revokeObjectURL(url), 2 * 60 * 60_000); // 2 h: que se pueda descargar desde el visor
   } catch (e) {
     ventana?.close();
     toast.error((e as Error).message);

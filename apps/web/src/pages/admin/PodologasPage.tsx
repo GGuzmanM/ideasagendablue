@@ -28,6 +28,7 @@ function FormularioProfesional({
   const [colegiatura, setColegiatura] = useState(inicial?.colegiatura ?? '');
   const [emailAgenda, setEmailAgenda] = useState(inicial?.emailAgenda ?? '');
   const [colorAvatar, setColorAvatar] = useState(inicial?.colorAvatar ?? AVATAR_COLORES[0]);
+  const [asignacionAutomatica, setAsignacionAutomatica] = useState(inicial?.asignacionAutomatica ?? true);
 
   const submit = () => {
     if (!nombres.trim() || !apellidos.trim() || !unidadNegocioId) {
@@ -48,6 +49,7 @@ function FormularioProfesional({
       emailAgenda: correo, // '' → el backend lo normaliza a null (quita la sincronización)
       colorAvatar,
       sedeId: sedeId !== (inicial?.sedeId ?? '') ? sedeId : '', // solo se manda si cambió
+      asignacionAutomatica,
     });
   };
 
@@ -122,6 +124,23 @@ function FormularioProfesional({
                 Si lo defines, cada cita que se le agende se enviará automáticamente a ese
                 calendario (invitación que Google/Outlook agregan solos). Déjalo vacío para no sincronizar.
               </p>
+            </div>
+            <div className="col-span-2">
+              <label className="flex items-start gap-2.5 cursor-pointer rounded-xl border border-slate-200 px-3 py-2.5 hover:bg-slate-50">
+                <input
+                  type="checkbox"
+                  checked={asignacionAutomatica}
+                  onChange={e => setAsignacionAutomatica(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 accent-emerald-600"
+                  data-testid="asignacion-automatica"
+                />
+                <span>
+                  <span className="block text-sm font-semibold text-slate-700">Entra a la asignación automática</span>
+                  <span className="block text-[11px] text-slate-400 leading-snug">
+                    Si lo desmarcas, nunca se le asigna una cita sola (sin preferencia, reserva web, agente): solo cuando la eligen.
+                  </span>
+                </span>
+              </label>
             </div>
             <div className="col-span-2">
               <label className="block text-xs font-semibold text-slate-500 mb-1.5">Color de avatar</label>
@@ -403,6 +422,7 @@ export function PodologasPage() {
             emailAgenda: profEditando.emailAgenda ?? '',
             colorAvatar: profEditando.colorAvatar,
             sedeId: profEditando.sedeActual?.id ?? '',
+            asignacionAutomatica: profEditando.asignacionAutomatica ?? true,
           } : undefined}
           unidades={unidades}
           sedes={(sedes ?? []).filter((s) => s.activa !== false).map((s) => ({ id: s.id, nombre: s.nombre }))}

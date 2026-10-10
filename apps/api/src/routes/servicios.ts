@@ -52,6 +52,8 @@ const servicioSchema = z.object({
   precioReferencial: z.number().positive().optional(),
   unidadNegocioId: z.string().uuid(),
   activo: z.boolean().default(true),
+  // 09-oct-2026: cuántas citas de este servicio pueden cruzarse a la vez en una sede (salas). null = sin límite.
+  cupoSimultaneo: z.number().int().min(1).max(50).nullable().optional(),
 });
 
 // Prefijo de código según la unidad (consistente: POD-/BAR-/FIS-, o 3 letras del nombre).

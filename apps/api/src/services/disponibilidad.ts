@@ -2,6 +2,7 @@ import { prisma } from '../db';
 import { redis } from '../redis';
 import { fechaDb } from '../utils/fechaLima';
 import { esFichaAdicional } from '../utils/fichaAdicional';
+import { ocupacionServicio, choques } from './cupoServicio';
 import { timeToMinutes, minutesToTime, generarSlotsDelDia, horaInicioValidaParaDuracion } from '@limablue/shared';
 
 export interface TurnoDia { horaInicio: string; horaFin: string }
@@ -203,6 +204,9 @@ export async function calcularDisponibilidad(params: DisponibilidadParams): Prom
           unidadNegocioId,
           activo: true,
           deletedAt: null,
+          // 09-oct-2026: quien NO entra a la asignación automática (Daniel y Yasica Doy) no suma horas libres a
+          // «cualquier profesional»: solo se le agenda si se le elige (esa consulta va por la rama de arriba).
+          asignacionAutomatica: true,
           // Solo competencias "normales" entran al automático (excluye médicos / baro de Daniel).
           competencias: { some: { servicioId, activa: true, soloPorSolicitud: false } },
         },
@@ -345,6 +349,13 @@ export async function calcularDisponibilidad(params: DisponibilidadParams): Prom
     }
   }
 
+  // 09-oct-2026: servicio con sala/equipo único en la sede (Motiphysio): si la sala ya está ocupada a esa hora,
+  // la hora no se ofrece aunque haya profesionales libres.
+  const ocSala = await ocupacionServicio(prisma, servicioId, sedeId, fecha);
+  if (ocSala) {
+    for (const r of resultados) if (r.disponible && choques(ocSala, r.horaInicio, duracion) >= ocSala.cupo) r.disponible = false;
+  }
+
   // Si modo sin_eleccion o preferencia_opcional (sin profesional específico):
   // colapsar por slot, disponible si al menos un profesional lo tiene libre
   if ((!profesionalId || unidad.modoReserva === 'sin_eleccion') && !params.desglosado) {
@@ -389,9 +400,15 @@ export async function seleccionarProfesionalOptimo(
         // Doy, podólogo, también hace Baropodometría). La competencia ya delimita la unidad.
         activo: true,
         deletedAt: null,
+        // 09-oct-2026: quien tiene la asignación automática apagada (Daniel y Yasica Doy) NUNCA se elige sola,
+        // por ninguna vía (Nueva cita «sin preferencia», bloque combinado, reserva web, agente). Solo si la eligen.
+        asignacionAutomatica: true,
         // La competencia debe ser "normal" (no solo-por-solicitud): médicos y la baro de Daniel
-        // no entran al automático, pero sí su podología (competencia normal).
+        // no entran al automático.
         competencias: { some: { servicioId, activa: true, soloPorSolicitud: false } },
+        // 10-oct-2026: una MÁQUINA (Baro 1/2) solo se asigna en su propia unidad. Tienen competencia en «Ortésicos»
+        // (servicio de Podología) y una cita de ortésicos terminó en «Baro 2» dentro de Podología.
+        OR: [{ esEquipo: false }, { unidadNegocioId }],
       },
     },
     include: {
@@ -415,6 +432,10 @@ export async function seleccionarProfesionalOptimo(
   const duracion = servicio.duracionMinutos;
   const slotStart = timeToMinutes(horaInicio);
   const slotEnd = slotStart + duracion;
+
+  // 09-oct-2026: si el servicio usa una sala única y ya está ocupada a esa hora, nadie puede tomarla.
+  const ocSala = await ocupacionServicio(prisma, servicioId, sedeId, fecha);
+  if (ocSala && choques(ocSala, horaInicio, duracion) >= ocSala.cupo) return null;
 
   // Turno efectivo (normal o excepcional) de cada candidato.
   const turnos = await turnosDelDia(sedeId, fecha, asignaciones.map((a) => a.profesionalId));

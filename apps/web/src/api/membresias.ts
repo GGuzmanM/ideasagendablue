@@ -72,7 +72,7 @@ export async function verContratoMembresia(promoId: string, opts: { pacienteId?:
   const blob = await membresiasApi.descargarContratoBlob(promoId, opts);
   const url = URL.createObjectURL(blob);
   window.open(url, '_blank');
-  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  setTimeout(() => URL.revokeObjectURL(url), 2 * 60 * 60_000); // 2 h: que se pueda descargar desde el visor
 }
 
 /**
@@ -98,7 +98,7 @@ export async function imprimirContratoMembresia(promoId: string, pacienteId: str
       window.open(url, '_blank'); // respaldo: abrir en pestaña
     }
     // Libera el objeto tras un tiempo prudente (el print es asíncrono).
-    setTimeout(() => { URL.revokeObjectURL(url); iframe.remove(); }, 60_000);
+    setTimeout(() => { URL.revokeObjectURL(url); iframe.remove(); }, 10 * 60_000); // el diálogo de impresión puede quedar abierto un rato
   };
   document.body.appendChild(iframe);
 }

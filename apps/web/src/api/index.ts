@@ -80,6 +80,8 @@ export interface Profesional {
   emailAgenda?: string | null;
   colorAvatar: string;
   activo: boolean;
+  /** 09-oct-2026: false = nunca se le asigna una cita sola; solo si la eligen. */
+  asignacionAutomatica?: boolean;
   iniciales: string;
   unidadNegocio: UnidadNegocio;
   sedeActual: { id: string; nombre: string; color: string } | null;
@@ -219,6 +221,8 @@ export interface Servicio {
   unidadNegocioId: string;
   unidadNegocio: UnidadNegocio;
   activo: boolean;
+  /** 09-oct-2026: citas de este servicio que pueden cruzarse a la vez en una sede (salas). null = sin límite. */
+  cupoSimultaneo?: number | null;
   // Subcategorías ACTIVAS (solo las trae GET /servicios). Si tiene >0, elegir una
   // es obligatorio al agendar y se fija al vender membresías.
   subcategorias?: SubcategoriaServicio[];
@@ -231,10 +235,10 @@ export const serviciosApi = {
       activo: params?.activo != null ? String(params.activo) : undefined,
     } as Record<string, string>),
 
-  crear: (data: { nombre: string; codigo?: string; duracionMinutos: number; color: string; precioReferencial?: number; unidadNegocioId: string }) =>
+  crear: (data: { nombre: string; codigo?: string; duracionMinutos: number; color: string; precioReferencial?: number; unidadNegocioId: string; cupoSimultaneo?: number | null }) =>
     api.post<Servicio>('/servicios', data),
 
-  editar: (id: string, data: Partial<{ nombre: string; codigo: string; duracionMinutos: number; color: string; precioReferencial: number; unidadNegocioId: string; activo: boolean }>) =>
+  editar: (id: string, data: Partial<{ nombre: string; codigo: string; duracionMinutos: number; color: string; precioReferencial: number; unidadNegocioId: string; activo: boolean; cupoSimultaneo: number | null }>) =>
     api.patch<Servicio>(`/servicios/${id}`, data),
 
   // ── Subcategorías (administración) ──

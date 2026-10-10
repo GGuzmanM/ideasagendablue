@@ -233,7 +233,7 @@ export async function verConsentimientoFoto(id: string) {
   try {
     const url = URL.createObjectURL(await historiaClinicaApi.blobConsentimientoFoto(id));
     window.open(url, '_blank');
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    setTimeout(() => URL.revokeObjectURL(url), 2 * 60 * 60_000); // 2 h: que se pueda descargar desde el visor
   } catch (e) {
     toast.error((e as Error).message);
   }

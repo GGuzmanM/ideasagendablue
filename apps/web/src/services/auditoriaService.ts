@@ -940,6 +940,7 @@ export const CAMPO_LABEL: Record<string, string> = {
   competenciasDesactivadas: 'Competencias desactivadas',
   sede: 'Sede',
   soloPorSolicitud: 'Solo por solicitud',
+  asignacionAutomatica: 'Asignación automática',
   colegiatura: 'Colegiatura (CMP)',
   metaDiasMes: 'Meta de días al mes',
   esEquipo: 'Es un equipo (máquina)',

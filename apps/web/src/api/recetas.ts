@@ -121,7 +121,9 @@ export async function abrirPdfEnPestana(cargar: () => Promise<Blob>): Promise<vo
   try {
     const url = URL.createObjectURL(await cargar());
     if (ventana) ventana.location.href = url; else window.open(url, '_blank');
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    // 09-oct-2026: antes se liberaba al minuto y el botón «Descargar» del visor fallaba («Error de red»).
+    // Se mantiene 2 h para que se pueda descargar o imprimir desde la pestaña.
+    setTimeout(() => URL.revokeObjectURL(url), 2 * 60 * 60_000);
   } catch (e) {
     ventana?.close();
     throw e;
@@ -144,7 +146,7 @@ export async function imprimirReceta(id: string, copias?: 1 | 2, conFirma = fals
   iframe.src = url;
   iframe.onload = () => {
     try { iframe.contentWindow?.focus(); iframe.contentWindow?.print(); } catch { window.open(url, '_blank'); }
-    setTimeout(() => { URL.revokeObjectURL(url); iframe.remove(); }, 60_000);
+    setTimeout(() => { URL.revokeObjectURL(url); iframe.remove(); }, 10 * 60_000); // el diálogo de impresión puede quedar abierto un rato
   };
   document.body.appendChild(iframe);
 }

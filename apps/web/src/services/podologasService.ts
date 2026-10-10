@@ -23,6 +23,8 @@ export interface FormProfesional {
   emailAgenda?: string;
   colorAvatar: string;
   sedeId?: string; // sede base de la ficha; '' = sin cambio (se asigna después en Movimientos)
+  /** 09-oct-2026: false = nunca se le asigna una cita sola; solo si la eligen. */
+  asignacionAutomatica?: boolean;
 }
 
 export function usePodologasData() {
