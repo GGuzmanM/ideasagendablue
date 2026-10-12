@@ -36,6 +36,7 @@ import { getServicioAnclaId, esCombinacionPermitida } from '../services/combinac
 import { enviarCorreoReserva } from '../services/emailService';
 import { verificarTokenConfirmacion } from '../utils/confirmToken';
 import { fechaDb, fechaAStr, hoyLimaStr, esFechaPasadaLima, diasEnPasadoLima } from '../utils/fechaLima';
+import { filtroFechaVisor } from '../utils/rangoVisor';
 import { zFechaCita, zHoraCita, zComentarioCita, assertFechaNoMuyLejana } from '../utils/validacionCita';
 import { horaInicioValidaParaDuracion, timeToMinutes, minutesToTime } from '@limablue/shared';
 import { getCitaCompleta, promoCitaSelect, comentariosInclude, crearComentarioEnTx } from '../services/citaCompleta';
@@ -387,7 +388,7 @@ router.post(
 
 // ─── GET /citas ───────────────────────────────────────────────────────────────
 router.get('/', requireAuth, async (req, res) => {
-  const { sedeId, fecha, profesionalId, unidadNegocioId, pacienteId, estado } = req.query as Record<string, string>;
+  const { sedeId, fecha, hasta, profesionalId, unidadNegocioId, pacienteId, estado } = req.query as Record<string, string>;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const where: Record<string, any> = {
@@ -402,7 +403,8 @@ router.get('/', requireAuth, async (req, res) => {
   } else if (req.user && !puedeTodasLasSedes(req.user)) {
     where.sedeId = { in: req.user.sedes };
   }
-  if (fecha) where.fecha = fechaDb(fecha);
+  // `hasta` (Visor de Pacientes, 10-oct-2026): rango fecha..hasta, solo admin y auditor de médicos.
+  if (fecha) where.fecha = filtroFechaVisor(req, fecha, hasta);
   if (profesionalId) where.profesionalId = profesionalId;
   if (unidadNegocioId) where.unidadNegocioId = unidadNegocioId;
   if (pacienteId) where.pacienteId = pacienteId;
@@ -2878,11 +2880,12 @@ router.post('/intercambiar', requireAuth, requireAcceso('appointments:write', 'c
           },
         });
         const at = atenciones.find((x) => x.citaId === pl.cita.id);
-        if (at) await atencionSigueAProfesional(tx, pl.cita.id, pl.profesionalId);
+        // 10-oct-2026: si la atención clínica pasa a la otra podóloga, queda dicho en la auditoría (antes no).
+        const atencionDe = at ? await atencionSigueAProfesional(tx, pl.cita.id, pl.profesionalId) : null;
         await auditEnTx(tx, {
           citaId: pl.cita.id, usuarioId: req.user?.userId, accion: 'intercambiar', entidad: 'cita', entidadId: pl.cita.id,
           antes: { profesionalId: pl.cita.profesionalId, horaInicio: pl.cita.horaInicio },
-          despues: { profesionalId: pl.profesionalId, horaInicio: pl.horaInicio, conCita: pl.cita.id === a.id ? b.id : a.id },
+          despues: { profesionalId: pl.profesionalId, horaInicio: pl.horaInicio, conCita: pl.cita.id === a.id ? b.id : a.id, ...(atencionDe ? { atencionPasaDe: atencionDe } : {}) },
           sedeId: a.sedeId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
         });
       }

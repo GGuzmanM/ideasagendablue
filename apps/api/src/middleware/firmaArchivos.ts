@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { createHmac, timingSafeEqual } from 'crypto';
 import path from 'path';
 import fs from 'fs';
+import { DIR_UPLOADS } from '../utils/rutasArchivos';
 
 // ─── Firma de URLs de archivos privados (/uploads) ─────────────────────────────
 // Los comprobantes de pago y los contratos de membresía llevan datos personales
@@ -16,7 +17,7 @@ import fs from 'fs';
 
 const SECRET = process.env.ARCHIVO_FIRMA_SECRET || process.env.JWT_SECRET || 'limablue-dev-secret-only';
 const TTL_MS = 2 * 60 * 60 * 1000; // 2h — sobra para ver/imprimir; se regenera en cada carga de datos.
-const UPLOADS_ROOT = path.join(process.cwd(), 'uploads');
+const UPLOADS_ROOT = DIR_UPLOADS;
 
 // Solo estos subdirectorios se firman y se sirven; el resto de /uploads queda cerrado.
 const PROTEGIDO_RE = /\/uploads\/(comprobantes|contratos)\//;

@@ -17,7 +17,9 @@ import { citaInicioUtc } from '../utils/fechaLima';
 export const LOGO_CID = 'logo-limablue';
 
 function rutaLogoCorreo(): string | null {
-  const dir = path.join(__dirname, '../../assets/correo');
+  // <cwd>/assets/correo (cwd = apps/api en desarrollo; la carpeta del programa en el servidor). Antes iba por
+  // __dirname, que en el instalable (un solo archivo compilado) ya no apunta a apps/api.
+  const dir = path.join(process.cwd(), 'assets', 'correo');
   for (const f of ['logo-correo.png', 'logo-correo.jpg', 'logo-correo.jpeg']) {
     const p = path.join(dir, f);
     try { if (fs.existsSync(p)) return p; } catch { /* noop */ }

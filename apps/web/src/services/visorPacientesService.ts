@@ -22,6 +22,12 @@ const horaDe = (iso?: string | null) => (iso ? new Date(iso).toLocaleTimeString(
 
 export type FiltroVisor = 'todos' | 'mios' | 'sin_medico';
 
+// 10-oct-2026: ver otro día o un rango (máx. 31 días) solo lo pueden administración y el auditor de médicos.
+export const ROLES_RANGO_VISOR = ['admin', 'medico_auditor'];
+export const MAX_DIAS_RANGO = 31;
+const sumarDias = (f: string, n: number) => { const d = new Date(`${f}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const diasEntre = (a: string, b: string) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
+
 export function useVisorPacientes() {
   const qc = useQueryClient();
   const navigate = useNavigate();
@@ -45,11 +51,33 @@ export function useVisorPacientes() {
     if (preferida) setSedeId(preferida);
   }, [sedes, sedeAgenda, sedeId]);
 
-  const fecha = hoyStr();
+  const hoy = hoyStr();
+  const puedeRango = ROLES_RANGO_VISOR.includes(usuario?.rol ?? '');
+  const [desdeSel, setDesdeSel] = useState(hoy);
+  const [hastaSel, setHastaSel] = useState(hoy);
+  // Los demás roles ven SIEMPRE hoy, aunque algo dejara otra fecha en el estado.
+  const fecha = puedeRango ? desdeSel : hoy;
+  const hasta = puedeRango && hastaSel !== desdeSel ? hastaSel : undefined;
+  const esRango = !!hasta;
+  const esHoy = fecha === hoy && !esRango;
+  const setDesde = (v: string) => {
+    if (!v) return;
+    setDesdeSel(v);
+    if (v > hastaSel || diasEntre(v, hastaSel) >= MAX_DIAS_RANGO) setHastaSel(v > hastaSel ? v : sumarDias(v, MAX_DIAS_RANGO - 1));
+  };
+  const setHasta = (v: string) => {
+    if (!v) return;
+    setHastaSel(v);
+    if (v < desdeSel || diasEntre(desdeSel, v) >= MAX_DIAS_RANGO) setDesdeSel(v < desdeSel ? v : sumarDias(v, -(MAX_DIAS_RANGO - 1)));
+  };
+  /** Flechas: un día antes / después (deja de ser rango). */
+  const moverDia = (n: number) => { const d = sumarDias(fecha, n); setDesdeSel(d); setHastaSel(d); };
+  const irHoy = () => { setDesdeSel(hoy); setHastaSel(hoy); };
+
   const citasQ = useQuery({
     // Con el prefijo ['citas'] la agenda y el socket la refrescan solos al cambiar cualquier cita.
-    queryKey: ['citas', 'visor', sedeId, fecha],
-    queryFn: () => citasApi.listar({ sedeId, fecha }),
+    queryKey: ['citas', 'visor', sedeId, fecha, hasta ?? ''],
+    queryFn: () => citasApi.listar({ sedeId, fecha, hasta }),
     enabled: !!sedeId,
     refetchInterval: 30_000,
   });
@@ -57,8 +85,8 @@ export function useVisorPacientes() {
   // Citas que ya tienen receta / indicaciones vigentes → la fila se pinta en VERDE (25-sep-2026). Con el prefijo
   // ['citas'] se refresca junto con las citas (socket y botón Actualizar).
   const recetasQ = useQuery({
-    queryKey: ['citas', 'visor-recetas', sedeId, fecha],
-    queryFn: () => recetasApi.delDia(sedeId, fecha),
+    queryKey: ['citas', 'visor-recetas', sedeId, fecha, hasta ?? ''],
+    queryFn: () => recetasApi.delDia(sedeId, fecha, hasta),
     enabled: !!sedeId && puedeVerHc,
     refetchInterval: 30_000,
   });
@@ -69,8 +97,8 @@ export function useVisorPacientes() {
   // (anamnesis o SOAP + diagnóstico + procedimiento o receta) por cita.
   const v2 = useMemo(() => leerHcV2(), []);
   const resumenQ = useQuery({
-    queryKey: ['citas', 'visor-resumen-hc', sedeId, fecha],
-    queryFn: () => historiaClinicaApi.resumenDelDia(sedeId, fecha),
+    queryKey: ['citas', 'visor-resumen-hc', sedeId, fecha, hasta ?? ''],
+    queryFn: () => historiaClinicaApi.resumenDelDia(sedeId, fecha, hasta),
     enabled: v2 && !!sedeId && puedeVerHc,
     refetchInterval: 30_000,
   });
@@ -91,11 +119,13 @@ export function useVisorPacientes() {
     .filter((c) => filtro === 'todos' ? true : filtro === 'mios' ? c.medicoId === miFicha : !c.medicoId && citaLlevaMedico(c))
     .filter(coincide)
     // Primero los que llevan más tiempo esperando (llegó más temprano); En atención después de los que esperan.
-    .sort((a, b) => (a.estado === b.estado ? (a.llegoEn ?? a.horaInicio).localeCompare(b.llegoEn ?? b.horaInicio) : a.estado === 'llego' ? -1 : 1)),
+    // Con rango, primero por día.
+    .sort((a, b) => a.fecha.slice(0, 10).localeCompare(b.fecha.slice(0, 10))
+      || (a.estado === b.estado ? (a.llegoEn ?? a.horaInicio).localeCompare(b.llegoEn ?? b.horaInicio) : a.estado === 'llego' ? -1 : 1)),
   // eslint-disable-next-line react-hooks/exhaustive-deps
   [todas, filtro, busqueda, miFicha]);
   const atendidos = useMemo(() => todas.filter((c) => (c.estado || '').toLowerCase() === 'completada').filter(coincide)
-    .sort((a, b) => (b.completadaEn ?? b.horaInicio).localeCompare(a.completadaEn ?? a.horaInicio)),
+    .sort((a, b) => b.fecha.slice(0, 10).localeCompare(a.fecha.slice(0, 10)) || (b.completadaEn ?? b.horaInicio).localeCompare(a.completadaEn ?? a.horaInicio)),
   // eslint-disable-next-line react-hooks/exhaustive-deps
   [todas, busqueda]);
   const porVenir = todas.filter((c) => ['agendada', 'confirmada'].includes((c.estado || '').toLowerCase())).length;
@@ -130,7 +160,7 @@ export function useVisorPacientes() {
       puedeVerHistoria: puedeVerHc,
       llegoHora: horaDe(c.llegoEn) ?? c.horaInicio,
       enAtencionHora: horaDe(c.enAtencionEn),
-      esperaMin: c.llegoEn && c.estado === 'llego' ? Math.max(0, Math.round((Date.now() - new Date(c.llegoEn).getTime()) / 60000)) : null,
+      esperaMin: esHoy && c.llegoEn && c.estado === 'llego' ?Math.max(0, Math.round((Date.now() - new Date(c.llegoEn).getTime()) / 60000)) : null,
     };
   };
 
@@ -148,7 +178,8 @@ export function useVisorPacientes() {
   return {
     usuario, soyMedico, puedeAsignar, miFicha,
     sedes, sedeId, setSedeId, sedeNombre: sedes.find((s) => s.id === sedeId)?.nombre ?? '',
-    fecha, cargando: citasQ.isLoading, error: citasQ.error as Error | null,
+    fecha, hasta, hoy, esHoy, esRango, puedeRango, desdeSel: fecha, hastaSel: hasta ?? fecha, setDesde, setHasta, moverDia, irHoy,
+    cargando: citasQ.isLoading, error: citasQ.error as Error | null,
     filtro, setFiltro, busqueda, setBusqueda, verAtendidos, setVerAtendidos,
     enSede, atendidos, porVenir, asignables, acciones, recetaDe, resumenDe,
     tomar, soltar, asignar, atender, pendiente: medicoMut.isPending,

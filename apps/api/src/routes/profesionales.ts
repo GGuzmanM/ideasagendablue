@@ -2,7 +2,8 @@ import { nombreDeFichaAUsuarioEnTx } from '../services/fichaUsuarioService';
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db';
-import { requireAuth, requirePermiso } from '../middleware/auth';
+import { requireAuth, requirePermiso, requireRol } from '../middleware/auth';
+import { fusionarProfesionales, posiblesDuplicados } from '../services/fusionProfesionalService';
 import { AppError } from '../middleware/errorHandler';
 import { turnosDelDia } from '../services/disponibilidad';
 import { fechaDb, hoyLimaStr } from '../utils/fechaLima';
@@ -344,6 +345,19 @@ const profesionalSchema = z.object({
 router.post('/', requireAuth, requirePermiso('profesionales.editar'), async (req, res) => {
   const { sedeId, ...data } = profesionalSchema.parse(req.body);
   if (data.emailAgenda === '') data.emailAgenda = null; // vacío = sin sincronización de calendario
+  // 12-oct-2026: no crear a la misma persona dos veces («Laura Escalante» se creó de nuevo porque la ficha vieja
+  // «Laura Kelly Escalante Mendoza» estaba inactiva). Si parece repetida se avisa; para crearla igual, confirmarDuplicado.
+  if ((req.body as { confirmarDuplicado?: unknown })?.confirmarDuplicado !== true) {
+    const parecidas = await posiblesDuplicados({ nombres: data.nombres, apellidos: data.apellidos, tipo: data.tipo });
+    if (parecidas.length) {
+      const lista = parecidas.map((x) => `«${x.nombres} ${x.apellidos}»${x.activo ? '' : ' (inactiva)'}`).join(', ');
+      res.status(409).json({
+        error: 'POSIBLE_DUPLICADO', statusCode: 409, parecidas,
+        message: `Ya existe ${lista}. Si es la misma persona, reactiva o edita esa ficha en vez de crear otra.`,
+      });
+      return;
+    }
+  }
   const { profesional, cambioSede } = await prisma.$transaction(async (tx) => {
     const p = await tx.profesional.create({
       data: { ...data, creadoPor: req.user?.userId },
@@ -365,6 +379,17 @@ router.post('/', requireAuth, requirePermiso('profesionales.editar'), async (req
     ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
   });
   res.status(201).json(profesional);
+});
+
+// POST /profesionales/:id/fusionar { destinoId } — la ficha :id (duplicada) pasa todo a destinoId y se da de baja.
+// Solo administración. Ver services/fusionProfesionalService.ts.
+router.post('/:id/fusionar', requireAuth, requireRol('admin'), async (req, res) => {
+  const { destinoId } = z.object({ destinoId: z.string().uuid() }).parse(req.body);
+  const r = await fusionarProfesionales({
+    origenId: z.string().uuid().parse(req.params.id), destinoId,
+    usuarioId: req.user?.userId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
+  });
+  res.json(r);
 });
 
 router.patch('/:id', requireAuth, requirePermiso('profesionales.editar'), async (req, res) => {

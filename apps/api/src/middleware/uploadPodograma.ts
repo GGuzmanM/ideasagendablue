@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import type { Request, Response, NextFunction } from 'express';
 import { AppError } from './errorHandler';
+import { DIR_UPLOADS } from '../utils/rutasArchivos';
 
 // ─── Subida de imágenes del podograma (HC) ─────────────────────────────────────
 // Mismo enfoque que uploadComprobante.ts (extensión desde allowlist de mimetype + validación
@@ -11,7 +12,7 @@ import { AppError } from './errorHandler';
 //  · se guardan en uploads/podogramas/<atencionId>/ — ese subdirectorio NO lo sirve la ruta
 //    firmada de /uploads (solo abre comprobantes|contratos), así que el archivo se entrega
 //    ÚNICAMENTE por el endpoint autenticado de historia clínica (hc.ver + sede).
-export const UPLOADS_ROOT = path.join(process.cwd(), 'uploads');
+export const UPLOADS_ROOT = DIR_UPLOADS;
 const SUBDIR = 'podogramas';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

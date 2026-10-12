@@ -87,7 +87,7 @@ export async function asegurarHistoria(
     const hc = await prisma.historiaClinica.create({
       data: { pacienteId, sedeAperturaId: opts.sedeId ?? null, creadoPorUsuarioId: opts.usuarioId ?? null },
     });
-    void registrarAudit({
+    await registrarAudit({
       usuarioId: opts.usuarioId, accion: 'abrir_historia', entidad: 'historia_clinica', entidadId: pacienteId,
       sedeId: opts.sedeId ?? undefined, despues: { historiaClinicaId: hc.id, numero: hc.numero },
     });
@@ -357,6 +357,44 @@ export async function atencionOr404(id: string) {
   return at;
 }
 
+/**
+ * 10-oct-2026: el MÉDICO (rol medico) que abre o registra en la atención de una cita de podología o baro que no tiene
+ * médico queda como su médico. Antes la atención podía quedar trabajada por un médico y la cita «sin médico». Con guarda:
+ * solo escribe si sigue sin médico (nunca le quita la cita a otro). Todo el bloque combinado lleva el mismo médico.
+ */
+export async function tomarMedicoAlAtenderEnTx(tx: Prisma.TransactionClient, p: Ctx & { citaId: string }): Promise<void> {
+  if (!p.usuarioId) return;
+  const u = await tx.usuario.findUnique({
+    where: { id: p.usuarioId },
+    select: { rol: true, profesional: { select: { id: true, nombres: true, apellidos: true, tipo: true, esEquipo: true, activo: true, deletedAt: true } } },
+  });
+  const m = u?.profesional;
+  if (u?.rol !== 'medico' || !m || m.tipo !== 'medico' || m.esEquipo || !m.activo || m.deletedAt) return;
+  const cita = await tx.cita.findUnique({
+    where: { id: p.citaId },
+    select: { id: true, sedeId: true, slotGrupoId: true, medicoId: true, estado: true, unidadNegocio: { select: { nombre: true, modoReserva: true } } },
+  });
+  if (!cita || cita.medicoId || ['cancelada', 'reprogramada', 'no_show'].includes(cita.estado)) return;
+  if (!/podolog|baropodometr/i.test(cita.unidadNegocio.nombre)) return;
+  const ids = cita.slotGrupoId
+    ? (await tx.cita.findMany({ where: { slotGrupoId: cita.slotGrupoId, deletedAt: null }, select: { id: true } })).map((c) => c.id)
+    : [cita.id];
+  const libres = (await tx.cita.findMany({ where: { id: { in: ids }, medicoId: null }, select: { id: true } })).map((c) => c.id);
+  if (!libres.length) return;
+  await tx.cita.updateMany({ where: { id: { in: libres }, medicoId: null }, data: { medicoId: m.id, medicoAsignadoEn: new Date(), medicoAsignadoPorId: p.usuarioId } });
+  // Baro: el médico también vive en solicitadoProfesionalId (igual que «Tomar» en el detalle).
+  if (cita.unidadNegocio.modoReserva === 'sin_eleccion') {
+    await tx.cita.updateMany({ where: { id: { in: libres }, solicitadoProfesionalId: null }, data: { solicitadoProfesionalId: m.id } });
+  }
+  const nombre = `${m.nombres} ${m.apellidos}`.trim();
+  for (const id of libres) {
+    await auditEnTx(tx, {
+      ...ctxAudit(p), citaId: id, accion: 'tomar_cita_medico', entidad: 'cita', entidadId: id, sedeId: cita.sedeId,
+      antes: { medicoId: null }, despues: { medicoId: m.id, medico: nombre, origen: 'al_atender' },
+    });
+  }
+}
+
 // ─── Atención ─────────────────────────────────────────────────────────────────
 export async function abrirAtencion(p: Ctx & { citaId: string; motivoConsulta?: string; profesionalId?: string | null }) {
   const cita = await resolverCitaPrincipal(p.citaId);
@@ -388,6 +426,7 @@ export async function abrirAtencion(p: Ctx & { citaId: string; motivoConsulta?: 
       ? (await tx.cita.findMany({ where: { slotGrupoId: cita.slotGrupoId }, select: { id: true } })).map((c) => c.id)
       : [cita.id];
     await tx.consentimientoInformado.updateMany({ where: { citaId: { in: citasVisita }, atencionId: null }, data: { atencionId: a.id } });
+    await tomarMedicoAlAtenderEnTx(tx, { ...p, citaId: cita.id });
     // Una HC pasiva (archivo) vuelve sola a activa cuando el paciente regresa.
     if (hc.estado === 'pasiva') {
       await tx.historiaClinica.update({ where: { id: hc.id }, data: { estado: 'activa' } });
@@ -487,7 +526,7 @@ export async function guardarDictado(p: Ctx & { atencionId: string; texto: strin
   const at = await atencionOr404(p.atencionId);
   exigirAbierta(at);
   const texto = p.texto.replace(/\r/g, '');
-  const previo = await prisma.dictadoConsulta.findUnique({ where: { atencionId: at.id }, select: { id: true } });
+  const previo = await prisma.dictadoConsulta.findUnique({ where: { atencionId: at.id }, select: { id: true, aplicadoEn: true } });
   const etiqueta = previo ? undefined : await etiquetaUsuario(prisma, p.usuarioId);
   await prisma.$transaction(async (tx) => {
     await tx.dictadoConsulta.upsert({
@@ -497,6 +536,10 @@ export async function guardarDictado(p: Ctx & { atencionId: string; texto: strin
     });
     if (!previo) {
       await auditEnTx(tx, { ...ctxAudit(p), citaId: at.citaId, sedeId: at.sedeId, accion: 'guardar_dictado', entidad: 'atencion_clinica', entidadId: at.id, despues: { caracteres: texto.length } });
+    }
+    // 10-oct-2026: repartir el dictado a los campos también queda (antes solo el primer guardado).
+    if (p.aplicado) {
+      await auditEnTx(tx, { ...ctxAudit(p), citaId: at.citaId, sedeId: at.sedeId, accion: 'aplicar_dictado', entidad: 'atencion_clinica', entidadId: at.id, despues: { caracteres: texto.length, yaAplicadoAntes: !!previo?.aplicadoEn } });
     }
   });
   return getAtencionCompleta(at.id);
@@ -510,7 +553,7 @@ export async function limpiarDictado(p: Ctx & { atencionId: string }) {
   if (!d) return getAtencionCompleta(at.id);
   await prisma.$transaction(async (tx) => {
     await tx.dictadoConsulta.delete({ where: { atencionId: at.id } });
-    await auditEnTx(tx, { ...ctxAudit(p), citaId: at.citaId, sedeId: at.sedeId, accion: 'limpiar_dictado', entidad: 'atencion_clinica', entidadId: at.id, antes: { caracteres: d.texto.length } });
+    await auditEnTx(tx, { ...ctxAudit(p), citaId: at.citaId, sedeId: at.sedeId, accion: 'limpiar_dictado', entidad: 'atencion_clinica', entidadId: at.id, antes: { caracteres: d.texto.length, texto: d.texto } });
   });
   return getAtencionCompleta(at.id);
 }

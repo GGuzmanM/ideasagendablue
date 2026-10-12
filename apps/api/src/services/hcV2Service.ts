@@ -162,9 +162,9 @@ export async function precargarAnterior(p: Ctx & { atencionId: string }) {
  * banderas y conteos (sin contenido clínico). «Completada» = tiene anamnesis (o una nota SOAP con contenido), al menos
  * un diagnóstico, y al menos un procedimiento O una receta vigente (decisión del 02-oct-2026: no siempre hay receta).
  */
-export async function resumenClinicoDelDia(sedeId: string, fecha: string) {
+export async function resumenClinicoDelDia(sedeId: string, fecha: string | Date | { gte: Date; lte: Date }) {
   const ats = await prisma.atencionClinica.findMany({
-    where: { sedeId, fecha: fechaDb(fecha) },
+    where: { sedeId, fecha: typeof fecha === 'string' ? fechaDb(fecha) : fecha },
     select: {
       id: true, citaId: true, anamnesis: true,
       notas: { where: { deletedAt: null }, select: { subjetivo: true, objetivo: true, apreciacion: true, plan: true, texto: true } },

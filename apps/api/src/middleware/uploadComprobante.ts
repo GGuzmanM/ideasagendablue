@@ -3,8 +3,9 @@ import path from 'path';
 import fs from 'fs';
 import type { Request, Response, NextFunction } from 'express';
 import { AppError } from './errorHandler';
+import { DIR_UPLOADS } from '../utils/rutasArchivos';
 
-const dir = path.join(process.cwd(), 'uploads', 'comprobantes');
+const dir = path.join(DIR_UPLOADS, 'comprobantes');
 if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
 // Tipos permitidos y su extensión SEGURA. La extensión del archivo guardado se deriva de aquí

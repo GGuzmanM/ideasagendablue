@@ -6,6 +6,7 @@ import toast from 'react-hot-toast';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '../stores/authStore';
 import { pacientesApi, sedesApi, serviciosApi, type Sede, type Servicio } from '../api';
+import { TiemposAtencionTool } from '../components/herramientas/TiemposAtencionTool';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -38,7 +39,7 @@ export function HerramientasPage() {
   const esAdmin = useAuthStore.getState().usuario?.rol === 'admin';
 
   const [vista, setVista] = useState<Vista>('inicio');
-  const [exportTab, setExportTab] = useState<'excel' | 'reactivacion' | 'pdf'>('excel');
+  const [exportTab, setExportTab] = useState<'excel' | 'tiempos' | 'reactivacion' | 'pdf'>('excel');
 
   // Con permisos finos: cada tarjeta se muestra si el usuario tiene algún permiso de su grupo
   // (las RUTAS de cada herramienta enforcean el acceso exacto). "Operativas" = exportar + comunicaciones;
@@ -262,6 +263,15 @@ export function HerramientasPage() {
               <span>📄</span> Lista de Citas (Excel)
             </button>
             <button
+              onClick={() => setExportTab('tiempos')}
+              data-testid="tab-tiempos-atencion"
+              className={`px-4 py-2 text-xs font-bold rounded-xl transition-all flex items-center gap-2 ${
+                exportTab === 'tiempos' ? 'bg-primary text-on-primary shadow-md' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              Tiempos de atención (Excel)
+            </button>
+            <button
               onClick={() => setExportTab('reactivacion')}
               className={`px-4 py-2 text-xs font-bold rounded-xl transition-all flex items-center gap-2 ${
                 exportTab === 'reactivacion' ? 'bg-purple-600 text-white shadow-md' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
@@ -303,6 +313,7 @@ export function HerramientasPage() {
 
           <div className="max-w-2xl">
             {exportTab === 'excel' && <ExcelTool />}
+            {exportTab === 'tiempos' && <TiemposAtencionTool />}
             {exportTab === 'reactivacion' && <ReactivacionTool />}
             {exportTab === 'pdf' && <PdfHistorialTool />}
           </div>

@@ -192,8 +192,10 @@ export const profesionalesApi = {
     api.post<{ resultados: { fecha: string; accion: string }[]; errores: { fecha: string; error: string }[] }>('/profesionales/dia-especial/set', data),
 
   // sedeId = sede base de la ficha (desde hoy, sin fin); vacío = no cambiar.
-  crear: (data: { nombres: string; apellidos: string; tipo: string; unidadNegocioId: string; colorAvatar?: string; colegiatura?: string; emailAgenda?: string; sedeId?: string }) =>
+  // confirmarDuplicado (12-oct-2026): crearla aunque el servidor diga que se parece a otra ficha (409 POSIBLE_DUPLICADO).
+  crear: (data: { nombres: string; apellidos: string; tipo: string; unidadNegocioId: string; colorAvatar?: string; colegiatura?: string; emailAgenda?: string; sedeId?: string; confirmarDuplicado?: boolean }) =>
     api.post<Profesional>('/profesionales', data),
+  fusionar: (id: string, destinoId: string) => api.post<{ fichaQueQueda: string; fichaQuitada: string; citas: number }>(`/profesionales/${id}/fusionar`, { destinoId }),
 
   editar: (id: string, data: Partial<{ nombres: string; apellidos: string; tipo: string; unidadNegocioId: string; colorAvatar: string; activo: boolean; colegiatura: string; emailAgenda: string; sedeId: string }>) =>
     api.patch<Profesional>(`/profesionales/${id}`, data),

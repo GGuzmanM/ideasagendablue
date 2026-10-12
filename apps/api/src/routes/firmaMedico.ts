@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../db';
 import { requireAuth, requirePermiso, AuthPayload } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
-import { registrarAudit } from '../services/audit';
+import { auditEnTx } from '../services/audit';
 import { medicoDelUsuario } from '../services/medicoCitaService';
 
 // ─── Firma y sello digitalizados del médico (18-sep-2026) ─────────────────────
@@ -58,27 +58,36 @@ router.put('/', requireAuth, async (req, res) => {
   const mime = tipoImagenFirma(b);
   if (!mime) throw new AppError('La firma debe ser una imagen PNG o JPG', 400, 'FIRMA_FORMATO');
   const antes = await prisma.firmaProfesional.findUnique({ where: { profesionalId: yo.id }, select: { actualizadoEn: true } });
-  await prisma.firmaProfesional.upsert({
-    where: { profesionalId: yo.id },
-    create: { profesionalId: yo.id, imagen: b, mime },
-    update: { imagen: b, mime },
+  // 10-oct-2026: el cambio y su auditoría van en la MISMA transacción (si la auditoría falla, no se cambia la firma).
+  await prisma.$transaction(async (tx) => {
+    await tx.firmaProfesional.upsert({
+      where: { profesionalId: yo.id },
+      create: { profesionalId: yo.id, imagen: b, mime },
+      update: { imagen: b, mime },
+    });
+    // Nunca se audita la imagen: solo que se subió o reemplazó, cuánto pesa y de qué tipo.
+    await auditEnTx(tx, { ...ctx(req), accion: antes ? 'reemplazar_firma' : 'subir_firma', entidad: 'profesional', entidadId: yo.id, despues: { mime, bytes: b.length } });
   });
-  // Nunca se audita la imagen: solo que se subió o reemplazó, cuánto pesa y de qué tipo.
-  await registrarAudit({ ...ctx(req), accion: antes ? 'reemplazar_firma' : 'subir_firma', entidad: 'profesional', entidadId: yo.id, despues: { mime, bytes: b.length } });
   res.json({ tieneFirma: true, actualizadoEn: new Date() });
 });
 
 router.delete('/', requireAuth, async (req, res) => {
   const yo = await yoMedico(req);
-  const r = await prisma.firmaProfesional.deleteMany({ where: { profesionalId: yo.id } });
-  if (r.count) await registrarAudit({ ...ctx(req), accion: 'quitar_firma', entidad: 'profesional', entidadId: yo.id });
-  res.json({ tieneFirma: false, actualizadoEn: null });
+  const r = await prisma.$transaction(async (tx) => {
+    const borradas = await tx.firmaProfesional.deleteMany({ where: { profesionalId: yo.id } });
+    if (borradas.count) await auditEnTx(tx, { ...ctx(req), accion: 'quitar_firma', entidad: 'profesional', entidadId: yo.id });
+    return borradas;
+  });
+  res.json({ tieneFirma: false, actualizadoEn: null, quitada: r.count > 0 });
 });
 
 router.delete('/de/:profesionalId', requireAuth, requirePermiso('usuarios.editar'), async (req, res) => {
   const profesionalId = z.string().uuid().parse(req.params.profesionalId);
-  const r = await prisma.firmaProfesional.deleteMany({ where: { profesionalId } });
-  if (r.count) await registrarAudit({ ...ctx(req), accion: 'retirar_firma', entidad: 'profesional', entidadId: profesionalId });
+  const r = await prisma.$transaction(async (tx) => {
+    const borradas = await tx.firmaProfesional.deleteMany({ where: { profesionalId } });
+    if (borradas.count) await auditEnTx(tx, { ...ctx(req), accion: 'retirar_firma', entidad: 'profesional', entidadId: profesionalId });
+    return borradas;
+  });
   res.json({ retirada: r.count > 0 });
 });
 

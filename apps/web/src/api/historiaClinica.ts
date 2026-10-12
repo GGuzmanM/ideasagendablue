@@ -440,7 +440,7 @@ export const historiaClinicaApi = {
   eliminarNotaMedico: (id: string) => api.delete<NotaMedicoPaciente[]>(`${B}/notas-medico/${id}`),
   precargarAnterior: (atencionId: string) =>
     api.post<{ atencion: AtencionCompleta; dxCopiados: number; anamnesisCopiada: boolean }>(`${B}/atenciones/${atencionId}/precargar-anterior`, {}),
-  resumenDelDia: (sedeId: string, fecha: string) => api.get<Record<string, ResumenClinicoCita>>(`${B}/resumen-del-dia`, { sedeId, fecha }),
+  resumenDelDia: (sedeId: string, fecha: string, hasta?: string) => api.get<Record<string, ResumenClinicoCita>>(`${B}/resumen-del-dia`, { sedeId, fecha, ...(hasta ? { hasta } : {}) }),
   subirConsentimientoFoto: (atencionId: string, archivo: File, campos: { procedimiento?: string; plantillaId?: string | null }) => {
     const fd = new FormData();
     fd.append('foto', archivo);

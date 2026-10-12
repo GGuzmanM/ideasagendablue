@@ -56,8 +56,7 @@ export function decidirCambioMedico(actor: ActorMedico, cita: EstadoCitaMedico, 
         if (!esSuya || !actor.puedeAutoasignar) return no(403, 'NO_ES_TU_CITA', 'Solo puedes soltar una cita que tomaste tú');
         if (cita.tieneRecetaVigente) {
           return no(409, 'TIENE_RECETA', 'Ya hay una receta médica emitida en esta cita: para cambiar de médico pide a coordinación');
-        }
-      }
+        }      }
       return si(cita.medicoId, null);
     }
     case 'asignar': {

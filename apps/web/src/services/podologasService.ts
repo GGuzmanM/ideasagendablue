@@ -46,7 +46,20 @@ export function usePodologasData() {
   ).values()];
 
   const crearMut = useMutation({
-    mutationFn: (data: FormProfesional) => profesionalesApi.crear({ ...data, sedeId: data.sedeId || undefined }),
+    mutationFn: async (data: FormProfesional) => {
+      const datos = { ...data, sedeId: data.sedeId || undefined };
+      try {
+        return await profesionalesApi.crear(datos);
+      } catch (e) {
+        // 12-oct-2026: si ya hay una ficha con el mismo nombre (aunque esté inactiva) se avisa antes de duplicarla.
+        const err = e as Error & { statusCode?: number; data?: { error?: string } };
+        if (err.statusCode === 409 && err.data?.error === 'POSIBLE_DUPLICADO'
+          && window.confirm(`${err.message}\n\n¿Es otra persona? Aceptar = crearla igual.`)) {
+          return profesionalesApi.crear({ ...datos, confirmarDuplicado: true });
+        }
+        throw e;
+      }
+    },
     onSuccess: (p, data) => {
       qc.invalidateQueries({ queryKey: ['profesionales'] });
       qc.invalidateQueries({ queryKey: ['profesionales-admin'] });

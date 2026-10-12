@@ -106,8 +106,13 @@ export async function crearMovimientoEnTx(tx: Prisma.TransactionClient, data: Cr
   // Guard: los profesionales "Adicional" y de Baropodometría son fijos de su sede y no pueden moverse.
   const prof = await tx.profesional.findUnique({
     where: { id: data.profesionalId },
-    select: { nombres: true, apellidos: true, tipo: true, unidadNegocio: { select: { nombre: true } } },
+    select: { nombres: true, apellidos: true, tipo: true, activo: true, deletedAt: true, unidadNegocio: { select: { nombre: true } } },
   });
+  // 12-oct-2026: a una ficha inactiva o dada de baja no se le crean movimientos (a la ficha vieja de Laura Escalante,
+  // inactiva, le crearon uno y quedó «en» Los Olivos junto a la ficha nueva).
+  if (prof && (!prof.activo || prof.deletedAt)) {
+    throw new AppError(`${prof.nombres} ${prof.apellidos} está inactiva: actívala en Administración antes de moverla.`, 400, 'PROFESIONAL_INACTIVO');
+  }
   if (prof && esProfesionalFijo(prof.nombres, prof.tipo, prof.unidadNegocio?.nombre)) {
     throw new AppError('Los profesionales "Adicional" y de Baropodometría son fijos de su sede y no pueden moverse.', 400, 'PROFESIONAL_FIJO');
   }

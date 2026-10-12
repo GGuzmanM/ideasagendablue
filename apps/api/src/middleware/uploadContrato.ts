@@ -3,8 +3,9 @@ import path from 'path';
 import fs from 'fs';
 import type { Request, Response, NextFunction } from 'express';
 import { AppError } from './errorHandler';
+import { DIR_UPLOADS } from '../utils/rutasArchivos';
 
-const dir = path.join(process.cwd(), 'uploads', 'contratos');
+const dir = path.join(DIR_UPLOADS, 'contratos');
 if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
 const storage = multer.diskStorage({

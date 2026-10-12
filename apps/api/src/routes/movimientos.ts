@@ -217,6 +217,9 @@ router.get('/', requireAuth, requirePermiso('movimientos.ver'), async (req, res)
 
   if (desde) where.fechaInicio = { ...where.fechaInicio, gte: fechaDb(desde) };
   if (hasta) where.fechaFin = { ...where.fechaFin, lte: fechaDb(hasta) };
+  // 12-oct-2026: una ficha inactiva o dada de baja no figura en el tablero (salvo en el historial): la ficha vieja de
+  // Laura Escalante, inactiva, seguía apareciendo en Los Olivos junto a la nueva.
+  where.profesional = estado === 'historial' ? { deletedAt: null } : { deletedAt: null, activo: true };
 
   const asignaciones = await prisma.asignacionSede.findMany({
     where,

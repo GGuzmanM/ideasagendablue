@@ -430,6 +430,9 @@ export function procesarYOrdenarDoctores(params: {
   });
 
   citasDb.forEach((c) => {
+    // 12-oct-2026: una cita CANCELADA o REPROGRAMADA no es presencia: no abre columna. Laura Escalante salía en la agenda
+    // de Paz Soldán (ya trabaja en Los Olivos) solo por una cita cancelada de ese día. El servidor ya lo filtraba.
+    if (['cancelada', 'reprogramada'].includes(String(c.estado ?? '').toLowerCase())) return;
     const p = c.profesional || c.solicitadoProfesional;
     const pId = c.profesionalId || (c as any).solicitadoProfesionalId || c.solicitadoProfesional?.id;
     if (pId) {

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../db';
 import { requireAuth, requirePermiso, assertSede, puedeTodasLasSedes, AuthPayload } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
+import { filtroFechaVisor } from '../utils/rangoVisor';
 import * as hc from '../services/historiaClinicaService';
 import * as b3 from '../services/bloque3Service';
 import * as fp from '../services/fichaPreviaService';
@@ -62,11 +63,16 @@ async function soloSusAtencionesSiEsMedico(req: Request, _res: Response, next: N
       if (!atencionId) break;
       const at = await prisma.atencionClinica.findUnique({
         where: { id: atencionId },
-        select: { cita: { select: { medicoId: true, medico: { select: { nombres: true, apellidos: true } } } } },
+        select: { cita: { select: { id: true, medicoId: true, medico: { select: { nombres: true, apellidos: true } } } } },
       });
       const medico = at?.cita.medicoId && at.cita.medicoId !== u.profesionalId ? at.cita.medico : null;
       if (medico) {
         throw new AppError(`Esta atención es de ${medico.nombres} ${medico.apellidos}: puedes verla, pero no modificarla`, 403, 'ATENCION_DE_OTRO_MEDICO');
+      }
+      // 10-oct-2026: el médico que registra en una atención cuya cita no tiene médico queda como su médico.
+      if (at && !at.cita.medicoId) {
+        const citaId = at.cita.id;
+        await prisma.$transaction((tx) => hc.tomarMedicoAlAtenderEnTx(tx, { ...ctx(req), citaId }));
       }
       break;
     }
@@ -607,9 +613,9 @@ router.post('/atenciones/:id/precargar-anterior', ...registrar, async (req, res)
 
 // GET /resumen-del-dia?sedeId&fecha — por cita: atención completada y si tiene procedimiento (Visor). Solo banderas.
 router.get('/resumen-del-dia', ...verHc, async (req, res) => {
-  const q = z.object({ sedeId: uuid, fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).parse(req.query);
+  const q = z.object({ sedeId: uuid, fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), hasta: z.string().optional() }).parse(req.query);
   assertSede(req, q.sedeId);
-  res.json(await v2.resumenClinicoDelDia(q.sedeId, q.fecha));
+  res.json(await v2.resumenClinicoDelDia(q.sedeId, filtroFechaVisor(req, q.fecha, q.hasta)));
 });
 
 // POST /atenciones/:id/consentimientos-foto (multipart: foto, procedimiento?, plantillaId?) — formato en papel firmado.

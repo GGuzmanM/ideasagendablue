@@ -34,9 +34,23 @@ router.get('/', requireAuth, requirePermiso('auditoria.ver'), async (req, res) =
     if (hasta) where.creadoEn.lte = new Date(hasta + 'T23:59:59');
   }
   if (q) {
+    // 10-oct-2026: lo de la HC a nivel PACIENTE (antecedentes, alergias, «Niega», notas del médico, exportar…) no
+    // va ligado a una cita sino al paciente (entidadId = pacienteId): sin esto, buscar al paciente no lo encontraba.
+    const pacientesQ = await prisma.paciente.findMany({
+      where: { OR: [
+        { nombres: { contains: q, mode: 'insensitive' } },
+        { apellidoPaterno: { contains: q, mode: 'insensitive' } },
+        { apellidoMaterno: { contains: q, mode: 'insensitive' } },
+        { numeroDocumento: { contains: q } },
+      ] },
+      select: { id: true },
+      take: 300,
+    });
+    const idsPacientes = pacientesQ.map((p) => p.id);
     // Busca por lo que una persona escribe: nombre del paciente de la cita, del usuario, la IP o
     // (para quien conoce las claves) la acción/entidad técnica.
     where.OR = [
+      ...(idsPacientes.length ? [{ entidad: { in: ['historia_clinica', 'paciente'] }, entidadId: { in: idsPacientes } }] : []),
       { accion: { contains: q, mode: 'insensitive' } },
       { entidad: { contains: q, mode: 'insensitive' } },
       { ip: { contains: q } },

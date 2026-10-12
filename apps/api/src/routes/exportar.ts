@@ -213,6 +213,221 @@ router.get('/citas-excel', requireAuth, async (req, res) => {
   res.end();
 });
 
+// ─── GET /exportar/tiempos-atencion?fecha= | desde=&hasta= [&sedeId=] ───── (Excel) ──
+// 10-oct-2026: por cada cita que llegó, QUIÉN marcó «Llegó», «En atención» y «Completada» (o si lo hizo el sistema:
+// completado automático o el aparato del consultorio), la espera, la atención y el total reales contra el tiempo
+// TEÓRICO de la cita (los 30 / 60 min con que se agenda). Un día o un rango (máx. 92 días), una sede o todas.
+// Hojas: «Citas» (detalle) y «Resumen» (por sede y por quién marcó «Llegó») para comparar.
+type MarcaEstado = { quien: string; rol: string; automatico: boolean };
+const ESTADOS_MARCADOS = ['llego', 'en_atencion', 'completada'] as const;
+type EstadoMarcado = (typeof ESTADOS_MARCADOS)[number];
+const horaLima = (d: Date | null) => (d ? d.toLocaleTimeString('es-PE', { timeZone: 'America/Lima', hour: '2-digit', minute: '2-digit', hour12: false }) : '');
+const minutosEntre = (a: Date | null, b: Date | null) => {
+  if (!a || !b) return null;
+  const m = Math.round((b.getTime() - a.getTime()) / 60_000);
+  return m >= 0 ? m : null;
+};
+const promedio = (xs: (number | null)[]) => {
+  const v = xs.filter((x): x is number => x !== null);
+  return v.length ? Math.round((v.reduce((s, x) => s + x, 0) / v.length) * 10) / 10 : null;
+};
+
+router.get('/tiempos-atencion', async (req, res) => {
+  const { fecha, desde, hasta, sedeId } = req.query as { fecha?: string; desde?: string; hasta?: string; sedeId?: string };
+  const esFecha = (v?: string): v is string => !!v && /^\d{4}-\d{2}-\d{2}$/.test(v);
+  const esRango = esFecha(desde) && esFecha(hasta);
+  if (!esRango && !esFecha(fecha)) throw new AppError('Indica una fecha (YYYY-MM-DD) o un rango desde/hasta', 400, 'FECHA_REQUERIDA');
+  const ini = esRango ? desde : fecha!;
+  const fin = esRango ? hasta : fecha!;
+  if (fin < ini) throw new AppError('La fecha «hasta» no puede ser anterior a «desde»', 400, 'RANGO_INVALIDO');
+  const dias = Math.round((Date.parse(fin + 'T00:00:00Z') - Date.parse(ini + 'T00:00:00Z')) / 86_400_000) + 1;
+  if (dias > MAX_DIAS_RANGO_EXCEL) {
+    throw new AppError(`El rango puede ser de hasta ${MAX_DIAS_RANGO_EXCEL} días (elegiste ${dias}). Divídelo en partes.`, 400, 'RANGO_MUY_LARGO');
+  }
+  const sede = sedeId ? await prisma.sede.findUnique({ where: { id: sedeId }, select: { nombre: true } }) : null;
+
+  const citas = await prisma.cita.findMany({
+    where: {
+      fecha: esRango ? { gte: new Date(ini + 'T12:00:00'), lte: new Date(fin + 'T12:00:00') } : new Date(ini + 'T12:00:00'),
+      deletedAt: null, estado: { in: [...ESTADOS_LLEGARON] }, ...(sedeId ? { sedeId } : {}),
+    },
+    select: {
+      id: true, fecha: true, horaInicio: true, estado: true, duracionMinutos: true, slotRol: true,
+      llegoEn: true, enAtencionEn: true, completadaEn: true,
+      paciente: { select: { nombres: true, apellidoPaterno: true, apellidoMaterno: true, numeroDocumento: true } },
+      sede: { select: { nombre: true } },
+      unidadNegocio: { select: { nombre: true } },
+      servicio: { select: { nombre: true } },
+      subcategoria: { select: { nombre: true } },
+      profesional: { select: { nombres: true, apellidos: true } },
+    },
+    orderBy: [{ fecha: 'asc' }, { sede: { nombre: 'asc' } }, { horaInicio: 'asc' }],
+  });
+
+  // Quién hizo cada paso: el ÚLTIMO cambio a ese estado en la auditoría (si se revirtió y se volvió a marcar, vale el último).
+  const roles = Object.fromEntries((await prisma.rol.findMany({ select: { nombre: true, label: true } })).map((r) => [r.nombre, r.label]));
+  const marcas = new Map<string, Partial<Record<EstadoMarcado, MarcaEstado>>>();
+  const ids = citas.map((c) => c.id);
+  for (let i = 0; i < ids.length; i += 2000) {
+    const logs = await prisma.auditLog.findMany({
+      where: { citaId: { in: ids.slice(i, i + 2000) }, accion: { in: ['cambiar_estado', 'auto_completar'] } },
+      select: { citaId: true, accion: true, despues: true, usuario: { select: { nombre: true, rol: true } } },
+      orderBy: { creadoEn: 'asc' },
+    });
+    for (const l of logs) {
+      const d = (l.despues ?? {}) as { estado?: string; origen?: string; dispositivo?: string };
+      const estado = (l.accion === 'auto_completar' ? 'completada' : d.estado) as EstadoMarcado | undefined;
+      if (!l.citaId || !estado || !ESTADOS_MARCADOS.includes(estado)) continue;
+      const m: MarcaEstado = l.accion === 'auto_completar'
+        ? { quien: 'Sistema (completado automático)', rol: 'Sistema', automatico: true }
+        : !l.usuario
+          ? { quien: d.origen === 'dispositivo' ? `Aparato del consultorio${d.dispositivo ? ` (${d.dispositivo})` : ''}` : 'Sistema (automático)', rol: 'Sistema', automatico: true }
+          : { quien: l.usuario.nombre.trim(), rol: roles[l.usuario.rol] ?? l.usuario.rol, automatico: false };
+      marcas.set(l.citaId, { ...(marcas.get(l.citaId) ?? {}), [estado]: m });
+    }
+  }
+  const sinRegistro: MarcaEstado = { quien: 'Sin registro', rol: '', automatico: false };
+  const marca = (id: string, e: EstadoMarcado, hora: Date | null) => marcas.get(id)?.[e] ?? (hora ? sinRegistro : null);
+
+  const filas = citas.map((c) => {
+    const llego = marca(c.id, 'llego', c.llegoEn);
+    const atencion = marca(c.id, 'en_atencion', c.enAtencionEn);
+    const completada = marca(c.id, 'completada', c.completadaEn);
+    const espera = minutosEntre(c.llegoEn, c.enAtencionEn);
+    const minAtencion = minutosEntre(c.enAtencionEn, c.completadaEn);
+    const automaticos = [llego?.automatico && 'Llegó', atencion?.automatico && 'En atención', completada?.automatico && 'Completada'].filter(Boolean) as string[];
+    return {
+      c, llego, atencion, completada, espera, minAtencion, total: minutosEntre(c.llegoEn, c.completadaEn),
+      teorico: c.duracionMinutos,
+      automatico: automaticos.length ? automaticos.join(', ') : 'No',
+      // En una cita doble los tiempos son los mismos para las dos: el resumen cuenta solo el 1º tratamiento.
+      cuentaEnResumen: c.slotRol !== 'SECUNDARIO',
+    };
+  });
+  type Fila = (typeof filas)[number];
+
+  const wb = new ExcelJS.Workbook();
+  const ddmmyyyy = (d: Date) => d.toISOString().slice(0, 10).split('-').reverse().join('/');
+  const periodo = esRango ? `Del ${ini.split('-').reverse().join('/')} al ${fin.split('-').reverse().join('/')}` : ini.split('-').reverse().join('/');
+  const titulo = `Tiempos de atención · ${periodo} · Sede: ${sede?.nombre ?? 'Todas las sedes'} · ${citas.length} citas que llegaron`;
+  // Azul Limablue (el `primary` de la Agenda).
+  const cabecera = (ws: ExcelJS.Worksheet, fila: number, titulos: string[], color = 'FF0044AB') => {
+    const r = ws.getRow(fila);
+    r.values = titulos;
+    r.eachCell((cell) => {
+      cell.font = { name: 'Arial', bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: color } };
+      cell.alignment = { vertical: 'middle', wrapText: true };
+    });
+    r.height = 30;
+  };
+
+  // ── Hoja 1: detalle por cita ──
+  const ws = wb.addWorksheet('Citas');
+  const columnas: { titulo: string; ancho: number; valor: (f: Fila) => string | number | null; texto?: boolean; num?: boolean; marca?: EstadoMarcado }[] = [
+    { titulo: 'Fecha', ancho: 11, valor: (f) => ddmmyyyy(f.c.fecha) },
+    { titulo: 'Sede', ancho: 13, valor: (f) => f.c.sede.nombre },
+    { titulo: 'Unidad', ancho: 14, valor: (f) => f.c.unidadNegocio.nombre },
+    { titulo: 'Hora cita', ancho: 9, valor: (f) => f.c.horaInicio },
+    { titulo: 'DNI', ancho: 12, valor: (f) => f.c.paciente.numeroDocumento ?? '', texto: true },
+    { titulo: 'Paciente', ancho: 32, valor: (f) => `${f.c.paciente.nombres} ${f.c.paciente.apellidoPaterno} ${f.c.paciente.apellidoMaterno ?? ''}`.replace(/\s+/g, ' ').trim() },
+    { titulo: 'Servicio', ancho: 34, valor: (f) => (f.c.subcategoria ? `${f.c.servicio.nombre} · ${f.c.subcategoria.nombre}` : f.c.servicio.nombre) },
+    { titulo: 'Profesional', ancho: 26, valor: (f) => (f.c.profesional ? `${f.c.profesional.nombres} ${f.c.profesional.apellidos}`.trim() : '') },
+    { titulo: 'Estado', ancho: 12, valor: (f) => ESTADO_CITA_LABEL[f.c.estado] ?? f.c.estado },
+    { titulo: 'Cita doble', ancho: 10, valor: (f) => (f.c.slotRol === 'PRINCIPAL' ? '1º trat.' : f.c.slotRol === 'SECUNDARIO' ? '2º trat.' : '') },
+    { titulo: 'Llegó (hora)', ancho: 10, valor: (f) => horaLima(f.c.llegoEn) },
+    { titulo: 'Marcó «Llegó»', ancho: 26, valor: (f) => f.llego?.quien ?? '', marca: 'llego' },
+    { titulo: 'Rol (Llegó)', ancho: 18, valor: (f) => f.llego?.rol ?? '' },
+    { titulo: 'En atención (hora)', ancho: 11, valor: (f) => horaLima(f.c.enAtencionEn) },
+    { titulo: 'Marcó «En atención»', ancho: 26, valor: (f) => f.atencion?.quien ?? '', marca: 'en_atencion' },
+    { titulo: 'Completada (hora)', ancho: 11, valor: (f) => horaLima(f.c.completadaEn) },
+    { titulo: 'Marcó «Completada»', ancho: 28, valor: (f) => f.completada?.quien ?? '', marca: 'completada' },
+    { titulo: 'Hecho por el sistema', ancho: 18, valor: (f) => f.automatico },
+    { titulo: 'Espera (min)', ancho: 9, valor: (f) => f.espera, num: true },
+    { titulo: 'Atención (min)', ancho: 10, valor: (f) => f.minAtencion, num: true },
+    { titulo: 'Total (min)', ancho: 9, valor: (f) => f.total, num: true },
+    { titulo: 'Tiempo teórico (min)', ancho: 10, valor: (f) => f.teorico, num: true },
+  ];
+  ws.columns = columnas.map((x) => ({ width: x.ancho }));
+  ws.mergeCells(1, 1, 1, columnas.length);
+  ws.getCell(1, 1).value = titulo;
+  ws.getCell(1, 1).font = { name: 'Arial', bold: true, size: 13 };
+  const FILA_CAB = 3;
+  cabecera(ws, FILA_CAB, columnas.map((x) => x.titulo));
+  ws.autoFilter = { from: { row: FILA_CAB, column: 1 }, to: { row: FILA_CAB, column: columnas.length } };
+  ws.views = [{ state: 'frozen', ySplit: FILA_CAB }];
+  filas.forEach((f, i) => {
+    const r = ws.getRow(FILA_CAB + 1 + i);
+    r.values = columnas.map((x) => x.valor(f));
+    r.font = { name: 'Arial', size: 10 };
+    columnas.forEach((x, k) => {
+      const cell = r.getCell(k + 1);
+      if (x.texto) cell.numFmt = '@';
+      if (x.marca) {
+        const m = x.marca === 'llego' ? f.llego : x.marca === 'en_atencion' ? f.atencion : f.completada;
+        if (m?.automatico) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } };
+      }
+    });
+  });
+
+  // ── Hoja 2: resumen para comparar ──
+  const rs = wb.addWorksheet('Resumen');
+  rs.columns = [{ width: 30 }, { width: 20 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 16 }, { width: 16 }];
+  rs.mergeCells(1, 1, 1, 8);
+  rs.getCell(1, 1).value = titulo;
+  rs.getCell(1, 1).font = { name: 'Arial', bold: true, size: 13 };
+
+  const enResumen = filas.filter((f) => f.cuentaEnResumen);
+  let fila = 3;
+  rs.getCell(fila, 1).value = 'Por sede';
+  rs.getCell(fila, 1).font = { name: 'Arial', bold: true, size: 11 };
+  fila++;
+  cabecera(rs, fila, ['Sede', 'Citas que llegaron', 'Espera prom. (min)', 'Atención prom. (min)', 'Total prom. (min)', 'Teórico prom. (min)', 'Completadas por el sistema', '% completadas por el sistema']);
+  const porSede = new Map<string, Fila[]>();
+  for (const f of enResumen) porSede.set(f.c.sede.nombre, [...(porSede.get(f.c.sede.nombre) ?? []), f]);
+  const lineaResumen = (nombre: string, fs: Fila[]) => {
+    const auto = fs.filter((f) => f.completada?.automatico).length;
+    const completadas = fs.filter((f) => f.c.estado === 'completada').length;
+    return [
+      nombre, fs.length, promedio(fs.map((f) => f.espera)), promedio(fs.map((f) => f.minAtencion)), promedio(fs.map((f) => f.total)),
+      promedio(fs.map((f) => f.teorico)), auto, completadas ? Math.round((auto / completadas) * 1000) / 10 : null,
+    ];
+  };
+  for (const [nombre, fs] of [...porSede.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    fila++;
+    rs.getRow(fila).values = lineaResumen(nombre, fs);
+    rs.getRow(fila).font = { name: 'Arial', size: 10 };
+  }
+  fila++;
+  rs.getRow(fila).values = lineaResumen('Todas las sedes', enResumen);
+  rs.getRow(fila).font = { name: 'Arial', size: 10, bold: true };
+
+  fila += 3;
+  rs.getCell(fila, 1).value = 'Quién marcó «Llegó»';
+  rs.getCell(fila, 1).font = { name: 'Arial', bold: true, size: 11 };
+  fila++;
+  cabecera(rs, fila, ['Usuario', 'Rol', 'Sede(s)', 'Citas marcadas', 'Espera prom. (min)']);
+  const porUsuario = new Map<string, { rol: string; sedes: Set<string>; fs: Fila[] }>();
+  for (const f of enResumen) {
+    if (!f.llego) continue;
+    const u = porUsuario.get(f.llego.quien) ?? { rol: f.llego.rol, sedes: new Set<string>(), fs: [] };
+    u.sedes.add(f.c.sede.nombre);
+    u.fs.push(f);
+    porUsuario.set(f.llego.quien, u);
+  }
+  for (const [nombre, u] of [...porUsuario.entries()].sort((a, b) => b[1].fs.length - a[1].fs.length)) {
+    fila++;
+    rs.getRow(fila).values = [nombre, u.rol, [...u.sedes].sort().join(', '), u.fs.length, promedio(u.fs.map((f) => f.espera))];
+    rs.getRow(fila).font = { name: 'Arial', size: 10 };
+  }
+
+  const nombreArchivo = `tiempos-atencion-${esRango ? `${ini}_a_${fin}` : ini}${sede ? `-${sede.nombre.replace(/\s+/g, '-').toLowerCase()}` : ''}.xlsx`;
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(nombreArchivo)}"`);
+  await wb.xlsx.write(res);
+  res.end();
+});
+
 // ─── GET /exportar/reactivacion ──────────────────────────────────────────────
 // Filtro por período de última visita (3 modos, prioridad de arriba hacia abajo):
 //   1) fechaDesde + fechaHasta (YYYY-MM-DD) → última visita DENTRO del rango

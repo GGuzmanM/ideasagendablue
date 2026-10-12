@@ -1,0 +1,91 @@
+LIMABLUE AGENDA - SERVIDOR
+Version: {{VERSION}}
+
+Esta carpeta es el programa completo, ya compilado. No necesita instalar Node, npm ni descargar nada.
+Las PCs de las sedes solo usan el navegador (Chrome o Edge).
+
+
+REQUISITOS DEL SERVIDOR
+- Windows 10 / 11 o Windows Server 2016 o superior.
+- PostgreSQL (14 o superior) en el mismo servidor o en otro equipo de la red.
+- Usuario de Windows con permisos de administrador para instalar.
+
+
+MUDANZA DESDE LA PC ANTERIOR (antes de instalar)
+1. Elige un momento sin atencion (por ejemplo, despues del cierre) y que NADIE use la Agenda vieja desde ahi.
+2. En la PC anterior: deten la Agenda y saca un respaldo EN ESE MOMENTO (no uses el de las 13:00 si despues
+   se siguio trabajando: lo hecho despues se perderia).
+3. Lleva al servidor (USB o una carpeta temporal; NO los dejes en el NAS junto al programa):
+     - el respaldo  Agendav2-AAAAMMDD-HHMMSS.dump
+     - la carpeta   apps\api\uploads   (fotos clinicas, consentimientos, comprobantes, contratos)
+     - el archivo   apps\api\.env      (correo, claves, integraciones)
+4. El PostgreSQL del servidor debe ser version 18 o superior (los respaldos son de PostgreSQL 18).
+
+
+INSTALACION (primera vez)
+1. Copia esta carpeta al servidor, por ejemplo a  C:\Limablue Agenda
+2. Doble clic en  "Instalar o actualizar.bat"  (acepta el permiso de administrador) y responde:
+     - Ruta del .env anterior (conserva correo, claves e integraciones).
+     - Servidor, puerto, nombre, usuario y clave de PostgreSQL.
+     - Puerto de la Agenda (por defecto 5180).
+     - Respaldo (.dump) a cargar y carpeta uploads anterior: los carga solos.
+       El respaldo solo se carga si la base esta vacia o no existe (nunca encima de datos).
+     - Carpeta del NAS para la copia de los respaldos y el usuario de Windows con acceso a ella.
+3. Al terminar muestra la direccion. Desde cualquier PC de la red:  https://IP-DEL-SERVIDOR:5180
+4. Borra del servidor las copias temporales del .env y del respaldo.
+
+
+RESPALDOS AUTOMATICOS
+- Todos los dias a las 13:00 y 20:00 (tarea "Limablue Agenda - Respaldo"): base de datos + archivos subidos.
+- Se guardan en  C:\ProgramData\Limablue Agenda\respaldos  (7 dias completos + 4 semanales + 6 mensuales)
+  y una copia en el NAS (30 dias), si se configuro.
+- "Respaldar ahora.bat": respaldo inmediato (por ejemplo, antes de una actualizacion).
+- Registro de cada respaldo: C:\ProgramData\Limablue Agenda\respaldos\respaldos.log
+
+La Agenda queda como tarea de Windows "Limablue Agenda": arranca sola al prender el servidor (aunque nadie
+inicie sesion) y se reinicia sola si se cae.
+
+
+CERTIFICADO HTTPS (aviso "No es seguro")
+La Agenda va por https (lo exige el dictado por voz). Dos opciones al instalar:
+A) RECOMENDADA - Certificado de la autoridad de Limablue: sistemas lo genera para la IP del servidor y entrega
+   una carpeta con servidor.crt, servidor.key y limablue-ca.crt. El instalador pregunta esa carpeta.
+   En cada PC se instala UNA sola vez limablue-ca.crt (si ya esta, no se hace nada):
+     doble clic > Instalar certificado > Equipo local > "Colocar en el siguiente almacen" >
+     "Entidades de certificacion raiz de confianza" > Finalizar.
+     (o como administrador:  certutil -addstore -f Root limablue-ca.crt)
+   Si algun dia cambia la IP, solo se genera otro certificado: en las PCs no se toca nada.
+B) Enter en esa pregunta: el instalador crea un certificado propio. La primera vez cada navegador avisa
+   ("Configuracion avanzada" > "Continuar") o se instala en cada PC
+     C:\ProgramData\Limablue Agenda\config\certificado\servidor-para-las-PCs.cer
+Para cambiar de certificado despues: en agenda.env deja solo HTTPS_CERT/HTTPS_KEY (o HTTPS_PFX/HTTPS_PFX_CLAVE)
+apuntando a archivos de la carpeta config\certificado. Luego Detener.bat e Iniciar.bat.
+
+
+ACTUALIZAR A UNA VERSION NUEVA
+0. "Respaldar ahora.bat" (por si acaso).
+1. Detener.bat
+2. Reemplaza la carpeta del programa por la nueva (la configuracion y los archivos NO estan aqui, no se pierden).
+3. "Instalar o actualizar.bat"  (ya no pregunta nada: aplica los cambios de la base y vuelve a arrancar).
+
+
+DONDE ESTA CADA COSA
+- Programa:            esta carpeta (se reemplaza en cada version).
+- Configuracion:       C:\ProgramData\Limablue Agenda\config\agenda.env   (claves: solo administradores).
+- Archivos subidos:    C:\ProgramData\Limablue Agenda\uploads   (fotos clinicas, consentimientos, comprobantes).
+- Respaldos:           C:\ProgramData\Limablue Agenda\respaldos  (+ copia en el NAS).
+- Logs:                C:\ProgramData\Limablue Agenda\logs   (uno por dia)  ->  "Ver logs.bat"
+
+
+OTRAS ACCIONES
+- Detener.bat / Iniciar.bat     detener o iniciar la Agenda.
+- Desinstalar.bat               quita el servicio y la regla del firewall (no borra base ni archivos).
+- Si se cambia algo en agenda.env: Detener.bat y luego Iniciar.bat.
+
+
+PROBLEMAS COMUNES
+- "No se pudieron aplicar las migraciones": revisa DATABASE_URL en agenda.env (servidor, usuario, clave)
+  y que PostgreSQL acepte conexiones desde este equipo (pg_hba.conf).
+- Las PCs no abren la pagina: revisa que el puerto (5180) este abierto en el firewall del servidor
+  y que usen https:// (no http://).
+- Cualquier otro error: abre el log del dia ("Ver logs.bat").

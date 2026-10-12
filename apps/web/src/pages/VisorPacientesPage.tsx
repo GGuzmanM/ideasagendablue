@@ -61,6 +61,26 @@ const LEYENDA: { clase: string; texto: string; soloMedico?: boolean }[] = [
 ];
 
 function nombrePaciente(c: CitaResumen) { return `${c.paciente.nombres} ${c.paciente.apellidoPaterno} ${c.paciente.apellidoMaterno ?? ''}`.trim(); }
+const diaCorto = (f: string) => `${f.slice(8, 10)}/${f.slice(5, 7)}`;
+const diaLargo = (f: string) => new Date(`${f.slice(0, 10)}T12:00:00`).toLocaleDateString('es-PE', { weekday: 'long', day: 'numeric', month: 'long' });
+
+/** Día o rango del visor (solo admin y auditor de médicos). */
+function SelectorFechasVisor({ v }: { v: ReturnType<typeof useVisorPacientes> }) {
+  const INPUT = 'bg-surface-container-low border border-outline-variant rounded-lg px-2 py-1 text-sm text-on-surface';
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap" data-testid="visor-fechas">
+      <button onClick={() => v.moverDia(-1)} className={BTN_SEC} title="Día anterior" data-testid="visor-dia-anterior"><span className="material-symbols-outlined text-base">chevron_left</span></button>
+      <label className="flex items-center gap-1 text-xs text-on-surface-variant">Desde
+        <input type="date" value={v.desdeSel} onChange={(e) => v.setDesde(e.target.value)} className={INPUT} data-testid="visor-desde" />
+      </label>
+      <label className="flex items-center gap-1 text-xs text-on-surface-variant">Hasta
+        <input type="date" value={v.hastaSel} onChange={(e) => v.setHasta(e.target.value)} className={INPUT} data-testid="visor-hasta" />
+      </label>
+      <button onClick={() => v.moverDia(1)} className={BTN_SEC} title="Día siguiente" data-testid="visor-dia-siguiente"><span className="material-symbols-outlined text-base">chevron_right</span></button>
+      {!v.esHoy && <button onClick={v.irHoy} className={BTN_SEC} data-testid="visor-hoy">Hoy</button>}
+    </div>
+  );
+}
 
 export function VisorPacientesPage() {
   const v = useVisorPacientes();
@@ -73,10 +93,15 @@ export function VisorPacientesPage() {
             <span className="material-symbols-outlined text-primary">clinical_notes</span>Visor de Pacientes
           </h1>
           <p className="text-xs text-on-surface-variant mt-0.5">
-            Quienes ya llegaron hoy a {v.sedeNombre || 'la sede'}. Tómate al paciente, entra a su historia y emite la receta desde aquí.
+            {v.esHoy
+              ? <>Quienes ya llegaron hoy a {v.sedeNombre || 'la sede'}. Tómate al paciente, entra a su historia y emite la receta desde aquí.</>
+              : v.esRango
+                ? <>Pacientes de {v.sedeNombre || 'la sede'} del {diaCorto(v.fecha)} al {diaCorto(v.hasta!)}.</>
+                : <>Pacientes de {v.sedeNombre || 'la sede'} del {diaLargo(v.fecha)}.</>}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          {v.puedeRango && <SelectorFechasVisor v={v} />}
           {v.sedes.length > 1 && (
             <select value={v.sedeId} onChange={(e) => v.setSedeId(e.target.value)} className="bg-surface-container-low border border-outline-variant rounded-lg px-2 py-1.5 text-sm text-on-surface" data-testid="visor-sede">
               {v.sedes.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
@@ -100,7 +125,7 @@ export function VisorPacientesPage() {
           <input value={v.busqueda} onChange={(e) => v.setBusqueda(e.target.value)} placeholder="Nombre o documento…" className="pl-8 pr-3 py-1.5 bg-surface-container-low border border-outline-variant rounded-lg text-sm text-on-surface w-56" />
         </div>
         <span className="flex-1" />
-        <span className="text-xs text-on-surface-variant">{v.porVenir} por llegar · {v.atendidos.length} atendido{v.atendidos.length === 1 ? '' : 's'} hoy</span>
+        <span className="text-xs text-on-surface-variant">{v.porVenir} por llegar · {v.atendidos.length} atendido{v.atendidos.length === 1 ? '' : 's'}{v.esHoy ? ' hoy' : ''}</span>
       </div>
       <div className="flex items-center gap-3 flex-wrap text-[11px] text-on-surface-variant" data-testid="visor-leyenda">
         {LEYENDA.filter((l) => !l.soloMedico || v.soyMedico).map((l) => (
@@ -139,7 +164,7 @@ export function VisorPacientesPage() {
                         <ChipsResumenHc r={v.resumenDe(c)} />
                       </div>
                       <p className="text-xs text-on-surface-variant mt-0.5 truncate">
-                        {c.horaInicio} · {c.servicio.nombre}{c.subcategoria ? ` · ${c.subcategoria.nombre}` : ''} · {c.unidadNegocio.nombre}
+                        {v.esRango ? `${diaCorto(c.fecha)} · ` : ''}{c.horaInicio} · {c.servicio.nombre}{c.subcategoria ? ` · ${c.subcategoria.nombre}` : ''} · {c.unidadNegocio.nombre}
                         {c.profesional ? ` · ${c.profesional.nombres.split(' ')[0]} ${c.profesional.apellidos.split(' ')[0]}` : ''}
                       </p>
                       {a.llevaMedico && (
@@ -177,7 +202,7 @@ export function VisorPacientesPage() {
           <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4 lg:p-5">
             <button onClick={() => v.setVerAtendidos(!v.verAtendidos)} className="w-full flex items-center gap-2 text-left">
               <span className="material-symbols-outlined text-on-surface-variant">task_alt</span>
-              <h2 className="font-headline-sm text-headline-sm font-semibold text-on-surface flex-1">Atendidos hoy ({v.atendidos.length})</h2>
+              <h2 className="font-headline-sm text-headline-sm font-semibold text-on-surface flex-1">Atendidos{v.esHoy ? ' hoy' : ''} ({v.atendidos.length})</h2>
               <span className="material-symbols-outlined text-on-surface-variant">{v.verAtendidos ? 'expand_less' : 'expand_more'}</span>
             </button>
             {v.verAtendidos && (
@@ -186,7 +211,7 @@ export function VisorPacientesPage() {
                 {v.atendidos.map((c) => (
                   <div key={c.id} className="rounded-xl border border-outline-variant/20 px-3 py-2 flex items-center gap-2 flex-wrap">
                     <span className="text-sm font-semibold text-on-surface">{nombrePaciente(c)}</span>
-                    <span className="text-xs text-on-surface-variant">{c.horaInicio} · {c.servicio.nombre}{c.medico ? ` · ${nombreMedico(c.medico)}` : ''}</span>
+                    <span className="text-xs text-on-surface-variant">{v.esRango ? `${diaCorto(c.fecha)} · ` : ''}{c.horaInicio} · {c.servicio.nombre}{c.medico ? ` · ${nombreMedico(c.medico)}` : ''}</span>
                     {v.recetaDe(c) && <ChipReceta rx={v.recetaDe(c)!} />}
                     <ChipsResumenHc r={v.resumenDe(c)} />
                     <span className="flex-1" />

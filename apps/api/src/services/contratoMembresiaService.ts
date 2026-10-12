@@ -7,6 +7,7 @@
 import fs from 'fs';
 import path from 'path';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import { DIR_UPLOADS } from '../utils/rutasArchivos';
 
 export type CampoContrato = 'nombre' | 'dni' | 'fecha';
 
@@ -29,7 +30,7 @@ export interface DatosPacienteContrato {
 export function rutaLocalContrato(url: string): string {
   const idx = url.indexOf('/uploads/');
   const rel = idx >= 0 ? url.slice(idx + 1) : url; // "uploads/contratos/x.pdf"
-  return path.join(process.cwd(), rel);
+  return path.join(DIR_UPLOADS, rel.replace(/^uploads[\\/]/, ''));
 }
 
 const VALOR_POR_CAMPO = (d: DatosPacienteContrato): Record<CampoContrato, string> => ({
@@ -79,7 +80,7 @@ export async function generarContratoPdf(
 
 /** Escribe el contrato generado a disco (uploads/contratos) y devuelve su URL pública. */
 export function guardarContratoGenerado(bytes: Uint8Array, baseUrl: string): { url: string; nombre: string } {
-  const dir = path.join(process.cwd(), 'uploads', 'contratos');
+  const dir = path.join(DIR_UPLOADS, 'contratos');
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   const nombre = `contrato_gen_${Date.now()}_${Math.random().toString(36).slice(2)}.pdf`;
   fs.writeFileSync(path.join(dir, nombre), bytes);
