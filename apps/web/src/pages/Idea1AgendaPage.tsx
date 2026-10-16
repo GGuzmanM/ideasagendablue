@@ -988,7 +988,8 @@ export function Idea1AgendaPage() {
                                 // Soltar OTRA cita encima de esta → intercambiar pacientes (misma sede y día). Las canceladas / no vino
                                 // dejan pasar el soltar a la casilla (no se intercambian).
                                 onDragOver={(e) => {
-                                  if (!arrastrando || arrastrando === cita.id || !esDraggable || cita.raw?.slotGrupoId) return;
+                                  // Citas dobles: solo el admin las intercambia (16-oct-2026); se lee el rol sin hook.
+                                  if (!arrastrando || arrastrando === cita.id || !esDraggable || (cita.raw?.slotGrupoId && useAuthStore.getState().usuario?.rol !== 'admin')) return;
                                   e.preventDefault();
                                   e.stopPropagation();
                                   e.dataTransfer.dropEffect = 'move';
@@ -1005,9 +1006,11 @@ export function Idea1AgendaPage() {
                                   let payload: { citaId?: string; slotGrupoId?: string | null; pacienteNombre?: string; profesionalNombre?: string; horaInicio?: string } | null = null;
                                   try { payload = JSON.parse(e.dataTransfer.getData('text/plain') || 'null'); } catch { payload = null; }
                                   if (!payload?.citaId || payload.citaId === cita.id) return;
-                                  if (payload.slotGrupoId || cita.raw?.slotGrupoId) { toast.error('Las citas dobles se mueven con su bloque: no se intercambian'); return; }
+                                  const hayDoble = !!(payload.slotGrupoId || cita.raw?.slotGrupoId);
+                                  if (hayDoble && useAuthStore.getState().usuario?.rol !== 'admin') { toast.error('Las citas dobles solo las intercambia administración'); return; }
                                   const ok = window.confirm(
-                                    `¿Intercambiar pacientes?\n\n• ${payload.pacienteNombre ?? 'Paciente'} (${payload.profesionalNombre ?? ''} ${payload.horaInicio ?? ''}) → pasa a ${doc.nombres} ${cita.horaInicio}\n• ${cita.paciente} (${doc.nombres} ${cita.horaInicio}) → pasa a ${payload.profesionalNombre ?? ''} ${payload.horaInicio ?? ''}`,
+                                    `¿Intercambiar pacientes?\n\n• ${payload.pacienteNombre ?? 'Paciente'} (${payload.profesionalNombre ?? ''} ${payload.horaInicio ?? ''}) → pasa a ${doc.nombres} ${cita.horaInicio}\n• ${cita.paciente} (${doc.nombres} ${cita.horaInicio}) → pasa a ${payload.profesionalNombre ?? ''} ${payload.horaInicio ?? ''}` +
+                                    (hayDoble ? '\n\nLa cita doble se mueve completa (sus dos servicios juntos).' : ''),
                                   );
                                   if (!ok) return;
                                   try { await handleIntercambiarCitas({ citaIdA: payload.citaId, citaIdB: cita.id }); } catch { /* el toast ya muestra el motivo */ }

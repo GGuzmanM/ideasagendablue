@@ -2832,19 +2832,31 @@ router.post('/intercambiar', requireAuth, requireAcceso('appointments:write', 'c
   if (a.sedeId !== b.sedeId || fechaAStr(a.fecha) !== fechaAStr(b.fecha)) {
     throw new AppError('Solo se intercambian citas del mismo día y de la misma sede', 400, 'INTERCAMBIO_INVALIDO');
   }
+  // 16-oct-2026: el ADMIN también intercambia citas dobles. El bloque viaja COMPLETO, sus dos mitades juntas
+  // (comparten profesional y hora), en el estado en que estén (pedido del usuario: «que se vaya completa»).
+  const esAdmin = req.user?.rol === 'admin';
+  const FINAL_O_REPROG = [...ESTADOS_FINALES, 'reprogramada'];
+  const ladoDe = async (c: typeof a) => (c.slotGrupoId
+    ? prisma.cita.findMany({
+        where: { slotGrupoId: c.slotGrupoId, deletedAt: null },
+        include: { unidadNegocio: true, paciente: { select: { nombres: true, apellidoPaterno: true } } },
+      })
+    : [c]);
   for (const c of [a, b]) {
-    if ([...ESTADOS_FINALES, 'reprogramada'].includes(c.estado)) throw new AppError('Una de las citas ya terminó, se canceló o no vino: no se intercambia', 400, 'ESTADO_FINAL');
-    if (c.slotGrupoId) throw new AppError('Una de las citas es doble (dos servicios): esas se mueven con su bloque, no se intercambian', 400, 'CITA_DOBLE');
+    if (c.slotGrupoId && !esAdmin) throw new AppError('Una de las citas es doble (dos servicios): solo administración puede intercambiarla', 403, 'CITA_DOBLE');
+    if (!c.slotGrupoId && FINAL_O_REPROG.includes(c.estado)) throw new AppError('Una de las citas ya terminó, se canceló o no vino: no se intercambia', 400, 'ESTADO_FINAL');
     if (c.unidadNegocio.modoReserva === 'sin_eleccion') throw new AppError('Las citas de baropodometría van en máquina: no se intercambian', 400, 'INTERCAMBIO_INVALIDO');
     if (!c.profesionalId) throw new AppError('Una de las citas no tiene profesional', 400, 'SIN_PROFESIONAL');
   }
   if (a.profesionalId === b.profesionalId && a.horaInicio === b.horaInicio) throw new AppError('Las dos citas ya están en el mismo lugar', 400, 'INTERCAMBIO_INVALIDO');
+  const [ladoA, ladoB] = await Promise.all([ladoDe(a), ladoDe(b)]);
+  if (!ladoA.length || !ladoB.length) throw new AppError('Una de las citas ya terminó, se canceló o no vino: no se intercambia', 400, 'ESTADO_FINAL');
   const fecha = fechaAStr(a.fecha);
-  const ids = [a.id, b.id];
-  // Cada cita va al lugar de la otra.
+  const ids = [...ladoA, ...ladoB].map((c) => c.id);
+  // Cada lado va al lugar del otro (en una cita doble, sus dos mitades juntas).
   const planes = [
-    { cita: a, profesionalId: b.profesionalId!, horaInicio: b.horaInicio },
-    { cita: b, profesionalId: a.profesionalId!, horaInicio: a.horaInicio },
+    ...ladoA.map((c) => ({ cita: c, profesionalId: b.profesionalId!, horaInicio: b.horaInicio })),
+    ...ladoB.map((c) => ({ cita: c, profesionalId: a.profesionalId!, horaInicio: a.horaInicio })),
   ];
   for (const pl of planes) {
     const comp = await prisma.competenciaProfesional.findFirst({ where: { profesionalId: pl.profesionalId, servicioId: pl.cita.servicioId, activa: true } });
@@ -2871,10 +2883,11 @@ router.post('/intercambiar', requireAuth, requireAcceso('appointments:write', 'c
         await validarProfesionalLibre(pl.profesionalId, fecha, pl.horaInicio, pl.cita.duracionMinutos, undefined, ids, tx);
         await validarCupoServicio(tx, { servicioId: pl.cita.servicioId, sedeId: a.sedeId, fecha, horaInicio: pl.horaInicio, duracionMin: pl.cita.duracionMinutos, excluirCitaIds: ids });
       }
-      // El índice único (profesional, fecha, hora) no deja poner B en el lugar de A mientras A siga ahí: A se aparta un
-      // instante (deletedAt) dentro de la MISMA transacción y vuelve ya en su nuevo lugar.
-      await tx.cita.update({ where: { id: a.id }, data: { deletedAt: new Date() } });
-      for (const pl of [planes[1]!, planes[0]!]) {
+      // El índice único (profesional, fecha, hora) no deja poner B en el lugar de A mientras A siga ahí: A (con su bloque)
+      // se aparta un instante (deletedAt) dentro de la MISMA transacción y vuelve ya en su nuevo lugar.
+      const idsA = new Set(ladoA.map((c) => c.id));
+      await tx.cita.updateMany({ where: { id: { in: [...idsA] } }, data: { deletedAt: new Date() } });
+      for (const pl of [...planes.filter((p) => !idsA.has(p.cita.id)), ...planes.filter((p) => idsA.has(p.cita.id))]) {
         await tx.cita.update({
           where: { id: pl.cita.id },
           data: {
@@ -2890,7 +2903,7 @@ router.post('/intercambiar', requireAuth, requireAcceso('appointments:write', 'c
         await auditEnTx(tx, {
           citaId: pl.cita.id, usuarioId: req.user?.userId, accion: 'intercambiar', entidad: 'cita', entidadId: pl.cita.id,
           antes: { profesionalId: pl.cita.profesionalId, horaInicio: pl.cita.horaInicio },
-          despues: { profesionalId: pl.profesionalId, horaInicio: pl.horaInicio, conCita: pl.cita.id === a.id ? b.id : a.id, ...(atencionDe ? { atencionPasaDe: atencionDe } : {}) },
+          despues: { profesionalId: pl.profesionalId, horaInicio: pl.horaInicio, conCita: idsA.has(pl.cita.id) ? b.id : a.id, ...(pl.cita.slotGrupoId ? { bloque: pl.cita.slotGrupoId } : {}), ...(atencionDe ? { atencionPasaDe: atencionDe } : {}) },
           sedeId: a.sedeId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
         });
       }
@@ -2900,9 +2913,9 @@ router.post('/intercambiar', requireAuth, requireAcceso('appointments:write', 'c
     throw err;
   }
   await invalidateDisponibilidadCache(a.sedeId, fecha);
-  const [ca, cb] = await Promise.all([getCitaCompleta(a.id), getCitaCompleta(b.id)]);
-  for (const c of [ca, cb]) emitirEventoCita({ tipo: 'cita:actualizada', sedeId: a.sedeId, fecha, cita: c as never, cambiadoPor: req.user?.userId ?? 'sistema' });
-  res.json({ a: ca, b: cb });
+  const completas = await Promise.all(ids.map((id) => getCitaCompleta(id)));
+  for (const c of completas) emitirEventoCita({ tipo: 'cita:actualizada', sedeId: a.sedeId, fecha, cita: c as never, cambiadoPor: req.user?.userId ?? 'sistema' });
+  res.json({ a: completas[ids.indexOf(a.id)] ?? await getCitaCompleta(a.id), b: completas[ids.indexOf(b.id)] ?? await getCitaCompleta(b.id) });
 });
 
 // ─── PATCH /citas/:id/tratamiento ─────────────────────────────────────────────
