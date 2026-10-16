@@ -232,8 +232,9 @@ export const citasApi = {
 
   // `soloEsta`: en un bloque combinado, avanza SOLO esta cita (no cascadea al hermano).
   // Lo usa el flujo secuencial de 2 tratamientos. Sin él, el bloque se mueve junto (default).
-  cambiarEstado: (id: string, estado: string, comentario?: string, motivoCancelacion?: string, soloEsta?: boolean) =>
-    api.patch<CitaResumen>(`/citas/${id}/estado`, { estado, comentario, motivoCancelacion, soloEsta }),
+  // `forzar` (solo admin): cancelar / «no vino» aunque la atención clínica tenga registros.
+  cambiarEstado: (id: string, estado: string, comentario?: string, motivoCancelacion?: string, soloEsta?: boolean, forzar?: boolean) =>
+    api.patch<CitaResumen>(`/citas/${id}/estado`, { estado, comentario, motivoCancelacion, soloEsta, forzar }),
 
   // elegirEquipo: baro en sede con 2+ máquinas → respetar la máquina elegida (si no, el servidor elige una libre).
   mover: (id: string, data: { profesionalId?: string | null; fecha: string; horaInicio: string; origenAsignacion?: string; elegirEquipo?: boolean }) =>

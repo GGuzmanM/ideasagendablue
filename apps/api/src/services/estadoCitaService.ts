@@ -28,7 +28,7 @@ import { sincronizarCitaOutlook } from './outlookCalendarService';
 import { cancelarRecordatoriosDeCita } from './recordatorioService';
 import { cancelarVideosDeCita } from './videoEnvioService';
 import { sincronizarSesionPaquete } from './paqueteSesionService';
-import { assertSinAtencionClinica, atencionesVaciasDelBloque, retirarAtencionVaciaEnTx } from './historiaClinicaService';
+import { assertSinAtencionClinica, atencionesVaciasDelBloque, atencionesDelBloqueForzado, retirarAtencionVaciaEnTx } from './historiaClinicaService';
 import { getCitaCompleta, crearComentarioEnTx, CitaCompleta } from './citaCompleta';
 
 export const ESTADOS_FINALES = ['completada', 'no_show', 'cancelada'];
@@ -78,6 +78,8 @@ export interface SolicitudCambio {
   soloEsta?: boolean;
   /** Hora real del evento (botón del aparato). Por defecto, ahora. */
   hora?: Date;
+  /** Admin: cancelar / «no vino» aunque la atención clínica tenga registros (la atención se conserva). */
+  forzar?: boolean;
 }
 
 export interface PlanTransicion {
@@ -93,6 +95,8 @@ export interface PlanTransicion {
   hora: Date;
   /** Atenciones clínicas VACÍAS que se retiran al cancelar / «no vino» (solo cambio libre del admin). */
   atencionesVacias: string[];
+  /** Cancelación forzada del admin: atenciones CON registros que se conservan (solo se auditan). */
+  atencionesConservadas: { id: string; citaId: string }[];
 }
 
 /** Valida la transición `actual → destino`. Mismo estado = permitido (solo agrega comentario). */
@@ -148,6 +152,18 @@ export function anclasDeTiempo(actual: string, estado: string, hora: Date) {
   };
 }
 
+/**
+ * 14-oct-2026: «2º cancelado» por error en un bloque combinado → devolver SOLO el 2º tratamiento a «Llegó»
+ * (cancelada no tiene salida en la máquina de estados). Lo hacen quienes pueden revertir (admin / coordinación) y
+ * solo mientras el 1º tratamiento siga vivo (llegó, en atención o completado).
+ */
+async function esDevolverSegundo(cita: Cita, sol: SolicitudCambio, permisos: string[] | undefined, client: Prisma.TransactionClient | typeof prisma): Promise<boolean> {
+  if (cita.slotRol !== 'SECUNDARIO' || !cita.slotGrupoId || cita.estado !== 'cancelada' || sol.estado !== 'llego' || !sol.soloEsta) return false;
+  if (!permisos?.includes('citas.revertir')) return false;
+  const principal = await client.cita.findFirst({ where: { slotGrupoId: cita.slotGrupoId, slotRol: 'PRINCIPAL', deletedAt: null }, select: { estado: true } });
+  return !!principal && ['llego', 'en_atencion', 'completada'].includes(principal.estado);
+}
+
 /** Lee la cita, valida y arma el plan del cambio (sin escribir). */
 export async function prepararTransicion(
   sol: SolicitudCambio,
@@ -156,16 +172,19 @@ export async function prepararTransicion(
 ): Promise<PlanTransicion> {
   const cita = await client.cita.findUnique({ where: { id: sol.citaId, deletedAt: null } });
   if (!cita) throw new AppError('Cita no encontrada', 404);
-  validarTransicion(cita.estado, sol.estado, actor.permisos, !!actor.libre);
+  validarTransicion(cita.estado, sol.estado, actor.permisos, !!actor.libre || await esDevolverSegundo(cita, sol, actor.permisos, client));
 
   const esCancelacion = sol.estado === 'cancelada';
   const cambioReal = sol.estado !== cita.estado;
   // Historia clínica: una cita con atención registrada fue atendida de verdad → no se cancela ni se
   // marca "no vino" (409 CITA_CON_ATENCION_CLINICA). Único punto donde la agenda consulta a la HC.
   // Admin (libre): se permite si la atención está VACÍA (se abrió por error) y se retira en la misma transacción.
+  // 14-oct-2026: con `forzar`, el admin cancela aunque haya registros; esa atención se conserva tal cual.
   let atencionesVacias: string[] = [];
+  let atencionesConservadas: { id: string; citaId: string }[] = [];
   if (cambioReal && (esCancelacion || sol.estado === 'no_show')) {
-    if (actor.libre) atencionesVacias = await atencionesVaciasDelBloque(cita.id);
+    if (actor.libre && sol.forzar) ({ vacias: atencionesVacias, conRegistros: atencionesConservadas } = await atencionesDelBloqueForzado(cita.id));
+    else if (actor.libre) atencionesVacias = await atencionesVaciasDelBloque(cita.id);
     else await assertSinAtencionClinica(cita.id);
   }
 
@@ -192,6 +211,7 @@ export async function prepararTransicion(
     motivoCancelacion: sol.motivoCancelacion,
     hora: sol.hora ?? new Date(),
     atencionesVacias,
+    atencionesConservadas,
   };
 }
 
@@ -205,12 +225,20 @@ export async function transicionarEnTx(tx: Prisma.TransactionClient, plan: PlanT
   const anclas = anclasDeTiempo(cita.estado, estado, plan.hora);
   const r = await tx.cita.updateMany({
     where: { id: cita.id, estado: cita.estado, deletedAt: null },
-    data: { estado, motivoCancelacion: plan.motivoCancelacion ?? cita.motivoCancelacion, ...anclas },
+    // Si sale de «cancelada» (devolver el 2º, cambio libre del admin), el motivo de cancelación ya no aplica.
+    data: { estado, motivoCancelacion: cita.estado === 'cancelada' && estado !== 'cancelada' ? null : plan.motivoCancelacion ?? cita.motivoCancelacion, ...anclas },
   });
   if (r.count === 0) {
     throw new AppError('La cita cambió de estado mientras tanto. Actualiza la agenda y vuelve a intentar.', 409, 'ESTADO_CAMBIADO');
   }
   for (const atId of plan.atencionesVacias) await retirarAtencionVaciaEnTx(tx, atId, actor);
+  for (const at of plan.atencionesConservadas) {
+    await auditEnTx(tx, {
+      citaId: at.citaId, usuarioId: actor.usuarioId ?? undefined, accion: 'forzar_cancelacion_con_atencion', entidad: 'atencion_clinica', entidadId: at.id,
+      despues: { estadoCita: estado, motivo: 'El administrador canceló la cita aunque la atención tenía registros; la atención se conserva' },
+      sedeId: cita.sedeId, ip: actor.ip, userAgent: actor.userAgent,
+    });
+  }
   await auditEnTx(tx, {
     citaId: cita.id,
     usuarioId: actor.usuarioId ?? undefined,

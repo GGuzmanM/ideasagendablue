@@ -4,8 +4,9 @@
 # Deja en  Documentacion Agenda\Certificado HTTPS\Servidor <IP>\  la carpeta que se lleva al servidor:
 #   servidor.crt + servidor.key  → el instalador los pide («carpeta del certificado de Limablue»)
 #   limablue-ca.crt              → se instala UNA vez en cada PC (si ya está instalada, no hace falta)
+#   Varias IPs (pública + interna):  -IP 161.132.166.44,172.18.0.10
 param(
-  [Parameter(Mandatory)][string]$IP,
+  [Parameter(Mandatory)][string[]]$IP,
   [string]$Nombre,
   [int]$Dias = 730
 )
@@ -15,12 +16,14 @@ $openssl = (Get-Command openssl -ErrorAction SilentlyContinue).Source
 if (-not $openssl) { $openssl = 'C:\Program Files\Git\mingw64\bin\openssl.exe' }
 if (-not (Test-Path $openssl)) { throw 'No se encuentra openssl (viene con Git para Windows).' }
 foreach ($f in 'limablue-ca.crt', 'limablue-ca.key') { if (-not (Test-Path (Join-Path $CA_DIR $f))) { throw "Falta $f en $CA_DIR" } }
-if ($IP -notmatch '^\d{1,3}(\.\d{1,3}){3}$') { throw "IP no válida: $IP" }
+$IP = @($IP | ForEach-Object { $_.Split(',') } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+foreach ($i in $IP) { if ($i -notmatch '^\d{1,3}(\.\d{1,3}){3}$') { throw "IP no válida: $i" } }
 
-$salida = Join-Path $CA_DIR "Servidor $IP"
+$salida = Join-Path $CA_DIR "Servidor $($IP[0])"
 New-Item -ItemType Directory -Force -Path $salida | Out-Null
+$ips = @($IP) + @('127.0.0.1') | Select-Object -Unique
 $dns = @('localhost', 'agenda.limablue.local') + $(if ($Nombre) { @($Nombre, $Nombre.ToLower()) } else { @() }) | Select-Object -Unique
-$alt = @("IP.1 = $IP", 'IP.2 = 127.0.0.1') + (0..($dns.Count - 1) | ForEach-Object { "DNS.$($_ + 1) = $($dns[$_])" })
+$alt = @(0..($ips.Count - 1) | ForEach-Object { "IP.$($_ + 1) = $($ips[$_])" }) + @(0..($dns.Count - 1) | ForEach-Object { "DNS.$($_ + 1) = $($dns[$_])" })
 $cnf = @"
 [req]
 distinguished_name = dn

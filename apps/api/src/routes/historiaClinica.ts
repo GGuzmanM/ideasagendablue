@@ -8,12 +8,12 @@ import * as hc from '../services/historiaClinicaService';
 import * as b3 from '../services/bloque3Service';
 import * as fp from '../services/fichaPreviaService';
 import * as pl from '../services/plantillasService';
-import fs from 'fs';
-import { subirImagenPodograma, validarImagenPodogramaReal, subirFotoClinica, validarFotoClinicaReal } from '../middleware/uploadPodograma';
+import { subirImagenPodograma, validarImagenPodogramaReal, subirFotoClinica, validarFotoClinicaReal, rutaRelativaUpload } from '../middleware/uploadPodograma';
+import { borrarArchivo } from '../services/almacenArchivos';
 import { nuevoPdf } from '../services/pdfComun';
 import * as resumen from '../services/resumenPacienteService';
 import { escribirResumenPacientePdf } from '../services/resumenPacientePdf';
-import { escribirHistoriaPdf } from '../services/historiaPdf';
+import { escribirHistoriaPdf, cargarFotosPdf } from '../services/historiaPdf';
 import * as cs from '../services/consentimientoService';
 import * as ctl from '../services/controlService';
 import { enviarAvisoCoordinacion, enviarRecordatoriosPacientes } from '../services/avisosControles';
@@ -100,12 +100,14 @@ router.get('/paciente/:pacienteId/pdf', ...verHc, async (req, res) => {
   const crudo = await hc.historiaParaPdf(pacienteId);
   const datos = puedeVerRecetaMedica(req) ? crudo : ocultarRecetasMedicas(crudo);
   await hc.auditarLecturaHC({ ...ctx(req), pacienteId, origen: 'hc_pdf' });
+  const conFotos = req.query.fotos === '1';
+  const imagenes = conFotos ? await cargarFotosPdf(datos) : undefined;
   const doc = nuevoPdf(`Historia clínica ${String(datos.historia.numero).padStart(6, '0')}`);
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `inline; filename="historia-clinica-${String(datos.historia.numero).padStart(6, '0')}.pdf"`);
   res.setHeader('Cache-Control', 'private, no-store');
   doc.pipe(res);
-  escribirHistoriaPdf(doc, datos, { fotos: req.query.fotos === '1' });
+  escribirHistoriaPdf(doc, datos, { fotos: conFotos, imagenes });
   doc.end();
 });
 
@@ -634,7 +636,7 @@ router.post(
       const data = z.object({ procedimiento: z.string().trim().max(200).optional(), plantillaId: uuid.optional().or(z.literal('').transform(() => undefined)) }).parse(req.body ?? {});
       res.status(201).json(await v2.crearConsentimientoFoto({ ...ctx(req), atencionId: req.params.id, archivo, ...data }));
     } catch (e) {
-      fs.unlink(archivo.path, () => { /* sin huérfanos si falló el registro en BD */ });
+      void borrarArchivo(rutaRelativaUpload(archivo.path)); // sin huérfanos si falló el registro
       throw e;
     }
   },
@@ -645,7 +647,7 @@ router.get('/consentimientos/:id/archivo', ...verHc, async (req, res) => {
   await hc.auditarLecturaHC({ ...ctx(req), pacienteId: c.pacienteId, origen: 'consentimiento', atencionId: c.atencionId ?? undefined, sedeId: c.sedeId });
   res.setHeader('Cache-Control', 'private, no-store');
   res.type(c.mime);
-  res.sendFile(c.rutaAbsoluta);
+  res.send(c.datos);
 });
 
 // ─── Bloque 3 · Procedimientos, escalas y podograma ──────────────────────────
@@ -869,7 +871,7 @@ router.post(
       const { descripcion, vista } = subirImagenSchema.parse(req.body ?? {});
       res.status(201).json(await b3.registrarImagenPodograma({ ...ctx(req), atencionId: req.params.id, archivo, descripcion, vista }));
     } catch (e) {
-      fs.unlink(archivo.path, () => { /* sin huérfanos si falló el registro en BD */ });
+      void borrarArchivo(rutaRelativaUpload(archivo.path)); // sin huérfanos si falló el registro
       throw e;
     }
   },
@@ -881,7 +883,7 @@ router.get('/podograma/imagenes/:id', ...verHc, async (req, res) => {
   res.setHeader('Cache-Control', 'private, no-store');
   res.setHeader('Content-Disposition', `inline; filename="${img.nombreArchivo.replace(/[^\w.\-]+/g, '_')}"`);
   res.type(img.mime);
-  res.sendFile(img.rutaAbsoluta);
+  res.send(img.datos);
 });
 
 // Modo "Pintar" de la silueta: reemplaza la capa de trazos de un pie en una vista
@@ -938,7 +940,7 @@ router.post(
       const data = fotoSchema.parse(req.body ?? {});
       res.status(201).json(await b3.registrarFotoClinica({ ...ctx(req), atencionId: req.params.id, archivo, ...data }));
     } catch (e) {
-      fs.unlink(archivo.path, () => { /* sin huérfanos si falló el registro en BD */ });
+      void borrarArchivo(rutaRelativaUpload(archivo.path)); // sin huérfanos si falló el registro
       throw e;
     }
   },
@@ -949,7 +951,7 @@ router.get('/fotos/:id', ...verHc, async (req, res) => {
   assertSede(req, f.atencion.sedeId);
   res.setHeader('Cache-Control', 'private, no-store');
   res.type(f.mime);
-  res.sendFile(f.rutaAbsoluta);
+  res.send(f.datos);
 });
 
 router.patch('/fotos/:id', ...registrar, async (req, res) => {

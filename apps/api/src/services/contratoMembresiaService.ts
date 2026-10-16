@@ -4,10 +4,8 @@
  * constructor. Usa pdf-lib (sin navegador). El tamaño de fuente se auto-reduce para que un
  * nombre largo nunca se desborde del ancho disponible.
  */
-import fs from 'fs';
-import path from 'path';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
-import { DIR_UPLOADS } from '../utils/rutasArchivos';
+import { leerArchivo, guardarArchivo } from './almacenArchivos';
 
 export type CampoContrato = 'nombre' | 'dni' | 'fecha';
 
@@ -26,11 +24,11 @@ export interface DatosPacienteContrato {
   fecha: string; // "dd/MM/yyyy"
 }
 
-/** URL pública (…/uploads/contratos/x.pdf) → ruta local en disco. */
-export function rutaLocalContrato(url: string): string {
+/** URL del contrato (…/uploads/contratos/x.pdf) → bytes del PDF guardado en la base. */
+export async function leerPdfContrato(url: string): Promise<Buffer | null> {
   const idx = url.indexOf('/uploads/');
-  const rel = idx >= 0 ? url.slice(idx + 1) : url; // "uploads/contratos/x.pdf"
-  return path.join(DIR_UPLOADS, rel.replace(/^uploads[\\/]/, ''));
+  const rel = (idx >= 0 ? url.slice(idx + '/uploads/'.length) : url).split('?')[0];
+  return (await leerArchivo(rel))?.datos ?? null;
 }
 
 const VALOR_POR_CAMPO = (d: DatosPacienteContrato): Record<CampoContrato, string> => ({
@@ -48,10 +46,10 @@ export async function generarContratoPdf(
   campos: PosicionCampo[],
   datos: DatosPacienteContrato,
 ): Promise<Uint8Array> {
-  const ruta = rutaLocalContrato(plantillaUrl);
-  if (!fs.existsSync(ruta)) throw new Error('No se encontró el archivo de la plantilla del contrato');
+  const plantilla = await leerPdfContrato(plantillaUrl);
+  if (!plantilla) throw new Error('No se encontró el archivo de la plantilla del contrato');
 
-  const pdf = await PDFDocument.load(fs.readFileSync(ruta));
+  const pdf = await PDFDocument.load(plantilla);
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const paginas = pdf.getPages();
   const valores = VALOR_POR_CAMPO(datos);
@@ -78,11 +76,9 @@ export async function generarContratoPdf(
   return pdf.save();
 }
 
-/** Escribe el contrato generado a disco (uploads/contratos) y devuelve su URL pública. */
-export function guardarContratoGenerado(bytes: Uint8Array, baseUrl: string): { url: string; nombre: string } {
-  const dir = path.join(DIR_UPLOADS, 'contratos');
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+/** Guarda el contrato generado en la base (contratos/<nombre>) y devuelve su URL. */
+export async function guardarContratoGenerado(bytes: Uint8Array, baseUrl: string): Promise<{ url: string; nombre: string }> {
   const nombre = `contrato_gen_${Date.now()}_${Math.random().toString(36).slice(2)}.pdf`;
-  fs.writeFileSync(path.join(dir, nombre), bytes);
+  await guardarArchivo(`contratos/${nombre}`, Buffer.from(bytes), 'application/pdf');
   return { url: `${baseUrl}/uploads/contratos/${nombre}`, nombre };
 }

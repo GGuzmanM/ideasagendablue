@@ -7,7 +7,10 @@ Las PCs de las sedes solo usan el navegador (Chrome o Edge).
 
 REQUISITOS DEL SERVIDOR
 - Windows 10 / 11 o Windows Server 2016 o superior.
-- PostgreSQL (14 o superior) en el mismo servidor o en otro equipo de la red.
+- PostgreSQL 18 o superior (los respaldos de la Agenda son de PostgreSQL 18).
+  Si el servidor ya tiene otra version (por ejemplo la 15, que puede estar usando otro sistema), instala la 18
+  APARTE, en el puerto 5433, sin desinstalar la otra. El instalador y los respaldos usan siempre la mas nueva.
+- Firewall de Windows ACTIVADO (ver "SI EL SERVIDOR ESTA EN INTERNET").
 - Usuario de Windows con permisos de administrador para instalar.
 
 
@@ -33,6 +36,20 @@ INSTALACION (primera vez)
      - Carpeta del NAS para la copia de los respaldos y el usuario de Windows con acceso a ella.
 3. Al terminar muestra la direccion. Desde cualquier PC de la red:  https://IP-DEL-SERVIDOR:5180
 4. Borra del servidor las copias temporales del .env y del respaldo.
+
+
+INSTALAR AHORA PARA PROBAR Y CARGAR LOS DATOS DEFINITIVOS DESPUES (CORTE)
+1. Ahora: instala con el respaldo que trae la carpeta Mudanza y responde S a "instalacion de PRUEBA".
+   En modo prueba el servidor NO envia correos, recordatorios, videos ni encuestas, no abre la reserva web y
+   no toca Outlook (la PC anterior sigue atendiendo con los mismos pacientes). Se puede entrar y probar todo.
+   Lo que se registre en el servidor durante la prueba SE PIERDE en el corte: el trabajo real sigue en la PC anterior.
+2. Dia del corte:
+   a) Nadie usa la Agenda de la PC anterior. En esa PC: detener la Agenda y correr preparar-mudanza.ps1
+      (saca el respaldo de ESE momento y arma la carpeta Mudanza nueva).
+   b) Copia la carpeta Mudanza nueva al servidor (al lado de Release, reemplazando la anterior).
+   c) En el servidor: "Cargar datos del corte.bat". Saca un respaldo de seguridad de lo que habia, reemplaza la
+      base y los archivos subidos por los del corte, sale del modo prueba (vuelven correos y Outlook) y arranca.
+   d) Apaga la Agenda y los respaldos automaticos de la PC anterior. Desde ese momento se trabaja solo en el servidor.
 
 
 RESPALDOS AUTOMATICOS
@@ -62,6 +79,20 @@ Para cambiar de certificado despues: en agenda.env deja solo HTTPS_CERT/HTTPS_KE
 apuntando a archivos de la carpeta config\certificado. Luego Detener.bat e Iniciar.bat.
 
 
+SI EL SERVIDOR ESTA EN INTERNET (IP PUBLICA)
+- Al instalar, escribe la direccion publica (IP o dominio) cuando la pregunte.
+- Recomendado: limitar el acceso a las IPs publicas de las sedes (el instalador lo pregunta; queda en
+  FIREWALL_IPS_PERMITIDAS de agenda.env). Asi la pantalla de login no queda a la vista de todo internet.
+- El firewall de Windows debe estar ACTIVADO. Antes de activarlo, confirma que existen reglas de entrada para lo
+  que ya usa el servidor (Escritorio remoto 3389 y cualquier otro sistema, por ejemplo el puerto 80), o te quedas
+  sin acceso.
+- PostgreSQL NO debe quedar abierto a internet: puertos 5432/5433 sin regla de entrada y sin redireccion desde la
+  IP publica (pedirlo al proveedor). Clave fuerte para el usuario postgres.
+- Escritorio remoto (RDP) solo desde IPs conocidas o por VPN.
+- Copia de respaldos: el NAS de la clinica no se ve desde internet; usar otro disco del servidor (ej. E:) y las
+  copias (snapshots) del proveedor.
+
+
 ACTUALIZAR A UNA VERSION NUEVA
 0. "Respaldar ahora.bat" (por si acaso).
 1. Detener.bat
@@ -81,6 +112,10 @@ OTRAS ACCIONES
 - Detener.bat / Iniciar.bat     detener o iniciar la Agenda.
 - Desinstalar.bat               quita el servicio y la regla del firewall (no borra base ni archivos).
 - Si se cambia algo en agenda.env: Detener.bat y luego Iniciar.bat.
+- Reserva web de prueba.bat     pagina de reservas para pacientes en https://<servidor>/reserva. Opciones:
+                                1 VITRINA: se recorre con los horarios reales, pero no aparta ni crea citas.
+                                2 SIN PAGO: crea la cita de verdad (canal web, Pendiente de pago). Solo en modo prueba.
+                                0 APAGAR. El corte definitivo la apaga sola.
 
 
 PROBLEMAS COMUNES

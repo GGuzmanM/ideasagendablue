@@ -12,12 +12,11 @@
  *    `datos` (Json) y el backend calcula la etiqueta legible (`resultado`).
  *  · Podograma (1.3): marcas con coordenadas normalizadas (0..1) sobre la silueta.
  */
-import path from 'path';
-import fs from 'fs';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../db';
 import { AppError } from '../middleware/errorHandler';
-import { UPLOADS_ROOT, rutaRelativaUpload } from '../middleware/uploadPodograma';
+import { rutaRelativaUpload } from '../middleware/uploadPodograma';
+import { leerArchivo } from './almacenArchivos';
 import { auditEnTx } from './audit';
 import { Ctx, ctxAudit, etiquetaUsuario, atencionOr404, getAtencionCompleta, exigirAbierta } from './historiaClinicaService';
 import { fechaDb, hoyLimaStr } from '../utils/fechaLima';
@@ -653,17 +652,16 @@ export async function registrarImagenPodograma(p: Ctx & { atencionId: string; ar
   return getAtencionCompleta(at.id);
 }
 
-/** Localiza el archivo de una imagen (para servirlo). Blinda contra path traversal. */
+/** Bytes de una imagen del podograma (para servirla). */
 export async function archivoImagenPodograma(imagenId: string) {
   const img = await prisma.imagenPodograma.findFirst({
     where: { id: imagenId, deletedAt: null },
     select: { id: true, ruta: true, mime: true, nombreArchivo: true, atencion: { select: { id: true, sedeId: true, pacienteId: true } } },
   });
   if (!img) throw new AppError('Imagen no encontrada', 404);
-  const abs = path.resolve(UPLOADS_ROOT, img.ruta);
-  if (!abs.startsWith(UPLOADS_ROOT + path.sep)) throw new AppError('Ruta de archivo inválida', 400);
-  if (!fs.existsSync(abs)) throw new AppError('El archivo de la imagen no está disponible', 404, 'ARCHIVO_NO_DISPONIBLE');
-  return { ...img, rutaAbsoluta: abs };
+  const archivo = await leerArchivo(img.ruta);
+  if (!archivo) throw new AppError('El archivo de la imagen no está disponible', 404, 'ARCHIVO_NO_DISPONIBLE');
+  return { ...img, mime: archivo.mime, datos: archivo.datos };
 }
 
 const MAX_ANOTACIONES = 3000;
@@ -877,14 +875,13 @@ export async function registrarFotoClinica(p: Ctx & CamposFoto & { atencionId: s
   return getAtencionCompleta(at.id);
 }
 
-/** Localiza el archivo de una foto (para servirla). Blinda contra path traversal. */
+/** Bytes de una foto clínica (para servirla). */
 export async function archivoFotoClinica(fotoId: string) {
   const f = await prisma.fotoClinica.findFirst({ where: { id: fotoId, deletedAt: null }, select: { id: true, ruta: true, mime: true, atencion: { select: { id: true, sedeId: true, pacienteId: true } } } });
   if (!f) throw new AppError('Foto no encontrada', 404);
-  const abs = path.resolve(UPLOADS_ROOT, f.ruta);
-  if (!abs.startsWith(UPLOADS_ROOT + path.sep)) throw new AppError('Ruta de archivo inválida', 400);
-  if (!fs.existsSync(abs)) throw new AppError('El archivo de la foto no está disponible', 404, 'ARCHIVO_NO_DISPONIBLE');
-  return { ...f, rutaAbsoluta: abs };
+  const archivo = await leerArchivo(f.ruta);
+  if (!archivo) throw new AppError('El archivo de la foto no está disponible', 404, 'ARCHIVO_NO_DISPONIBLE');
+  return { ...f, mime: archivo.mime, datos: archivo.datos };
 }
 
 export async function editarFotoClinica(p: Ctx & CamposFoto & { fotoId: string }) {

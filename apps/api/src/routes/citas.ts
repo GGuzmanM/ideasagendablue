@@ -207,6 +207,8 @@ const estadoSchema = z.object({
   // avanza SOLO esta cita. Lo usa el flujo secuencial de 2 tratamientos (iniciar/completar/
   // cancelar cada tratamiento por separado). Sin el flag, el bloque se mueve junto (default).
   soloEsta: z.boolean().optional(),
+  // Solo admin: cancelar / «no vino» aunque la atención clínica tenga registros (se conserva).
+  forzar: z.boolean().optional(),
 });
 
 // La máquina de estados (TRANSICIONES_VALIDAS / ESTADOS_FINALES) vive en services/estadoCitaService.ts.
@@ -1772,11 +1774,11 @@ router.post('/combinada', requireAuth, requireAcceso('appointments:write', 'cita
 
 // ─── PATCH /citas/:id/estado ──────────────────────────────────────────────────
 router.patch('/:id/estado', requireAuth, requireAcceso('appointments:write', 'citas.estado'), guardSedeCita, async (req, res) => {
-  const { estado, comentario, motivoCancelacion, soloEsta } = estadoSchema.parse(req.body);
+  const { estado, comentario, motivoCancelacion, soloEsta, forzar } = estadoSchema.parse(req.body);
   // Toda la lógica (máquina de estados, cascada del bloque, anclas de tiempo, escritura con guarda
   // y efectos) vive en services/estadoCitaService.ts: la comparte con el aparato del consultorio.
   const citaCompleta = await cambiarEstadoCita(
-    { citaId: req.params.id, estado, comentario, motivoCancelacion, soloEsta },
+    { citaId: req.params.id, estado, comentario, motivoCancelacion, soloEsta, forzar: forzar && req.user?.rol === 'admin' },
     {
       usuarioId: req.user?.userId,
       permisos: req.user?.permisos,
@@ -2330,18 +2332,21 @@ router.patch('/grupo/:slotGrupoId/mover', requireAuth, requireAcceso('appointmen
   const usuarioId = req.user?.userId;
   const slotGrupoId = req.params.slotGrupoId;
 
-  const citas = await prisma.cita.findMany({
+  const todas = await prisma.cita.findMany({
     where: { slotGrupoId, deletedAt: null },
     include: { unidadNegocio: true, servicio: true },
     orderBy: { slotRol: 'asc' }, // PRINCIPAL antes que SECUNDARIO
   });
-  if (citas.length === 0) throw new AppError('Bloque combinado no encontrado', 404);
-  if (citas.some(c => ESTADOS_FINALES.includes(c.estado))) {
-    throw new AppError('No se puede mover un bloque con citas ya finalizadas', 400, 'ESTADO_FINAL');
+  if (todas.length === 0) throw new AppError('Bloque combinado no encontrado', 404);
+  // 14-oct-2026: si una mitad ya terminó (1º completado, 2º cancelado…), se mueve solo lo que sigue pendiente;
+  // lo terminado se queda donde se hizo. Antes respondía «bloque con citas finalizadas» y no dejaba mover el 2º.
+  const citas = todas.filter(c => !ESTADOS_FINALES.includes(c.estado));
+  if (citas.length === 0) {
+    throw new AppError('No se puede mover un bloque ya finalizado', 400, 'ESTADO_FINAL');
   }
   assertFechaMovible(data.fecha, citas[0]!.fecha);
   // Historia clínica: bloque con atención registrada → mover solo coordinación/admin (acción no visible).
-  const bloqueConAtencion = !!(await prisma.atencionClinica.findFirst({ where: { citaId: { in: citas.map(c => c.id) } }, select: { id: true } }));
+  const bloqueConAtencion = !!(await prisma.atencionClinica.findFirst({ where: { citaId: { in: todas.map(c => c.id) } }, select: { id: true } }));
   if (bloqueConAtencion && !['admin', 'coordinadora_sedes'].includes(req.user?.rol ?? '')) {
     throw new AppError('El bloque ya tiene atención clínica registrada: solo coordinación o administración pueden moverlo', 403, 'CITA_CON_ATENCION_CLINICA');
   }
@@ -2349,7 +2354,7 @@ router.patch('/grupo/:slotGrupoId/mover', requireAuth, requireAcceso('appointmen
   const ancla = citas.find(c => c.slotRol === 'PRINCIPAL') ?? citas[0]!;
   const sedeId = ancla.sedeId;
   const nuevoProfesionalId = data.profesionalId !== undefined ? data.profesionalId : ancla.profesionalId;
-  const grupoIds = citas.map(c => c.id);
+  const grupoIds = todas.map(c => c.id);
 
   // La duración del bloque = la del ancla (1 h). Hora entera para servicios de 1 h.
   if (!horaInicioValidaParaDuracion(data.horaInicio, ancla.duracionMinutos)) {

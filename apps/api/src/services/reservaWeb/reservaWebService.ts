@@ -31,6 +31,14 @@ export function reservaWebHabilitada(): boolean {
   return v === '1' || v === 'true';
 }
 
+/**
+ * 15-oct-2026: RESERVA_WEB_MODO=sin_pago — la reserva crea la cita al instante, sin pasar por la pasarela; la cita
+ * queda «Pendiente de pago» (paga en la sede). Para probar en el servidor mientras se elige la pasarela real.
+ */
+export function modoSinPago(): boolean {
+  return (process.env.RESERVA_WEB_MODO || '').trim().toLowerCase() === 'sin_pago';
+}
+
 function sumarDias(fecha: string, dias: number): string {
   const d = fechaDb(fecha); d.setUTCDate(d.getUTCDate() + dias); return fechaAStr(d);
 }
@@ -77,7 +85,7 @@ export async function catalogo() {
 }
 
 /** Servicio + variante reservables en esa sede, con el monto a cobrar. */
-async function servicioReservable(sedeId: string, servicioId: string, subcategoriaId?: string | null) {
+export async function servicioReservable(sedeId: string, servicioId: string, subcategoriaId?: string | null) {
   const cat = await catalogo();
   const sv = cat.servicios.find((s) => s.id === servicioId);
   if (!sv || !sv.sedes.includes(sedeId)) throw new AppError('Ese servicio no se puede reservar en línea en esta sede', 400, 'SERVICIO_NO_RESERVABLE');
@@ -228,6 +236,7 @@ export async function estadoReserva(codigo: string, token: string) {
     fecha: fechaAStr(r.fecha), horaInicio: r.horaInicio, duracionMinutos: r.duracionMinutos,
     sede, servicio: servicio?.nombre ?? null, variante: variante?.nombre ?? null,
     monto: Number(r.monto), moneda: r.moneda, expiraEn: r.expiraEn, pagadoEn: r.pagadoEn,
+    pagoPendiente: r.pasarela === 'sin_pago', // reservó sin pagar: paga en la sede
   };
 }
 
@@ -265,6 +274,18 @@ export async function procesarAvisoPago(aviso: AvisoPago, pasarela: string) {
   return crearCitaDeReserva(r.id);
 }
 
+/** Modo sin pago: confirma la reserva recién apartada y crea la cita en el acto (la cita queda «Pendiente de pago»). */
+export async function confirmarSinPago(reservaId: string) {
+  const u = await prisma.reservaWeb.updateMany({
+    where: { id: reservaId, estado: 'esperando_pago' },
+    data: { estado: 'pagada', pasarela: 'sin_pago', pagoEstado: 'pendiente' },
+  });
+  if (u.count === 0) throw new AppError('Esta reserva ya no está disponible. Vuelve a elegir tu horario.', 409, 'RESERVA_NO_PAGABLE');
+  const r = await crearCitaDeReserva(reservaId);
+  if (!r.ok) throw new AppError('Esa hora acaba de ocuparse. Elige otra.', 409, 'HORA_NO_DISPONIBLE');
+  return r;
+}
+
 /** Paciente por DNI (si ya existe NO se cambian sus datos) o nuevo con lo que escribió en la web. */
 async function pacienteDeReserva(r: { numeroDocumento: string; nombres: string; apellidoPaterno: string; apellidoMaterno: string | null; telefono: string; email: string; id: string }) {
   const existente = await prisma.paciente.findFirst({ where: { tipoDocumento: 'DNI', numeroDocumento: r.numeroDocumento, deletedAt: null }, select: { id: true } });
@@ -293,6 +314,7 @@ async function pacienteDeReserva(r: { numeroDocumento: string; nombres: string; 
 export async function crearCitaDeReserva(reservaId: string) {
   const r = await prisma.reservaWeb.findUniqueOrThrow({ where: { id: reservaId } });
   if (r.estado !== 'pagada') return { ok: true, estado: r.estado };
+  const sinPago = r.pasarela === 'sin_pago';
   try {
     const llave = process.env.RESERVA_WEB_API_KEY;
     if (!llave) throw new Error('Falta RESERVA_WEB_API_KEY');
@@ -304,8 +326,10 @@ export async function crearCitaDeReserva(reservaId: string) {
       body: JSON.stringify({
         pacienteId, sedeId: r.sedeId, unidadNegocioId: r.unidadNegocioId, servicioId: r.servicioId,
         ...(r.subcategoriaId ? { subcategoriaId: r.subcategoriaId } : {}),
-        fecha: fechaAStr(r.fecha), horaInicio: r.horaInicio, canal: 'web', estadoPago: 'completo',
-        comentarioRecepcion: `Reserva web ${r.codigo}: pagó S/ ${Number(r.monto).toFixed(2)} en línea (${r.pasarela ?? 'pasarela'} ${r.pagoReferencia ?? ''}).`.trim(),
+        fecha: fechaAStr(r.fecha), horaInicio: r.horaInicio, canal: 'web', estadoPago: sinPago ? 'pendiente' : 'completo',
+        comentarioRecepcion: sinPago
+          ? `Reserva web ${r.codigo}: reservó por internet sin pagar; paga S/ ${Number(r.monto).toFixed(2)} en la sede.`
+          : `Reserva web ${r.codigo}: pagó S/ ${Number(r.monto).toFixed(2)} en línea (${r.pasarela ?? 'pasarela'} ${r.pagoReferencia ?? ''}).`.trim(),
       }),
     });
     const cuerpo = await resp.json().catch(() => ({})) as { id?: string; message?: string; error?: string };
@@ -316,7 +340,13 @@ export async function crearCitaDeReserva(reservaId: string) {
     return { ok: true, estado: 'confirmada', citaId: cuerpo.id };
   } catch (e) {
     // Pagó pero ya no hay cupo (o falló la Agenda): queda para que administración devuelva el dinero o reubique.
+    // Sin pago no hay nada que devolver: la reserva queda «fallida» y el paciente elige otra hora.
     const msg = (e as Error).message.slice(0, 500);
+    if (sinPago) {
+      await prisma.reservaWeb.update({ where: { id: r.id }, data: { estado: 'fallida', error: msg } });
+      console.error(`[reserva-web] ${r.codigo} sin pago, no se pudo crear la cita: ${msg}`);
+      return { ok: false, estado: 'fallida', error: msg };
+    }
     await prisma.reservaWeb.update({ where: { id: r.id }, data: { estado: 'reembolsar', error: msg } });
     void registrarAudit({ accion: 'reserva_web_sin_cita', entidad: 'reserva_web', entidadId: r.id, sedeId: r.sedeId, despues: { codigo: r.codigo, error: msg } });
     console.error(`[reserva-web] ${r.codigo} pagada pero sin cita: ${msg}`);

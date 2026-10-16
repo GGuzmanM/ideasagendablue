@@ -15,8 +15,7 @@ import { requireAuth, requirePermiso } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { auditEnTx, registrarAudit } from '../services/audit';
 import { uploadContrato, validarContratoReal } from '../middleware/uploadContrato';
-import { generarContratoPdf, guardarContratoGenerado, rutaLocalContrato, type PosicionCampo } from '../services/contratoMembresiaService';
-import fs, { existsSync as fsExiste } from 'fs';
+import { generarContratoPdf, guardarContratoGenerado, leerPdfContrato, type PosicionCampo } from '../services/contratoMembresiaService';
 import { PDFDocument } from 'pdf-lib';
 
 const router = Router();
@@ -105,9 +104,9 @@ router.get('/:id/contrato-config', requireAuth, requireGestor, async (req, res) 
   let pagina: { width: number; height: number } | null = null;
   if (plantilla.contratoPlantillaUrl) {
     try {
-      const ruta = rutaLocalContrato(plantilla.contratoPlantillaUrl);
-      if (fsExiste(ruta)) {
-        const pdf = await PDFDocument.load(fs.readFileSync(ruta));
+      const bytes = await leerPdfContrato(plantilla.contratoPlantillaUrl);
+      if (bytes) {
+        const pdf = await PDFDocument.load(bytes);
         const p = pdf.getPage(0);
         pagina = { width: p.getWidth(), height: p.getHeight() };
       }
@@ -134,10 +133,10 @@ router.post('/:id/contrato-plantilla', requireAuth, requireGestor, uploadContrat
 router.get('/:id/contrato-plantilla-archivo', requireAuth, requireGestor, async (req, res) => {
   const plantilla = await plantillaDe(req.params.id);
   if (!plantilla.contratoPlantillaUrl) throw new AppError('Sin plantilla de contrato', 404, 'SIN_CONTRATO');
-  const ruta = rutaLocalContrato(plantilla.contratoPlantillaUrl);
-  if (!fsExiste(ruta)) throw new AppError('Archivo de plantilla no encontrado', 404);
+  const bytes = await leerPdfContrato(plantilla.contratoPlantillaUrl);
+  if (!bytes) throw new AppError('Archivo de plantilla no encontrado', 404);
   res.setHeader('Content-Type', 'application/pdf');
-  res.sendFile(ruta);
+  res.send(bytes);
 });
 
 // PATCH /membresias/:id/contrato-campos — guardar las posiciones marcadas.
@@ -530,7 +529,7 @@ router.post('/:id/vender', requireAuth, requireVender, async (req, res) => {
     try {
       const datos = await datosPacienteContrato(data.pacienteId);
       const bytes = await generarContratoPdf(plantilla.contratoPlantillaUrl, (plantilla.contratoCampos ?? []) as unknown as PosicionCampo[], datos);
-      const { url } = guardarContratoGenerado(bytes, baseUrlDe(req));
+      const { url } = await guardarContratoGenerado(bytes, baseUrlDe(req));
       await prisma.paquetePaciente.update({ where: { id: pp.id }, data: { contratoUrl: url } });
       (pp as { contratoUrl?: string }).contratoUrl = url;
     } catch (err) {

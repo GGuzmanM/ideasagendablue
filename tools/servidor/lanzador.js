@@ -78,6 +78,15 @@ levantarApi();
 // ─── Pantallas + paso al API ─────────────────────────────────────────────────────
 const app = express();
 app.disable('x-powered-by');
+// Cabeceras de seguridad de las pantallas (el API ya trae las suyas con helmet).
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'same-origin');
+  res.setHeader('Permissions-Policy', 'microphone=(self), camera=(self), geolocation=()');
+  if (tls) res.setHeader('Strict-Transport-Security', 'max-age=31536000');
+  next();
+});
 // xfwd: el API ve la IP real de cada PC (auditoría y límites por IP).
 const aApi = (filtro, extra = {}) => createProxyMiddleware({ target: API, changeOrigin: true, xfwd: true, pathFilter: filtro, ...extra });
 const proxyApi = aApi((p) => p.startsWith('/api') || p === '/health');
@@ -86,6 +95,52 @@ const proxyUploads = aApi((p) => p.startsWith('/uploads'));
 app.use(proxyApi);
 app.use(proxyWs);
 app.use(proxyUploads);
+
+// ─── Reserva web: página del paciente en /reserva (15-oct-2026) ─────────────────────
+// Solo con RESERVA_WEB_HABILITADA=1 (la activa «Reserva web de prueba.bat»). La página llama al API por la misma
+// dirección (/api/v1/publico/reservas). Con la pasarela «simulada», POST /reserva/pagar-prueba hace de pasarela:
+// el secreto vive aquí, nunca en el navegador. Con una pasarela real esa ruta no existe.
+const RESERVA = path.join(APP, 'reserva');
+const PREFIJO_RESERVA = '/api/v1/publico/reservas';
+async function pagarPrueba(req, res) {
+  const { codigo, token, aprobado } = req.body || {};
+  if (!codigo || !token) return res.status(400).json({ error: 'DATOS', message: 'Falta el código de la reserva' });
+  try {
+    // Vitrina (RESERVA_WEB_MODO=vitrina): demostración, no se cobra ni se crea la cita.
+    if (cfg.RESERVA_WEB_MODO === 'vitrina') {
+      await new Promise((ok) => setTimeout(ok, 1200));
+      const r = await fetch(`${API}${PREFIJO_RESERVA}/${encodeURIComponent(codigo)}/confirmar-demo`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }),
+      });
+      return res.status(r.status).json(await r.json().catch(() => ({})));
+    }
+    // Solo quien tiene el token de la reserva puede «pagarla».
+    const est = await fetch(`${API}${PREFIJO_RESERVA}/${encodeURIComponent(codigo)}?token=${encodeURIComponent(token)}`);
+    const e = await est.json().catch(() => ({}));
+    if (!est.ok) return res.status(est.status).json(e);
+    if (e.estado !== 'esperando_pago') {
+      return res.status(409).json({ error: 'RESERVA_NO_PAGABLE', message: e.estado === 'expirada' ? 'Se venció el tiempo para pagar. Vuelve a elegir tu horario.' : 'Esta reserva ya no está esperando pago.' });
+    }
+    await new Promise((ok) => setTimeout(ok, 1200)); // lo que tarda una pasarela de verdad
+    const r = await fetch(`${API}${PREFIJO_RESERVA}/pagos/webhook/simulada`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-simulada-secreto': cfg.RESERVA_WEB_SIMULADA_SECRETO || '' },
+      body: JSON.stringify({ codigo, aprobado: aprobado !== false }),
+    });
+    res.status(r.status).json(await r.json().catch(() => ({})));
+  } catch {
+    res.status(502).json({ error: 'API_NO_RESPONDE', message: 'El sistema no responde. Intenta en un momento.' });
+  }
+}
+if (cfg.RESERVA_WEB_HABILITADA === '1' && fs.existsSync(RESERVA)) {
+  if (cfg.RESERVA_WEB_MODO === 'vitrina' || cfg.RESERVA_WEB_PASARELA === 'simulada') app.post('/reserva/pagar-prueba', express.json({ limit: '10kb' }), pagarPrueba);
+  // Con «/» final para que el logo (ruta relativa) cargue. Express trata /reserva y /reserva/ igual en app.get: se compara exacto.
+  app.use((req, res, next) => (req.path === '/reserva' ? res.redirect(301, '/reserva/') : next()));
+  app.use('/reserva', express.static(RESERVA, { setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache') }));
+  log('servidor', cfg.RESERVA_WEB_MODO === 'vitrina'
+    ? 'Reserva web en /reserva en MODO VITRINA (solo se ve: no aparta horarios ni crea citas).'
+    : `Reserva web activa en /reserva (pasarela: ${cfg.RESERVA_WEB_PASARELA || 'sin definir'}).`);
+}
 
 const WEB = path.join(APP, 'web');
 // index.html sin caché (para que una actualización se vea con F5); los archivos con hash, un año.

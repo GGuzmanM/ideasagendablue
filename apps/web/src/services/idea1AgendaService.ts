@@ -224,7 +224,8 @@ export function mapearCitasDbACitaAgenda(citasDb: any[] = []): CitaAgenda[] {
       const principal = mitades.find((m) => m.raw?.slotRol === 'PRINCIPAL') || mitades[0];
       const secundario = mitades.find((m) => m.raw?.slotRol === 'SECUNDARIO') || mitades.find((m) => m.id !== principal.id) || mitades[1];
 
-      if (principal.doctorId === secundario.doctorId) {
+      // Solo se dibujan juntas si siguen en el mismo hueco (el 2º puede moverse solo cuando el 1º ya terminó).
+      if (principal.doctorId === secundario.doctorId && principal.horaInicio === secundario.horaInicio) {
         procesadosGrupo.add(grupoId);
 
         const duracionTotal = principal.duracionMinutos || 60;

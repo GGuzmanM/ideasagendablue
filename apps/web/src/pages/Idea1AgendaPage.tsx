@@ -930,11 +930,13 @@ export function Idea1AgendaPage() {
                             const heightPx = Math.max((duracion / 60) * ROW_HEIGHT, 40);
                             const isCompact = heightPx < 60;
                             const isMicro = heightPx < 42;
+                            // Bloque de 2 servicios: se puede arrastrar mientras el 2º siga pendiente aunque el 1º ya
+                            // terminó (el servidor mueve solo lo pendiente).
                             const esDraggable =
-                              puedeArrastrarCita &&
-                              cita.estado !== 'COMPLETADA' &&
-                              cita.estado !== 'NO SHOW' &&
-                              cita.estado !== 'CANCELADA';
+                              puedeArrastrarCita && (
+                                (cita.estado !== 'COMPLETADA' && cita.estado !== 'NO SHOW' && cita.estado !== 'CANCELADA') ||
+                                (!!cita.esCombinada && !['completada', 'no_show', 'cancelada'].includes((cita.secundarioRaw?.estado ?? 'completada').toLowerCase()))
+                              );
 
                             const esCancelada = cita.estado === 'CANCELADA';
                             // Cancelada DENTRO de un permiso / almuerzo / vacaciones de la profesional (26-sep-2026: cancelaron

@@ -1,6 +1,6 @@
 // Arma el INSTALABLE del servidor (12-oct-2026): una carpeta con la Agenda ya compilada, sin código fuente.
 //   node tools/servidor/empaquetar.mjs ["C:\ruta\de\salida"]
-// Por defecto deja  C:\Users\<usuario>\Documents\Agenda Servidor\Limablue Agenda v<AAAA.MM.DD-HHMM>
+// Por defecto deja  C:\Users\<usuario>\Documents\Agenda Servidor\AgendaLB\Release  (reemplaza la anterior)
 // Contenido:
 //   app\api.js        API compilado en UN archivo (minificado; sin .ts, sin comentarios)
 //   app\servidor.js   arranque: sirve las pantallas por https y pasa /api al API (ver lanzador.js)
@@ -19,8 +19,9 @@ import { fileURLToPath } from 'url';
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const ahora = new Date(Date.now() - 5 * 3600_000).toISOString(); // hora Lima
 const VERSION = `${ahora.slice(0, 10).replace(/-/g, '.')}-${ahora.slice(11, 16).replace(':', '')}`;
-const BASE = process.argv[2] || path.join(os.homedir(), 'Documents', 'Agenda Servidor');
-const OUT = path.join(BASE, `Limablue Agenda v${VERSION}`);
+// Misma ruta siempre (como AdminPad en el NAS: «AgendaLB\Release»); la versión va en version.txt.
+const BASE = process.argv[2] || path.join(os.homedir(), 'Documents', 'Agenda Servidor', 'AgendaLB');
+const OUT = path.join(BASE, 'Release');
 const APP = path.join(OUT, 'app');
 const API = path.join(REPO, 'apps', 'api');
 const WEB = path.join(REPO, 'apps', 'web');
@@ -70,6 +71,7 @@ run(`npx vite build --outDir "${path.join(APP, 'web')}" --emptyOutDir --logLevel
 // ── 3. Archivos que el API lee al correr + Prisma ───────────────────────────────
 paso('Copiando assets, schema y migraciones');
 fs.cpSync(path.join(API, 'assets'), path.join(APP, 'assets'), { recursive: true });
+fs.cpSync(path.join(REPO, 'tools', 'servidor', 'reserva'), path.join(APP, 'reserva'), { recursive: true }); // página de reserva web (/reserva)
 fs.mkdirSync(path.join(APP, 'prisma'), { recursive: true });
 fs.copyFileSync(path.join(API, 'prisma', 'schema.prisma'), path.join(APP, 'prisma', 'schema.prisma'));
 fs.cpSync(path.join(API, 'prisma', 'migrations'), path.join(APP, 'prisma', 'migrations'), { recursive: true });

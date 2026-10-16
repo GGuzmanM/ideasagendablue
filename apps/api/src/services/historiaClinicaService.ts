@@ -852,6 +852,14 @@ export async function atencionesVaciasDelBloque(citaId: string): Promise<string[
   }
   return ats.map((a) => a.id);
 }
+/**
+ * 14-oct-2026: cancelación FORZADA del admin. Las atenciones vacías se retiran como siempre; las que tienen registros
+ * NO se tocan (quedan en la historia del paciente, colgando de la cita cancelada) y se auditan aparte.
+ */
+export async function atencionesDelBloqueForzado(citaId: string): Promise<{ vacias: string[]; conRegistros: { id: string; citaId: string }[] }> {
+  const ats = await atencionesConContenido(prisma, await idsDelBloque(citaId));
+  return { vacias: ats.filter((a) => a.vacia).map((a) => a.id), conRegistros: ats.filter((a) => !a.vacia).map((a) => ({ id: a.id, citaId: a.citaId })) };
+}
 /** Retira una atención VACÍA dentro de la transacción del cambio de estado (vuelve a comprobar que siga vacía). */
 export async function retirarAtencionVaciaEnTx(tx: Tx, atencionId: string, actor: { usuarioId?: string | null; ip?: string; userAgent?: string }) {
   const [a] = await atencionesConContenido(tx, (await tx.atencionClinica.findMany({ where: { id: atencionId }, select: { citaId: true } })).map((x) => x.citaId));

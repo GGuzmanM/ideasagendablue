@@ -1,0 +1,601 @@
+<!doctype html>
+<html lang="es-PE">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Reserva tu cita · Limablue</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Geist:wght@500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@300..600,0..1&display=block" rel="stylesheet">
+<style>
+/* Mismos colores y tipografía que la Agenda (tailwind.config.js de apps/web): azul de la barra lateral #0e4f9f,
+   primary #0044ab, superficies #f7f9fb / blanco, bordes outline-variant, Inter + Geist, íconos Material Symbols. */
+:root {
+  --sidebar: #0e4f9f; --primary: #0044ab; --primary-hover: #003a93; --primary-fixed: #dbe4f5; --on-primary: #fff;
+  --surface: #f7f9fb; --card: #ffffff; --low: #f2f4f6; --container: #eceef0; --high: #e6e8ea;
+  --on-surface: #191c1e; --variant: #464555; --outline: #777587; --outline-variant: #c7c4d8; --dim: #bec6e0;
+  --error: #ba1a1a; --error-bg: #ffdad6; --ok: #047857; --ok-bg: #d1fae5;
+  --amber-bg: #fffbeb; --amber-line: #fcd34d; --amber-ink: #78350f;
+  --shadow: 0 1px 2px rgba(25, 28, 30, 0.04), 0 4px 16px rgba(25, 28, 30, 0.06);
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--surface); color: var(--on-surface); font: 400 14px/20px Inter, system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
+button, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.ms { font-family: "Material Symbols Outlined"; font-weight: normal; font-style: normal; font-size: 20px; line-height: 1; display: inline-block; white-space: nowrap; direction: ltr; -webkit-font-smoothing: antialiased; font-variation-settings: "FILL" 0, "wght" 400; flex-shrink: 0; }
+.ms.fill { font-variation-settings: "FILL" 1, "wght" 500; }
+html:not(.fuentes) .ms { display: none; }
+.geist { font-family: Geist, Inter, sans-serif; }
+.caps { font-size: 11px; line-height: 16px; letter-spacing: 0.08em; font-weight: 600; text-transform: uppercase; color: var(--variant); }
+
+/* Barra superior (como la barra lateral de la Agenda) */
+.top { background: var(--sidebar); color: #fff; padding: calc(env(safe-area-inset-top, 0px) + 14px) 16px 14px; }
+.top-in { max-width: 1120px; margin: 0 auto; display: flex; align-items: center; gap: 12px; }
+.top img { width: 48px; height: 48px; object-fit: contain; }
+.top h1 { margin: 0; font: 700 24px/1 Geist, Inter, sans-serif; letter-spacing: -0.01em; }
+.top p { margin: 4px 0 0; font-size: 11px; font-weight: 500; letter-spacing: 0.04em; color: var(--dim); }
+.top .ayuda { margin-left: auto; display: flex; align-items: center; gap: 6px; color: var(--dim); font-size: 13px; }
+
+.wrap { max-width: 1120px; margin: 0 auto; padding: 20px 16px calc(env(safe-area-inset-bottom, 0px) + 48px); display: grid; gap: 16px; }
+.demo { display: flex; gap: 10px; align-items: flex-start; background: var(--amber-bg); border: 1px solid var(--amber-line); color: var(--amber-ink); border-radius: 12px; padding: 10px 14px; font-size: 13px; }
+.layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+@media (min-width: 920px) { .layout { grid-template-columns: minmax(0, 1fr) 320px; align-items: start; } }
+.card { background: var(--card); border: 1px solid rgba(199, 196, 216, 0.4); border-radius: 16px; box-shadow: var(--shadow); min-width: 0; }
+.panel { padding: 24px; display: grid; gap: 20px; }
+@media (max-width: 520px) { .panel { padding: 18px; } }
+
+/* Pasos */
+.steps { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; margin: 0 -4px; padding: 0 4px; }
+.steps::-webkit-scrollbar { display: none; }
+.step { display: flex; align-items: center; gap: 6px; padding: 6px 10px 6px 6px; border-radius: 999px; font-size: 12px; font-weight: 600; color: var(--outline); white-space: nowrap; }
+.step i { width: 22px; height: 22px; border-radius: 99px; display: grid; place-items: center; font-style: normal; font-size: 11px; background: var(--container); color: var(--variant); }
+.step.on { background: var(--primary-fixed); color: var(--primary); }
+.step.on i { background: var(--primary); color: #fff; }
+.step.done { color: var(--variant); }
+.step.done i { background: var(--primary); color: #fff; }
+.step.done i .ms { font-size: 14px; }
+
+.titulo h2 { margin: 0; font: 600 24px/32px Geist, Inter, sans-serif; letter-spacing: -0.01em; }
+.titulo p { margin: 4px 0 0; color: var(--variant); font-size: 14px; }
+
+/* Campos */
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px 16px; }
+.campo { display: grid; gap: 6px; }
+.campo label { font-size: 13px; font-weight: 600; color: var(--on-surface); display: flex; gap: 6px; align-items: baseline; }
+.campo label small { font-weight: 400; color: var(--outline); font-size: 12px; }
+.campo .in { position: relative; }
+.campo .in .ms { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--outline); font-size: 18px; pointer-events: none; }
+.campo input { width: 100%; padding: 11px 12px 11px 38px; border: 1px solid var(--outline-variant); border-radius: 10px; background: #fff; font-size: 14px; transition: border-color .15s, box-shadow .15s; }
+.campo input:hover { border-color: var(--outline); }
+.campo input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(0, 68, 171, 0.15); }
+.campo input[aria-invalid="true"] { border-color: var(--error); }
+.campo .err { color: var(--error); font-size: 12px; min-height: 0; }
+.campo .err:empty { display: none; }
+.check { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; color: var(--variant); cursor: pointer; }
+.check input { margin: 1px 0 0; width: 18px; height: 18px; accent-color: var(--primary); flex-shrink: 0; cursor: pointer; }
+.aviso { display: flex; gap: 8px; align-items: flex-start; background: var(--error-bg); color: #93000a; border-radius: 12px; padding: 10px 14px; font-size: 13px; font-weight: 500; }
+
+/* Opciones */
+.opts { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.opt { text-align: left; border: 1px solid var(--outline-variant); background: #fff; border-radius: 12px; padding: 14px; cursor: pointer; display: flex; gap: 12px; align-items: flex-start; min-width: 0; transition: border-color .15s, background .15s; }
+.opt:hover { border-color: var(--outline); background: var(--low); }
+.opt[aria-pressed="true"] { border-color: var(--primary); background: var(--primary-fixed); box-shadow: inset 0 0 0 1px var(--primary); }
+.opt .ico { width: 40px; height: 40px; border-radius: 12px; background: var(--low); color: var(--primary); display: grid; place-items: center; }
+.opt[aria-pressed="true"] .ico { background: var(--primary); color: #fff; }
+.opt .tx { display: grid; gap: 2px; min-width: 0; }
+.opt b { font-size: 14px; font-weight: 600; }
+.opt span.d { font-size: 12px; color: var(--variant); }
+.opt .precio { font-size: 13px; font-weight: 700; color: var(--primary); font-variant-numeric: tabular-nums; }
+.subtit { margin: 0 0 8px; font-size: 13px; font-weight: 600; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { border: 1px solid var(--outline-variant); background: #fff; border-radius: 999px; padding: 7px 14px; cursor: pointer; font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.chip:hover { border-color: var(--outline); }
+.chip[aria-pressed="true"] { border-color: var(--primary); background: var(--primary); color: #fff; }
+.cualquiera { display: flex; gap: 12px; align-items: center; background: var(--low); border-radius: 12px; padding: 12px 14px; font-size: 13px; color: var(--variant); }
+.cualquiera .ms { color: var(--primary); font-size: 24px; }
+.cualquiera b { color: var(--on-surface); display: block; font-size: 14px; }
+
+/* Calendario */
+.cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.cal-head b { font: 600 16px Geist, Inter, sans-serif; text-transform: capitalize; }
+.redondo { border: 1px solid var(--outline-variant); background: #fff; border-radius: 10px; width: 36px; height: 36px; cursor: pointer; display: grid; place-items: center; color: var(--variant); }
+.redondo:hover:not(:disabled) { background: var(--low); }
+.redondo:disabled { opacity: 0.35; cursor: default; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.dow { text-align: center; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; color: var(--outline); text-transform: uppercase; padding-bottom: 2px; }
+.day { aspect-ratio: 1; max-height: 56px; border-radius: 10px; border: 1px solid var(--outline-variant); background: #fff; cursor: pointer; display: grid; place-items: center; font-variant-numeric: tabular-nums; font-weight: 600; position: relative; width: 100%; }
+.day:hover:not(:disabled) { border-color: var(--primary); }
+.day:disabled { background: transparent; border-color: transparent; color: #b9b8c3; cursor: default; font-weight: 400; }
+.day.vacio { visibility: hidden; }
+.day::after { content: ""; position: absolute; bottom: 5px; width: 5px; height: 5px; border-radius: 99px; }
+.day.libre::after { background: #10b981; }
+.day.pocas::after { background: #f59e0b; }
+.day[aria-pressed="true"] { background: var(--primary); border-color: var(--primary); color: #fff; }
+.day[aria-pressed="true"]::after { background: #fff; }
+.leyenda { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--variant); margin-top: 10px; }
+.leyenda i { display: inline-block; width: 7px; height: 7px; border-radius: 99px; margin-right: 6px; vertical-align: 1px; }
+
+/* Horas */
+.grupo { display: grid; gap: 8px; }
+.grupo .caps { display: flex; align-items: center; gap: 6px; }
+.grupo .caps .ms { font-size: 16px; }
+.horas { display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 8px; }
+.hora { border: 1px solid var(--outline-variant); background: #fff; border-radius: 10px; padding: 9px 0; cursor: pointer; font-variant-numeric: tabular-nums; font-weight: 600; font-size: 14px; }
+.hora:hover { border-color: var(--primary); color: var(--primary); }
+.hora[aria-pressed="true"] { background: var(--primary); color: #fff; border-color: var(--primary); }
+.nota { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--variant); margin: 0; }
+.nota .ms { font-size: 18px; color: var(--outline); }
+
+/* Botones */
+.nav { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding-top: 4px; border-top: 1px solid var(--high); padding-top: 16px; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 0; border-radius: 12px; padding: 11px 18px; font-weight: 600; font-size: 14px; cursor: pointer; transition: background .15s; }
+.btn .ms { font-size: 18px; }
+.btn.pri { background: var(--primary); color: #fff; box-shadow: 0 1px 2px rgba(0, 68, 171, 0.25); }
+.btn.pri:hover:not(:disabled) { background: var(--primary-hover); }
+.btn.pri:disabled { background: var(--high); color: var(--outline); box-shadow: none; cursor: default; }
+.btn.sec { background: #fff; color: var(--variant); border: 1px solid var(--outline-variant); }
+.btn.sec:hover { background: var(--low); }
+.link { background: none; border: 0; color: var(--variant); text-decoration: underline; cursor: pointer; font-size: 13px; padding: 4px 0; }
+.link:disabled { opacity: 0.4; cursor: default; }
+
+/* Resumen */
+.resumen { padding: 20px; display: grid; gap: 14px; position: sticky; top: 16px; }
+.resumen .fila { display: flex; gap: 10px; align-items: flex-start; }
+.resumen .fila > .ms { color: var(--outline); font-size: 18px; margin-top: 1px; }
+.resumen .fila div { min-width: 0; }
+.resumen dt { font-size: 11px; color: var(--outline); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+.resumen dd { margin: 1px 0 0; font-weight: 500; overflow-wrap: anywhere; }
+.resumen dd small { display: block; color: var(--variant); font-weight: 400; font-size: 12px; }
+.resumen dl { margin: 0; display: grid; gap: 12px; }
+.total { border-top: 1px solid var(--high); padding-top: 12px; display: flex; justify-content: space-between; align-items: baseline; }
+.total b { font: 700 24px Geist, Inter, sans-serif; color: var(--primary); font-variant-numeric: tabular-nums; }
+.timer { display: flex; gap: 8px; align-items: center; background: var(--amber-bg); border: 1px solid var(--amber-line); color: var(--amber-ink); border-radius: 12px; padding: 9px 12px; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.timer.fin { background: var(--error-bg); border-color: #f5b5ae; color: #93000a; }
+
+/* Pago */
+.pago { border: 1px solid var(--outline-variant); border-radius: 12px; overflow: hidden; }
+.pago-head { display: flex; align-items: center; gap: 8px; background: var(--low); padding: 10px 14px; font-weight: 600; font-size: 13px; }
+.pago-head .ms { color: var(--primary); }
+.pago-body { padding: 14px; display: grid; gap: 12px; }
+.pago-body p { margin: 0; font-size: 13px; color: var(--variant); }
+.tarjetas { display: flex; gap: 6px; flex-wrap: wrap; }
+.tarjetas span { border: 1px solid var(--outline-variant); border-radius: 6px; padding: 2px 8px; font-size: 11px; font-weight: 700; color: var(--variant); letter-spacing: 0.04em; }
+
+/* Final */
+.final { text-align: center; display: grid; gap: 12px; justify-items: center; padding: 16px 0 8px; }
+.final .big { width: 64px; height: 64px; border-radius: 999px; background: var(--ok-bg); color: var(--ok); display: grid; place-items: center; }
+.final .big .ms { font-size: 36px; }
+.final .big.mal { background: var(--error-bg); color: var(--error); }
+.final h2 { margin: 0; font: 700 26px/1.2 Geist, Inter, sans-serif; }
+.final p { margin: 0; color: var(--variant); max-width: 46ch; }
+.codigo { font: 700 20px "JetBrains Mono", ui-monospace, Consolas, monospace; letter-spacing: 0.08em; background: var(--low); border: 1px dashed var(--outline-variant); padding: 8px 16px; border-radius: 10px; }
+.cargando { display: flex; gap: 10px; align-items: center; color: var(--variant); font-size: 13px; padding: 8px 0; }
+.spin { width: 16px; height: 16px; border: 2px solid var(--high); border-top-color: var(--primary); border-radius: 99px; animation: g 0.8s linear infinite; }
+@keyframes g { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="top-in">
+    <img src="logo-login.png" alt="Limablue">
+    <div>
+      <h1>Reserva tu cita</h1>
+      <p>LIMABLUE · CLÍNICA DE SALUD DEL PIE</p>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="layout">
+    <main class="card panel" id="panel" aria-live="polite"></main>
+    <aside class="card resumen" id="resumen"></aside>
+  </div>
+</div>
+
+<script>
+(function () {
+  // Íconos: se muestran SOLO si cargó la fuente de íconos; si no carga (sin acceso a Google Fonts), quedan ocultos
+  // en vez de verse como palabras («calendar_today», «science»…).
+  function marcar() {
+    try { if (document.fonts && !document.fonts.check('20px "Material Symbols Outlined"')) return; } catch (e) { return; }
+    document.documentElement.classList.add('fuentes');
+  }
+  if (document.fonts && document.fonts.load) document.fonts.load('20px "Material Symbols Outlined"', 'event').then(marcar, function () {});
+  setTimeout(marcar, 3000);
+
+  var API = '/api/v1/publico/reservas';
+  var DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
+  var MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'setiembre', 'octubre', 'noviembre', 'diciembre'];
+  var PASOS = ['Tus datos', 'Sede', 'Servicio', 'Fecha', 'Hora', 'Pago'];
+
+  var cat = null;
+  var s = nuevoEstado();
+  var panel = document.getElementById('panel');
+  var resumen = document.getElementById('resumen');
+
+  function nuevoEstado() {
+    return { paso: 0, dni: '', nombres: '', apPat: '', apMat: '', cel: '', email: '', acepta: false,
+      sede: null, serv: null, variante: undefined, fecha: null, hora: null, mes: null,
+      dias: null, horas: null, cargando: false, error: '', reserva: null, estado: null, acepta2: false, pagando: false,
+      intento: null, tiempoVencido: false };
+  }
+
+  // ─── intento: los 10 min corren desde el primer «Continuar» y cada paso se guarda ───
+  var PASO_NOMBRE = ['datos', 'sede', 'servicio', 'fecha', 'hora', 'pago'];
+  function datosPaciente() {
+    return { numeroDocumento: s.dni, nombres: s.nombres.trim(), apellidoPaterno: s.apPat.trim(), apellidoMaterno: s.apMat.trim() || null, telefono: s.cel, email: s.email.trim() };
+  }
+  function limite() { return s.reserva ? s.reserva.expiraEn : s.intento ? s.intento.expiraEn : null; }
+  function vencio() { var l = limite(); return !!l && new Date(l).getTime() <= Date.now(); }
+  function iniciarIntento() {
+    return llamar('POST', API + '/intentos', Object.assign(datosPaciente(), { aceptaDatos: true })).then(function (r) {
+      s.intento = { id: r.intentoId, token: r.token, expiraEn: r.expiraEn }; s.tiempoVencido = false;
+    });
+  }
+  function guardarAvance() {
+    if (!s.intento) return Promise.resolve();
+    return llamar('PATCH', API + '/intentos/' + s.intento.id, Object.assign(datosPaciente(), {
+      token: s.intento.token, paso: PASO_NOMBRE[s.paso], sedeId: s.sede || null, servicioId: s.serv || null,
+      subcategoriaId: s.variante === undefined ? null : s.variante, fecha: s.fecha || null, horaInicio: s.hora || null,
+    })).catch(function (e) {
+      if (e.codigo === 'TIEMPO_VENCIDO' || e.codigo === 'INTENTO_NO_ENCONTRADO') { s.tiempoVencido = true; render(); }
+    });
+  }
+  // «Volver a empezar» tras vencer: nuevo reloj con los mismos datos y lo ya elegido.
+  function reiniciar() {
+    s.reserva = null; s.estado = null; s.acepta2 = false; s.error = ''; s.cargando = true;
+    if (s.paso === 5) { s.paso = 4; s.hora = null; }
+    if (s.paso < 1) s.paso = 1;
+    limpiarUrl(); render();
+    iniciarIntento().then(guardarAvance).then(function () {
+      s.cargando = false;
+      if (s.paso === 4) { cargarHoras(); } else if (s.paso === 3) { cargarDias(); } else { render(); }
+    }, function (e) { s.cargando = false; s.error = e.message; s.paso = 0; s.tiempoVencido = false; render(); });
+  }
+
+  // ─── utilidades ───
+  function esc(t) { return String(t == null ? '' : t).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function ic(n, extra) { return '<span class="ms' + (extra ? ' ' + extra : '') + '" aria-hidden="true">' + n + '</span>'; }
+  function pad(n) { return String(n).padStart(2, '0'); }
+  function iso(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  function deIso(t) { var p = t.split('-'); return new Date(+p[0], +p[1] - 1, +p[2]); }
+  function fechaLarga(t) { var d = deIso(t); return DIAS[d.getDay()] + ' ' + d.getDate() + ' de ' + MESES[d.getMonth()]; }
+  function soles(n) { return 'S/ ' + Number(n).toFixed(2); }
+  function hoyLima() { return new Date(Date.now() - 5 * 3600 * 1000).toISOString().slice(0, 10); }
+  function sumarDias(t, n) { var d = deIso(t); d.setDate(d.getDate() + n); return iso(d); }
+  function sede() { return cat && cat.sedes.find(function (x) { return x.id === s.sede; }); }
+  function serv() { return cat && cat.servicios.find(function (x) { return x.id === s.serv; }); }
+  function variante() { var sv = serv(); return sv && s.variante !== undefined ? sv.variantes.find(function (v) { return v.id === s.variante; }) : null; }
+  function esBaro(sv) { return sv && /baro/i.test(sv.unidad); }
+  function iconoServicio(sv) { return esBaro(sv) ? 'directions_walk' : /curaci/i.test(sv.nombre) ? 'healing' : /evaluaci/i.test(sv.nombre) ? 'stethoscope' : 'footprint'; }
+
+  function llamar(metodo, ruta, cuerpo) {
+    return fetch(ruta, { method: metodo, headers: cuerpo ? { 'Content-Type': 'application/json' } : {}, body: cuerpo ? JSON.stringify(cuerpo) : undefined })
+      .then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (j) {
+          if (!r.ok) { var e = new Error(mensajeError(j)); e.codigo = j.error; e.status = r.status; throw e; }
+          return j;
+        });
+      }, function () { throw new Error('No hay conexión con el sistema. Revisa tu internet e intenta de nuevo.'); });
+  }
+  function mensajeError(j) {
+    if (j && j.error === 'VALIDATION_ERROR' && j.details && j.details.length) return j.details.map(function (d) { return d.mensaje; }).join('. ');
+    return (j && j.message) || 'Ocurrió un problema. Intenta de nuevo.';
+  }
+
+  // ─── validación de datos (paso 1) ───
+  var CAMPOS = [
+    { id: 'dni', et: 'DNI', ayuda: '8 dígitos', icono: 'badge', tipo: 'text', num: 8, ok: function (v) { return /^\d{8}$/.test(v); }, msj: 'El DNI tiene 8 dígitos.' },
+    { id: 'cel', et: 'Celular', ayuda: 'Ej. 987654321', icono: 'smartphone', tipo: 'tel', num: 9, ok: function (v) { return /^9\d{8}$/.test(v); }, msj: 'Ingresa un celular de 9 dígitos que empiece con 9.', auto: 'tel-national' },
+    { id: 'nombres', et: 'Nombres', icono: 'person', tipo: 'text', ok: function (v) { return v.trim().length > 1; }, msj: 'Escribe tus nombres.', auto: 'given-name' },
+    { id: 'apPat', et: 'Apellido paterno', icono: 'person', tipo: 'text', ok: function (v) { return v.trim().length > 1; }, msj: 'Escribe tu apellido paterno.', auto: 'family-name' },
+    { id: 'apMat', et: 'Apellido materno', ayuda: 'Opcional', icono: 'person', tipo: 'text', ok: function () { return true; }, msj: '' },
+    { id: 'email', et: 'Correo', ayuda: 'Para enviarte la confirmación', icono: 'mail', tipo: 'email', ok: function (v) { return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.trim()); }, msj: 'Revisa el correo.', auto: 'email' },
+  ];
+  function datosOk() { return CAMPOS.every(function (c) { return c.ok(s[c.id]); }) && s.acepta; }
+  // Actualiza errores, botón y resumen SIN volver a dibujar los campos (así el cursor no salta).
+  // Los errores aparecen recién al salir del campo (no mientras escribe por primera vez).
+  function refrescarDatos() {
+    CAMPOS.forEach(function (c) {
+      var el = document.getElementById('err-' + c.id), inp = document.getElementById('in-' + c.id);
+      if (!el || !inp) return;
+      var mostrar = s[c.id] !== '' && c.tocado;
+      var mal = mostrar && !c.ok(s[c.id]);
+      el.textContent = mal ? c.msj : '';
+      inp.setAttribute('aria-invalid', mal ? 'true' : 'false');
+    });
+    var b = panel.querySelector('[data-a="sig"]'); if (b) b.disabled = !datosOk() || s.cargando;
+    pintarResumen();
+  }
+
+  // ─── carga de datos ───
+  function cargarDias() {
+    var m = s.mes, desde = iso(new Date(m.getFullYear(), m.getMonth(), 1)), hasta = iso(new Date(m.getFullYear(), m.getMonth() + 1, 0));
+    var clave = s.sede + s.serv + desde;
+    s.dias = null; render();
+    llamar('GET', API + '/dias?sedeId=' + s.sede + '&servicioId=' + s.serv + '&desde=' + desde + '&hasta=' + hasta).then(function (j) {
+      if (clave !== s.sede + s.serv + iso(new Date(s.mes.getFullYear(), s.mes.getMonth(), 1))) return;
+      s.dias = {}; j.dias.forEach(function (d) { s.dias[d.fecha] = d.horas; }); render();
+    }, function (e) { s.error = e.message; s.dias = {}; render(); });
+  }
+  function cargarHoras() {
+    s.horas = null; render();
+    llamar('GET', API + '/horas?sedeId=' + s.sede + '&servicioId=' + s.serv + '&fecha=' + s.fecha).then(function (j) {
+      s.horas = j.horas; render();
+    }, function (e) { s.error = e.message; s.horas = []; render(); });
+  }
+  function apartar() {
+    s.cargando = true; s.error = ''; render();
+    llamar('POST', API, Object.assign(datosPaciente(), {
+      sedeId: s.sede, servicioId: s.serv, subcategoriaId: s.variante,
+      fecha: s.fecha, horaInicio: s.hora, aceptaDatos: true,
+      intentoId: s.intento ? s.intento.id : null, intentoToken: s.intento ? s.intento.token : null,
+    })).then(function (r) {
+      s.reserva = r; s.cargando = false;
+      try { history.replaceState(null, '', '?codigo=' + encodeURIComponent(r.codigo) + '&token=' + encodeURIComponent(r.token)); } catch (e) {}
+      // Sin pago en línea (por ahora): la cita ya quedó creada, se muestra la confirmación.
+      if (r.estado === 'confirmada') { s.pagando = true; render(); seguirEstado(0); return; }
+      s.paso = 5;
+      return llamar('POST', API + '/' + encodeURIComponent(r.codigo) + '/pago', { token: r.token }).then(function () { render(); });
+    }).catch(function (e) {
+      s.cargando = false; s.error = e.message;
+      if (e.codigo === 'TIEMPO_VENCIDO') { s.error = ''; s.tiempoVencido = true; render(); return; }
+      if (e.codigo === 'HORA_NO_DISPONIBLE') { s.hora = null; cargarHoras(); return; }
+      render();
+    });
+  }
+  function pagar(aprobado) {
+    s.pagando = true; s.error = ''; render();
+    llamar('POST', '/reserva/pagar-prueba', { codigo: s.reserva.codigo, token: s.reserva.token, aprobado: aprobado }).then(function () {
+      if (!aprobado) { s.pagando = false; s.error = 'El pago fue rechazado. Puedes intentarlo de nuevo mientras tu horario siga separado.'; render(); return; }
+      seguirEstado(0);
+    }, function (e) { s.pagando = false; s.error = e.message; render(); });
+  }
+  function seguirEstado(intento) {
+    llamar('GET', API + '/' + encodeURIComponent(s.reserva.codigo) + '?token=' + encodeURIComponent(s.reserva.token)).then(function (e) {
+      s.estado = e;
+      if ((e.estado === 'pagada' || e.estado === 'esperando_pago') && intento < 20) { setTimeout(function () { seguirEstado(intento + 1); }, 1000); return; }
+      s.pagando = false; render();
+    }, function (e) { s.pagando = false; s.error = e.message; render(); });
+  }
+
+  // ─── pintar ───
+  function fila(icono, et, valor) { return '<div class="fila">' + ic(icono) + '<div><dt>' + et + '</dt><dd>' + valor + '</dd></div></div>'; }
+  function pintarResumen() {
+    if (!cat) { resumen.innerHTML = ''; return; }
+    var se = sede(), sv = serv(), v = variante(), nombre = (s.nombres + ' ' + s.apPat).trim();
+    var e = s.estado, enCurso = !!limite() && (!e || e.estado === 'esperando_pago') && !s.tiempoVencido;
+    resumen.innerHTML = '<div class="caps">Tu reserva</div><dl>' +
+      fila('person', 'Paciente', nombre ? esc(nombre) + (s.dni ? '<small>DNI ' + esc(s.dni) + '</small>' : '') : '—') +
+      fila('location_on', 'Sede', se ? esc(se.nombre) + '<small>' + esc(se.direccion) + '</small>' : (e && e.sede ? esc(e.sede.nombre) : '—')) +
+      fila('medical_services', 'Servicio', sv ? esc(sv.nombre) + (v && v.id ? '<small>' + esc(v.nombre) + '</small>' : '') : (e && e.servicio ? esc(e.servicio) : '—')) +
+      fila('groups', 'Profesional', sv ? (esBaro(sv) ? 'Especialista disponible' : 'Cualquier podóloga disponible') : '—') +
+      fila('event', 'Fecha y hora', s.fecha ? esc(fechaLarga(s.fecha)) + (s.hora ? '<small>' + s.hora + ' h</small>' : '') : '—') +
+      '</dl><div class="total"><span class="caps">Total</span><b>' + (v ? soles(v.precio) : s.reserva ? soles(s.reserva.monto) : '—') + '</b></div>' +
+      (enCurso ? '<div class="timer" id="timer"></div>' : '');
+    tick();
+  }
+  function tick() {
+    var el = document.getElementById('timer'), l = limite(); if (!el || !l) return;
+    var resta = Math.max(0, Math.round((new Date(l).getTime() - Date.now()) / 1000));
+    var mmss = Math.floor(resta / 60) + ':' + pad(resta % 60);
+    el.className = 'timer' + (resta > 0 ? '' : ' fin');
+    el.innerHTML = ic(resta > 0 ? 'timer' : 'timer_off') + '<span>' + (resta <= 0 ? 'Se terminó el tiempo'
+      : s.reserva ? 'Horario separado · ' + mmss + ' min para pagar' : 'Tienes ' + mmss + ' min para completar tu reserva') + '</span>';
+  }
+  function pasos() {
+    return '<nav class="steps" aria-label="Pasos">' + PASOS.map(function (p, i) {
+      var c = i === s.paso ? 'on' : i < s.paso ? 'done' : '';
+      return '<span class="step ' + c + '"' + (c === 'on' ? ' aria-current="step"' : '') + '><i>' + (c === 'done' ? ic('check') : i + 1) + '</i>' + p + '</span>';
+    }).join('') + '</nav>';
+  }
+  function titulo(t, sub) { return '<div class="titulo"><h2>' + t + '</h2>' + (sub ? '<p>' + sub + '</p>' : '') + '</div>'; }
+  function nav(puede, etiqueta, icono) {
+    return '<div class="nav">' + (s.paso > 0 ? '<button class="btn sec" data-a="atras" type="button">' + ic('arrow_back') + 'Atrás</button>' : '<span></span>') +
+      '<button class="btn pri" data-a="sig" type="button"' + (puede ? '' : ' disabled') + '>' + (etiqueta || 'Continuar') + ic(icono || 'arrow_forward') + '</button></div>';
+  }
+  function cargandoHtml(t) { return '<div class="cargando"><span class="spin"></span>' + t + '</div>'; }
+  function avisoHtml() { return s.error ? '<div class="aviso" role="alert">' + ic('error') + '<span>' + esc(s.error) + '</span></div>' : ''; }
+
+  function render() {
+    if (!cat) {
+      panel.innerHTML = s.error ? avisoHtml() + '<div><button class="btn sec" data-a="reintentar" type="button">' + ic('refresh') + 'Reintentar</button></div>' : cargandoHtml('Cargando sedes y servicios…');
+      resumen.innerHTML = ''; return;
+    }
+    panel.innerHTML = s.estado && s.estado.estado !== 'esperando_pago' && s.estado.estado !== 'pagada' ? final()
+      : s.tiempoVencido ? vencidoHtml() : pasos() + paso();
+    pintarResumen();
+  }
+  function vencidoHtml() {
+    return '<div class="final"><div class="big mal">' + ic('timer_off') + '</div><h2>Se terminó el tiempo</h2>' +
+      '<p>Tenías ' + cat.reglas.minutosApartado + ' minutos para completar la reserva' + (s.reserva ? ' y pagar' : '') + '. ' + (s.reserva ? 'El horario se liberó y no se te cobró nada. ' : '') +
+      'Puedes volver a empezar: tus datos y lo que elegiste se mantienen.</p>' +
+      '<button class="btn pri" data-a="reiniciar" type="button"' + (s.cargando ? ' disabled' : '') + '>' + ic('restart_alt') + (s.cargando ? 'Reiniciando…' : 'Volver a empezar') + '</button></div>';
+  }
+
+  function final() {
+    var e = s.estado;
+    if (e.estado === 'confirmada') {
+      return '<div class="final"><div class="big">' + ic('check_circle', 'fill') + '</div><h2>¡Cita confirmada!</h2>' +
+        '<p>Te esperamos el <b>' + esc(fechaLarga(e.fecha)) + ' a las ' + esc(e.horaInicio) + '</b> en <b>' + esc(e.sede && e.sede.nombre) + '</b>, ' + esc(e.sede && e.sede.direccion) + '.</p>' +
+        '<div class="codigo">' + esc(e.codigo) + '</div><p>Código de reserva · ' + (e.pagoPendiente ? 'pagas ' + soles(e.monto) + ' en la sede' : 'pagaste ' + soles(e.monto)) + '. Llega 10 minutos antes con tu DNI.</p>' +
+        (e.demo ? '<div class="demo">' + ic('info') + '<span>Demostración: no se reservó ninguna cita ni se cobró nada.</span></div>' : '') +
+        '<button class="btn sec" data-a="nuevo" type="button">' + ic('add') + 'Hacer otra reserva</button></div>';
+    }
+    if (e.estado === 'reembolsar') {
+      return '<div class="final"><div class="big mal">' + ic('priority_high') + '</div><h2>Recibimos tu pago</h2>' +
+        '<p>Pero ese horario se ocupó justo antes de confirmar. Te llamaremos para darte otro horario o devolverte el dinero.</p>' +
+        '<div class="codigo">' + esc(e.codigo) + '</div><button class="btn sec" data-a="nuevo" type="button">Volver al inicio</button></div>';
+    }
+    return '<div class="final"><div class="big mal">' + ic('timer_off') + '</div><h2>Se venció el tiempo</h2>' +
+      '<p>No se completó el pago a tiempo y el horario se liberó. No se te cobró nada.</p>' +
+      '<button class="btn pri" data-a="reiniciar" type="button">' + ic('restart_alt') + 'Volver a empezar</button></div>';
+  }
+
+  function paso() {
+    var h = avisoHtml();
+    if (s.paso === 0) {
+      return titulo('Tus datos', 'Los usamos para registrarte y enviarte la confirmación de tu cita.') + h +
+        '<div class="grid2">' + CAMPOS.map(function (c) {
+          return '<div class="campo"><label for="in-' + c.id + '">' + c.et + (c.ayuda ? ' <small>' + c.ayuda + '</small>' : '') + '</label>' +
+            '<div class="in">' + ic(c.icono) + '<input id="in-' + c.id + '" data-campo="' + c.id + '" type="' + c.tipo + '"' +
+            (c.num ? ' inputmode="numeric" maxlength="' + c.num + '"' : '') + ' value="' + esc(s[c.id]) + '" autocomplete="' + (c.auto || 'off') + '" aria-describedby="err-' + c.id + '"></div>' +
+            '<span class="err" id="err-' + c.id + '"></span></div>';
+        }).join('') + '</div>' +
+        '<label class="check"><input type="checkbox" id="acepta"' + (s.acepta ? ' checked' : '') + '><span>Acepto el tratamiento de mis datos personales para gestionar mi cita, según la política de privacidad de Limablue.</span></label>' +
+        '<p class="nota">' + ic('timer') + 'Al continuar tendrás ' + cat.reglas.minutosApartado + ' minutos para elegir tu horario y pagar.</p>' +
+        nav(datosOk() && !s.cargando, s.cargando ? 'Guardando…' : 'Continuar');
+    }
+    if (s.paso === 1) {
+      return titulo('Elige la sede', 'Atendemos en ' + cat.sedes.length + ' sedes de Lima.') + h + '<div class="opts">' +
+        cat.sedes.map(function (x) {
+          return '<button class="opt" type="button" data-sede="' + x.id + '" aria-pressed="' + (s.sede === x.id) + '"><span class="ico">' + ic('location_on') + '</span><span class="tx"><b>' + esc(x.nombre) + '</b><span class="d">' + esc(x.direccion) + '</span></span></button>';
+        }).join('') + '</div>' + nav(!!s.sede);
+    }
+    if (s.paso === 2) {
+      var lista = cat.servicios.filter(function (x) { return x.sedes.indexOf(s.sede) >= 0; }), sv = serv();
+      h = titulo('Elige el servicio', 'Precios de la clínica. El pago se hace al final.') + h;
+      if (!lista.length) return h + '<p class="nota">' + ic('info') + 'Esta sede no tiene servicios para reservar en línea por ahora.</p>' + nav(false);
+      h += '<div class="opts">' + lista.map(function (x) {
+        var mn = Math.min.apply(null, x.variantes.map(function (v) { return v.precio; }));
+        return '<button class="opt" type="button" data-serv="' + x.id + '" aria-pressed="' + (s.serv === x.id) + '"><span class="ico">' + ic(iconoServicio(x)) + '</span><span class="tx"><b>' + esc(x.nombre) + '</b>' +
+          '<span class="d">' + esc(x.unidad) + ' · ' + x.duracionMinutos + ' min</span><span class="precio">' + (x.variantes.length > 1 ? 'Desde ' : '') + soles(mn) + '</span></span></button>';
+      }).join('') + '</div>';
+      if (sv && sv.variantes.length > 1) {
+        h += '<div><p class="subtit">Tipo de ' + esc(sv.nombre.toLowerCase()) + '</p><div class="chips">' +
+          sv.variantes.map(function (v) { return '<button class="chip" type="button" data-var="' + v.id + '" aria-pressed="' + (s.variante === v.id) + '">' + esc(v.nombre) + ' · ' + soles(v.precio) + '</button>'; }).join('') + '</div></div>';
+      }
+      if (sv) h += '<div class="cualquiera">' + ic('groups') + '<div><b>' + (esBaro(sv) ? 'Especialista disponible' : 'Cualquier podóloga disponible') + '</b>Te asignamos a la profesional libre en el horario que elijas.</div></div>';
+      return h + nav(!!sv && s.variante !== undefined);
+    }
+    if (s.paso === 3) {
+      var m = s.mes, ini = new Date(m.getFullYear(), m.getMonth(), 1), nDias = new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate();
+      var hoy = hoyLima(), tope = sumarDias(hoy, cat.reglas.diasMaximos), celdas = '';
+      for (var e = 0; e < ini.getDay(); e++) celdas += '<button class="day vacio" disabled tabindex="-1" aria-hidden="true"></button>';
+      for (var d = 1; d <= nDias; d++) {
+        var f = iso(new Date(m.getFullYear(), m.getMonth(), d)), n = s.dias ? s.dias[f] || 0 : 0;
+        var st = n === 0 ? '' : n <= 3 ? 'pocas' : 'libre';
+        celdas += '<button class="day ' + st + '" type="button" data-dia="' + f + '"' + (st ? '' : ' disabled') +
+          ' aria-pressed="' + (s.fecha === f) + '" aria-label="' + fechaLarga(f) + (st ? ', ' + n + ' horarios' : ', sin horarios') + '">' + d + '</button>';
+      }
+      var mesHoy = deIso(hoy), prev = m.getFullYear() === mesHoy.getFullYear() && m.getMonth() === mesHoy.getMonth();
+      var next = iso(new Date(m.getFullYear(), m.getMonth() + 1, 1)) > tope;
+      return titulo('Elige la fecha', 'Solo se pueden elegir los días con horarios libres, hasta ' + cat.reglas.diasMaximos + ' días adelante.') + h +
+        '<div><div class="cal-head"><button class="redondo" type="button" data-a="mesAnt" aria-label="Mes anterior"' + (prev ? ' disabled' : '') + '>' + ic('chevron_left') + '</button>' +
+        '<b>' + MESES[m.getMonth()] + ' ' + m.getFullYear() + '</b><button class="redondo" type="button" data-a="mesSig" aria-label="Mes siguiente"' + (next ? ' disabled' : '') + '>' + ic('chevron_right') + '</button></div>' +
+        (s.dias ? '<div class="cal-grid">' + DIAS.map(function (x) { return '<div class="dow">' + x + '</div>'; }).join('') + celdas + '</div>' : cargandoHtml('Buscando días con horarios libres…')) +
+        '<div class="leyenda"><span><i style="background:#10b981"></i>Con horarios</span><span><i style="background:#f59e0b"></i>Últimos horarios</span><span>Gris: sin atención o lleno</span></div></div>' + nav(!!s.fecha);
+    }
+    if (s.paso === 4) {
+      h = titulo('Elige la hora', esc(fechaLarga(s.fecha)) + ' · ' + esc(sede().nombre)) + h;
+      if (!s.horas) return h + cargandoHtml('Buscando horarios libres…') + nav(false);
+      if (!s.horas.length) return h + '<p class="nota">' + ic('event_busy') + 'Ya no quedan horarios libres ese día. Elige otra fecha.</p>' + nav(false);
+      var man = s.horas.filter(function (x) { return x < '12:00'; }), tar = s.horas.filter(function (x) { return x >= '12:00'; });
+      var grupo = function (t, icono, l) { return l.length ? '<div class="grupo"><div class="caps">' + ic(icono) + t + '</div><div class="horas">' + l.map(function (x) { return '<button class="hora" type="button" data-hora="' + x + '" aria-pressed="' + (s.hora === x) + '">' + x + '</button>'; }).join('') + '</div></div>' : ''; };
+      return h + grupo('Mañana', 'wb_sunny', man) + grupo('Tarde', 'wb_twilight', tar) +
+        '<p class="nota">' + ic('lock_clock') + 'Al continuar separamos tu horario mientras pagas, dentro del tiempo que te queda.</p>' +
+        nav(!!s.hora && !s.cargando, s.cargando ? 'Separando tu horario…' : 'Separar horario y pagar', 'lock');
+    }
+    var v = variante(), monto = v ? v.precio : s.reserva.monto;
+    return titulo('Paga y confirma', 'Tu horario ya está separado. La cita se confirma cuando el pago queda aprobado.') + h +
+      '<div class="pago"><div class="pago-head">' + ic('credit_card') + 'Pasarela de pago <span style="font-weight:400;color:var(--outline)">· simulada</span></div><div class="pago-body">' +
+      '<div class="tarjetas"><span>VISA</span><span>MASTERCARD</span><span>AMEX</span><span>YAPE</span></div>' +
+      '<p>Aquí irá el formulario seguro de la pasarela que elija la clínica. Limablue nunca ve los datos de la tarjeta. En esta prueba no se cobra nada.</p>' +
+      '<label class="check"><input type="checkbox" id="acepta2"' + (s.acepta2 ? ' checked' : '') + '><span>Acepto las condiciones de reserva.</span></label></div></div>' +
+      '<div class="nav"><button class="link" data-a="rechazar" type="button"' + (s.pagando ? ' disabled' : '') + '>Probar un pago rechazado</button>' +
+      '<button class="btn pri" data-a="pagar" type="button"' + (s.acepta2 && !s.pagando ? '' : ' disabled') + '>' + ic('lock') + (s.pagando ? 'Procesando pago…' : 'Pagar ' + soles(monto)) + '</button>' +
+      '</div>' + (s.pagando ? cargandoHtml('Confirmando tu cita en la agenda…') : '');
+  }
+
+  // ─── eventos ───
+  panel.addEventListener('input', function (e) {
+    var id = e.target.getAttribute('data-campo'); if (!id) return;
+    var c = CAMPOS.find(function (x) { return x.id === id; });
+    if (c && c.num) { var limpio = e.target.value.replace(/\D/g, ''); if (limpio !== e.target.value) e.target.value = limpio; }
+    s[id] = e.target.value; s.error = '';
+    refrescarDatos();
+  });
+  panel.addEventListener('focusout', function (e) {
+    var id = e.target.getAttribute && e.target.getAttribute('data-campo'); if (!id) return;
+    var c = CAMPOS.find(function (x) { return x.id === id; }); if (c) { c.tocado = true; refrescarDatos(); }
+  });
+  panel.addEventListener('change', function (e) {
+    if (e.target.id === 'acepta') { s.acepta = e.target.checked; refrescarDatos(); }
+    if (e.target.id === 'acepta2') { s.acepta2 = e.target.checked; render(); }
+  });
+  panel.addEventListener('click', function (e) {
+    var b = e.target.closest('button'); if (!b || b.disabled) return;
+    var a = b.getAttribute('data-a');
+    if (b.dataset.sede) { if (s.sede !== b.dataset.sede) { s.sede = b.dataset.sede; s.serv = null; s.variante = undefined; s.fecha = null; s.hora = null; } }
+    if (b.dataset.serv && s.serv !== b.dataset.serv) {
+      s.serv = b.dataset.serv; var sv = serv();
+      s.variante = sv.variantes.length === 1 ? sv.variantes[0].id : undefined; s.fecha = null; s.hora = null;
+    }
+    if (b.dataset.var) s.variante = b.dataset.var === 'null' ? null : b.dataset.var;
+    if (b.dataset.dia) { s.fecha = b.dataset.dia; s.hora = null; }
+    if (b.dataset.hora) s.hora = b.dataset.hora;
+    if (a === 'reintentar') { s.error = ''; iniciar(); return; }
+    if (a === 'mesAnt' || a === 'mesSig') { s.mes = new Date(s.mes.getFullYear(), s.mes.getMonth() + (a === 'mesAnt' ? -1 : 1), 1); cargarDias(); return; }
+    if (a === 'atras') { s.error = ''; s.paso = Math.max(0, s.paso - 1); if (s.paso === 3) { cargarDias(); return; } }
+    if (a === 'pagar') { pagar(true); return; }
+    if (a === 'rechazar') { pagar(false); return; }
+    if (a === 'reiniciar') { reiniciar(); return; }
+    if (a === 'nuevo') {
+      // Otra reserva: mismos datos, pero un intento (y un reloj) nuevo al pulsar «Continuar».
+      var datos = { dni: s.dni, nombres: s.nombres, apPat: s.apPat, apMat: s.apMat, cel: s.cel, email: s.email, acepta: s.acepta };
+      s = Object.assign(nuevoEstado(), datos, { paso: 0 }); limpiarUrl();
+    }
+    if (a === 'sig') {
+      s.error = '';
+      if (s.paso >= 1 && vencio()) { s.tiempoVencido = true; render(); return; }
+      if (s.paso === 0) {
+        // Primer «Continuar»: crea el intento (arrancan los minutos). Si ya existe y sigue vigente, solo actualiza los datos.
+        s.cargando = true; render();
+        var p = s.intento && !vencio() ? guardarAvance() : iniciarIntento();
+        p.then(function () { s.cargando = false; s.paso = 1; render(); panel.scrollIntoView({ block: 'start', behavior: 'smooth' }); },
+          function (er) { s.cargando = false; s.error = er.message; render(); });
+        return;
+      }
+      if (s.paso === 4) { apartar(); return; }
+      s.paso = Math.min(4, s.paso + 1);
+      guardarAvance(); // se guarda en segundo plano: hasta dónde llegó y qué eligió
+      if (s.paso === 3) { var f = s.fecha ? deIso(s.fecha) : deIso(hoyLima()); s.mes = new Date(f.getFullYear(), f.getMonth(), 1); cargarDias(); return; }
+      if (s.paso === 4) { cargarHoras(); return; }
+    }
+    render();
+    if (a === 'sig' || a === 'atras') panel.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  });
+  function limpiarUrl() { try { history.replaceState(null, '', location.pathname); } catch (e) {} }
+
+  setInterval(function () {
+    tick();
+    // Se acabó el tiempo (desde el primer «Continuar»): pantalla para volver a empezar.
+    if (s.paso >= 1 && !s.estado && !s.pagando && !s.tiempoVencido && vencio()) { s.tiempoVencido = true; render(); }
+  }, 1000);
+
+  function iniciar() {
+    llamar('GET', API + '/catalogo').then(function (c) {
+      cat = c;
+      // ¿Volvió con su código? (por ejemplo, al regresar de la pasarela)
+      var q = new URLSearchParams(location.search), codigo = q.get('codigo'), token = q.get('token');
+      if (codigo && token) {
+        return llamar('GET', API + '/' + encodeURIComponent(codigo) + '?token=' + encodeURIComponent(token)).then(function (e) {
+          s.reserva = { codigo: e.codigo, token: token, monto: e.monto, expiraEn: e.expiraEn };
+          s.fecha = e.fecha; s.hora = e.horaInicio; s.nombres = e.nombres || '';
+          if (e.estado === 'esperando_pago') { s.paso = 5; } else { s.estado = e; }
+          render();
+        }, function () { limpiarUrl(); render(); });
+      }
+      render();
+    }, function (e) { s.error = e.message; render(); });
+  }
+  render();
+  iniciar();
+})();
+</script>
+</body>
+</html>

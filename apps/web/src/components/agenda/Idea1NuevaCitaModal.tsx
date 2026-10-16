@@ -9,6 +9,7 @@ import { RomboAlerta } from '../pacientes/RomboAlerta';
 import { ESTADOS_PAGO } from '../../utils/estadoPago';
 import { urlArchivo } from '../../utils/urlArchivo';
 import { DistritoAutocomplete, PaisAutocomplete } from '../ui/DistritoAutocomplete';
+import { SugerenciaCorreo } from '../ui/SugerenciaCorreo';
 import { UBIGEO_EXTRANJERO } from '@limablue/shared';
 import { VisorHistorialGenexis } from '../pacientes/HistorialGenexis';
 import { BaroSolicitudModal } from './BaroSolicitudModal';
@@ -588,6 +589,7 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
                       placeholder="correo@ejemplo.com"
                       className="w-full bg-white border border-outline-variant rounded-lg px-3 py-2 text-sm outline-none focus:border-primary"
                     />
+                    <SugerenciaCorreo valor={npEmail} onUsar={setNpEmail} />
                   </div>
                 </div>
                 {/* Dirección — distrito de residencia (igual que en «Nuevo paciente») */}
@@ -917,6 +919,8 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
                   data-testid="canal-reserva"
                   className="w-full appearance-none bg-amber-50 border border-amber-400 ring-1 ring-amber-400 rounded-xl px-4 py-3 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-400 transition-all text-amber-900 font-semibold"
                 >
+                  {/* Contact center arranca sin canal: lo tiene que elegir para registrar. */}
+                  {!canal && <option value="" disabled>Seleccionar…</option>}
                   {canales.map((c) => (
                     <option key={c.value} value={c.value}>
                       {c.label}

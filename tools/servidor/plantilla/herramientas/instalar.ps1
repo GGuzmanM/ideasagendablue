@@ -33,10 +33,14 @@ function EscribirEnv($ruta, $h) {
   foreach ($k in $h.Keys) { $v = [string]$h[$k]; if ($v -match '[\s#"]') { $v = '"' + $v.Replace('"', '\"') + '"' }; $lineas += "$k=$v" }
   [IO.File]::WriteAllLines($ruta, $lineas, (New-Object Text.UTF8Encoding $false))
 }
+# La versión MÁS NUEVA instalada (si conviven PostgreSQL 15 y 18, se usan las herramientas de la 18).
 function Herramienta([string]$n) {
+  $c = Get-ChildItem 'C:\Program Files\PostgreSQL' -Directory -ErrorAction SilentlyContinue |
+    Sort-Object { [int]($_.Name -replace '\D', '0') } -Descending |
+    ForEach-Object { Join-Path $_.FullName "bin\$n" } | Where-Object { Test-Path $_ } | Select-Object -First 1
+  if ($c) { return $c }
   $c = Get-Command $n -ErrorAction SilentlyContinue; if ($c) { return $c.Source }
-  $c = Get-ChildItem 'C:\Program Files\PostgreSQL' -Recurse -Filter $n -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1
-  if ($c) { return $c.FullName }; throw "No encuentro $n. Instala PostgreSQL (o sus herramientas de cliente) en este servidor."
+  throw "No encuentro $n. Instala PostgreSQL (o sus herramientas de cliente) en este servidor."
 }
 function IPsDelServidor() {
   return @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } | Select-Object -ExpandProperty IPAddress)
@@ -67,7 +71,13 @@ if ($nueva) {
   $dbUser = Preguntar 'Usuario' 'postgres'
   $sec = Read-Host '  Clave del usuario' -AsSecureString
   $dbPass = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
-  $webPort = Preguntar 'Puerto de la Agenda para las PCs de la red' '5180'
+  $webPort = Preguntar 'Puerto de la Agenda (443 si entrara por internet con dominio)' '5180'
+  Write-Host ''
+  Write-Host '  Si el servidor esta en INTERNET (IP publica o dominio):'
+  $publico = (Read-Host '  Direccion publica por la que entraran (ej. 161.132.166.44 o agenda.limablue.com). Enter = solo red interna').Trim()
+  if ($publico) { $cfg['DIRECCION_PUBLICA'] = $publico }
+  $permitidas = (Read-Host '  IPs que pueden entrar (las IPs publicas de las sedes, separadas por coma). Enter = cualquiera').Trim()
+  if ($permitidas) { $cfg['FIREWALL_IPS_PERMITIDAS'] = $permitidas }
   Write-Host ''
   Write-Host '  Datos de la instalacion anterior (para mudarse a este servidor). Enter para omitir:'
   $respaldo = (Read-Host '  Respaldo de la base a cargar (.dump)').Trim('"')
@@ -83,17 +93,43 @@ if ($nueva) {
   if (-not $cfg.Contains('RECORDATORIOS_WORKER_INLINE')) { $cfg['RECORDATORIOS_WORKER_INLINE'] = 'true' }
   foreach ($k in @('JWT_SECRET', 'CONFIRM_TOKEN_SECRET', 'ARCHIVO_FIRMA_SECRET')) { if (-not $cfg[$k]) { $cfg[$k] = Secreto } }
   if (-not $cfg['JWT_EXPIRES_IN']) { $cfg['JWT_EXPIRES_IN'] = '12h' }
+  # Instalación de PRUEBA mientras la PC anterior sigue atendiendo: los dos sistemas tienen los mismos pacientes, así que
+  # aquí se apaga todo lo que sale hacia afuera (correos, recordatorios, videos, encuestas, reserva web, Outlook). Los
+  # valores reales quedan guardados como CORTE_ORIGINAL_* y «Cargar datos del corte.bat» los devuelve.
+  $prueba = Preguntar 'Es una instalacion de PRUEBA mientras la PC anterior sigue atendiendo? (S = no envia correos ni sincroniza Outlook)' 'S'
+  if ($prueba.ToUpper().StartsWith('S')) {
+    $cfg['MODO_PRUEBA'] = 'true'
+    $apagar = [ordered]@{ MAIL_DRY_RUN = 'true'; RECORDATORIOS_ACTIVOS = 'false'; VIDEOS_SERVICIO_ACTIVOS = 'false'; ENCUESTA_SATISFACCION_ACTIVA = 'false'; RESERVA_WEB_HABILITADA = 'false'; AZURE_TENANT_ID = ''; AZURE_CLIENT_ID = ''; AZURE_CLIENT_SECRET = '' }
+    foreach ($k in $apagar.Keys) {
+      $cfg["CORTE_ORIGINAL_$k"] = if ($cfg.Contains($k)) { [string]$cfg[$k] } else { '__no_estaba__' }
+      $cfg[$k] = $apagar[$k]
+    }
+    Aviso 'MODO PRUEBA: no se envian correos ni recordatorios ni se toca Outlook. Lo que se registre aqui se reemplaza el dia del corte.'
+  }
 } else {
   Ok "Ya instalado: se usa $ENVF (no se pregunta nada)."
 }
 $webPort = if ($cfg['WEB_PUERTO']) { $cfg['WEB_PUERTO'] } else { '5180' }
 # Direcciones permitidas (CORS): https://<cada IP del servidor>:<puerto>, nombre del equipo y localhost.
 $origenes = @("https://localhost:$webPort", "https://$($env:COMPUTERNAME):$webPort".ToLower()) + (IPsDelServidor | ForEach-Object { "https://$($_):$webPort" })
-$extra = @(); if ($cfg['CORS_EXTRA']) { $extra = $cfg['CORS_EXTRA'].Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ } }
-$cfg['CORS_ORIGIN'] = (($origenes + $extra) | Select-Object -Unique) -join ','
-$ip1 = (IPsDelServidor | Select-Object -First 1)
-if (-not $cfg['APP_BASE_URL']) { $cfg['APP_BASE_URL'] = "https://$($ip1):$webPort" }
-if (-not $cfg['API_BASE_URL']) { $cfg['API_BASE_URL'] = "https://$($ip1):$webPort" }
+$extra = @(); if ($cfg['CORS_EXTRA']) { $extra = @($cfg['CORS_EXTRA'].Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
+# Dirección pública (servidor en internet): en la nube la IP pública suele NO estar en la tarjeta de red (NAT).
+$sufijo = if ($webPort -eq '443') { '' } else { ":$webPort" }
+# @(…) siempre: con UNA sola dirección PowerShell devuelve un texto y $publicas[0] sería su primera letra ("https://1").
+$publicas = @(); if ($cfg['DIRECCION_PUBLICA']) { $publicas = @($cfg['DIRECCION_PUBLICA'].Split(',') | ForEach-Object { $_.Trim().ToLower() } | Where-Object { $_ }) }
+$origenesPublicos = $publicas | ForEach-Object { "https://$_$sufijo" }
+if ($webPort -eq '443') { $origenes += ($origenes | ForEach-Object { $_ -replace ':443$', '' }) }
+$cfg['CORS_ORIGIN'] = (($origenes + $origenesPublicos + $extra) | Select-Object -Unique) -join ','
+$base = if ($publicas.Count) { "https://$($publicas[0])$sufijo" } else { "https://$(IPsDelServidor | Select-Object -First 1)$sufijo" }
+# Enlaces de los correos (confirmar / cancelar / encuesta) y verificación de recetas. Se recalculan en cada
+# instalación si apuntan a una IP de este servidor (p. ej. cambió el puerto de 5180 a 443); un dominio propio se respeta.
+$propias = @($publicas) + @(IPsDelServidor) + @('localhost')
+foreach ($k in @('APP_BASE_URL', 'API_BASE_URL')) {
+  $v = [string]$cfg[$k]
+  # También se corrige una dirección rota sin punto en el nombre (p. ej. "https://1" que dejó el error de arriba).
+  $esPropia = -not $v -or $v -notmatch '^https?://[^/:]+\.[^/:]+' -or @($propias | Where-Object { $v -match ('^https?://' + [regex]::Escape($_) + '(:\d+)?/?$') }).Count -gt 0
+  if ($esPropia) { $cfg[$k] = $base }
+}
 
 # ─── 2. Certificado HTTPS (el dictado por voz exige https) ─────────────────────
 Titulo 'Certificado HTTPS'
@@ -113,7 +149,8 @@ if (-not $tieneCert) {
   }
 }
 if ($tieneCert) { Ok 'Certificado HTTPS listo.' } else {
-  $san = (@("DNS=$($env:COMPUTERNAME)", 'DNS=localhost') + (IPsDelServidor | ForEach-Object { "IPAddress=$_" }) + @('IPAddress=127.0.0.1')) -join '&'
+  $sanPublicos = $publicas | ForEach-Object { if ($_ -match '^\d{1,3}(\.\d{1,3}){3}$') { "IPAddress=$_" } else { "DNS=$_" } }
+  $san = (@("DNS=$($env:COMPUTERNAME)", 'DNS=localhost') + (IPsDelServidor | ForEach-Object { "IPAddress=$_" }) + @('IPAddress=127.0.0.1') + $sanPublicos | Select-Object -Unique) -join '&'
   $cert = New-SelfSignedCertificate -Subject "CN=Limablue Agenda ($($env:COMPUTERNAME))" -TextExtension @("2.5.29.17={text}$san") `
     -CertStoreLocation 'Cert:\LocalMachine\My' -KeyExportPolicy Exportable -KeyAlgorithm RSA -KeyLength 2048 -NotAfter (Get-Date).AddYears(5) -FriendlyName 'Limablue Agenda'
   $clave = Secreto
@@ -171,10 +208,14 @@ Remove-Item Env:\DATABASE_URL
 Ok 'Base de datos al dia.'
 
 # ─── 5. Firewall ──────────────────────────────────────────────────────────────
-if (-not (Get-NetFirewallRule -DisplayName 'Limablue Agenda' -ErrorAction SilentlyContinue)) {
-  New-NetFirewallRule -DisplayName 'Limablue Agenda' -Direction Inbound -Protocol TCP -LocalPort $webPort -Action Allow -Profile Domain,Private | Out-Null
-  Ok "Puerto $webPort abierto en el firewall (red de la empresa)."
-}
+# Todos los perfiles (un servidor en internet suele estar en perfil «Público»). Si hay IPs permitidas, SOLO ellas entran.
+$remotas = if ($cfg['FIREWALL_IPS_PERMITIDAS']) { @($cfg['FIREWALL_IPS_PERMITIDAS'].Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ }) } else { @('Any') }
+Remove-NetFirewallRule -DisplayName 'Limablue Agenda' -ErrorAction SilentlyContinue
+New-NetFirewallRule -DisplayName 'Limablue Agenda' -Direction Inbound -Protocol TCP -LocalPort $webPort -Action Allow -Profile Any -RemoteAddress $remotas | Out-Null
+if ($remotas[0] -eq 'Any') { Ok "Puerto $webPort abierto en el firewall." } else { Ok "Puerto $webPort abierto SOLO para: $($remotas -join ', ')" }
+$apagados = @(Get-NetFirewallProfile | Where-Object { -not $_.Enabled } | Select-Object -ExpandProperty Name)
+if ($apagados.Count) { Aviso "El firewall de Windows esta DESACTIVADO ($($apagados -join ', ')): esta regla no tiene efecto y PostgreSQL / Escritorio remoto podrian quedar expuestos. Activalo (ver LEEME)." }
+if ($cfg['DIRECCION_PUBLICA'] -and $remotas[0] -eq 'Any') { Aviso 'El servidor esta en internet y cualquiera puede llegar a la pantalla de login. Recomendado: limitar a las IPs de las sedes (FIREWALL_IPS_PERMITIDAS en agenda.env y volver a correr el instalador).' }
 
 # ─── 6. Tarea de Windows: arranca con el servidor, sin sesión, y se reinicia si cae ─
 $accion = New-ScheduledTaskAction -Execute $NODE -Argument "`"$(Join-Path $APP 'servidor.js')`"" -WorkingDirectory $APP
@@ -190,13 +231,13 @@ Copy-Item (Join-Path $PSScriptRoot 'respaldar.ps1') (Join-Path $dirHerr 'respald
 $TAREA_BK = 'Limablue Agenda - Respaldo'
 if (Get-ScheduledTask -TaskName $TAREA_BK -ErrorAction SilentlyContinue) { Ok "Respaldos automaticos ya programados (13:00 y 20:00)." } else {
   Titulo 'Respaldos automaticos'
-  $nas = Preguntar 'Carpeta del NAS para guardar copia de los respaldos (escribe NO para guardar solo en este servidor)' '\\192.168.0.77\it limablue\BK Agenda Servidor'
+  $nas = Preguntar 'Carpeta para la COPIA de los respaldos: otro disco (ej. E:\Respaldos Agenda) o el NAS. NO = sin copia' 'E:\Respaldos Agenda'
   $accionBk = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $dirHerr 'respaldar.ps1')`""
   $horas = @((New-ScheduledTaskTrigger -Daily -At '13:00'), (New-ScheduledTaskTrigger -Daily -At '20:00'))
   $ajustesBk = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Hours 2) -MultipleInstances IgnoreNew
-  if ($nas -and $nas.ToUpper() -ne 'NO') {
-    $cfg['RESPALDO_COPIA_DIR'] = $nas
-    EscribirEnv $ENVF $cfg
+  if ($nas -and $nas.ToUpper() -ne 'NO') { $cfg['RESPALDO_COPIA_DIR'] = $nas; EscribirEnv $ENVF $cfg }
+  # Solo una carpeta de RED (\\...) necesita un usuario de Windows con acceso; otro disco del servidor va con SYSTEM.
+  if ($nas -and $nas.StartsWith('\\')) {
     Write-Host '  Para copiar al NAS, la tarea corre con un usuario de Windows que tenga acceso a esa carpeta.'
     $usuarioBk = Preguntar 'Usuario de Windows' "$env:USERDOMAIN\$env:USERNAME"
     $secBk = Read-Host '  Clave de ese usuario (la guarda Windows, no la Agenda)' -AsSecureString
@@ -222,7 +263,9 @@ if (-not $SinIniciar) {
 }
 
 Titulo 'Listo'
-foreach ($ip in IPsDelServidor) { Write-Host "  Desde las PCs de la red:  https://$($ip):$webPort" -ForegroundColor White }
+if ($cfg['MODO_PRUEBA'] -eq 'true') { Aviso 'MODO PRUEBA activo (sin correos ni Outlook). El dia del corte: "Cargar datos del corte.bat".' }
+foreach ($p in $publicas) { Write-Host "  Desde internet:           https://$p$sufijo" -ForegroundColor White }
+foreach ($ip in IPsDelServidor) { Write-Host "  Desde la red del servidor: https://$ip$sufijo" -ForegroundColor White }
 Write-Host "  Configuracion: $ENVF"
 Write-Host "  Logs:          $DATOS\logs"
 Write-Host ''

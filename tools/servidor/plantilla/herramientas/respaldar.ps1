@@ -21,10 +21,14 @@ foreach ($l in Get-Content $ENVF -Encoding UTF8) { if ($l -match '^\s*([A-Za-z0-
 $m = [regex]::Match($cfg['DATABASE_URL'], '^postgres(?:ql)?://([^:]+):([^@]+)@([^:/]+):(\d+)/([^?]+)')
 if (-not $m.Success) { throw 'DATABASE_URL de agenda.env con formato inesperado.' }
 $pgUser = $m.Groups[1].Value; $pgPass = [Uri]::UnescapeDataString($m.Groups[2].Value); $pgHost = $m.Groups[3].Value; $pgPort = $m.Groups[4].Value; $pgDb = $m.Groups[5].Value
+# La versión MÁS NUEVA instalada (pg_dump no puede respaldar un servidor más nuevo que él: si conviven 15 y 18, va la 18).
 function Herramienta([string]$n) {
+  $c = Get-ChildItem 'C:\Program Files\PostgreSQL' -Directory -ErrorAction SilentlyContinue |
+    Sort-Object { [int]($_.Name -replace '\D', '0') } -Descending |
+    ForEach-Object { Join-Path $_.FullName "bin\$n" } | Where-Object { Test-Path $_ } | Select-Object -First 1
+  if ($c) { return $c }
   $c = Get-Command $n -ErrorAction SilentlyContinue; if ($c) { return $c.Source }
-  $c = Get-ChildItem 'C:\Program Files\PostgreSQL' -Recurse -Filter $n -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1
-  if ($c) { return $c.FullName }; throw "No encuentro $n. Instala PostgreSQL (o sus herramientas) en este servidor."
+  throw "No encuentro $n. Instala PostgreSQL (o sus herramientas) en este servidor."
 }
 $pgDump = Herramienta 'pg_dump.exe'; $pgRestore = Herramienta 'pg_restore.exe'
 

@@ -151,6 +151,9 @@ router.get('/citas-excel', requireAuth, async (req, res) => {
     orderBy: [...(esRango ? [{ fecha: 'asc' as const }] : []), { sede: { nombre: 'asc' } }, { horaInicio: 'asc' }],
   });
   type FilaCita = (typeof citas)[number];
+  // Canal (14-oct-2026): la cita guarda el valor ("whatsapp"); el nombre visible sale del catálogo de canales.
+  const etiquetaCanal = new Map((await prisma.canal.findMany({ select: { valor: true, etiqueta: true } })).map((k) => [k.valor, k.etiqueta]));
+  const canalDe = (c: FilaCita) => etiquetaCanal.get(c.canal) ?? (c.canal === 'web' ? 'Reserva web' : c.canal.replace(/_/g, ' ').replace(/^./, (l) => l.toUpperCase()));
   // Quién la agendó (06-oct-2026). Sin usuario = la creó una integración (reserva web, agente) o vino del sistema anterior.
   const agendadoPor = (c: FilaCita) =>
     c.creadoPorUsuario?.nombre.trim() || (c.canal === 'web' ? 'Reserva web (internet)' : 'Sin usuario (automática o importada)');
@@ -174,6 +177,7 @@ router.get('/citas-excel', requireAuth, async (req, res) => {
     { titulo: 'Estado', ancho: 14, valor: (c) => ESTADO_CITA_LABEL[c.estado] ?? c.estado },
     { titulo: '¿Pagado?', ancho: 19, valor: (c) => ESTADO_PAGO_LABEL[c.estadoPago] ?? c.estadoPago, pago: true },
     { titulo: 'Agendado por', ancho: 32, valor: agendadoPor },
+    { titulo: 'Canal', ancho: 20, valor: canalDe },
   ];
   const COLS = columnas.map((x) => x.titulo);
   ws.columns = columnas.map((x) => ({ width: x.ancho }));

@@ -1,4 +1,5 @@
 import { DistritoAutocomplete, PaisAutocomplete } from '../ui/DistritoAutocomplete';
+import { SugerenciaCorreo } from '../ui/SugerenciaCorreo';
 import { UBIGEO_EXTRANJERO } from '@limablue/shared';
 import { useNuevoPacienteForm, type UseNuevoPacienteFormProps } from '../../services/pacientesService';
 import { useCanales } from '../../hooks/useCanales';
@@ -186,6 +187,7 @@ export function Idea1NuevoPacienteModal(props: UseNuevoPacienteFormProps) {
             <div>
               <label className={LBL}>Email</label>
               <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={INP} placeholder="correo@ejemplo.com" />
+              <SugerenciaCorreo valor={email} onUsar={setEmail} />
             </div>
           </div>
 

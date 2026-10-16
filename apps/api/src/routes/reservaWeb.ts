@@ -20,9 +20,11 @@ import { z } from 'zod';
 import { AppError } from '../middleware/errorHandler';
 import {
   reservaWebHabilitada, catalogo, horasLibres, diasDisponibles, crearReserva, iniciarPago, estadoReserva, procesarAvisoPago,
+  modoSinPago, confirmarSinPago,
 } from '../services/reservaWeb/reservaWebService';
 import { pasarelaPorNombre } from '../services/reservaWeb/pasarelas';
 import { crearIntento, actualizarIntento, PASOS_INTENTO } from '../services/reservaWeb/intentos';
+import { modoVitrina, intentoDemo, avanceDemo, crearReservaDemo, pagoDemo, confirmarDemo, estadoDemo } from '../services/reservaWeb/vitrina';
 
 const router = Router();
 
@@ -105,6 +107,7 @@ const limiteIntentos = limite(60, 15 * 60_000, 'Demasiados intentos desde esta c
 router.post('/intentos', limiteIntentos, async (req, res) => {
   const d = datosPacienteSchema.extend({ aceptaDatos, captcha: z.string().max(4000).optional() }).parse(req.body);
   await verificarCaptcha(d.captcha, req.ip);
+  if (modoVitrina()) { res.status(201).json(intentoDemo()); return; } // vitrina: no se guarda nada
   res.status(201).json(await crearIntento(d, { ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined }));
 });
 
@@ -117,22 +120,38 @@ router.patch('/intentos/:id', limiteConsultas, async (req, res) => {
     fecha: fecha.nullable().optional(), horaInicio: hora.nullable().optional(),
   }).parse(req.body);
   const { token, ...cambios } = c;
+  if (modoVitrina()) { res.json(avanceDemo(id, cambios.paso)); return; }
   res.json(await actualizarIntento(id, token, cambios));
 });
 
 router.post('/', limiteReservas, async (req, res) => {
   const d = crearSchema.parse(req.body);
   await verificarCaptcha(d.captcha, req.ip);
+  // Vitrina: valida servicio y hora con la disponibilidad real, pero no aparta nada.
+  if (modoVitrina()) {
+    const v = await crearReservaDemo(d);
+    res.status(201).json({ codigo: v.codigo, token: v.tokenConsulta, estado: v.estado, monto: v.monto, moneda: v.moneda, fecha: d.fecha, horaInicio: v.horaInicio, expiraEn: v.expiraEn });
+    return;
+  }
   const r = await crearReserva(d, { ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined });
+  // Sin pago (15-oct-2026): la cita se crea en el acto y la página salta directo a la confirmación.
+  const estado = modoSinPago() ? (await confirmarSinPago(r.id)).estado : r.estado;
   res.status(201).json({
-    codigo: r.codigo, token: r.tokenConsulta, estado: r.estado, monto: Number(r.monto), moneda: r.moneda,
+    codigo: r.codigo, token: r.tokenConsulta, estado, monto: Number(r.monto), moneda: r.moneda,
     fecha: d.fecha, horaInicio: r.horaInicio, expiraEn: r.expiraEn,
   });
 });
 
 router.post('/:codigo/pago', limiteReservas, async (req, res) => {
   const { token } = z.object({ token: z.string().min(10).max(100) }).parse(req.body);
-  res.json(await iniciarPago(req.params.codigo, token));
+  res.json(modoVitrina() ? pagoDemo(req.params.codigo, token) : await iniciarPago(req.params.codigo, token));
+});
+
+// Vitrina: el «pago» de la demostración (no cobra ni crea la cita). Fuera de la vitrina no existe.
+router.post('/:codigo/confirmar-demo', limiteConsultas, async (req, res) => {
+  if (!modoVitrina()) throw new AppError('No encontrado', 404, 'NOT_FOUND');
+  const { token } = z.object({ token: z.string().min(10).max(100) }).parse(req.body);
+  res.json(confirmarDemo(req.params.codigo, token));
 });
 
 // Avisos de la pasarela: sin CORS de navegador (servidor a servidor); la firma la valida cada pasarela.
@@ -146,7 +165,7 @@ router.post('/pagos/webhook/:pasarela', async (req, res) => {
 
 router.get('/:codigo', limiteConsultas, async (req, res) => {
   const { token } = z.object({ token: z.string().min(10).max(100) }).parse(req.query);
-  res.json(await estadoReserva(req.params.codigo, token));
+  res.json(modoVitrina() ? await estadoDemo(req.params.codigo, token) : await estadoReserva(req.params.codigo, token));
 });
 
 export default router;

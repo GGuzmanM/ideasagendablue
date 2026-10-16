@@ -52,7 +52,7 @@ function igualesSeguro(a: string, b: string): boolean {
 /**
  * Pasarela SIMULADA: no cobra nada. El «aviso de pago» lo envía quien prueba (o el botón de la página de demo)
  * a POST /api/v1/publico/reservas/pagos/webhook/simulada con el secreto RESERVA_WEB_SIMULADA_SECRETO.
- * Nunca se activa con NODE_ENV=production.
+ * Nunca se activa con NODE_ENV=production, salvo en el servidor en MODO PRUEBA (MODO_PRUEBA=true en agenda.env).
  */
 const simulada: Pasarela = {
   nombre: 'simulada',
@@ -78,12 +78,15 @@ const simulada: Pasarela = {
 
 const PASARELAS: Record<string, Pasarela> = { simulada };
 
+/** La simulada no corre en producción, salvo en el servidor en MODO PRUEBA (15-oct-2026; el corte quita ese modo). */
+const simuladaBloqueada = () => process.env.NODE_ENV === 'production' && process.env.MODO_PRUEBA !== 'true';
+
 /** Pasarela configurada. 503 si falta configurarla (la página muestra «pagos no disponibles»). */
 export function pasarelaActiva(): Pasarela {
   const nombre = (process.env.RESERVA_WEB_PASARELA || '').trim().toLowerCase();
   const p = PASARELAS[nombre];
   if (!p) throw new AppError('Los pagos en línea no están disponibles por el momento', 503, 'PASARELA_NO_CONFIGURADA');
-  if (p.nombre === 'simulada' && process.env.NODE_ENV === 'production') {
+  if (p.nombre === 'simulada' && simuladaBloqueada()) {
     throw new AppError('Los pagos en línea no están disponibles por el momento', 503, 'PASARELA_NO_CONFIGURADA');
   }
   return p;
@@ -92,6 +95,6 @@ export function pasarelaActiva(): Pasarela {
 export function pasarelaPorNombre(nombre: string): Pasarela | null {
   const p = PASARELAS[nombre.toLowerCase()];
   if (!p) return null;
-  if (p.nombre === 'simulada' && process.env.NODE_ENV === 'production') return null;
+  if (p.nombre === 'simulada' && simuladaBloqueada()) return null;
   return p;
 }

@@ -2764,3 +2764,19 @@ model EncuestaSatisfaccion {
   @@index([estado, creadoEn])
   @@map("encuestas_satisfaccion")
 }
+
+// ─── Archivos en la base (14-oct-2026) ───────────────────────────────────────
+// Fotos clínicas, podogramas, consentimientos en foto, comprobantes y contratos se guardan AQUÍ (bytea),
+// no en una carpeta del servidor. `ruta` es la misma clave relativa que antes iba bajo uploads/
+// (p. ej. fotos-clinicas/<atencionId>/foto_x.jpg), así las columnas ruta/url de los demás modelos no cambian.
+// Las imágenes llegan ya comprimidas (JPEG, máx. 1600 px); `tamanoOriginal` es lo que pesaba al subirla.
+model Archivo {
+  ruta           String   @id
+  datos          Bytes
+  mime           String
+  tamano         Int
+  tamanoOriginal Int?
+  creadoEn       DateTime @default(now())
+
+  @@map("archivos")
+}

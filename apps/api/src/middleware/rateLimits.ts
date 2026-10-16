@@ -40,15 +40,26 @@ function crearLimiter(cfg: LimiterCfg) {
 }
 
 /**
- * Login: máx 5 intentos FALLIDOS por IP cada 15 min. Un login correcto NO gasta el cupo
- * (skipSuccessfulRequests), así que solo frena la fuerza bruta, no al usuario legítimo.
+ * Login: máx 10 intentos FALLIDOS por CORREO cada 15 min (14-oct-2026). Antes contaba por IP, pero las PCs de la
+ * clínica y todo el acceso desde internet (NAT del proveedor) llegan con la misma IP y una persona bloqueaba a todas.
+ * Un login correcto NO gasta el cupo (skipSuccessfulRequests).
  */
 export const loginLimiter = crearLimiter({
-  limit: 5,
+  limit: 10,
+  windowMs: 15 * 60 * 1000,
+  skipSuccessful: true,
+  clave: (req) => `correo:${String((req.body as { email?: unknown } | undefined)?.email ?? '').trim().toLowerCase()}`,
+  code: 'DEMASIADOS_INTENTOS',
+  message: 'Demasiados intentos fallidos con este correo. Espera 15 minutos e intenta de nuevo.',
+});
+
+/** Respaldo del anterior: quien prueba MUCHOS correos distintos desde una IP (50 fallidos / 15 min). */
+export const loginIpLimiter = crearLimiter({
+  limit: 50,
   windowMs: 15 * 60 * 1000,
   skipSuccessful: true,
   code: 'DEMASIADOS_INTENTOS',
-  message: 'Demasiados intentos de inicio de sesión desde esta IP. Espera 15 minutos e intenta de nuevo.',
+  message: 'Demasiados intentos de inicio de sesión. Espera 15 minutos e intenta de nuevo.',
 });
 
 /**

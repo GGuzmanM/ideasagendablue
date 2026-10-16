@@ -7,8 +7,6 @@
  *  · RESUMEN DEL DÍA para el Visor: si la atención está «Completada» y si tiene procedimiento realizado.
  *  · CONSENTIMIENTO POR FOTO: foto del formato en papel firmado (formato 3), mientras se estandariza el digital.
  */
-import path from 'path';
-import fs from 'fs';
 import { prisma } from '../db';
 import { AppError } from '../middleware/errorHandler';
 import { AuthPayload } from '../middleware/auth';
@@ -16,7 +14,8 @@ import { auditEnTx } from './audit';
 import {
   Ctx, ctxAudit, etiquetaUsuario, asegurarHistoria, exigirAbierta, getAtencionCompleta, getHistoriaCompleta,
 } from './historiaClinicaService';
-import { UPLOADS_ROOT, rutaRelativaUpload } from '../middleware/uploadPodograma';
+import { rutaRelativaUpload } from '../middleware/uploadPodograma';
+import { leerArchivo } from './almacenArchivos';
 import { fechaDb } from '../utils/fechaLima';
 import { esRolMedico } from '../utils/rolesMedico';
 
@@ -236,7 +235,7 @@ export async function crearConsentimientoFoto(p: Ctx & {
 export async function archivoConsentimiento(id: string) {
   const c = await prisma.consentimientoInformado.findUnique({ where: { id }, select: { id: true, sedeId: true, pacienteId: true, atencionId: true, archivoRuta: true, archivoMime: true } });
   if (!c || !c.archivoRuta) throw new AppError('Este consentimiento no tiene foto', 404);
-  const abs = path.resolve(UPLOADS_ROOT, c.archivoRuta);
-  if (!abs.startsWith(path.resolve(UPLOADS_ROOT) + path.sep) || !fs.existsSync(abs)) throw new AppError('No se encontró la foto', 404);
-  return { ...c, rutaAbsoluta: abs, mime: c.archivoMime ?? 'image/jpeg' };
+  const archivo = await leerArchivo(c.archivoRuta);
+  if (!archivo) throw new AppError('No se encontró la foto', 404);
+  return { ...c, mime: archivo.mime, datos: archivo.datos };
 }

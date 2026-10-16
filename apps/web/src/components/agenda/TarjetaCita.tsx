@@ -256,7 +256,7 @@ export function TarjetaCitaCombinada({ principal, secundario, onClick, slotHeigh
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: principal.id,
     data: { cita: principal },
-    disabled: final(principal) || final(secundario),
+    disabled: final(principal) && final(secundario), // con una mitad pendiente se mueve lo pendiente
   });
 
   return (

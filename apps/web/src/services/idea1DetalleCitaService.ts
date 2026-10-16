@@ -208,9 +208,17 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
   // Reprogramar un BLOQUE (cita doble): se mueve completo (/citas/grupo/:id/mover). Solo si ninguna de las dos mitades
   // avanzó (ambas «agendada»); ocupa la duración del bloque y su disponibilidad se mide con el servicio principal.
   // En rebote (solo admin) el bloque también se reagenda completo, con las dos mitades en rebote.
+  // 14-oct-2026: también CONFIRMADA (antes solo agendada y el botón no salía), y cuando una mitad ya terminó y la otra
+  // sigue pendiente (1º completado → el 2º se pasa a otro día/hora; el servidor mueve solo lo pendiente).
+  const estadoDe = (c: CitaResumen) => (c.estado ?? '').toLowerCase();
+  const pendientesBloque = grupoBloque.filter((c) => !['completada', 'no_show', 'cancelada'].includes(estadoDe(c)));
   const bloqueReprogramable = esCombo
     && grupoBloque.length >= 2
-    && (grupoBloque.every((c) => (c.estado ?? '').toLowerCase() === 'agendada') || grupoBloque.every((c) => citaEnRebote(c)));
+    && (
+      (pendientesBloque.length === grupoBloque.length && pendientesBloque.every((c) => ['agendada', 'confirmada'].includes(estadoDe(c))))
+      || (pendientesBloque.length > 0 && pendientesBloque.length < grupoBloque.length && pendientesBloque.every((c) => ['agendada', 'confirmada', 'llego'].includes(estadoDe(c))))
+      || grupoBloque.every((c) => citaEnRebote(c))
+    );
   const duracionBloque = esCombo && grupoBloque.length ? Math.max(...grupoBloque.map((c) => c.duracionMinutos)) : cita.duracionMinutos;
   const idsBloque = new Set(esCombo ? grupoBloque.map((c) => c.id) : [cita.id]);
   const servicioReprog = (esCombo ? bloquePrincipal?.servicio?.id : null) ?? cita.servicio?.id;
@@ -220,8 +228,8 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
   // tratamiento) sin cerrar el modal ni pisar el estado de la mitad activa. Por defecto = la
   // cita activa (comportamiento intacto para citas sueltas).
   const estadoMutation = useMutation({
-    mutationFn: ({ estado, comentario, citaId, soloEsta }: { estado: string; comentario?: string; citaId?: string; soloEsta?: boolean }) =>
-      citasApi.cambiarEstado(citaId ?? cita.id, estado, comentario, motivoCancelacion || undefined, soloEsta),
+    mutationFn: ({ estado, comentario, citaId, soloEsta, forzar }: { estado: string; comentario?: string; citaId?: string; soloEsta?: boolean; forzar?: boolean }) =>
+      citasApi.cambiarEstado(citaId ?? cita.id, estado, comentario, motivoCancelacion || undefined, soloEsta, forzar),
     onSuccess: (updatedCita, variables) => {
       const targetId = variables.citaId ?? cita.id;
       const esActiva = targetId === cita.id;
@@ -255,7 +263,17 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
         onClose();
       }
     },
-    onError: (e: Error) => toast.error(e.message),
+    onError: (e: Error & { data?: { error?: string } | null }, variables) => {
+      // Admin: la atención clínica tiene registros → puede cancelar igual, confirmándolo (la atención se conserva).
+      const esAdmin = useAuthStore.getState().usuario?.rol === 'admin';
+      if (esAdmin && !variables.forzar && e.data?.error === 'CITA_CON_ATENCION_CLINICA' && ['cancelada', 'no_show'].includes(variables.estado)) {
+        if (window.confirm(`${e.message}\n\nComo administrador puedes ${variables.estado === 'cancelada' ? 'cancelarla' : 'marcarla como «no vino»'} igual. La atención no se borra: queda en la historia del paciente y en la auditoría.\n\n¿Continuar?`)) {
+          estadoMutation.mutate({ ...variables, forzar: true });
+        }
+        return;
+      }
+      toast.error(e.message);
+    },
   });
 
   const exonerarMut = useMutation({

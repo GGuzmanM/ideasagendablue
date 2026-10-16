@@ -6,9 +6,7 @@
  * con «página N de M» se escribe al final (bufferPages). Documento confidencial: su descarga queda
  * auditada como `exportar_hc`.
  */
-import * as fs from 'fs';
-import * as path from 'path';
-import { UPLOADS_ROOT } from '../middleware/uploadPodograma';
+import { leerArchivo } from './almacenArchivos';
 import type { HistoriaParaPdf } from './historiaClinicaService';
 import {
   Doc, W, H, M, CONTENT_W, AZUL, AZUL_C, GRIS, INK, ROJO, ROJO_F, LINEA, SUAVE, SEXO, CLINICA,
@@ -33,7 +31,21 @@ const DOC_RECETA: Record<string, string> = { RECETA_MEDICA: 'Receta médica', IN
 // recuadro con aviso para que el PDF no pese decenas de MB ni bloquee el servidor; tope por atención.
 const MAX_FOTO_PDF = 4 * 1024 * 1024, MAX_FOTOS_ATENCION = 24;
 
-export function escribirHistoriaPdf(doc: Doc, h: HistoriaParaPdf, opts: { fotos?: boolean } = {}): void {
+type ImagenesPdf = Map<string, { datos: Buffer; mime: string }>;
+
+/** Trae de la base las fotos que irán en el PDF (pdfkit dibuja en síncrono). */
+export async function cargarFotosPdf(h: HistoriaParaPdf): Promise<ImagenesPdf> {
+  const mapa: ImagenesPdf = new Map();
+  for (const a of h.historia.atenciones) {
+    for (const f of a.fotos.slice(0, MAX_FOTOS_ATENCION)) {
+      const archivo = await leerArchivo(f.ruta);
+      if (archivo) mapa.set(f.ruta, archivo);
+    }
+  }
+  return mapa;
+}
+
+export function escribirHistoriaPdf(doc: Doc, h: HistoriaParaPdf, opts: { fotos?: boolean; imagenes?: ImagenesPdf } = {}): void {
   const { paciente: pac, historia } = h;
   const atenciones = historia.atenciones;
   const ultima = atenciones[atenciones.length - 1];
@@ -211,14 +223,14 @@ export function escribirHistoriaPdf(doc: Doc, h: HistoriaParaPdf, opts: { fotos?
     const cw = (ANCHO - GAP * (COL - 1)) / COL, ch = cw * 0.75;
     let col = 0;
     for (const f of a.fotos.slice(0, MAX_FOTOS_ATENCION)) {
-      const abs = path.resolve(UPLOADS_ROOT, f.ruta);
-      const valida = abs.startsWith(UPLOADS_ROOT + path.sep) && fs.existsSync(abs) && /image\/(jpe?g|png)/.test(f.mime);
-      const pesada = valida && f.tamano > MAX_FOTO_PDF;
+      const img = opts.imagenes?.get(f.ruta);
+      const valida = !!img && /image\/(jpe?g|png)/.test(img.mime);
+      const pesada = !!img && valida && img.datos.length > MAX_FOTO_PDF;
       if (col === 0) asegurar(ch + 22);
       const x = X + col * (cw + GAP);
       doc.rect(x, y, cw, ch).fillAndStroke('#F4F6FA', LINEA);
-      if (valida && !pesada) {
-        try { doc.image(abs, x + 2, y + 2, { fit: [cw - 4, ch - 4], align: 'center', valign: 'center' }); } catch { /* imagen dañada: queda el recuadro */ }
+      if (img && valida && !pesada) {
+        try { doc.image(img.datos, x + 2, y + 2, { fit: [cw - 4, ch - 4], align: 'center', valign: 'center' }); } catch { /* imagen dañada: queda el recuadro */ }
       } else {
         doc.font('Helvetica').fontSize(7).fillColor(GRIS).text(pesada ? 'Foto muy pesada: verla en el sistema' : 'Formato no imprimible', x + 2, y + ch / 2 - 4, { width: cw - 4, align: 'center' });
       }

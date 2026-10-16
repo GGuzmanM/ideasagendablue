@@ -1,8 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { createHmac, timingSafeEqual } from 'crypto';
-import path from 'path';
-import fs from 'fs';
-import { DIR_UPLOADS } from '../utils/rutasArchivos';
+import { leerArchivo } from '../services/almacenArchivos';
 
 // ─── Firma de URLs de archivos privados (/uploads) ─────────────────────────────
 // Los comprobantes de pago y los contratos de membresía llevan datos personales
@@ -17,7 +15,7 @@ import { DIR_UPLOADS } from '../utils/rutasArchivos';
 
 const SECRET = process.env.ARCHIVO_FIRMA_SECRET || process.env.JWT_SECRET || 'limablue-dev-secret-only';
 const TTL_MS = 2 * 60 * 60 * 1000; // 2h — sobra para ver/imprimir; se regenera en cada carga de datos.
-const UPLOADS_ROOT = DIR_UPLOADS;
+const MIME_SEGUROS = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']);
 
 // Solo estos subdirectorios se firman y se sirven; el resto de /uploads queda cerrado.
 const PROTEGIDO_RE = /\/uploads\/(comprobantes|contratos)\//;
@@ -85,7 +83,7 @@ export function firmarUrlsRespuesta(_req: Request, res: Response, next: NextFunc
   next();
 }
 
-/** Sirve un archivo de /uploads SOLO si trae una firma válida y vigente. Reemplaza a express.static. */
+/** Sirve un archivo de /uploads (desde la base) SOLO si trae una firma válida y vigente. */
 export function servirUploadFirmado(req: Request, res: Response): void {
   const pathname = req.baseUrl + req.path; // montado en /uploads → /uploads/comprobantes/x.jpg
   if (!PROTEGIDO_RE.test(pathname)) {
@@ -105,27 +103,21 @@ export function servirUploadFirmado(req: Request, res: Response): void {
     res.status(403).json({ error: 'FIRMA_INVALIDA', message: 'Enlace de archivo inválido.', statusCode: 403 });
     return;
   }
-  // Anti path-traversal: el archivo resuelto debe quedar dentro de uploads/.
+  // El archivo vive en la tabla `archivos` (clave = ruta bajo uploads/; claveArchivo bloquea «..»).
   const rel = decodeURIComponent(req.path).replace(/^[/\\]+/, '');
-  const abs = path.join(UPLOADS_ROOT, rel);
-  if (abs !== UPLOADS_ROOT && !abs.startsWith(UPLOADS_ROOT + path.sep)) {
-    res.status(400).end();
-    return;
-  }
-  if (!fs.existsSync(abs)) {
-    res.status(404).end();
-    return;
-  }
-  // Defensa en profundidad contra XSS almacenado: nunca dejar que el navegador EJECUTE el archivo.
-  // - `nosniff`: el navegador no adivina un tipo peligroso (p.ej. text/html) por el contenido.
-  // - Extensiones seguras (imagen/PDF) → se pueden ver inline. Cualquier otra (legado: .html/.svg/…)
-  //   se fuerza a DESCARGA con tipo neutro, así jamás se ejecuta en el origen del API.
-  const ext = path.extname(abs).toLowerCase();
-  const EXT_SEGURAS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.pdf']);
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  if (!EXT_SEGURAS.has(ext)) {
-    res.setHeader('Content-Type', 'application/octet-stream');
-    res.setHeader('Content-Disposition', 'attachment');
-  }
-  res.sendFile(abs);
+  leerArchivo(rel)
+    .then((archivo) => {
+      if (!archivo) { res.status(404).end(); return; }
+      // Defensa en profundidad contra XSS almacenado: nunca dejar que el navegador EJECUTE el archivo.
+      // - `nosniff`: el navegador no adivina un tipo peligroso (p.ej. text/html) por el contenido.
+      // - Imagen/PDF → se pueden ver inline. Cualquier otro tipo se fuerza a DESCARGA con tipo neutro.
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      if (MIME_SEGUROS.has(archivo.mime)) res.type(archivo.mime);
+      else {
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.setHeader('Content-Disposition', 'attachment');
+      }
+      res.send(archivo.datos);
+    })
+    .catch(() => { if (!res.headersSent) res.status(500).end(); });
 }

@@ -488,7 +488,7 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                       // Admin: un salto fuera del flujo normal (p. ej. En atención → Cancelada) se confirma antes.
                       if (esCambioEspecial(estadoNorm, destino) && !window.confirm(
                         `Cambio especial de administrador: ${ESTADO_LABEL[estadoNorm] ?? estadoNorm} → ${ESTADO_LABEL[destino] ?? destino}.\n\n` +
-                        (['cancelada', 'no_show'].includes(destino) ? 'Si la cita tiene una atención clínica VACÍA, se retira. Con registros clínicos no se puede.\n\n' : '') +
+                        (['cancelada', 'no_show'].includes(destino) ? 'Si la cita tiene una atención clínica VACÍA, se retira. Si tiene registros, se te pide confirmar otra vez y la atención se conserva.\n\n' : '') +
                         '¿Continuar?')) return;
                       estadoMutation.mutate({ estado: destino });
                     }}
@@ -852,7 +852,10 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
               const S = bloqueSecundaria.id;
               const pend = estadoMutation.isPending;
               const finales = ['completada', 'no_show', 'cancelada'];
-              if (finales.includes(pE) && finales.includes(sE)) return null; // bloque cerrado
+              // «2º cancelado» o 2º completado por error: admin / coordinación lo devuelven (solo el 2º; el 1º no se toca).
+              const devolver2 = useAuthStore.getState().tiene('citas.revertir')
+                && ['llego', 'en_atencion', 'completada'].includes(pE) && (sE === 'cancelada' || sE === 'completada');
+              if (finales.includes(pE) && finales.includes(sE) && !devolver2) return null; // bloque cerrado
               const s1 = bloquePrincipal.servicio?.nombre ?? '1º tratamiento';
               const s2 = bloqueSecundaria.servicio?.nombre ?? '2º tratamiento';
               const btnFull = 'w-full flex items-center justify-center gap-2 p-3.5 rounded-2xl transition-all font-bold text-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed';
@@ -933,6 +936,20 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                       className={cn(btnFull, 'border border-emerald-400 bg-emerald-600 text-white shadow-md shadow-emerald-600/20 hover:bg-emerald-700')}>
                       <span className="material-symbols-outlined text-lg">task_alt</span>
                       Completar 2º tratamiento · {s2}
+                    </button>
+                  )}
+
+                  {devolver2 && (
+                    <button disabled={pend}
+                      onClick={() => {
+                        const a = sE === 'cancelada' ? 'Llegó' : 'En atención';
+                        if (window.confirm(`El 2º tratamiento (${s2}) vuelve a «${a}». El 1º no cambia. ¿Continuar?`)) {
+                          estadoMutation.mutate({ estado: sE === 'cancelada' ? 'llego' : 'en_atencion', citaId: S, soloEsta: true });
+                        }
+                      }}
+                      className={cn(btnFull, 'border border-outline-variant/40 bg-white hover:bg-surface-container text-on-surface')}>
+                      <span className="material-symbols-outlined text-lg">undo</span>
+                      {sE === 'cancelada' ? 'Devolver 2º tratamiento' : 'Reabrir 2º tratamiento'} · {s2}
                     </button>
                   )}
                 </div>
@@ -1406,8 +1423,10 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
 
           {/* FOOTER ACTION */}
           <div className="p-6 border-t border-outline-variant/20 space-y-3 bg-surface-container-lowest rounded-b-2xl">
-            {/* Cancelar solo mientras el servidor lo acepta (agendada, confirmada o llegó); en atención ya no. */}
-            {puedeCancelar && ['agendada', 'confirmada', 'llego'].includes(estadoNorm) && (
+            {/* Cancelar solo mientras el servidor lo acepta (agendada, confirmada o llegó); en atención ya no.
+                El admin cancela en cualquier estado (14-oct-2026); se lee el rol sin hook. */}
+            {puedeCancelar && (['agendada', 'confirmada', 'llego'].includes(estadoNorm) ||
+              (useAuthStore.getState().usuario?.rol === 'admin' && !['cancelada', 'reprogramada'].includes(estadoNorm))) && (
               <>
                 {!cancelando ? (
                   <button

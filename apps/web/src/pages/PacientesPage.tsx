@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { SugerenciaCorreo } from '../components/ui/SugerenciaCorreo';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { useQueryClient } from '@tanstack/react-query';
@@ -383,6 +384,7 @@ export function FichaPacientePage() {
                     <label className="block">
                       <span className="text-xs text-on-surface-variant">Email</span>
                       <input type="email" className={claseFaltante('correo')} value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
+                      <SugerenciaCorreo valor={form.email} onUsar={(c) => setForm(f => ({ ...f, email: c }))} />
                     </label>
                     <label className="block">
                       <span className="text-xs text-on-surface-variant">Fecha nac.</span>

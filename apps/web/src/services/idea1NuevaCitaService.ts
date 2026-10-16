@@ -650,7 +650,7 @@ export function useIdea1NuevaCitaForm({
   const { data: promocionesElegibles = [] } = useQuery({
     queryKey: ['promos-elegibles', servicioId, sedeId, fechaCita, canal, pacienteSeleccionado?.id],
     queryFn: () => promocionesApi.elegibles({ servicio: servicioId, sede: sedeId, fecha: fechaCita, canal, paciente: pacienteSeleccionado?.id }),
-    enabled: Boolean(servicioId) && Boolean(sedeId) && Boolean(fechaCita) && !usandoMembresia,
+    enabled: Boolean(servicioId) && Boolean(sedeId) && Boolean(fechaCita) && Boolean(canal) && !usandoMembresia,
   });
 
   const promoSeleccionada = useMemo(
@@ -985,6 +985,10 @@ export function useIdea1NuevaCitaForm({
   const handleAgendar = async () => {
     if (!servicioId) {
       toast.error('Selecciona un servicio');
+      return;
+    }
+    if (!canal) {
+      toast.error('Selecciona el canal de reserva');
       return;
     }
     if (sedeCerradaEseDia) {

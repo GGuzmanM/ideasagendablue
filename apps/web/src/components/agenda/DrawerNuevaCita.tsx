@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
+import { SugerenciaCorreo } from '../ui/SugerenciaCorreo';
 import { v4 as uuidv4 } from 'uuid';
 import { pacientesApi, serviciosApi, profesionalesApi, paquetesApi, disponibilidadApi, horariosApi, historialGenexisApi, reniecApi } from '../../api';
 import { citasApi } from '../../api/citas';
@@ -646,7 +647,7 @@ export function DrawerNuevaCita({
   const bloqueoProfSel = profesionalId
     ? bloqueoEnHora(profesionales?.find(p => p.id === profesionalId) ?? {}, hora, servicioSeleccionado?.duracionMinutos ?? 30)
     : null;
-  const valido = !!pacienteSeleccionado && !!servicioId && !!hora && !slotInvalidoParaServicio &&
+  const valido = !!pacienteSeleccionado && !!servicioId && !!hora && !slotInvalidoParaServicio && !!canal &&
     !bloqueoProfSel && // profesional bloqueado a esa hora → no se puede agendar
     (!requiereSubcategoria || !!subcategoriaId) && // subcategoría obligatoria si el servicio la tiene
     (modoReserva === 'sin_eleccion' || modoReserva === 'preferencia_opcional' || !!profesionalId) &&
@@ -902,6 +903,7 @@ export function DrawerNuevaCita({
                 <div>
                   <label className="block text-[10px] text-slate-500 mb-0.5">Correo electrónico</label>
                   <input type="email" className="input text-sm" placeholder="correo@ejemplo.com" value={npEmail} onChange={e => setNpEmail(e.target.value)} />
+                  <SugerenciaCorreo valor={npEmail} onUsar={setNpEmail} />
                 </div>
 
                 <div>
@@ -1028,6 +1030,7 @@ export function DrawerNuevaCita({
           <div>
             <label className="block text-xs font-bold text-amber-800 mb-1.5">Canal de reserva</label>
             <select className="input text-sm bg-amber-50 border-amber-400 ring-1 ring-amber-400 font-semibold text-amber-900 focus:ring-amber-400" value={canal} onChange={e => setCanal(e.target.value)}>
+              {!canal && <option value="" disabled>Seleccionar…</option>}
               {canalesOpts.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
             </select>
           </div>
