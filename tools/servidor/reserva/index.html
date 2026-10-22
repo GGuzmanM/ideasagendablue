@@ -337,8 +337,7 @@ html:not(.fuentes) .ms { display: none; }
     })).then(function (r) {
       s.reserva = r; s.cargando = false;
       try { history.replaceState(null, '', '?codigo=' + encodeURIComponent(r.codigo) + '&token=' + encodeURIComponent(r.token)); } catch (e) {}
-      // Sin pago en línea (por ahora): la cita ya quedó creada, se muestra la confirmación.
-      if (r.estado === 'confirmada') { s.pagando = true; render(); seguirEstado(0); return; }
+      // El horario queda separado; la cita se crea solo cuando el pago se aprueba.
       s.paso = 5;
       return llamar('POST', API + '/' + encodeURIComponent(r.codigo) + '/pago', { token: r.token }).then(function () { render(); });
     }).catch(function (e) {

@@ -114,7 +114,6 @@ OTRAS ACCIONES
 - Si se cambia algo en agenda.env: Detener.bat y luego Iniciar.bat.
 - Reserva web de prueba.bat     pagina de reservas para pacientes en https://<servidor>/reserva. Opciones:
                                 1 VITRINA: se recorre con los horarios reales, pero no aparta ni crea citas.
-                                2 SIN PAGO: crea la cita de verdad (canal web, Pendiente de pago). Solo en modo prueba.
                                 0 APAGAR. El corte definitivo la apaga sola.
 
 

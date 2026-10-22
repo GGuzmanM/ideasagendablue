@@ -31,13 +31,8 @@ export function reservaWebHabilitada(): boolean {
   return v === '1' || v === 'true';
 }
 
-/**
- * 15-oct-2026: RESERVA_WEB_MODO=sin_pago — la reserva crea la cita al instante, sin pasar por la pasarela; la cita
- * queda «Pendiente de pago» (paga en la sede). Para probar en el servidor mientras se elige la pasarela real.
- */
-export function modoSinPago(): boolean {
-  return (process.env.RESERVA_WEB_MODO || '').trim().toLowerCase() === 'sin_pago';
-}
+// 21-oct-2026: la cita se crea SOLO cuando el pago queda aprobado (procesarAvisoPago). Se quitó el modo
+// RESERVA_WEB_MODO=sin_pago (creaba la cita al elegir la hora, sin pagar). Sin pasarela, la reserva no agenda.
 
 function sumarDias(fecha: string, dias: number): string {
   const d = fechaDb(fecha); d.setUTCDate(d.getUTCDate() + dias); return fechaAStr(d);
@@ -272,18 +267,6 @@ export async function procesarAvisoPago(aviso: AvisoPago, pasarela: string) {
   if (u.count === 0) return { ok: true, estado: 'en_proceso' };
   void registrarAudit({ accion: 'reserva_web_pagada', entidad: 'reserva_web', entidadId: r.id, sedeId: r.sedeId, despues: { codigo: r.codigo, pasarela, referencia: aviso.referencia, monto: Number(r.monto) } });
   return crearCitaDeReserva(r.id);
-}
-
-/** Modo sin pago: confirma la reserva recién apartada y crea la cita en el acto (la cita queda «Pendiente de pago»). */
-export async function confirmarSinPago(reservaId: string) {
-  const u = await prisma.reservaWeb.updateMany({
-    where: { id: reservaId, estado: 'esperando_pago' },
-    data: { estado: 'pagada', pasarela: 'sin_pago', pagoEstado: 'pendiente' },
-  });
-  if (u.count === 0) throw new AppError('Esta reserva ya no está disponible. Vuelve a elegir tu horario.', 409, 'RESERVA_NO_PAGABLE');
-  const r = await crearCitaDeReserva(reservaId);
-  if (!r.ok) throw new AppError('Esa hora acaba de ocuparse. Elige otra.', 409, 'HORA_NO_DISPONIBLE');
-  return r;
 }
 
 /** Paciente por DNI (si ya existe NO se cambian sus datos) o nuevo con lo que escribió en la web. */

@@ -1,4 +1,4 @@
-import { defineConfig, loadEnv } from 'vite';
+import { defineConfig, loadEnv, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import basicSsl from '@vitejs/plugin-basic-ssl';
 import path from 'path';
@@ -21,10 +21,33 @@ const certificadoPropio = (mode: string): { key: Buffer; cert: Buffer } | null =
   return { key: fs.readFileSync(key), cert: fs.readFileSync(cert) };
 };
 
+// Página pública de reserva web (tools/servidor/reserva). En producción la sirve el lanzador en /reserva/;
+// este plugin hace lo mismo en dev/preview para poder probarla en localhost.
+const reservaPublica = (): Plugin => {
+  const carpeta = path.resolve(__dirname, '../../tools/servidor/reserva');
+  const tipos: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.png': 'image/png', '.js': 'text/javascript', '.css': 'text/css' };
+  const middleware = (req: { url?: string }, res: any, next: () => void) => {
+    const ruta = (req.url || '').split('?')[0];
+    if (ruta === '/reserva') { res.statusCode = 301; res.setHeader('Location', '/reserva/'); res.end(); return; }
+    if (!ruta.startsWith('/reserva/')) return next();
+    const rel = decodeURIComponent(ruta.slice('/reserva/'.length)) || 'index.html';
+    const archivo = path.resolve(carpeta, rel);
+    if (!archivo.startsWith(carpeta) || !fs.existsSync(archivo) || !fs.statSync(archivo).isFile()) return next();
+    res.setHeader('Content-Type', tipos[path.extname(archivo)] || 'application/octet-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    fs.createReadStream(archivo).pipe(res);
+  };
+  return {
+    name: 'limablue-reserva-publica',
+    configureServer: (s) => { s.middlewares.use(middleware); },
+    configurePreviewServer: (s) => { s.middlewares.use(middleware); },
+  };
+};
+
 export default defineConfig(({ mode }) => {
   const https = httpsHabilitado(mode) ? certificadoPropio(mode) : null;
   return {
-  plugins: [react(), ...(httpsHabilitado(mode) && !https ? [basicSsl()] : [])],
+  plugins: [react(), reservaPublica(), ...(httpsHabilitado(mode) && !https ? [basicSsl()] : [])],
   resolve: {
     alias: {
       '@limablue/shared': path.resolve(__dirname, '../../packages/shared/src/index.ts'),

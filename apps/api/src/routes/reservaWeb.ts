@@ -20,7 +20,6 @@ import { z } from 'zod';
 import { AppError } from '../middleware/errorHandler';
 import {
   reservaWebHabilitada, catalogo, horasLibres, diasDisponibles, crearReserva, iniciarPago, estadoReserva, procesarAvisoPago,
-  modoSinPago, confirmarSinPago,
 } from '../services/reservaWeb/reservaWebService';
 import { pasarelaPorNombre } from '../services/reservaWeb/pasarelas';
 import { crearIntento, actualizarIntento, PASOS_INTENTO } from '../services/reservaWeb/intentos';
@@ -134,10 +133,9 @@ router.post('/', limiteReservas, async (req, res) => {
     return;
   }
   const r = await crearReserva(d, { ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined });
-  // Sin pago (15-oct-2026): la cita se crea en el acto y la página salta directo a la confirmación.
-  const estado = modoSinPago() ? (await confirmarSinPago(r.id)).estado : r.estado;
+  // La cita NO se crea aquí: solo aparta el horario. Se agenda cuando el pago queda aprobado (webhook de la pasarela).
   res.status(201).json({
-    codigo: r.codigo, token: r.tokenConsulta, estado, monto: Number(r.monto), moneda: r.moneda,
+    codigo: r.codigo, token: r.tokenConsulta, estado: r.estado, monto: Number(r.monto), moneda: r.moneda,
     fecha: d.fecha, horaInicio: r.horaInicio, expiraEn: r.expiraEn,
   });
 });

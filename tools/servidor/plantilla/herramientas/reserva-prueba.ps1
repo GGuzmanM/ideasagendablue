@@ -1,8 +1,7 @@
-# Limablue Agenda - reserva web para pacientes en https://<servidor>/reserva. Tres estados:
+# Limablue Agenda - reserva web para pacientes en https://<servidor>/reserva. Dos estados:
 #   VITRINA   se recorre completa con los horarios reales, pero NO aparta, NO cobra y NO crea citas.
-#   SIN PAGO  crea la cita de verdad (canal web, «Pendiente de pago»); el pago en línea se agrega después.
-#             Solo en MODO PRUEBA: en este servidor todavía no son los datos definitivos.
 #   APAGADA   la página /reserva no responde.
+# La cita se crea SOLO cuando el pago queda aprobado (21-oct-2026): sin pasarela de pago no se agenda nada.
 # El día del corte («Cargar datos del corte.bat», definitivo) se apaga sola.
 $ErrorActionPreference = 'Stop'
 $RAIZ = Split-Path -Parent $PSScriptRoot
@@ -41,7 +40,7 @@ function Reiniciar() {
 if (-not (Test-Path $ENVF)) { throw 'La Agenda no esta instalada: corre «Instalar o actualizar.bat» primero.' }
 $cfg = LeerEnv $ENVF
 $prueba = $cfg['MODO_PRUEBA'] -eq 'true'
-$actual = if ($cfg['RESERVA_WEB_HABILITADA'] -ne '1') { 'APAGADA' } elseif ($cfg['RESERVA_WEB_MODO'] -eq 'sin_pago') { 'SIN PAGO (crea citas)' } else { 'VITRINA (solo se ve)' }
+$actual = if ($cfg['RESERVA_WEB_HABILITADA'] -ne '1') { 'APAGADA' } elseif ($cfg['RESERVA_WEB_MODO'] -eq 'vitrina') { 'VITRINA (solo se ve)' } else { 'ENCENDIDA (sin pasarela de pago no agenda: elige 1 para dejarla en vitrina)' }
 $puerto = if ($cfg['WEB_PUERTO'] -and $cfg['WEB_PUERTO'] -ne '443') { ":$($cfg['WEB_PUERTO'])" } else { '' }
 $host1 = if ($cfg['DIRECCION_PUBLICA']) { $cfg['DIRECCION_PUBLICA'].Split(',')[0].Trim() } else { $env:COMPUTERNAME.ToLower() }
 
@@ -50,15 +49,11 @@ Write-Host '== Reserva web para pacientes ==' -ForegroundColor Cyan
 Write-Host "  Estado actual: $actual"
 Write-Host ''
 Write-Host '  1 = VITRINA   se ve completa, no aparta ni crea citas'
-Write-Host "  2 = SIN PAGO  crea la cita de verdad (Pendiente de pago)$(if (-not $prueba) { '  [no disponible: datos reales]' })"
 Write-Host '  0 = APAGAR'
+Write-Host '  (La cita solo se crea cuando el pago queda aprobado: hace falta la pasarela de pago.)'
 $op = (Read-Host '  Elige (Enter = no cambiar)').Trim()
 if (-not $op) { exit 0 }
-if ($op -notin @('0', '1', '2')) { Aviso 'Opcion no valida. No se cambio nada.'; exit 1 }
-if ($op -eq '2' -and -not $prueba) {
-  Aviso 'Este servidor ya trabaja con los datos reales: para crear citas desde internet hace falta la pasarela de pago. No se cambio nada.'
-  exit 1
-}
+if ($op -notin @('0', '1')) { Aviso 'Opcion no valida. No se cambio nada.'; exit 1 }
 
 if ($prueba) {
   # En modo prueba, que el corte devuelva los valores originales (si el instalador no los guardo ya).
@@ -76,14 +71,8 @@ if ($op -eq '0') {
   exit 0
 }
 
-if ($op -eq '1') {
-  Base 'sin-llave' | Out-Null; $r = Base 'marcar'
-  $cfg['RESERVA_WEB_MODO'] = 'vitrina'
-} else {
-  $r = Base 'llave'
-  $cfg['RESERVA_WEB_MODO'] = 'sin_pago'
-  $cfg['RESERVA_WEB_API_KEY'] = $r.llave
-}
+Base 'sin-llave' | Out-Null; $r = Base 'marcar'
+$cfg['RESERVA_WEB_MODO'] = 'vitrina'
 $cfg['RESERVA_WEB_HABILITADA'] = '1'
 EscribirEnv $ENVF $cfg
 Ok "Servicios que se muestran: $($r.servicios)."
@@ -91,5 +80,4 @@ Reiniciar
 Write-Host ''
 Write-Host "  Pagina de reserva:  https://$host1$puerto/reserva" -ForegroundColor White
 Write-Host "  API (para la web):  https://$host1$puerto/api/v1/publico/reservas" -ForegroundColor White
-if ($op -eq '1') { Write-Host '  VITRINA: muestra horarios reales, pero no aparta ni crea citas.' -ForegroundColor White }
-else { Write-Host '  SIN PAGO: cada reserva crea la cita en la Agenda (canal web, Pendiente de pago).' -ForegroundColor White }
+Write-Host '  VITRINA: muestra horarios reales, pero no aparta ni crea citas.' -ForegroundColor White
