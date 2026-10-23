@@ -10,7 +10,7 @@ import { nuevoPdf, qrPng, urlVerificacionReceta } from '../services/pdfComun';
 import { filtroRecetaMedica, puedeVerRecetaMedica } from '../services/recetaVisibilidad';
 import { registrarAudit } from '../services/audit';
 import { fechaDb } from '../utils/fechaLima';
-import { filtroFechaVisor } from '../utils/rangoVisor';
+import { filtroFechaVisor, filtroSedeVisor } from '../utils/rangoVisor';
 
 // ─── Recetas e indicaciones (Fase 2) ──────────────────────────────────────────
 // Permisos por TIPO de documento:
@@ -131,10 +131,10 @@ router.delete('/favoritas/:id', requireAuth, async (req, res) => {
 // GET /recetas/del-dia?sedeId&fecha — citas del día (en esa sede) que ya tienen receta médica o indicaciones VIGENTES
 // (no anuladas). Para el Visor de Pacientes, que las pinta en verde (25-sep-2026). Solo ids y conteos, sin contenido.
 router.get('/del-dia', requireAuth, requirePermiso('hc.ver'), async (req, res) => {
-  const { sedeId, fecha, hasta } = z.object({ sedeId: uuid, fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), hasta: z.string().optional() }).parse(req.query);
-  assertSede(req, sedeId);
+  const q = z.object({ sedeId: uuid.optional(), fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), hasta: z.string().optional() }).parse(req.query);
+  const sedeId = filtroSedeVisor(req, q.sedeId); // sin sede = todas (administración y auditor de médicos)
   const recetas = await prisma.receta.findMany({
-    where: { estado: { not: 'anulada' }, atencion: { fecha: filtroFechaVisor(req, fecha, hasta), cita: { sedeId } } },
+    where: { estado: { not: 'anulada' }, atencion: { fecha: filtroFechaVisor(req, q.fecha, q.hasta), ...(sedeId ? { cita: { sedeId } } : {}) } },
     select: { tipoDocumento: true, atencion: { select: { citaId: true } } },
   });
   const porCita = new Map<string, { citaId: string; recetasMedicas: number; indicaciones: number }>();

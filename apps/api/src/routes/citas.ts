@@ -36,7 +36,7 @@ import { getServicioAnclaId, esCombinacionPermitida } from '../services/combinac
 import { enviarCorreoReserva } from '../services/emailService';
 import { verificarTokenConfirmacion } from '../utils/confirmToken';
 import { fechaDb, fechaAStr, hoyLimaStr, esFechaPasadaLima, diasEnPasadoLima } from '../utils/fechaLima';
-import { filtroFechaVisor } from '../utils/rangoVisor';
+import { filtroFechaVisor, puedeTodasSedesVisor } from '../utils/rangoVisor';
 import { zFechaCita, zHoraCita, zComentarioCita, assertFechaNoMuyLejana } from '../utils/validacionCita';
 import { horaInicioValidaParaDuracion, timeToMinutes, minutesToTime } from '@limablue/shared';
 import { getCitaCompleta, promoCitaSelect, comentariosInclude, crearComentarioEnTx } from '../services/citaCompleta';
@@ -390,7 +390,7 @@ router.post(
 
 // ─── GET /citas ───────────────────────────────────────────────────────────────
 router.get('/', requireAuth, async (req, res) => {
-  const { sedeId, fecha, hasta, profesionalId, unidadNegocioId, pacienteId, estado } = req.query as Record<string, string>;
+  const { sedeId, fecha, hasta, profesionalId, unidadNegocioId, pacienteId, estado, todas } = req.query as Record<string, string>;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const where: Record<string, any> = {
@@ -402,6 +402,8 @@ router.get('/', requireAuth, async (req, res) => {
   if (sedeId) {
     assertSede(req, sedeId);
     where.sedeId = sedeId;
+  } else if (todas === '1' && puedeTodasSedesVisor(req)) {
+    // 23-oct-2026: «Todas las sedes» del Visor de Pacientes (administración y auditor de médicos): sin filtro de sede.
   } else if (req.user && !puedeTodasLasSedes(req.user)) {
     where.sedeId = { in: req.user.sedes };
   }

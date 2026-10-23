@@ -6,7 +6,7 @@ import { type RecetaDelDia } from '../api/recetas';
 import { type ResumenClinicoCita } from '../api/historiaClinica';
 import { nombreMedico } from '../api/medicoCita';
 import { Skeleton } from '../components/ui/Skeleton';
-import { useVisorPacientes, type FiltroVisor } from '../services/visorPacientesService';
+import { useVisorPacientes, TODAS_SEDES, type FiltroVisor } from '../services/visorPacientesService';
 import { cn } from '../utils/cn';
 
 const BTN = 'min-h-[40px] lg:min-h-0 px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 disabled:opacity-50 transition-colors';
@@ -43,6 +43,29 @@ function ChipsResumenHc({ r }: { r: ResumenClinicoCita | null }) {
       )}
     </>
   );
+}
+
+/** Interruptor «Solo con procedimiento» (23-oct-2026): filtra la lista y el Excel. */
+function InterruptorProcedimiento({ activo, onChange }: { activo: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label
+      className={cn('flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer select-none transition-colors',
+        activo ? 'bg-indigo-50 border-indigo-400 text-indigo-800' : 'bg-surface-container-low border-outline-variant text-on-surface-variant hover:bg-surface-container-high')}
+      title="Muestra (y exporta) solo las visitas cuya atención tiene al menos un procedimiento"
+      data-testid="visor-solo-procedimiento"
+    >
+      <input type="checkbox" className="sr-only" checked={activo} onChange={(e) => onChange(e.target.checked)} />
+      <span className={cn('relative inline-flex h-4 w-7 shrink-0 rounded-full transition-colors', activo ? 'bg-indigo-600' : 'bg-slate-300')}>
+        <span className={cn('absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-all', activo ? 'left-3.5' : 'left-0.5')} />
+      </span>
+      <span className="material-symbols-outlined text-[16px]">healing</span>Solo con procedimiento
+    </label>
+  );
+}
+
+/** Sede de la cita, visible cuando el visor muestra todas las sedes. */
+function EtiquetaSede({ nombre }: { nombre: string }) {
+  return <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-slate-800 text-white" data-testid="visor-sede-cita">{nombre}</span>;
 }
 
 const TONO_FILA = {
@@ -102,12 +125,28 @@ export function VisorPacientesPage() {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {v.puedeRango && <SelectorFechasVisor v={v} />}
-          {v.sedes.length > 1 && (
-            <select value={v.sedeId} onChange={(e) => v.setSedeId(e.target.value)} className="bg-surface-container-low border border-outline-variant rounded-lg px-2 py-1.5 text-sm text-on-surface" data-testid="visor-sede">
+          {(v.sedes.length > 1 || v.puedeTodas) && (
+            <select value={v.sedeId} onChange={(e) => v.setSedeId(e.target.value)} className={cn('border rounded-lg px-2 py-1.5 text-sm', v.esTodas ? 'bg-slate-800 text-white border-slate-800 font-semibold' : 'bg-surface-container-low border-outline-variant text-on-surface')} data-testid="visor-sede">
+              {v.puedeTodas && <option value={TODAS_SEDES}>Todas las sedes</option>}
               {v.sedes.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
             </select>
           )}
+          {v.esTodas && (
+            <select value={v.medicoFiltro} onChange={(e) => v.setMedicoFiltro(e.target.value)}
+              className={cn('border rounded-lg px-2 py-1.5 text-sm max-w-[240px]', v.medicoFiltro ? 'bg-indigo-700 text-white border-indigo-700 font-semibold' : 'bg-surface-container-low border-outline-variant text-on-surface')}
+              title="Los médicos rotan entre sedes: filtra sus visitas en todas las sedes" data-testid="visor-medico">
+              <option value="">Todos los médicos</option>
+              {v.medicosPeriodo.map((m) => <option key={m.id} value={m.id}>{m.nombre} ({m.citas})</option>)}
+            </select>
+          )}
           <button onClick={v.refrescar} className={BTN_SEC}><span className="material-symbols-outlined text-base">refresh</span>Actualizar</button>
+          {v.puedeExportar && (
+            <button onClick={() => void v.exportar()} disabled={v.exportando} className={cn(BTN, 'bg-emerald-700 text-white hover:bg-emerald-800 shadow-sm')}
+              title="Descarga un Excel con las visitas del periodo: médico que atendió, diagnósticos, procedimientos y recetas" data-testid="visor-exportar">
+              <span className={cn('material-symbols-outlined text-base', v.exportando && 'animate-spin')}>{v.exportando ? 'progress_activity' : 'download'}</span>
+              {v.exportando ? 'Generando Excel…' : 'Exportar Excel'}
+            </button>
+          )}
         </div>
       </header>
 
@@ -124,6 +163,7 @@ export function VisorPacientesPage() {
           <span className="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-base text-on-surface-variant">search</span>
           <input value={v.busqueda} onChange={(e) => v.setBusqueda(e.target.value)} placeholder="Nombre o documento…" className="pl-8 pr-3 py-1.5 bg-surface-container-low border border-outline-variant rounded-lg text-sm text-on-surface w-56" />
         </div>
+        {v.puedeVerHc && <InterruptorProcedimiento activo={v.soloConProcedimiento} onChange={v.setSoloConProcedimiento} />}
         <span className="flex-1" />
         <span className="text-xs text-on-surface-variant">{v.porVenir} por llegar · {v.atendidos.length} atendido{v.atendidos.length === 1 ? '' : 's'}{v.esHoy ? ' hoy' : ''}</span>
       </div>
@@ -154,6 +194,7 @@ export function VisorPacientesPage() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-bold text-on-surface">{nombrePaciente(c)}</span>
+                        {v.esTodas && <EtiquetaSede nombre={c.sede.nombre} />}
                         {c.paciente.numeroDocumento && <span className="text-[11px] text-on-surface-variant font-mono">{c.paciente.numeroDocumento}</span>}
                         <span className={cn('text-[10px] font-bold uppercase px-2 py-0.5 rounded', enAtencion ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-700')}>
                           {enAtencion ? `En atención${a.enAtencionHora ? ` desde ${a.enAtencionHora}` : ''}` : `Llegó ${a.llegoHora}`}
@@ -211,6 +252,7 @@ export function VisorPacientesPage() {
                 {v.atendidos.map((c) => (
                   <div key={c.id} className="rounded-xl border border-outline-variant/20 px-3 py-2 flex items-center gap-2 flex-wrap">
                     <span className="text-sm font-semibold text-on-surface">{nombrePaciente(c)}</span>
+                    {v.esTodas && <EtiquetaSede nombre={c.sede.nombre} />}
                     <span className="text-xs text-on-surface-variant">{v.esRango ? `${diaCorto(c.fecha)} · ` : ''}{c.horaInicio} · {c.servicio.nombre}{c.medico ? ` · ${nombreMedico(c.medico)}` : ''}</span>
                     {v.recetaDe(c) && <ChipReceta rx={v.recetaDe(c)!} />}
                     <ChipsResumenHc r={v.resumenDe(c)} />

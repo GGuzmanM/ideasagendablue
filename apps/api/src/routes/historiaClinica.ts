@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../db';
 import { requireAuth, requirePermiso, assertSede, puedeTodasLasSedes, AuthPayload } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
-import { filtroFechaVisor } from '../utils/rangoVisor';
+import { filtroFechaVisor, filtroSedeVisor, puedeTodasSedesVisor } from '../utils/rangoVisor';
 import * as hc from '../services/historiaClinicaService';
 import * as b3 from '../services/bloque3Service';
 import * as fp from '../services/fichaPreviaService';
@@ -22,6 +22,7 @@ import { escribirConsentimientoPdf } from '../services/consentimientoPdf';
 import * as cons from '../services/constanciaService';
 import * as erp from '../services/historiaErpService';
 import * as v2 from '../services/hcV2Service';
+import { generarExcelVisor } from '../services/visorExcelService';
 import { escribirConstanciaPdf } from '../services/constanciaPdf';
 import { qrPng, urlVerificacionReceta } from '../services/pdfComun';
 import { filtroRecetaMedica, ocultarRecetasMedicas, puedeVerRecetaMedica } from '../services/recetaVisibilidad';
@@ -615,9 +616,50 @@ router.post('/atenciones/:id/precargar-anterior', ...registrar, async (req, res)
 
 // GET /resumen-del-dia?sedeId&fecha — por cita: atención completada y si tiene procedimiento (Visor). Solo banderas.
 router.get('/resumen-del-dia', ...verHc, async (req, res) => {
-  const q = z.object({ sedeId: uuid, fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), hasta: z.string().optional() }).parse(req.query);
-  assertSede(req, q.sedeId);
-  res.json(await v2.resumenClinicoDelDia(q.sedeId, filtroFechaVisor(req, q.fecha, q.hasta)));
+  const q = z.object({ sedeId: uuid.optional(), fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), hasta: z.string().optional() }).parse(req.query);
+  res.json(await v2.resumenClinicoDelDia(filtroSedeVisor(req, q.sedeId), filtroFechaVisor(req, q.fecha, q.hasta)));
+});
+
+// GET /visor/excel?sedeId&fecha&hasta&conProcedimiento=1&medicoId — Excel del Visor de Pacientes (23-oct-2026): visitas del periodo con
+// médico que atendió, diagnósticos, procedimientos y recetas. Solo administración y el auditor de médicos; sin sede = todas.
+// Cada exportación queda en la auditoría (filtros y cantidad de filas).
+router.get('/visor/excel', ...verHc, async (req, res) => {
+  if (!puedeTodasSedesVisor(req)) throw new AppError('Solo administración y el auditor de médicos pueden exportar el Visor', 403, 'SIN_PERMISO');
+  const q = z.object({
+    sedeId: uuid.optional(),
+    fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    hasta: z.string().optional(),
+    conProcedimiento: z.enum(['0', '1']).optional(),
+    medicoId: uuid.optional(), // médico de la cita (rotan entre sedes: el filtro es independiente de la sede)
+  }).parse(req.query);
+  const sedeId = filtroSedeVisor(req, q.sedeId);
+  const fecha = filtroFechaVisor(req, q.fecha, q.hasta);
+  const hasta = q.hasta && q.hasta !== q.fecha ? q.hasta : null;
+  const dmy = (iso: string) => iso.split('-').reverse().join('/');
+  const [sede, quien] = await Promise.all([
+    sedeId ? prisma.sede.findUnique({ where: { id: sedeId }, select: { nombre: true } }) : Promise.resolve(null),
+    prisma.usuario.findUnique({ where: { id: user(req).userId }, select: { nombre: true } }),
+  ]);
+  const soloConProcedimiento = q.conProcedimiento === '1';
+  const medico = q.medicoId ? await prisma.profesional.findUnique({ where: { id: q.medicoId }, select: { nombres: true, apellidos: true } }) : null;
+  if (q.medicoId && !medico) throw new AppError('Médico no encontrado', 404, 'MEDICO_NO_ENCONTRADO');
+  const medicoNombre = medico ? `${medico.nombres} ${medico.apellidos}`.replace(/\s+/g, ' ').trim() : undefined;
+  const { wb, visitas, procedimientos } = await generarExcelVisor({
+    sedeId, medicoId: q.medicoId, medicoNombre, fecha, soloConProcedimiento, verRecetaMedica: puedeVerRecetaMedica(req),
+    periodo: hasta ? `Del ${dmy(q.fecha)} al ${dmy(hasta)}` : `Día ${dmy(q.fecha)}`,
+    sedeNombre: sede?.nombre ?? 'Todas las sedes',
+    generadoPor: quien?.nombre ?? 'usuario del sistema',
+  });
+  void registrarAudit({
+    ...ctx(req), accion: 'exportar_visor', entidad: 'visor_pacientes', entidadId: user(req).userId, sedeId,
+    despues: { sede: sede?.nombre ?? 'Todas las sedes', desde: q.fecha, hasta: hasta ?? q.fecha, medico: medicoNombre ?? null, soloConProcedimiento, visitas, procedimientos },
+  });
+  const archivo = `visor-pacientes-${hasta ? `${q.fecha}_a_${hasta}` : q.fecha}-${(sede?.nombre ?? 'todas-las-sedes').toLowerCase().replace(/\s+/g, '-')}${medicoNombre ? `-${medicoNombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '-')}` : ''}${soloConProcedimiento ? '-con-procedimiento' : ''}.xlsx`;
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(archivo)}"`);
+  res.setHeader('Cache-Control', 'private, no-store');
+  await wb.xlsx.write(res);
+  res.end();
 });
 
 // POST /atenciones/:id/consentimientos-foto (multipart: foto, procedimiento?, plantillaId?) — formato en papel firmado.

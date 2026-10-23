@@ -97,6 +97,7 @@ export const ACCION_LABEL: Record<string, AccionStyle> = {
   crear:                        def('Cita agendada', 'event_available', 'verde'),
   agendar:                      def('Cita agendada', 'event_available', 'verde'),
   crear_retroactiva:            def('Cita agendada en fecha pasada', 'history', 'ambar'),
+  exportar_visor:               def('Exportó el Visor de Pacientes (Excel)', 'download', 'teal'),
   cambiar_estado:               def('Cambio de estado', 'autorenew', 'ambar'),
   auto_completar:               def('Completada por tiempo', 'timer', 'ambar'),
   mover:                        def('Cita reprogramada', 'swap_horiz', 'azul'),

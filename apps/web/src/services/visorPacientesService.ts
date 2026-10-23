@@ -8,7 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { citasApi, type CitaResumen } from '../api/citas';
 import { sedesApi } from '../api';
-import { medicoCitaApi } from '../api/medicoCita';
+import { medicoCitaApi, nombreMedico } from '../api/medicoCita';
 import { recetasApi, type RecetaDelDia } from '../api/recetas';
 import { historiaClinicaApi, type ResumenClinicoCita } from '../api/historiaClinica';
 import { leerHcV2 } from '../utils/vistaHc';
@@ -25,6 +25,8 @@ export type FiltroVisor = 'todos' | 'mios' | 'sin_medico';
 // 10-oct-2026: ver otro día o un rango (máx. 31 días) solo lo pueden administración y el auditor de médicos.
 export const ROLES_RANGO_VISOR = ['admin', 'medico_auditor'];
 export const MAX_DIAS_RANGO = 31;
+// 23-oct-2026: «Todas las sedes» y el Excel del visor — mismos roles que el rango de fechas.
+export const TODAS_SEDES = '__todas__';
 const sumarDias = (f: string, n: number) => { const d = new Date(`${f}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 const diasEntre = (a: string, b: string) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
 
@@ -37,6 +39,7 @@ export function useVisorPacientes() {
   const sedeAgenda = useAgendaStore((s) => s.sedeId);
 
   const miFicha = usuario?.profesional?.tipo === 'medico' ? usuario.profesionalId ?? null : null;
+  const puedeRango = ROLES_RANGO_VISOR.includes(usuario?.rol ?? '');
   const soyMedico = !!miFicha && tiene('medico.autoasignar');
   const puedeAsignar = tiene('medico.asignar');
   const puedeVerHc = tiene('hc.ver');
@@ -46,13 +49,14 @@ export function useVisorPacientes() {
   const sedes = useMemo(() => sedesTodas.filter((s) => s.activa && puedeAccederSede(s.id)), [sedesTodas, puedeAccederSede]);
   const [sedeId, setSedeId] = useState<string>('');
   useEffect(() => {
-    if (sedeId && sedes.some((s) => s.id === sedeId)) return;
+    if (sedeId && (sedes.some((s) => s.id === sedeId) || (sedeId === TODAS_SEDES && puedeRango))) return;
     const preferida = sedeAgenda && sedes.some((s) => s.id === sedeAgenda) ? sedeAgenda : sedes[0]?.id ?? '';
     if (preferida) setSedeId(preferida);
-  }, [sedes, sedeAgenda, sedeId]);
+  }, [sedes, sedeAgenda, sedeId, puedeRango]);
+  const esTodas = puedeRango && sedeId === TODAS_SEDES;
+  const sedeParam = esTodas ? undefined : sedeId; // sin sede = todas en el API
 
   const hoy = hoyStr();
-  const puedeRango = ROLES_RANGO_VISOR.includes(usuario?.rol ?? '');
   const [desdeSel, setDesdeSel] = useState(hoy);
   const [hastaSel, setHastaSel] = useState(hoy);
   // Los demás roles ven SIEMPRE hoy, aunque algo dejara otra fecha en el estado.
@@ -77,7 +81,7 @@ export function useVisorPacientes() {
   const citasQ = useQuery({
     // Con el prefijo ['citas'] la agenda y el socket la refrescan solos al cambiar cualquier cita.
     queryKey: ['citas', 'visor', sedeId, fecha, hasta ?? ''],
-    queryFn: () => citasApi.listar({ sedeId, fecha, hasta }),
+    queryFn: () => citasApi.listar({ ...(esTodas ? { todas: '1' as const } : { sedeId }), fecha, hasta }),
     enabled: !!sedeId,
     refetchInterval: 30_000,
   });
@@ -86,7 +90,7 @@ export function useVisorPacientes() {
   // ['citas'] se refresca junto con las citas (socket y botón Actualizar).
   const recetasQ = useQuery({
     queryKey: ['citas', 'visor-recetas', sedeId, fecha, hasta ?? ''],
-    queryFn: () => recetasApi.delDia(sedeId, fecha, hasta),
+    queryFn: () => recetasApi.delDia(sedeParam, fecha, hasta),
     enabled: !!sedeId && puedeVerHc,
     refetchInterval: 30_000,
   });
@@ -98,7 +102,7 @@ export function useVisorPacientes() {
   const v2 = useMemo(() => leerHcV2(), []);
   const resumenQ = useQuery({
     queryKey: ['citas', 'visor-resumen-hc', sedeId, fecha, hasta ?? ''],
-    queryFn: () => historiaClinicaApi.resumenDelDia(sedeId, fecha, hasta),
+    queryFn: () => historiaClinicaApi.resumenDelDia(sedeParam, fecha, hasta),
     enabled: v2 && !!sedeId && puedeVerHc,
     refetchInterval: 30_000,
   });
@@ -107,6 +111,12 @@ export function useVisorPacientes() {
   const [filtro, setFiltro] = useState<FiltroVisor>(soyMedico ? 'todos' : 'todos');
   const [busqueda, setBusqueda] = useState('');
   const [verAtendidos, setVerAtendidos] = useState(false);
+  // 23-oct-2026: «Solo con procedimiento» — deja las visitas cuya atención tiene al menos un procedimiento (también en el Excel).
+  const [soloConProcedimiento, setSoloConProcedimiento] = useState(false);
+  // 23-oct-2026: filtro por médico — los médicos rotan entre sedes, por eso solo se ofrece con «Todas las sedes».
+  const [medicoFiltro, setMedicoFiltro] = useState('');
+  const porMedico = esTodas && !!medicoFiltro;
+  const conProcedimiento = (c: CitaResumen) => (resumenDe(c)?.procedimientos ?? 0) > 0;
 
   const todas = citasQ.data ?? [];
   const coincide = (c: CitaResumen) => {
@@ -118,17 +128,38 @@ export function useVisorPacientes() {
     .filter((c) => ESTADOS_EN_SEDE.includes((c.estado || '').toLowerCase()))
     .filter((c) => filtro === 'todos' ? true : filtro === 'mios' ? c.medicoId === miFicha : !c.medicoId && citaLlevaMedico(c))
     .filter(coincide)
+    .filter((c) => !soloConProcedimiento || conProcedimiento(c))
+    .filter((c) => !porMedico || c.medicoId === medicoFiltro)
     // Primero los que llevan más tiempo esperando (llegó más temprano); En atención después de los que esperan.
     // Con rango, primero por día.
     .sort((a, b) => a.fecha.slice(0, 10).localeCompare(b.fecha.slice(0, 10))
       || (a.estado === b.estado ? (a.llegoEn ?? a.horaInicio).localeCompare(b.llegoEn ?? b.horaInicio) : a.estado === 'llego' ? -1 : 1)),
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  [todas, filtro, busqueda, miFicha]);
+  [todas, filtro, busqueda, miFicha, soloConProcedimiento, resumenQ.data, porMedico, medicoFiltro]);
   const atendidos = useMemo(() => todas.filter((c) => (c.estado || '').toLowerCase() === 'completada').filter(coincide)
+    .filter((c) => !soloConProcedimiento || conProcedimiento(c))
+    .filter((c) => !porMedico || c.medicoId === medicoFiltro)
     .sort((a, b) => b.fecha.slice(0, 10).localeCompare(a.fecha.slice(0, 10)) || (b.completadaEn ?? b.horaInicio).localeCompare(a.completadaEn ?? a.horaInicio)),
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  [todas, busqueda]);
-  const porVenir = todas.filter((c) => ['agendada', 'confirmada'].includes((c.estado || '').toLowerCase())).length;
+  [todas, busqueda, soloConProcedimiento, resumenQ.data, porMedico, medicoFiltro]);
+  // Médicos con visitas en el periodo (todas las sedes), para el selector; con cuántas citas tiene cada uno.
+  const medicosPeriodo = useMemo(() => {
+    if (!esTodas) return [];
+    const m = new Map<string, { id: string; nombre: string; citas: number }>();
+    for (const c of todas) {
+      if (!c.medicoId || !c.medico) continue;
+      const x = m.get(c.medicoId) ?? { id: c.medicoId, nombre: nombreMedico(c.medico) ?? `${c.medico.nombres} ${c.medico.apellidos}`, citas: 0 };
+      x.citas++;
+      m.set(c.medicoId, x);
+    }
+    return [...m.values()].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+  }, [todas, esTodas]);
+  // Al salir de «Todas las sedes», o si el médico ya no tiene visitas en el periodo elegido, se quita el filtro.
+  useEffect(() => {
+    if (!medicoFiltro) return;
+    if (!esTodas || (citasQ.data && !medicosPeriodo.some((m) => m.id === medicoFiltro))) setMedicoFiltro('');
+  }, [esTodas, medicosPeriodo, medicoFiltro, citasQ.data]);
+  const porVenir = todas.filter((c) => ['agendada', 'confirmada'].includes((c.estado || '').toLowerCase()) && (!porMedico || c.medicoId === medicoFiltro)).length;
 
   const refrescar = () => { qc.invalidateQueries({ queryKey: ['citas'] }); qc.invalidateQueries({ queryKey: ['idea1-citas'] }); };
   const medicoMut = useMutation({
@@ -140,7 +171,7 @@ export function useVisorPacientes() {
   const { data: asignables = [] } = useQuery({
     queryKey: ['medicos-asignables', sedeId],
     queryFn: () => medicoCitaApi.asignables(sedeId),
-    enabled: puedeAsignar && !!sedeId,
+    enabled: puedeAsignar && !!sedeId && !esTodas,
     staleTime: 300_000,
   });
 
@@ -153,7 +184,7 @@ export function useVisorPacientes() {
       esMia,
       puedeTomar: soyMedico && llevaMedico && !c.medicoId,
       puedeSoltar: !!c.medicoId && (esMia || puedeAsignar),
-      puedeAsignar: puedeAsignar && llevaMedico,
+      puedeAsignar: puedeAsignar && llevaMedico && !esTodas,
       // El médico atiende a SU paciente (o a uno sin médico, que toma al entrar); administración entra a cualquiera.
       puedeAtender: puedeVerHc && (!soyMedico || esMia || !c.medicoId || puedeAsignar),
       // Paciente que tomó OTRO médico: se ve su historia (solo lectura), sin atender (26-sep-2026).
@@ -162,6 +193,25 @@ export function useVisorPacientes() {
       enAtencionHora: horaDe(c.enAtencionEn),
       esperaMin: esHoy && c.llegoEn && c.estado === 'llego' ?Math.max(0, Math.round((Date.now() - new Date(c.llegoEn).getTime()) / 60000)) : null,
     };
+  };
+
+  const puedeExportar = puedeRango && puedeVerHc;
+  const [exportando, setExportando] = useState(false);
+  /** Descarga el Excel con lo que muestra el visor: periodo, sede (o todas) y «solo con procedimiento». */
+  const exportar = async () => {
+    setExportando(true);
+    try {
+      const { blob, nombre } = await historiaClinicaApi.excelVisor({ sedeId: sedeParam, medicoId: porMedico ? medicoFiltro : undefined, fecha, hasta, conProcedimiento: soloConProcedimiento });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = nombre; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      toast.success('Excel descargado');
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setExportando(false);
+    }
   };
 
   const tomar = (c: CitaResumen) => medicoMut.mutate({ citaId: c.id, accion: 'tomar' });
@@ -177,7 +227,9 @@ export function useVisorPacientes() {
 
   return {
     usuario, soyMedico, puedeAsignar, miFicha,
-    sedes, sedeId, setSedeId, sedeNombre: sedes.find((s) => s.id === sedeId)?.nombre ?? '',
+    sedes, sedeId, setSedeId, esTodas, puedeTodas: puedeRango, sedeNombre: esTodas ? 'todas las sedes' : sedes.find((s) => s.id === sedeId)?.nombre ?? '',
+    puedeVerHc, soloConProcedimiento, setSoloConProcedimiento, puedeExportar, exportar, exportando,
+    medicoFiltro, setMedicoFiltro, medicosPeriodo,
     fecha, hasta, hoy, esHoy, esRango, puedeRango, desdeSel: fecha, hastaSel: hasta ?? fecha, setDesde, setHasta, moverDia, irHoy,
     cargando: citasQ.isLoading, error: citasQ.error as Error | null,
     filtro, setFiltro, busqueda, setBusqueda, verAtendidos, setVerAtendidos,

@@ -3,6 +3,7 @@
 import type { Request } from 'express';
 import { AppError } from '../middleware/errorHandler';
 import { fechaDb } from './fechaLima';
+import { assertSede } from '../middleware/auth';
 
 export const ROLES_RANGO_VISOR = ['admin', 'medico_auditor'];
 const MAX_DIAS = 31;
@@ -16,4 +17,17 @@ export function filtroFechaVisor(req: Request, fecha: string, hasta?: string | n
   const dias = Math.round((Date.parse(`${hasta}T00:00:00Z`) - Date.parse(`${fecha}T00:00:00Z`)) / 86_400_000) + 1;
   if (dias > MAX_DIAS) throw new AppError(`El rango puede tener como máximo ${MAX_DIAS} días`, 400, 'RANGO_MUY_LARGO');
   return { gte: fechaDb(fecha), lte: fechaDb(hasta) };
+}
+
+/** 23-oct-2026: «Todas las sedes» en el Visor (y su Excel) — mismos roles que el rango de fechas. */
+export const puedeTodasSedesVisor = (req: Request) => ROLES_RANGO_VISOR.includes(req.user?.rol ?? '');
+
+/**
+ * Sede del Visor: con `sedeId` se valida que el usuario la pueda operar y se devuelve; sin `sedeId` = todas las sedes,
+ * solo para administración y el auditor de médicos (el resto debe elegir una sede).
+ */
+export function filtroSedeVisor(req: Request, sedeId?: string | null): string | undefined {
+  if (sedeId) { assertSede(req, sedeId); return sedeId; }
+  if (!puedeTodasSedesVisor(req)) throw new AppError('Elige una sede', 400, 'SEDE_REQUERIDA');
+  return undefined;
 }

@@ -440,7 +440,20 @@ export const historiaClinicaApi = {
   eliminarNotaMedico: (id: string) => api.delete<NotaMedicoPaciente[]>(`${B}/notas-medico/${id}`),
   precargarAnterior: (atencionId: string) =>
     api.post<{ atencion: AtencionCompleta; dxCopiados: number; anamnesisCopiada: boolean }>(`${B}/atenciones/${atencionId}/precargar-anterior`, {}),
-  resumenDelDia: (sedeId: string, fecha: string, hasta?: string) => api.get<Record<string, ResumenClinicoCita>>(`${B}/resumen-del-dia`, { sedeId, fecha, ...(hasta ? { hasta } : {}) }),
+  resumenDelDia: (sedeId: string | undefined, fecha: string, hasta?: string) => api.get<Record<string, ResumenClinicoCita>>(`${B}/resumen-del-dia`, { ...(sedeId ? { sedeId } : {}), fecha, ...(hasta ? { hasta } : {}) }),
+  /** Excel del Visor de Pacientes (admin y auditor de médicos). Sin sede = todas. Devuelve el archivo y su nombre. */
+  excelVisor: async (p: { sedeId?: string; medicoId?: string; fecha: string; hasta?: string; conProcedimiento: boolean }): Promise<{ blob: Blob; nombre: string }> => {
+    const token = useAuthStore.getState().token;
+    const qs = new URLSearchParams({ fecha: p.fecha, conProcedimiento: p.conProcedimiento ? '1' : '0', ...(p.sedeId ? { sedeId: p.sedeId } : {}), ...(p.medicoId ? { medicoId: p.medicoId } : {}), ...(p.hasta ? { hasta: p.hasta } : {}) });
+    const res = await fetch(`/api/v1${B}/visor/excel?${qs}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: 'No se pudo generar el Excel' }));
+      throw new Error((err as { message?: string }).message ?? 'No se pudo generar el Excel');
+    }
+    const disp = res.headers.get('Content-Disposition') ?? '';
+    const nombre = decodeURIComponent(disp.match(/filename="?([^";]+)"?/)?.[1] ?? 'visor-pacientes.xlsx');
+    return { blob: await res.blob(), nombre };
+  },
   subirConsentimientoFoto: (atencionId: string, archivo: File, campos: { procedimiento?: string; plantillaId?: string | null }) => {
     const fd = new FormData();
     fd.append('foto', archivo);

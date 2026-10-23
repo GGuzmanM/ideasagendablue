@@ -207,7 +207,8 @@ export interface OcupacionDia {
 
 export const citasApi = {
   // `hasta`: rango fecha..hasta (Visor de Pacientes; solo admin y auditor de médicos).
-  listar: (params: { sedeId?: string; fecha?: string; hasta?: string; unidadNegocioId?: string; profesionalId?: string }) =>
+  // `todas: '1'` (Visor de Pacientes, 23-oct-2026): sin filtro de sede — solo administración y el auditor de médicos.
+  listar: (params: { sedeId?: string; fecha?: string; hasta?: string; unidadNegocioId?: string; profesionalId?: string; todas?: '1' }) =>
     api.get<CitaResumen[]>('/citas', params as Record<string, string>),
 
   // Ocupaciones de otras unidades para pintar bloques fantasma en la agenda.
