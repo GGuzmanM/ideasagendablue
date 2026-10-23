@@ -3,6 +3,7 @@ import { io, Socket } from 'socket.io-client';
 import { useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../stores/authStore';
+import { AVISOS_PARCHABLES, parchearCita, programarRecarga } from '../services/agendaTiempoReal';
 
 let socket: Socket | null = null;
 // Sede a la que ESTA pestaña está suscrita. Vive fuera del hook para poder re-suscribir al reconectar.
@@ -45,24 +46,18 @@ export function useSocket(sedeId: string | null) {
     const citaHandler = (event: { tipo: string; sedeId: string; fecha: string; cita: unknown; cambiadoPor: string }) => {
       if (event.sedeId !== sedeId) return;
       // El detalle abierto de esa cita se refresca al instante (no espera su poll de 10 s).
-      const citaId = (event.cita as { id?: string } | null)?.id;
-      if (citaId) qc.invalidateQueries({ queryKey: ['cita-detalle', citaId] });
-      // Refresca TODO lo que depende de las citas de esa sede+fecha:
-      // la grilla (citas), los contadores de cabecera (stats), la
-      // disponibilidad de horarios y los bloqueos/permisos. Así cualquier
-      // cambio hecho por otro usuario (recepción / contact center) se ve al
-      // instante, sin tener que refrescar manualmente.
-      const claves = ['citas', 'stats', 'disponibilidad', 'bloqueos-almuerzo', 'permisos-agenda', 'ocupacion-externa'];
-      qc.invalidateQueries({
-        predicate: (q) => {
-          const k = q.queryKey;
-          return Array.isArray(k)
-            && typeof k[0] === 'string'
-            && claves.includes(k[0])
-            && k.includes(event.sedeId)
-            && k.includes(event.fecha);
-        },
-      });
+      const cita = event.cita as { id?: string; fecha?: string } | null;
+      const citaId = cita?.id;
+      const yo = useAuthStore.getState().usuario?.id;
+      // El detalle abierto se refresca al instante; el autor ya lo tiene al día con la respuesta de su propia acción.
+      if (citaId && event.cambiadoPor !== yo) qc.invalidateQueries({ queryKey: ['cita-detalle', citaId] });
+      // 23-oct-2026 (rendimiento): la cita del aviso se aplica directo a las listas de la agenda y del visor, sin volver
+      // a pedir la lista del día. Lo demás (contadores, ocupación, disponibilidad) se recarga agrupado (varios avisos
+      // seguidos = una recarga). La lista completa solo se pide si esta pantalla no tenía la cita (p. ej. una cita nueva).
+      const parcheada = !!citaId && AVISOS_PARCHABLES.has(event.tipo)
+        && parchearCita(qc, { ...(cita as object), id: citaId }, event.sedeId, event.fecha);
+      // El autor del cambio ya recargó con su propia acción: no se repite (antes pedía todo dos veces).
+      if (!(event.cambiadoPor === yo && parcheada)) programarRecarga(qc, event.sedeId, event.fecha, !parcheada);
 
       const mensajes: Record<string, string> = {
         'cita:creada': 'Nueva cita agendada',
@@ -72,7 +67,6 @@ export function useSocket(sedeId: string | null) {
       };
       const msg = mensajes[event.tipo];
       // Al autor del cambio no se le repite el aviso (ya vio el toast de su propia acción).
-      const yo = useAuthStore.getState().usuario?.id;
       if (msg && event.cambiadoPor !== yo) toast(msg, { icon: '🔄', duration: 3000 });
     };
 

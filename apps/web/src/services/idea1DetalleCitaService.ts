@@ -10,6 +10,7 @@ import { usePromociones } from '../hooks/usePromociones';
 import { usePaquetesPaciente, paquetesElegibles, paquetesOtraSede, paquetesSesionesApi } from '../api/paquetesSesiones';
 import { generarSlotsDelDia, horaInicioValidaParaDuracion, esCitaInactiva } from '@limablue/shared';
 import { useAuthStore } from '../stores/authStore';
+import { copiaListasDelDia, esClaveDelDia, parchearCita } from './agendaTiempoReal';
 import { estadoPagoDe, infoEstadoPago, type EstadoPago } from '../utils/estadoPago';
 import { useResumenAtencionCita, useFichaPrevia } from '../api/historiaClinica';
 import { citaEnRebote } from '../api/rebote';
@@ -230,6 +231,16 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
   const estadoMutation = useMutation({
     mutationFn: ({ estado, comentario, citaId, soloEsta, forzar }: { estado: string; comentario?: string; citaId?: string; soloEsta?: boolean; forzar?: boolean }) =>
       citasApi.cambiarEstado(citaId ?? cita.id, estado, comentario, motivoCancelacion || undefined, soloEsta, forzar),
+    // 23-oct-2026 (rendimiento): la tarjeta cambia de estado al instante, sin esperar al servidor ni a la recarga.
+    onMutate: async ({ estado, citaId }) => {
+      const fecha = (cita.fecha ?? '').slice(0, 10);
+      if (!cita.sedeId || !fecha) return { copia: [] as ReturnType<typeof copiaListasDelDia> };
+      // Una recarga en curso podría pisar el estado optimista con el dato viejo: se cancela (onSuccess vuelve a recargar).
+      await qc.cancelQueries({ predicate: (q) => esClaveDelDia(q.queryKey, ['citas'], cita.sedeId, fecha) });
+      const copia = copiaListasDelDia(qc, cita.sedeId, fecha);
+      parchearCita(qc, { id: citaId ?? cita.id, estado }, cita.sedeId, fecha);
+      return { copia };
+    },
     onSuccess: (updatedCita, variables) => {
       const targetId = variables.citaId ?? cita.id;
       const esActiva = targetId === cita.id;
@@ -263,7 +274,9 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
         onClose();
       }
     },
-    onError: (e: Error & { data?: { error?: string } | null }, variables) => {
+    onError: (e: Error & { data?: { error?: string } | null }, variables, contexto) => {
+      // Se deshace el cambio optimista: la tarjeta vuelve a su estado real.
+      contexto?.copia.forEach(([clave, datos]) => qc.setQueryData(clave, datos));
       // Admin: la atención clínica tiene registros → puede cancelar igual, confirmándolo (la atención se conserva).
       const esAdmin = useAuthStore.getState().usuario?.rol === 'admin';
       if (esAdmin && !variables.forzar && e.data?.error === 'CITA_CON_ATENCION_CLINICA' && ['cancelada', 'no_show'].includes(variables.estado)) {
