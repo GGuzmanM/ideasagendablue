@@ -4,6 +4,7 @@ import dispositivosRouter from './routes/dispositivos';
 import dispositivoApiRouter from './routes/dispositivoApi';
 import tiemposTratamientoRouter from './routes/tiemposTratamiento';
 import reportesClinicosRouter from './routes/reportesClinicos';
+import reporteCreacionCitasRouter from './routes/reporteCreacionCitas';
 import medicoCitaRouter from './routes/medicoCita';
 import firmaMedicoRouter from './routes/firmaMedico';
 import verificacionPublicaRouter from './routes/verificacionPublica';
@@ -257,6 +258,7 @@ app.use(`${v1}/tiempos-tratamiento`, tiemposTratamientoRouter); // Reporte de ti
 app.use(`${v1}/mi-firma`, firmaMedicoRouter); // Firma y sello digitalizados del médico (solo él la usa)
 app.use(`${v1}/medico-cita`, medicoCitaRouter); // Médico de la cita: el médico se toma/suelta; admin y coordinación asignan
 app.use(`${v1}/reportes-clinicos`, reportesClinicosRouter); // Diagnosticos, productividad y calidad del registro (conteos, sin datos del paciente)
+app.use(`${v1}/reporte-creacion-citas`, reporteCreacionCitasRouter); // Quién creó cada cita y el día/hora en que la creó
 app.use(`${v1}/verificar`, verificacionPublicaRouter); // PÚBLICO (sin login): verificación de recetas por el QR
 app.use(`${v1}/publico/reservas`, reservaWebRouter); // PÚBLICO: reserva web con pago (apagada salvo RESERVA_WEB_HABILITADA=1)
 app.use(`${v1}/reservas-web`, reservaWebAgendaRouter); // Interno: reservas web en curso para la agenda (lista vacía si está apagada)

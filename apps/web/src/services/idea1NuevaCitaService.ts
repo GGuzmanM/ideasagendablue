@@ -1,4 +1,4 @@
-import { UBIGEO_EXTRANJERO } from '@limablue/shared';
+import { UBIGEO_EXTRANJERO, horaInicioValidaParaDuracion } from '@limablue/shared';
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
@@ -777,6 +777,10 @@ export function useIdea1NuevaCitaForm({
     enabled: Boolean(sedeId) && Boolean(fechaCita),
   });
 
+  // Citas de 1 h solo en hora entera (23-oct-2026). Un bloque combinado dura lo del servicio principal (el ancla).
+  const duracionServicio = serviciosData.find((s) => s.id === servicioId)?.duracionMinutos ?? 30;
+  const horaInvalidaParaServicio = Boolean(servicioId && horaCita) && !horaInicioValidaParaDuracion(horaCita, duracionServicio);
+
   // Opciones de horas acotadas por apertura/cierre de sede y horario del profesional
   const opcionesHoras = useMemo(() => {
     if (sedeCerradaEseDia) return [];
@@ -800,8 +804,8 @@ export function useIdea1NuevaCitaForm({
     }
 
     if (dispo?.slots && dispo.slots.length > 0) {
-      const horasDispo = [...new Set(dispo.slots.map((s: any) => s.horaInicio))]
-        .filter((h) => h >= profIni && h < profFin)
+      const horasDispo = [...new Set(dispo.slots.map((s: any) => s.horaInicio as string))]
+        .filter((h) => h >= profIni && h < profFin && horaInicioValidaParaDuracion(h, duracionServicio))
         .sort();
 
       if (horasDispo.length > 0) {
@@ -822,7 +826,7 @@ export function useIdea1NuevaCitaForm({
       const h0 = `${hh}:00`;
       const h30 = `${hh}:30`;
       if (h0 >= profIni && h0 < profFin) horasFallback.push(h0);
-      if (h30 >= profIni && h30 < profFin) horasFallback.push(h30);
+      if (h30 >= profIni && h30 < profFin && horaInicioValidaParaDuracion(h30, duracionServicio)) horasFallback.push(h30);
     }
 
     if (horaCita && !horasFallback.includes(horaCita) && horaCita >= profIni && horaCita < profFin) {
@@ -831,7 +835,7 @@ export function useIdea1NuevaCitaForm({
     }
 
     return horasFallback;
-  }, [dispo, horaCita, sedeCerradaEseDia, horarioEf, profesionalId, turnosProfMap]);
+  }, [dispo, horaCita, sedeCerradaEseDia, horarioEf, profesionalId, turnosProfMap, duracionServicio]);
 
   // Configuración de combinaciones
   const { data: configCombi } = useQuery({
@@ -1011,6 +1015,10 @@ export function useIdea1NuevaCitaForm({
     }
     if (!fechaCita || !horaCita) {
       toast.error('Selecciona fecha y hora');
+      return;
+    }
+    if (horaInvalidaParaServicio) {
+      toast.error(`Este servicio dura 1 hora: solo puede empezar en hora en punto (09:00, 10:00…), no a las ${horaCita}.`);
       return;
     }
     // Retroactiva: fecha en el pasado → exige motivo (el backend también lo re-valida).
@@ -1207,6 +1215,7 @@ export function useIdea1NuevaCitaForm({
     handleAgendar,
     isPending: mutationCrear.isPending || mutationCrearPaciente.isPending,
     opcionesHoras,
+    horaInvalidaParaServicio,
     fechaHeader,
   };
 }

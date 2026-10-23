@@ -21,6 +21,10 @@ import {
   timeToMinutes,
   esMismoDia,
 } from '../services/idea1AgendaService';
+import { horaInicioValidaParaDuracion } from '@limablue/shared';
+
+/** Citas de 1 h solo en hora entera (23-oct-2026): mismo texto en soltar e intercambiar. */
+const avisoHoraEntera = (hora: string) => `Las citas de 1 hora solo empiezan en hora en punto (09:00, 10:00…), no a las ${hora}.`;
 
 export function Idea1AgendaPage() {
   const navigate = useNavigate();
@@ -641,6 +645,12 @@ export function Idea1AgendaPage() {
                                   // No mover si es el mismo profesional y hora
                                   if (payload.profesionalId === doc.id && payload.horaInicio === slot.hora) return;
 
+                                  // Citas de 1 h: solo a una hora en punto (el servidor también lo rechaza).
+                                  if (!horaInicioValidaParaDuracion(slot.hora, Number(payload.duracionMinutos) || 30)) {
+                                    toast.error(avisoHoraEntera(slot.hora));
+                                    return;
+                                  }
+
                                   // Advertencia si el paciente eligió el profesional y se cambia
                                   if (payload.origenAsignacion === 'elegida_por_paciente' && payload.profesionalId !== doc.id) {
                                     const confirmMove = window.confirm(
@@ -1003,9 +1013,18 @@ export function Idea1AgendaPage() {
                                   setSobreCita(null);
                                   setDragOverSlot(null);
                                   if (isMoving || isIntercambiando) { toast('Espera: se está moviendo una cita…', { icon: '⏳' }); return; }
-                                  let payload: { citaId?: string; slotGrupoId?: string | null; pacienteNombre?: string; profesionalNombre?: string; horaInicio?: string } | null = null;
+                                  let payload: { citaId?: string; slotGrupoId?: string | null; pacienteNombre?: string; profesionalNombre?: string; horaInicio?: string; duracionMinutos?: number } | null = null;
                                   try { payload = JSON.parse(e.dataTransfer.getData('text/plain') || 'null'); } catch { payload = null; }
                                   if (!payload?.citaId || payload.citaId === cita.id) return;
+                                  // Al intercambiar, cada cita toma la hora de la otra: una de 1 h no puede caer en media hora.
+                                  if (!horaInicioValidaParaDuracion(cita.horaInicio, Number(payload.duracionMinutos) || 30)) {
+                                    toast.error(`${payload.pacienteNombre ?? 'La cita arrastrada'}: ${avisoHoraEntera(cita.horaInicio)}`);
+                                    return;
+                                  }
+                                  if (payload.horaInicio && !horaInicioValidaParaDuracion(payload.horaInicio, cita.duracionMinutos || 30)) {
+                                    toast.error(`${cita.paciente}: ${avisoHoraEntera(payload.horaInicio)}`);
+                                    return;
+                                  }
                                   const hayDoble = !!(payload.slotGrupoId || cita.raw?.slotGrupoId);
                                   if (hayDoble && useAuthStore.getState().usuario?.rol !== 'admin') { toast.error('Las citas dobles solo las intercambia administración'); return; }
                                   const ok = window.confirm(

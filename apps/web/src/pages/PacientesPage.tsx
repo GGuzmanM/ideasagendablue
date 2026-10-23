@@ -22,7 +22,7 @@ import { cn } from '../utils/cn';
 import { DistritoAutocomplete, PaisAutocomplete } from '../components/ui/DistritoAutocomplete';
 import { etiquetaDistrito } from '../data/ubigeo';
 import { UBIGEO_EXTRANJERO, nombrePais } from '@limablue/shared';
-import { usePacientesBusqueda, useFichaPaciente } from '../services/pacientesService';
+import { usePacientesBusqueda, useFichaPaciente, calcularEdad } from '../services/pacientesService';
 import { useCanales } from '../hooks/useCanales';
 
 // ─── Lista/búsqueda ───────────────────────────────────────────────────────────
@@ -214,6 +214,7 @@ export function FichaPacientePage() {
   if (!paciente) return <div className="p-8 text-on-surface-variant">Paciente no encontrado</div>;
 
   const nombreCompleto = `${paciente.nombres} ${paciente.apellidoPaterno} ${paciente.apellidoMaterno}`.trim();
+  const edad = calcularEdad(String(paciente.fechaNacimiento ?? ''));
   const iniciales = `${paciente.nombres?.[0] ?? ''}${paciente.apellidoPaterno?.[0] ?? ''}`.toUpperCase();
 
   // Abre el detalle de una cita (del historial o próximas). El modal refetchea la cita
@@ -262,6 +263,12 @@ export function FichaPacientePage() {
                     <RomboAlerta alerta={paciente.alerta} size={16} />
                     <span>{nombreCompleto}</span>
                   </h2>
+                  {/* Edad (23-oct-2026): solo si tiene fecha de nacimiento registrada. */}
+                  {edad != null && (
+                    <span className="shrink-0 text-sm font-bold px-3 py-1 rounded-full bg-primary/10 text-primary" data-testid="ficha-edad-paciente">
+                      {edad} {edad === 1 ? 'año' : 'años'}
+                    </span>
+                  )}
                 </div>
                 {paciente.alerta?.alerta && (
                   <p className="text-xs font-semibold text-amber-700 mt-1">

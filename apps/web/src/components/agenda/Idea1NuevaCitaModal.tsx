@@ -149,6 +149,7 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
     handleAgendar,
     isPending,
     opcionesHoras,
+    horaInvalidaParaServicio,
     fechaHeader,
   } = useIdea1NuevaCitaForm(props);
 
@@ -1193,6 +1194,11 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
                   schedule
                 </span>
               </div>
+              {horaInvalidaParaServicio && (
+                <p className="text-xs font-semibold text-error" data-testid="aviso-hora-entera">
+                  Este servicio dura 1 hora: elige una hora en punto (09:00, 10:00…).
+                </p>
+              )}
             </div>
           </div>
 
