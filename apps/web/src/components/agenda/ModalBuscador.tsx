@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, keepPreviousData, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useValorDiferido } from '../../hooks/useValorDiferido';
 import { format, addDays } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { pacientesApi, profesionalesApi, type HistorialCita } from '../../api';
@@ -115,10 +116,14 @@ export function ModalBuscador({ modoInicial, fechaHoy, onClose, onIrAFecha, onVe
   };
 
   // Búsqueda de pacientes
+  // Por nombre se busca cuando se deja de escribir (no una consulta por tecla); por documento, al pulsar Enter.
+  const busquedaDiferida = useValorDiferido(busqueda);
+  const termino = modo === 'nombre' ? busquedaDiferida : busqueda;
   const { data: resultados, isFetching: buscando } = useQuery({
-    queryKey: ['buscar-paciente', busqueda],
-    queryFn: () => pacientesApi.buscar(busqueda),
-    enabled: busqueda.length >= 2,
+    queryKey: ['buscar-paciente', termino],
+    queryFn: () => pacientesApi.buscar(termino),
+    enabled: termino.length >= 2,
+    placeholderData: keepPreviousData,
     staleTime: 30_000,
   });
 

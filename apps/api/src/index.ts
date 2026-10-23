@@ -139,8 +139,19 @@ const redactarTokens = (s?: string | null): string => {
 morgan.token('url-safe', (req: express.Request) => redactarTokens(req.originalUrl || req.url));
 morgan.token('ref-safe', (req: express.Request) => redactarTokens(req.headers.referer || '-'));
 app.use(morgan(
-  ':remote-addr - :remote-user [:date[clf]] ":method :url-safe HTTP/:http-version" :status :res[content-length] ":ref-safe" ":user-agent"',
+  ':remote-addr - :remote-user [:date[clf]] ":method :url-safe HTTP/:http-version" :status :res[content-length] ":ref-safe" ":user-agent" :response-time ms',
 ));
+// 23-oct-2026 (rendimiento): aviso de peticiones lentas, para encontrar en los logs de producción qué se demora.
+// Solo método, ruta (sin query string: la búsqueda lleva nombres) y estado.
+const UMBRAL_LENTO_MS = Number(process.env.UMBRAL_LENTO_MS) || 1000;
+app.use((req, res, next) => {
+  const inicio = process.hrtime.bigint();
+  res.on('finish', () => {
+    const ms = Number(process.hrtime.bigint() - inicio) / 1e6;
+    if (ms >= UMBRAL_LENTO_MS) console.warn(`[LENTO] ${Math.round(ms)} ms ${req.method} ${(req.originalUrl || req.url).split('?')[0]} → ${res.statusCode}`);
+  });
+  next();
+});
 
 // Firma las URLs de archivos privados (/uploads) en TODA respuesta JSON (punto único).
 app.use(firmarUrlsRespuesta);

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, keepPreviousData, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useValorDiferido } from '../hooks/useValorDiferido';
 import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { pacientesApi, paquetesApi, reniecApi } from '../api';
@@ -17,11 +18,14 @@ import { UBIGEO_EXTRANJERO } from '@limablue/shared';
 
 export function usePacientesBusqueda() {
   const [q, setQ] = useState('');
+  // Una búsqueda cuando se deja de escribir (no una por tecla); mientras tanto quedan los resultados anteriores.
+  const qBuscada = useValorDiferido(q.trim());
 
   const { data: resultados, isLoading } = useQuery({
-    queryKey: ['pacientes-buscar', q],
-    queryFn: () => pacientesApi.buscar(q),
-    enabled: q.length >= 2,
+    queryKey: ['pacientes-buscar', qBuscada],
+    queryFn: () => pacientesApi.buscar(qBuscada),
+    enabled: qBuscada.length >= 2,
+    placeholderData: keepPreviousData,
   });
 
   return { q, setQ, resultados, isLoading };

@@ -52,7 +52,9 @@ Reemplaza un ERP de escritorio de 14 años. 5 sedes, ~400 citas diarias, 40 pod�
     `tiempos_cita_vigente_unico` (máx 1 tiempo no descartado por cita).
   - Además, índices **GIN pg_trgm** (no únicos, tampoco en el schema) en
     `20260903120000_catalogos_hce_cie10_medicamento`: `cie10_descripcion_trgm`,
-    `medicamentos_dci_trgm`, `medicamentos_comercial_trgm`.
+    `medicamentos_dci_trgm`, `medicamentos_comercial_trgm`; y en
+    `20261023190000_busqueda_pacientes_trgm` (búsqueda de pacientes): `pacientes_nombre_completo_trgm`,
+    `pacientes_documento_trgm`, `pacientes_telefono_trgm`.
 
   Como NO están en `schema.prisma`, al correr `migrate dev` Prisma intentará "dropearlos" en la
   migración generada → **revisa el SQL generado y borra cualquier `DROP INDEX` de esos** (o

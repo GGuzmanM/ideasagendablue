@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import { useValorDiferido } from '../../hooks/useValorDiferido';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { pacientesApi } from '../../api';
@@ -49,9 +50,12 @@ export function BuscadorPacientesModal({ open, onClose }: BuscadorPacientesModal
   }, [open, selectedPacienteId]);
 
   // Búsqueda de pacientes (recientes si query está vacía, filtro si tiene texto)
+  // Se busca cuando se deja de escribir (no una consulta por tecla); mientras tanto quedan los resultados anteriores.
+  const queryDiferida = useValorDiferido(query.trim());
   const { data: pacientes = [], isLoading: buscandoPacientes } = useQuery({
-    queryKey: ['buscar-pacientes-modal', query],
-    queryFn: () => pacientesApi.buscar(query),
+    queryKey: ['buscar-pacientes-modal', queryDiferida],
+    queryFn: () => pacientesApi.buscar(queryDiferida),
+    placeholderData: keepPreviousData,
     enabled: open && tienePermiso('pacientes.ver'),
   });
 
