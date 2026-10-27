@@ -176,7 +176,7 @@ export async function crearReserva(d: NuevaReservaWeb & { intentoId?: string | n
 
   const reserva = await prisma.$transaction(async (tx) => {
     // Un solo «apartado» a la vez por sede y día: dos personas no pueden tomar el último cupo al mismo tiempo.
-    await tx.$executeRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))', `reserva-web|${d.sedeId}|${d.fecha}`);
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`reserva-web|${d.sedeId}|${d.fecha}`}))`;
     // Si volvió atrás y eligió otra hora: suelta el apartado anterior de ESTE intento (no ocupa dos horarios).
     if (intento?.reservaId) {
       await tx.reservaWeb.updateMany({ where: { id: intento.reservaId, estado: 'esperando_pago' }, data: { estado: 'expirada', expiraEn: ahora } });

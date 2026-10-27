@@ -4,11 +4,12 @@ import { useAuthStore } from '../stores/authStore';
 import { rutaInicio } from '../utils/rutaInicio';
 import { notificacionesApi } from '../api/notificaciones';
 import { useNotificacionesStore } from '../stores/notificacionesStore';
+import { rutaWeb } from '../utils/rutaBase';
 
 // Logo del login: pegar el archivo en apps/web/public/logo-login.png
 // Si no existe, cae al logo actual (logo-limablue.svg) sin romper la página.
-const LOGO_SRC = '/logo-login.png';
-const LOGO_FALLBACK = '/logo-limablue.svg';
+const LOGO_SRC = rutaWeb('/logo-login.png');
+const LOGO_FALLBACK = rutaWeb('/logo-limablue.svg');
 
 function useRelojLima() {
   const [ahora, setAhora] = useState(() => new Date());

@@ -52,12 +52,13 @@ import { VisorPacientesPage } from './pages/VisorPacientesPage';
 import { ReboteBandejaPage } from './pages/ReboteBandejaPage';
 import { ReservasWebPage } from './pages/ReservasWebPage';
 import { rutaInicio } from './utils/rutaInicio';
+import { RUTA_LOGIN } from './utils/rutaLogin';
 
-// Guard de SESIÓN: sin token → directo a /login. Está suscrito al store, así que al cerrar sesión
+// Guard de SESIÓN: sin token → directo al inicio de sesión (RUTA_LOGIN). Está suscrito al store, así que al cerrar sesión
 // (logout pone token=null) redirige AL INSTANTE — no se queda la vista/sidebar hasta el próximo clic.
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const token = useAuthStore(s => s.token);
-  if (!token) return <Navigate to="/login" replace />;
+  if (!token) return <Navigate to={RUTA_LOGIN} replace />;
   return <>{children}</>;
 }
 
@@ -105,7 +106,7 @@ export default function App() {
 
   return (
     <Routes>
-      <Route path="/login" element={token ? <IrAlInicio /> : <LoginPage />} />
+      <Route path={RUTA_LOGIN} element={token ? <IrAlInicio /> : <LoginPage />} />
       {/* Vista principal de la agenda */}
       <Route path="/AgendaPrincipal" element={<RequireAuth><RequirePermiso permiso="citas.ver"><Idea1AgendaPage /></RequirePermiso></RequireAuth>} />
       {/* Compatibilidad: la URL anterior /idea1 redirige a la nueva (bookmarks) */}

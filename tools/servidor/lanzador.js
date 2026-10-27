@@ -142,13 +142,28 @@ if (cfg.RESERVA_WEB_HABILITADA === '1' && fs.existsSync(RESERVA)) {
     : `Reserva web activa en /reserva (pasarela: ${cfg.RESERVA_WEB_PASARELA || 'sin definir'}).`);
 }
 
+// ─── Pantallas: TODA la web cuelga de /acceso_agenda_lb (login en /acceso_agenda_lb/login) ───────────────────────
+// Debe coincidir con `base` de apps/web/vite.config.ts (el build ya trae los enlaces con este prefijo). Se puede cambiar
+// con PREFIJO_WEB en agenda.env, pero entonces hay que recompilar la web con el mismo prefijo.
+const PREFIJO = `/${(cfg.PREFIJO_WEB || 'acceso_agenda_lb').replace(/^\/+|\/+$/g, '')}`;
 const WEB = path.join(APP, 'web');
+const noEncontrado = (_req, res) => res.status(404).type('text/plain').send('Not Found');
+// Los QR de las recetas ya impresas apuntan a /verificar/<código> (sin prefijo): se les lleva a la dirección nueva.
+app.get('/verificar/:codigo', (req, res) => res.redirect(302, `${PREFIJO}/verificar/${encodeURIComponent(req.params.codigo)}`));
 // index.html sin caché (para que una actualización se vea con F5); los archivos con hash, un año.
-app.use(express.static(WEB, {
+app.use(PREFIJO, express.static(WEB, {
   index: false,
   setHeaders: (res, ruta) => res.setHeader('Cache-Control', ruta.includes(`${path.sep}assets${path.sep}`) ? 'public, max-age=31536000, immutable' : 'no-cache'),
 }));
-app.get('*', (_req, res) => { res.setHeader('Cache-Control', 'no-cache'); res.sendFile(path.join(WEB, 'index.html')); });
+// Ventanas de la aplicación (rutas del navegador) → index.html. Un archivo que no existe (con extensión) es 404, no la página.
+app.use(PREFIJO, (req, res, next) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+  if (path.extname(req.path)) return noEncontrado(req, res);
+  res.setHeader('Cache-Control', 'no-cache');
+  res.sendFile(path.join(WEB, 'index.html'));
+});
+// Cualquier otra dirección (la raíz, /login, /admin…) no revela nada: 404 neutro. Quien no conoce la dirección de acceso no ve el sistema.
+app.use(noEncontrado);
 
 function opcionesHttps() {
   try {
@@ -163,7 +178,8 @@ const tls = opcionesHttps();
 const servidor = tls ? https.createServer(tls, app) : http.createServer(app);
 servidor.on('upgrade', proxyWs.upgrade);
 servidor.listen(WEB_PUERTO, '0.0.0.0', () => {
-  log('servidor', `Limablue Agenda en ${tls ? 'https' : 'http'}://<ip-del-servidor>:${WEB_PUERTO} (API interno ${API}). Datos: ${DATOS}`);
+  const sufijoPuerto = (tls && WEB_PUERTO === 443) || (!tls && WEB_PUERTO === 80) ? '' : `:${WEB_PUERTO}`;
+  log('servidor', `Limablue Agenda en ${tls ? 'https' : 'http'}://<ip-del-servidor>${sufijoPuerto}${PREFIJO}/login (API interno ${API}). Datos: ${DATOS}`);
 });
 
 function salir() {

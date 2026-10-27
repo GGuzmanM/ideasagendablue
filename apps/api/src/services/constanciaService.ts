@@ -159,8 +159,8 @@ export async function emitirConstancia(p: Ctx & { user: AuthPayload; atencionId:
 }
 
 export async function anularConstancia(p: Ctx & { user: AuthPayload; id: string; motivo: string }) {
-  const c = await prisma.constanciaClinica.findUnique({ where: { id: p.id }, select: { id: true, estado: true, sedeId: true, emisorUsuarioId: true, numero: true, tipo: true } });
-  if (!c) throw new AppError('Constancia no encontrada', 404);
+  const c = await prisma.constanciaClinica.findUnique({ where: { id: p.id }, select: { id: true, estado: true, sedeId: true, emisorUsuarioId: true, numero: true, tipo: true, deletedAt: true } });
+  if (!c || c.deletedAt) throw new AppError('Constancia no encontrada', 404);
   if (c.estado === 'anulada') throw new AppError('Ya está anulada', 409, 'YA_ANULADA');
   const puede = p.user.permisos.includes('hc.anular') || (c.emisorUsuarioId && c.emisorUsuarioId === p.user.userId);
   if (!puede) throw new AppError('Solo quien la emitió o coordinación pueden anularla', 403, 'SIN_PERMISO');
@@ -168,6 +168,31 @@ export async function anularConstancia(p: Ctx & { user: AuthPayload; id: string;
     const u = await tx.constanciaClinica.updateMany({ where: { id: c.id, estado: 'emitida' }, data: { estado: 'anulada', anuladaEn: new Date(), anuladaPorUsuarioId: p.usuarioId ?? null, motivoAnulacion: p.motivo.trim() } });
     if (u.count === 0) throw new AppError('Ya está anulada', 409, 'YA_ANULADA');
     await auditEnTx(tx, { ...ctxAudit(p), sedeId: c.sedeId, accion: 'anular_constancia', entidad: 'constancia', entidadId: c.id, antes: { estado: 'emitida' }, despues: { estado: 'anulada', motivo: p.motivo.trim(), numero: c.numero, tipo: c.tipo } });
+  });
+}
+
+/**
+ * Eliminar una constancia (26-oct-2026): SOLO administración. Borrado LÓGICO: la fila se conserva (quién la eliminó, cuándo y por
+ * qué) y la acción queda en la auditoría con una copia de lo que era. Deja de verse en la historia, en los PDF y en la
+ * verificación pública (su código pasa a «no existe»). Sirve para lo emitido por error; si solo hay que corregirla, se anula.
+ */
+export async function eliminarConstancia(p: Ctx & { user: AuthPayload; id: string; motivo: string }) {
+  if (p.user.rol !== 'admin') throw new AppError('Solo administración puede eliminar constancias', 403, 'SIN_PERMISO');
+  const motivo = p.motivo.trim();
+  if (motivo.length < 5) throw new AppError('Indica el motivo (al menos 5 caracteres)', 400, 'MOTIVO_REQUERIDO');
+  const c = await prisma.constanciaClinica.findUnique({
+    where: { id: p.id },
+    select: { id: true, numero: true, tipo: true, estado: true, sedeId: true, fechaEmision: true, emisorNombre: true, codigoVerificacion: true, deletedAt: true, atencion: { select: { citaId: true } } },
+  });
+  if (!c || c.deletedAt) throw new AppError('Constancia no encontrada', 404);
+  await prisma.$transaction(async (tx) => {
+    const u = await tx.constanciaClinica.updateMany({ where: { id: c.id, deletedAt: null }, data: { deletedAt: new Date(), eliminadaPorUsuarioId: p.usuarioId ?? null, motivoEliminacion: motivo } });
+    if (u.count === 0) throw new AppError('Constancia no encontrada', 404);
+    await auditEnTx(tx, {
+      ...ctxAudit(p), citaId: c.atencion.citaId, sedeId: c.sedeId, accion: 'eliminar_constancia', entidad: 'constancia', entidadId: c.id,
+      antes: { numero: c.numero, tipo: c.tipo, estado: c.estado, fechaEmision: c.fechaEmision, emisor: c.emisorNombre, codigoVerificacion: c.codigoVerificacion },
+      despues: { eliminada: true, motivo },
+    });
   });
 }
 
@@ -187,7 +212,7 @@ export async function constanciaParaPdf(id: string) {
       },
     },
   });
-  if (!c) throw new AppError('Constancia no encontrada', 404);
+  if (!c || c.deletedAt) throw new AppError('Constancia no encontrada', 404);
   // ¿Firma un médico? (las constancias viejas las firmaba la podóloga: el PDF pone «Médico · CMP» solo si lo es).
   const firmante = await prisma.profesional.findUnique({ where: { id: c.emisorProfesionalId }, select: { tipo: true } });
   return { ...c, emisorEsMedico: firmante?.tipo === 'medico' };
@@ -195,7 +220,7 @@ export async function constanciaParaPdf(id: string) {
 export type ConstanciaParaPdf = Awaited<ReturnType<typeof constanciaParaPdf>>;
 
 export async function metaConstancia(id: string) {
-  const c = await prisma.constanciaClinica.findUnique({ where: { id }, select: { id: true, sedeId: true, pacienteId: true, atencionId: true } });
-  if (!c) throw new AppError('Constancia no encontrada', 404);
+  const c = await prisma.constanciaClinica.findUnique({ where: { id }, select: { id: true, sedeId: true, pacienteId: true, atencionId: true, deletedAt: true } });
+  if (!c || c.deletedAt) throw new AppError('Constancia no encontrada', 404);
   return c;
 }

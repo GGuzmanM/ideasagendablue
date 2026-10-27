@@ -241,6 +241,7 @@ export async function getAtencionCompleta(id: string) {
       dictado: { select: { texto: true, aplicadoEn: true, actualizadoEn: true, registradoEtiqueta: true } },
       // Constancias y descansos médicos (5.4): resumen (el texto va en su PDF).
       constancias: {
+        where: { deletedAt: null },
         orderBy: { fechaEmision: 'asc' },
         select: { id: true, numero: true, tipo: true, estado: true, fechaEmision: true, desde: true, hasta: true, dias: true, diagnosticoCie10Codigo: true, emisorNombre: true, emisorUsuarioId: true, codigoVerificacion: true, anuladaEn: true, motivoAnulacion: true },
       },
@@ -313,7 +314,7 @@ export async function historiaParaPdf(pacienteId: string) {
             },
           },
           consentimientos: { orderBy: { firmadoEn: 'asc' }, select: { numero: true, procedimiento: true, firmanteNombre: true, firmanteRelacion: true, estado: true, firmadoEn: true } },
-          constancias: { where: { NOT: { estado: 'anulada' } }, orderBy: { fechaEmision: 'asc' }, select: { numero: true, tipo: true, estado: true, fechaEmision: true, desde: true, hasta: true, dias: true, emisorNombre: true, diagnosticoCie10Codigo: true } },
+          constancias: { where: { deletedAt: null, NOT: { estado: 'anulada' } }, orderBy: { fechaEmision: 'asc' }, select: { numero: true, tipo: true, estado: true, fechaEmision: true, desde: true, hasta: true, dias: true, emisorNombre: true, diagnosticoCie10Codigo: true } },
           fotos: { where: { deletedAt: null }, orderBy: { tomadaEn: 'asc' }, select: { id: true, ruta: true, mime: true, tamano: true, zona: true, pie: true, categoria: true, tomadaEn: true } },
         },
       },
@@ -824,7 +825,7 @@ const conteoVigente = {
   notas: { where: { deletedAt: null } }, diagnosticos: { where: { deletedAt: null } }, recetas: { where: { estado: 'emitida' as const } },
   procedimientos: { where: { deletedAt: null } }, escalas: { where: { deletedAt: null } }, marcasPodograma: { where: { deletedAt: null } },
   imagenesPodograma: { where: { deletedAt: null } }, fotos: { where: { deletedAt: null } }, dibujosSilueta: { where: { deletedAt: null } },
-  consentimientos: { where: { estado: 'firmado' } }, constancias: { where: { estado: 'emitida' } }, controles: { where: { NOT: { estado: 'descartado' } } },
+  consentimientos: { where: { estado: 'firmado' } }, constancias: { where: { estado: 'emitida', deletedAt: null } }, controles: { where: { NOT: { estado: 'descartado' } } },
 } as const;
 const conteoTotal = {
   notas: true, diagnosticos: true, recetas: true, procedimientos: true, escalas: true, marcasPodograma: true, imagenesPodograma: true,

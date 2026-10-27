@@ -1,6 +1,7 @@
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useEffect } from 'react';
 import { useAuthStore } from '../../stores/authStore';
+import { RUTA_LOGIN } from '../../utils/rutaLogin';
 import { useNotificacionesStore } from '../../stores/notificacionesStore';
 import { Sidebar } from './Sidebar';
 import { Idea1Sidebar } from './Idea1Sidebar';
@@ -18,7 +19,7 @@ export function Layout() {
   const esAgendaVieja = location.pathname === '/' || location.pathname === '/agenda-vieja';
 
   useEffect(() => {
-    if (!token) navigate('/login', { replace: true });
+    if (!token) navigate(RUTA_LOGIN, { replace: true });
   }, [token, navigate]);
 
   if (!token) return null;

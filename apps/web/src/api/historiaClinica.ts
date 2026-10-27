@@ -506,6 +506,8 @@ export const historiaClinicaApi = {
   // Constancias y descansos médicos (5.4)
   emitirConstancia: (atencionId: string, data: CamposConstancia) => api.post<{ id: string; numero: number; tipo: TipoConstancia; codigoVerificacion: string }>(`${B}/atenciones/${atencionId}/constancias`, data),
   anularConstancia: (id: string, motivo: string) => api.patch<{ ok: boolean }>(`${B}/constancias/${id}/anular`, { motivo }),
+  /** Solo administración: borrado lógico con motivo (queda en la auditoría). */
+  eliminarConstancia: (id: string, motivo: string) => api.patch<{ ok: boolean }>(`${B}/constancias/${id}/eliminar`, { motivo }),
   blobConstanciaPdf: async (id: string): Promise<Blob> => {
     const token = useAuthStore.getState().token;
     const res = await fetch(`/api/v1${B}/constancias/${id}/pdf`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });

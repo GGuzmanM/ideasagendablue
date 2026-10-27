@@ -34,7 +34,7 @@ INSTALACION (primera vez)
      - Respaldo (.dump) a cargar y carpeta uploads anterior: los carga solos.
        El respaldo solo se carga si la base esta vacia o no existe (nunca encima de datos).
      - Carpeta del NAS para la copia de los respaldos y el usuario de Windows con acceso a ella.
-3. Al terminar muestra la direccion. Desde cualquier PC de la red:  https://IP-DEL-SERVIDOR:5180
+3. Al terminar muestra la direccion. Desde cualquier PC de la red:  https://IP-DEL-SERVIDOR:5180/acceso_agenda_lb/login  (la raiz https://IP-DEL-SERVIDOR no muestra nada: es a proposito)
 4. Borra del servidor las copias temporales del .env y del respaldo.
 
 

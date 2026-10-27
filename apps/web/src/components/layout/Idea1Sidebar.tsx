@@ -5,6 +5,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { rutaInicio } from '../../utils/rutaInicio';
 import { useContadorControles } from '../../services/controlesService';
 import { useReservaWebHabilitada } from '../../services/reservaWebService';
+import { rutaWeb } from '../../utils/rutaBase';
 
 // Menú plegado (solo iconos): preferencia del equipo que se usa, guardada en el navegador.
 const CLAVE_PLEGADO = 'limablue-sidebar-plegado';
@@ -77,7 +78,7 @@ export function Idea1Sidebar() {
       <div className={cn('mb-6 flex items-center', plegado ? 'flex-col gap-2 px-0' : 'gap-2 px-3')}>
         <Link to={rutaInicio(usuario)} className={cn('flex items-center gap-3 group min-w-0', plegado ? 'justify-center' : 'flex-1')} title="Limablue Agenda">
           <div className="w-12 h-12 flex items-center justify-center group-hover:scale-105 transition-transform shrink-0">
-            <img src="/logo-login.png" alt="Limablue" className="w-full h-full object-contain" />
+            <img src={rutaWeb('/logo-login.png')} alt="Limablue" className="w-full h-full object-contain" />
           </div>
           {!plegado && (
             <div className="min-w-0">

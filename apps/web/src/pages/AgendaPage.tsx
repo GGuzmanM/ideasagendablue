@@ -32,6 +32,7 @@ import { PopoverCita } from '../components/agenda/PopoverCita';
 import { ModalBuscador } from '../components/agenda/ModalBuscador';
 import { AgendaSkeleton } from '../components/ui/Skeleton';
 import { cn } from '../utils/cn';
+import { rutaWeb } from '../utils/rutaBase';
 
 export function AgendaPage() {
   const { sedeId, setSedeId, fecha, setFecha, unidadNegocioId, setUnidadNegocioId, fechaStr } = useAgendaStore();
@@ -379,7 +380,7 @@ export function AgendaPage() {
             </button>
             {/* Imprimir los comprobantes del día (cierre) en una sola hoja */}
             <button
-              onClick={() => sedeId && window.open(`/imprimir/comprobantes?sede=${sedeId}&fecha=${fechaStr()}`, '_blank', 'noopener')}
+              onClick={() => sedeId && window.open(rutaWeb(`/imprimir/comprobantes?sede=${sedeId}&fecha=${fechaStr()}`), '_blank', 'noopener')}
               disabled={!sedeId}
               title="Imprimir los comprobantes de pago del día en una sola hoja (cierre)"
               data-testid="btn-imprimir-comprobantes"

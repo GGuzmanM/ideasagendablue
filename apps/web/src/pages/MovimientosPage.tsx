@@ -22,6 +22,7 @@ import {
   iniciales,
   esFichaAdicional,
 } from '../services/movimientosService';
+import { rutaWeb } from '../utils/rutaBase';
 
 // ─── Piezas visuales ──────────────────────────────────────────────────────────
 
@@ -577,10 +578,10 @@ export function MovimientosPage() {
   // Mes a exportar en el PDF de cambios (por defecto, el mes actual).
   const [mesExport, setMesExport] = useState(() => hoyStr.slice(0, 7));
   const abrirPdfCambios = () =>
-    window.open(`/imprimir/movimientos?mes=${mesExport}`, '_blank', 'noopener');
+    window.open(rutaWeb(`/imprimir/movimientos?mes=${mesExport}`), '_blank', 'noopener');
   // PDF de cambios PRÓXIMOS: desde el día seleccionado (fechaVista) hasta fin de mes.
   const abrirPdfDesde = () =>
-    window.open(`/imprimir/movimientos?desde=${fechaVista}`, '_blank', 'noopener');
+    window.open(rutaWeb(`/imprimir/movimientos?desde=${fechaVista}`), '_blank', 'noopener');
 
   // Grupo de personal en vista: podólogas (principal), recepción o doctores de baro.
   const qc = useQueryClient();

@@ -89,10 +89,12 @@ export function ConstanciasSection({ a, puedeRegistrar, esMedicoPrescriptor }: {
               </div>
               <button onClick={() => c.ver(x.id)} className={BTN}><span className="material-symbols-outlined text-base">picture_as_pdf</span>Ver</button>
               {c.puedeAnular(x) && <button onClick={() => c.setAnulando(x.id)} className="min-h-[44px] lg:min-h-0 px-3 py-1.5 text-rose-600 text-xs font-semibold hover:underline">Anular</button>}
+              {c.puedeEliminar && <button onClick={() => c.setEliminando(x.id)} data-testid="eliminar-constancia" title="Solo administración" className="min-h-[44px] lg:min-h-0 px-3 py-1.5 text-rose-700 text-xs font-semibold hover:underline flex items-center gap-1"><span className="material-symbols-outlined text-base">delete</span>Eliminar</button>}
             </div>
           ))}
         </div>
       )}
+      {c.eliminando && <DialogoMotivo titulo="Eliminar el documento" descripcion="Se quita de la lista, de la historia en PDF y su código de verificación deja de existir. Queda registrado en la auditoría con tu nombre y el motivo." confirmar="Eliminar" pending={c.eliminarMut.isPending} onConfirmar={(m) => c.eliminarMut.mutate({ id: c.eliminando!, motivo: m })} onClose={() => c.setEliminando(null)} />}
       {c.anulando && <DialogoMotivo titulo="Anular el documento" descripcion="Queda anulado con marca de agua y motivo; si hace falta, emite uno nuevo." confirmar="Anular" pending={c.anularMut.isPending} onConfirmar={(m) => c.anularMut.mutate({ id: c.anulando!, motivo: m })} onClose={() => c.setAnulando(null)} />}
     </section>
   );

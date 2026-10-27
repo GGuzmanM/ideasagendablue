@@ -5,13 +5,14 @@ import { BrowserRouter } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import App from './App';
 import { queryClient } from './lib/queryClient';
+import { BASE_WEB } from './utils/rutaBase';
 import './utils/toastDedupe'; // deduplica toasts por mensaje (no se apilan al repetir)
 import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
+      <BrowserRouter basename={BASE_WEB}>
         <App />
         <Toaster
           position="bottom-right"

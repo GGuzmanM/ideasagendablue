@@ -1,7 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db';
-import { requireAuth, requirePermiso, assertSede, puedeTodasLasSedes, AuthPayload } from '../middleware/auth';
+import { requireAuth, requirePermiso, requireRol, assertSede, puedeTodasLasSedes, AuthPayload } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { filtroFechaVisor, filtroSedeVisor, puedeTodasSedesVisor } from '../utils/rangoVisor';
 import * as hc from '../services/historiaClinicaService';
@@ -476,6 +476,14 @@ router.get('/constancias/:id/pdf', ...verHc, async (req, res) => {
   doc.pipe(res);
   escribirConstanciaPdf(doc, c, qr);
   doc.end();
+});
+// Eliminar (26-oct-2026): SOLO administración, borrado lógico con motivo; queda en la auditoría (ver eliminarConstancia).
+router.patch('/constancias/:id/eliminar', requireAuth, requireRol('admin'), async (req, res) => {
+  const { motivo } = z.object({ motivo: z.string().trim().min(5).max(500) }).parse(req.body);
+  const meta = await cons.metaConstancia(req.params.id);
+  assertSede(req, meta.sedeId);
+  await cons.eliminarConstancia({ ...ctx(req), user: user(req), id: req.params.id, motivo });
+  res.json({ ok: true });
 });
 router.patch('/constancias/:id/anular', ...registrar, async (req, res) => {
   const { motivo } = z.object({ motivo: z.string().trim().min(5).max(500) }).parse(req.body);

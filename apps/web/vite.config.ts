@@ -47,6 +47,10 @@ const reservaPublica = (): Plugin => {
 export default defineConfig(({ mode }) => {
   const https = httpsHabilitado(mode) ? certificadoPropio(mode) : null;
   return {
+  // TODA la web cuelga de este prefijo: https://<servidor>/acceso_agenda_lb/login, /acceso_agenda_lb/pacientes, etc.
+  // (assets, router y enlaces lo toman de aquí vía import.meta.env.BASE_URL → utils/rutaBase.ts). /api, /socket.io,
+  // /uploads y /reserva siguen en la raíz. Si cambia, cambia también PREFIJO_WEB en tools/servidor/lanzador.js.
+  base: '/acceso_agenda_lb/',
   plugins: [react(), reservaPublica(), ...(httpsHabilitado(mode) && !https ? [basicSsl()] : [])],
   resolve: {
     alias: {

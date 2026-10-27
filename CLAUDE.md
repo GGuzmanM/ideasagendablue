@@ -16,6 +16,11 @@ Reemplaza un ERP de escritorio de 14 años. 5 sedes, ~400 citas diarias, 40 pod�
 - Idioma UI: español (Perú). Zona horaria: America/Lima
 - API prefix: `/api/v1/`
 - Frontend proxía `/api` → `http://localhost:3002` (ver `apps/web/vite.config.ts`)
+- **Toda la web cuelga de `/acceso_agenda_lb`** (login en `/acceso_agenda_lb/login`, ventanas en `/acceso_agenda_lb/<ventana>`).
+  Se define una vez en `base` de `vite.config.ts`; el router usa `basename` (`utils/rutaBase.ts`) y lo que NO pasa por el
+  router (`window.open`, `window.location`, imágenes de `/public`) usa `rutaWeb()`. `/api`, `/socket.io`, `/uploads` y
+  `/reserva` siguen en la raíz. En producción `tools/servidor/lanzador.js` sirve solo ese prefijo (`PREFIJO_WEB`) y responde
+  404 neutro a todo lo demás; `/verificar/<código>` sin prefijo (QR de recetas ya impresas) redirige. En dev: `http://localhost:5180/acceso_agenda_lb/`.
 - TypeScript estricto en todo el proyecto
 - Errores API: `{ error: string, code?: string }` via `AppError` en `middleware/errorHandler.ts`
 - Fechas: UTC en DB, convertir a America/Lima en frontend

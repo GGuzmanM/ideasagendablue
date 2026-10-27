@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { composicionSedeApi, type PersonaRoster, type SedeComposicion } from '../../api/composicionSede';
 import { useAuthStore } from '../../stores/authStore';
+import { rutaWeb } from '../../utils/rutaBase';
 
 // Los cargos son las filas de la matriz. El color codifica el rol (sistema de color del documento):
 // un lomo saturado en el riel de la izquierda + un tinte muy tenue en las celdas de esa fila.
@@ -195,7 +196,7 @@ export function ComposicionImprimirPage() {
         <div className="dp-doc">
           <div className="dp-mast">
             <div className="dp-mast-l">
-              <div className="dp-logo"><img src="/logo-login.png" alt="Limablue" /></div>
+              <div className="dp-logo"><img src={rutaWeb('/logo-login.png')} alt="Limablue" /></div>
               <h1 className="dp-title">Distribución de personal</h1>
             </div>
             <div className="dp-mast-r">

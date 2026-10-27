@@ -12,11 +12,12 @@
 // Las zonas de cada vista (y su calibración) viven en utils/zonasPie.ts.
 import type { VistaSilueta } from '../../api/historiaClinica';
 import { SITIOS_MONOFILAMENTO, coordZona, zonaPorId } from '../../utils/zonasPie';
+import { rutaWeb } from '../../utils/rutaBase';
 
 // Geometría de cada foto (misma unidad que el recorte original): ancho total y ancho de la caja de un pie.
 const FOTOS: Record<VistaSilueta, { url: string; anchoImagen: number; anchoPie: number; aspecto: string }> = {
-  plantar: { url: '/Silueta.jpg', anchoImagen: 1544, anchoPie: 744, aspecto: '744 / 1843' },
-  dorsal: { url: '/Silueta-dorsal.jpg', anchoImagen: 1748, anchoPie: 874, aspecto: '874 / 1960' },
+  plantar: { url: rutaWeb('/Silueta.jpg'), anchoImagen: 1544, anchoPie: 744, aspecto: '744 / 1843' },
+  dorsal: { url: rutaWeb('/Silueta-dorsal.jpg'), anchoImagen: 1748, anchoPie: 874, aspecto: '874 / 1960' },
 };
 /** Proporción ancho/alto de la caja de un pie (usar como `aspectRatio` del contenedor). */
 export const aspectoSilueta = (vista: VistaSilueta = 'plantar') => FOTOS[vista].aspecto;

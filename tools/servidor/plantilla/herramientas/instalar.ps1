@@ -264,8 +264,8 @@ if (-not $SinIniciar) {
 
 Titulo 'Listo'
 if ($cfg['MODO_PRUEBA'] -eq 'true') { Aviso 'MODO PRUEBA activo (sin correos ni Outlook). El dia del corte: "Cargar datos del corte.bat".' }
-foreach ($p in $publicas) { Write-Host "  Desde internet:           https://$p$sufijo" -ForegroundColor White }
-foreach ($ip in IPsDelServidor) { Write-Host "  Desde la red del servidor: https://$ip$sufijo" -ForegroundColor White }
+foreach ($p in $publicas) { Write-Host "  Desde internet:           https://$p$sufijo/acceso_agenda_lb/login" -ForegroundColor White }
+foreach ($ip in IPsDelServidor) { Write-Host "  Desde la red del servidor: https://$ip$sufijo/acceso_agenda_lb/login" -ForegroundColor White }
 Write-Host "  Configuracion: $ENVF"
 Write-Host "  Logs:          $DATOS\logs"
 Write-Host ''

@@ -69,11 +69,11 @@ router.get('/constancia/:codigo', async (req, res) => {
     where: { codigoVerificacion: codigo },
     select: {
       id: true, numero: true, tipo: true, fechaEmision: true, estado: true, anuladaEn: true, desde: true, hasta: true, dias: true,
-      emisorNombre: true, emisorRegistro: true, sedeId: true,
+      emisorNombre: true, emisorRegistro: true, sedeId: true, deletedAt: true,
       atencion: { select: { sede: { select: { nombre: true } }, paciente: { select: { nombres: true, apellidoPaterno: true, apellidoMaterno: true } } } },
     },
   });
-  if (!c) throw new AppError('No existe un documento con ese código', 404, 'NO_ENCONTRADO');
+  if (!c || c.deletedAt) throw new AppError('No existe un documento con ese código', 404, 'NO_ENCONTRADO'); // eliminada = no existe
   void registrarAudit({ accion: 'verificar_constancia', entidad: 'constancia', entidadId: c.id, sedeId: c.sedeId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined });
   res.setHeader('Cache-Control', 'no-store');
   const p = c.atencion.paciente;

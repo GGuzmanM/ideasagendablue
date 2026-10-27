@@ -8,6 +8,7 @@ import { baroSolicitudApi, type BaroSolicitudData } from '../../api/baroSolicitu
 import { movimientosApi } from '../../api/movimientos';
 import { esProfesionalNoMovible } from '../../services/movimientosService';
 import { useAuthStore } from '../../stores/authStore';
+import { rutaWeb } from '../../utils/rutaBase';
 
 // Documento imprimible de los CAMBIOS DE PERSONAL de un mes, comparando contra el mes anterior.
 // Por cada tipo (Recepción / Doctores / Podología / Fisioterapia) y persona indica si CAMBIÓ de
@@ -329,7 +330,7 @@ export function MovimientosImprimirPage() {
         <div className="mp-doc">
           <div className="mp-mast">
             <div className="mp-mast-l">
-              <div className="mp-logo"><img src="/logo-login.png" alt="Limablue" /></div>
+              <div className="mp-logo"><img src={rutaWeb('/logo-login.png')} alt="Limablue" /></div>
               <h1 className="mp-title">{desde ? 'Cambios próximos' : 'Cambios de personal'}</h1>
             </div>
             <div className="mp-mast-r">

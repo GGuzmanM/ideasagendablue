@@ -2424,6 +2424,11 @@ model ConstanciaClinica {
   anuladaEn              DateTime?
   anuladaPorUsuarioId    String?   @db.Uuid
   motivoAnulacion        String?
+  // Eliminada (26-oct-2026, solo administración): borrado LÓGICO. La fila se conserva (con quién y por qué) y queda en la
+  // auditoría, pero deja de verse en la historia, en los PDF y en la verificación pública.
+  deletedAt              DateTime?
+  eliminadaPorUsuarioId  String?   @db.Uuid
+  motivoEliminacion      String?
   creadoEn               DateTime  @default(now())
 
   atencion AtencionClinica @relation(fields: [atencionId], references: [id], onDelete: Restrict)

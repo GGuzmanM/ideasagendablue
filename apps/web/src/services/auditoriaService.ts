@@ -284,6 +284,7 @@ export const ACCION_LABEL: Record<string, AccionStyle> = {
   eliminar_receta_favorita:     def('Receta favorita eliminada', 'delete', 'rojo'),
   emitir_constancia:            def('Constancia emitida', 'description', 'teal'),
   anular_constancia:            def('Constancia anulada', 'block', 'rojo'),
+  eliminar_constancia:          def('Constancia eliminada', 'delete', 'rojo'),
   verificar_constancia:         def('Constancia verificada (público)', 'verified', 'cielo'),
   firmar_consentimiento:        def('Consentimiento firmado', 'draw', 'teal'),
   revocar_consentimiento:       def('Consentimiento revocado', 'block', 'rojo'),

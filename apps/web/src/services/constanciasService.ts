@@ -21,6 +21,7 @@ export function useConstancias(atencion: AtencionCompleta, puedeRegistrar: boole
   const [dxCodigo, setDxCodigo] = useState('');
   const [observacion, setObservacion] = useState('');
   const [anulando, setAnulando] = useState<string | null>(null);
+  const [eliminando, setEliminando] = useState<string | null>(null); // solo administración
   // Horario de la constancia de atención (30-sep-2026): por defecto el de la cita; editable si llegó antes o después.
   const sumarMin = (hhmm: string, min: number) => { const [h, m] = hhmm.split(':').map(Number); const t = (h ?? 0) * 60 + (m ?? 0) + min; return `${String(Math.floor(t / 60) % 24).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`; };
   const horaCita = atencion.cita?.horaInicio ?? '';
@@ -66,7 +67,13 @@ export function useConstancias(atencion: AtencionCompleta, puedeRegistrar: boole
     onSuccess: () => { invalidar({ pacienteId: atencion.pacienteId, atencionId: atencion.id, citaId: atencion.citaId }); setAnulando(null); toast.success('Documento anulado'); },
     onError: (e: Error) => toast.error(e.message),
   });
+  const eliminarMut = useMutation({
+    mutationFn: (p: { id: string; motivo: string }) => historiaClinicaApi.eliminarConstancia(p.id, p.motivo),
+    onSuccess: () => { invalidar({ pacienteId: atencion.pacienteId, atencionId: atencion.id, citaId: atencion.citaId }); setEliminando(null); toast.success('Documento eliminado'); },
+    onError: (e: Error) => toast.error(e.message),
+  });
   const ver = async (id: string) => { try { await abrirPdfEnPestana(() => historiaClinicaApi.blobConstanciaPdf(id)); } catch (e) { toast.error((e as Error).message); } };
+  const puedeEliminar = usuario?.rol === 'admin'; // el servidor también lo exige
   const puedeAnular = (c: Constancia) => c.estado === 'emitida' && (tiene('hc.anular') || (!!usuario && c.emisorUsuarioId === usuario.id));
 
   return {
@@ -74,5 +81,6 @@ export function useConstancias(atencion: AtencionCompleta, puedeRegistrar: boole
     tipo, abrir, cerrar, desde, setDesde, dias, setDias, hasta, dxCodigo, setDxCodigo, diagnosticos, observacion, setObservacion,
     horaDesde, setHoraDesde, horaHasta, setHoraHasta, horaCita, finCita, horarioCambiado,
     faltantes, puedeEmitir, emitirMut, emitida, ver, anulando, setAnulando, anularMut, puedeAnular,
+    eliminando, setEliminando, eliminarMut, puedeEliminar,
   };
 }

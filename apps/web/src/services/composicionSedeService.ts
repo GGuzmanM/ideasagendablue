@@ -5,6 +5,7 @@ import { sedesApi } from '../api';
 import { composicionSedeApi, type PersonaRoster, type SedeComposicion } from '../api/composicionSede';
 import { MOTIVO_LABELS } from '../api/movimientos';
 import { useAuthStore } from '../stores/authStore';
+import { rutaWeb } from '../utils/rutaBase';
 
 // ── Helpers de mes ───────────────────────────────────────────────────────────
 
@@ -224,7 +225,7 @@ export function useComposicionSede() {
   const asignacionValida = !!sedeAsig && !!personaId && !!desde && (!hasta || hasta >= desde);
 
   // Vista de impresión (matriz A4) en pestaña nueva → el usuario imprime a PDF.
-  const abrirImprimible = () => window.open(`/imprimir/composicion-sede?mes=${mes}`, '_blank', 'noopener');
+  const abrirImprimible = () => window.open(rutaWeb(`/imprimir/composicion-sede?mes=${mes}`), '_blank', 'noopener');
 
   return {
     puedeGestionar,

@@ -1,4 +1,6 @@
 import { useAuthStore } from '../stores/authStore';
+import { RUTA_LOGIN } from '../utils/rutaLogin';
+import { rutaWeb } from '../utils/rutaBase';
 
 const BASE = '/api/v1';
 
@@ -35,7 +37,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!res.ok) {
     if (res.status === 401) {
       useAuthStore.getState().logout();
-      window.location.href = '/login';
+      window.location.href = rutaWeb(RUTA_LOGIN);
     }
     const err = (await res.json().catch(() => null)) as CuerpoError | null;
     throw Object.assign(new Error(mensajeDeError(res.status, err)), { statusCode: res.status, data: err });
@@ -66,7 +68,7 @@ export const api = {
     if (!res.ok) {
       if (res.status === 401) {
         useAuthStore.getState().logout();
-        window.location.href = '/login';
+        window.location.href = rutaWeb(RUTA_LOGIN);
       }
       const err = (await res.json().catch(() => null)) as CuerpoError | null;
       throw Object.assign(new Error(mensajeDeError(res.status, err)), { statusCode: res.status, data: err });

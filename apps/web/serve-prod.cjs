@@ -27,8 +27,10 @@ app.use(wsProxy);
 app.use(uploadsProxy);
 
 // Archivos estáticos del build + fallback SPA (rutas de cliente → index.html).
-app.use(express.static(DIST));
-app.get('*', (_req, res) => res.sendFile(path.join(DIST, 'index.html')));
+// Toda la web cuelga de /acceso_agenda_lb (mismo prefijo que `base` en vite.config.ts); fuera de él, 404.
+app.use('/acceso_agenda_lb', express.static(DIST));
+app.get('/acceso_agenda_lb*', (_req, res) => res.sendFile(path.join(DIST, 'index.html')));
+app.use((_req, res) => res.status(404).type('text/plain').send('Not Found'));
 
 const server = app.listen(PORT, () => {
   console.log(`🌐 Web estático en http://localhost:${PORT} · proxy /api,/socket.io → ${API_TARGET}`);

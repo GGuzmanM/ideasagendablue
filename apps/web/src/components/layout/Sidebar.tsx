@@ -2,6 +2,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { cn } from '../../utils/cn';
 import { useAuthStore } from '../../stores/authStore';
 import { useContadorControles } from '../../services/controlesService';
+import { rutaWeb } from '../../utils/rutaBase';
 
 // El menú se guía por PERMISOS del rol (configurables en Administración → Roles).
 const navItems = [
@@ -29,7 +30,7 @@ export function Sidebar() {
       {/* Logo */}
       <div className="mb-4">
         <div className="w-9 h-9 bg-white rounded-xl flex items-center justify-center p-1.5" title="Limablue Agenda">
-          <img src="/logo-login.png" alt="Limablue" className="w-full h-full object-contain" />
+          <img src={rutaWeb('/logo-login.png')} alt="Limablue" className="w-full h-full object-contain" />
         </div>
       </div>
 

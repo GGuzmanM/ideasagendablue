@@ -5,6 +5,7 @@
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { verificarDocumento, TIPO_DOC_LABEL } from '../api/recetas';
+import { rutaWeb } from '../utils/rutaBase';
 
 const fecha = (iso: string) => new Date(iso).toLocaleDateString('es-PE', { timeZone: 'America/Lima', day: '2-digit', month: 'long', year: 'numeric' });
 const dia = (iso: string) => iso.slice(0, 10).split('-').reverse().join('/');
@@ -30,7 +31,7 @@ export function VerificarRecetaPage() {
     <div className="min-h-screen bg-slate-100 flex items-start justify-center p-4 sm:p-8">
       <div className="w-full max-w-lg bg-white rounded-2xl shadow-lg overflow-hidden">
         <div className="bg-[#003366] px-6 py-4 flex items-center gap-3">
-          <img src="/LOGO LB.png" alt="Limablue" className="h-8 bg-white rounded-md px-2 py-1" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+          <img src={rutaWeb('/LOGO LB.png')} alt="Limablue" className="h-8 bg-white rounded-md px-2 py-1" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
           <div className="text-white">
             <p className="font-bold leading-tight">Verificación de documento</p>
             <p className="text-xs text-white/70">Código {codigo.toUpperCase()}</p>
