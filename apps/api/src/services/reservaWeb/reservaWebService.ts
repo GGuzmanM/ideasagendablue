@@ -1,14 +1,14 @@
 /**
- * RESERVA WEB (05-oct-2026): reserva de citas desde la página pública (www.limablue.com/reserva) con pago previo.
+ * RESERVA WEB (05-oct-2026; sin pasarela de pago desde el 29-oct-2026): reserva de citas desde la página pública
+ * (/reserva) y desde el chat de WhatsApp (API con llave, routes/reservaChat.ts).
  *
- * Flujo: catálogo → días/horas libres → crear reserva (aparta el horario RESERVA_WEB_MINUTOS_APARTADO min) →
- * iniciar pago en la pasarela → aviso de pago aprobado → se crea la cita en la Agenda (canal «web», pago completo,
- * profesional asignado automáticamente) con el MISMO endpoint que usa recepción (POST /citas), así hereda todas
- * sus reglas (anti doble reserva, almuerzos, permisos, correo de reserva, tiempo real, auditoría).
+ * Flujo: catálogo → días/horas libres → confirmar: se registra al paciente (si no existe) y se CREA LA CITA en la
+ * Agenda en ese momento (canal «web» o «whatsapp», pago pendiente: paga en la sede) con el MISMO endpoint que usa
+ * recepción (POST /citas), así hereda todas sus reglas (anti doble reserva, almuerzos, permisos, correo de reserva,
+ * tiempo real, auditoría). Ya no hay apartado de horario ni cobro en línea.
  *
- * Disponibilidad: la de siempre (calcularDisponibilidad) desglosada por profesional, MENOS los horarios ya
- * apartados por otras reservas web. Nunca se exponen nombres de profesionales ni datos de otros pacientes.
- * Todo queda inerte salvo RESERVA_WEB_HABILITADA=1.
+ * Disponibilidad: la de siempre (calcularDisponibilidad) desglosada por profesional. Nunca se exponen nombres de
+ * profesionales ni datos de otros pacientes. La página pública queda inerte salvo RESERVA_WEB_HABILITADA=1.
  */
 import crypto from 'crypto';
 import { prisma } from '../../db';
@@ -17,22 +17,18 @@ import { calcularDisponibilidad } from '../disponibilidad';
 import { fechaDb, fechaAStr, hoyLimaStr, LIMA_OFFSET_H } from '../../utils/fechaLima';
 import { registrarAudit } from '../audit';
 import { timeToMinutes } from '@limablue/shared';
-import { pasarelaActiva, type AvisoPago, type DatosCheckout } from './pasarelas';
 import { intentoConToken, enlazarReserva } from './intentos';
+import type { TipoDocumentoReserva } from './validaciones';
+import { precioWebEnSede, aNumero } from './precios';
 
 const num = (v: string | undefined, def: number) => (v && Number.isFinite(Number(v)) ? Number(v) : def);
-const MINUTOS_APARTADO = () => num(process.env.RESERVA_WEB_MINUTOS_APARTADO, 10);
 const DIAS_MAX = () => num(process.env.RESERVA_WEB_DIAS_MAX, 30);
 const ANTICIPACION_MIN = () => num(process.env.RESERVA_WEB_ANTICIPACION_MIN, 120); // reservar hoy: al menos 2 h antes
-const ESTADOS_QUE_OCUPAN = ['esperando_pago', 'pagada'];
 
 export function reservaWebHabilitada(): boolean {
   const v = (process.env.RESERVA_WEB_HABILITADA || '').trim().toLowerCase();
   return v === '1' || v === 'true';
 }
-
-// 21-oct-2026: la cita se crea SOLO cuando el pago queda aprobado (procesarAvisoPago). Se quitó el modo
-// RESERVA_WEB_MODO=sin_pago (creaba la cita al elegir la hora, sin pagar). Sin pasarela, la reserva no agenda.
 
 function sumarDias(fecha: string, dias: number): string {
   const d = fechaDb(fecha); d.setUTCDate(d.getUTCDate() + dias); return fechaAStr(d);
@@ -42,11 +38,16 @@ function minutosAhoraLima(ref: Date = new Date()): number {
 }
 
 // ─── Catálogo ─────────────────────────────────────────────────────────────────
-export interface VarianteWeb { id: string | null; nombre: string; precio: number }
+/**
+ * `precio` es el precio web GENERAL (el que rige en las sedes sin precio propio; si no hay ninguno, el menor de las sedes).
+ * `precios` es el precio en CADA sede donde ese tipo se puede reservar: el que se cobra en una sede es `precios[sedeId]`.
+ * Una sede que no aparece en `precios` no ofrece ese tipo.
+ */
+export interface VarianteWeb { id: string | null; nombre: string; precio: number; precios: Record<string, number> }
 export interface ServicioWeb { id: string; nombre: string; duracionMinutos: number; unidad: string; sedes: string[]; variantes: VarianteWeb[] }
 
 export async function catalogo() {
-  const [sedes, sedeUnidades, servicios] = await Promise.all([
+  const [sedes, sedeUnidades, servicios, preciosServicio, preciosTipo] = await Promise.all([
     prisma.sede.findMany({ where: { activa: true, deletedAt: null }, orderBy: [{ orden: 'asc' }, { nombre: 'asc' }], select: { id: true, nombre: true, direccion: true, horario: true } }),
     prisma.sedeUnidadNegocio.findMany({ select: { sedeId: true, unidadNegocioId: true } }),
     prisma.servicio.findMany({
@@ -57,39 +58,56 @@ export async function catalogo() {
         subcategorias: { where: { activo: true, deletedAt: null, reservaOnline: true }, orderBy: [{ orden: 'asc' }, { nombre: 'asc' }] },
       },
     }),
+    prisma.servicioPrecioWebSede.findMany(),
+    prisma.subcategoriaPrecioWebSede.findMany(),
   ]);
   const sedesActivas = new Set(sedes.map((s) => s.id));
+  const delServicio = new Map(preciosServicio.map((p) => [`${p.servicioId}|${p.sedeId}`, Number(p.precio)]));
+  const delTipo = new Map(preciosTipo.map((p) => [`${p.subcategoriaId}|${p.sedeId}`, Number(p.precio)]));
   const out: ServicioWeb[] = [];
   for (const s of servicios) {
-    const variantes: VarianteWeb[] = s.subcategorias.length
-      ? s.subcategorias.map((v) => ({ id: v.id, nombre: v.nombre, precio: Number(v.precioReferencial ?? s.precioOnline ?? s.precioReferencial ?? 0) }))
-      : [{ id: null, nombre: s.nombre, precio: Number(s.precioOnline ?? s.precioReferencial ?? 0) }];
-    const conPrecio = variantes.filter((v) => v.precio > 0); // sin precio no se puede cobrar en línea
-    if (!conPrecio.length) continue;
+    const sedesDelArea = sedeUnidades.filter((x) => x.unidadNegocioId === s.unidadNegocio.id && sedesActivas.has(x.sedeId)).map((x) => x.sedeId);
+    const armar = (id: string | null, nombre: string, tipo: { web: number | null; referencial: number | null } | null): VarianteWeb | null => {
+      const calcular = (sedeId: string | null) => precioWebEnSede(
+        { servicioWeb: aNumero(s.precioOnline), servicioReferencial: aNumero(s.precioReferencial), servicioSede: sedeId ? delServicio.get(`${s.id}|${sedeId}`) ?? null : null },
+        tipo ? { tipoWeb: tipo.web, tipoReferencial: tipo.referencial, tipoSede: sedeId && id ? delTipo.get(`${id}|${sedeId}`) ?? null : null } : null,
+      );
+      const precios: Record<string, number> = {};
+      for (const sedeId of sedesDelArea) { const p = calcular(sedeId); if (p != null) precios[sedeId] = p; }
+      const lista = Object.values(precios);
+      if (!lista.length) return null; // sin precio en ninguna sede no se muestra (el paciente debe saber cuánto pagará en la sede)
+      return { id, nombre, precio: calcular(null) ?? Math.min(...lista), precios };
+    };
+    const variantes = (s.subcategorias.length
+      ? s.subcategorias.map((v) => armar(v.id, v.nombre, { web: aNumero(v.precioOnline), referencial: aNumero(v.precioReferencial) }))
+      : [armar(null, s.nombre, null)]
+    ).filter((v): v is VarianteWeb => v !== null);
+    if (!variantes.length) continue;
     out.push({
       id: s.id, nombre: s.nombre, duracionMinutos: s.duracionMinutos, unidad: s.unidadNegocio.nombre,
-      sedes: sedeUnidades.filter((x) => x.unidadNegocioId === s.unidadNegocio.id && sedesActivas.has(x.sedeId)).map((x) => x.sedeId),
-      variantes: conPrecio,
+      sedes: sedesDelArea.filter((sedeId) => variantes.some((v) => v.precios[sedeId] !== undefined)),
+      variantes,
     });
   }
   return {
     sedes: sedes.map((s) => ({ id: s.id, nombre: s.nombre, direccion: s.direccion, horario: s.horario })),
     servicios: out.filter((s) => s.sedes.length > 0),
-    reglas: { diasMaximos: DIAS_MAX(), minutosApartado: MINUTOS_APARTADO(), anticipacionMinutosHoy: ANTICIPACION_MIN() },
+    reglas: { diasMaximos: DIAS_MAX(), anticipacionMinutosHoy: ANTICIPACION_MIN() },
   };
 }
 
-/** Servicio + variante reservables en esa sede, con el monto a cobrar. */
+/** Servicio + variante reservables en esa sede, con el precio de ESA sede (el que se pagará allí). */
 export async function servicioReservable(sedeId: string, servicioId: string, subcategoriaId?: string | null) {
   const cat = await catalogo();
   const sv = cat.servicios.find((s) => s.id === servicioId);
   if (!sv || !sv.sedes.includes(sedeId)) throw new AppError('Ese servicio no se puede reservar en línea en esta sede', 400, 'SERVICIO_NO_RESERVABLE');
-  const variante = sv.variantes.length === 1 && sv.variantes[0]!.id === null
-    ? sv.variantes[0]!
-    : sv.variantes.find((v) => v.id === (subcategoriaId ?? null));
-  if (!variante) throw new AppError('Elige el tipo de servicio', 400, 'VARIANTE_REQUERIDA');
+  const enSede = sv.variantes.filter((v) => v.precios[sedeId] !== undefined);
+  const variante = enSede.length === 1 && enSede[0]!.id === null
+    ? enSede[0]!
+    : enSede.find((v) => v.id === (subcategoriaId ?? null));
+  if (!variante) throw new AppError(subcategoriaId ? 'Ese tipo de servicio no se puede reservar en línea en esta sede' : 'Elige el tipo de servicio', 400, 'VARIANTE_REQUERIDA');
   const servicio = await prisma.servicio.findUniqueOrThrow({ where: { id: servicioId }, select: { unidadNegocioId: true, duracionMinutos: true, nombre: true } });
-  return { servicio, variante, monto: variante.precio };
+  return { servicio, variante, monto: variante.precios[sedeId]! };
 }
 
 // ─── Disponibilidad ───────────────────────────────────────────────────────────
@@ -99,7 +117,7 @@ function validarVentana(fecha: string) {
   if (fecha > sumarDias(hoy, DIAS_MAX())) throw new AppError(`Solo se puede reservar hasta ${DIAS_MAX()} días adelante`, 400, 'FECHA_MUY_LEJANA');
 }
 
-/** Horas libres (HH:MM) para ese servicio, juntando a todos los profesionales y descontando lo apartado en la web. */
+/** Horas libres (HH:MM) para ese servicio, juntando a todos los profesionales. */
 export async function horasLibres(sedeId: string, servicioId: string, fecha: string): Promise<string[]> {
   validarVentana(fecha);
   const servicio = await prisma.servicio.findUnique({ where: { id: servicioId }, select: { unidadNegocioId: true, duracionMinutos: true } });
@@ -111,21 +129,10 @@ export async function horasLibres(sedeId: string, servicioId: string, fecha: str
   const libresPorHora = new Map<string, number>();
   for (const s of slots) if (s.disponible) libresPorHora.set(s.horaInicio, (libresPorHora.get(s.horaInicio) ?? 0) + 1);
 
-  const ahora = new Date();
-  const apartadas = await prisma.reservaWeb.findMany({
-    where: {
-      sedeId, unidadNegocioId: servicio.unidadNegocioId, fecha: fechaDb(fecha),
-      OR: [{ estado: 'esperando_pago', expiraEn: { gt: ahora } }, { estado: 'pagada' }],
-    },
-    select: { horaInicio: true, duracionMinutos: true },
-  });
-  const corte = fecha === hoyLimaStr() ? minutosAhoraLima(ahora) + ANTICIPACION_MIN() : -1;
+  const corte = fecha === hoyLimaStr() ? minutosAhoraLima(new Date()) + ANTICIPACION_MIN() : -1;
   const out: string[] = [];
   for (const [hora, libres] of libresPorHora) {
-    const ini = timeToMinutes(hora), fin = ini + servicio.duracionMinutos;
-    if (ini < corte) continue;
-    const ocupadasWeb = apartadas.filter((a) => { const ai = timeToMinutes(a.horaInicio); return ai < fin && ai + a.duracionMinutos > ini; }).length;
-    if (libres - ocupadasWeb > 0) out.push(hora);
+    if (libres > 0 && timeToMinutes(hora) >= corte) out.push(hora);
   }
   return out.sort((a, b) => timeToMinutes(a) - timeToMinutes(b));
 }
@@ -151,193 +158,195 @@ export async function diasDisponibles(sedeId: string, servicioId: string, desde:
   return valor;
 }
 
-// ─── Crear reserva (aparta el horario) ────────────────────────────────────────
+// ─── Reservar (crea la cita) ──────────────────────────────────────────────────
 export interface NuevaReservaWeb {
-  numeroDocumento: string; nombres: string; apellidoPaterno: string; apellidoMaterno?: string | null;
-  telefono: string; email: string; sedeId: string; servicioId: string; subcategoriaId?: string | null;
+  tipoDocumento: TipoDocumentoReserva; numeroDocumento: string; nombres: string; apellidoPaterno: string; apellidoMaterno?: string | null;
+  telefono: string; email?: string | null; sedeId: string; servicioId: string; subcategoriaId?: string | null;
   fecha: string; horaInicio: string;
+}
+export interface OrigenReserva {
+  /** Valor de un canal de la Agenda: «web» (página) o «whatsapp» (chat). */
+  canal: string;
+  /** Id que manda el chat para que un reintento de la misma petición no cree otra cita. */
+  referencia?: string | null;
+  ip?: string; userAgent?: string;
+  /** Solo la página: el intento (seguimiento de quién empezó y hasta dónde llegó). */
+  intentoId?: string | null; intentoToken?: string | null;
 }
 
 function nuevoCodigo(): string { return 'LB-' + String(crypto.randomInt(100000, 1000000)); }
 
-export async function crearReserva(d: NuevaReservaWeb & { intentoId?: string | null; intentoToken?: string | null }, meta: { ip?: string; userAgent?: string }) {
-  // 06-oct-2026: si viene de un intento (página nueva), el apartado vence cuando vence el intento (10 min desde el
-  // primer «Continuar»), no 10 min desde aquí.
-  const intento = d.intentoId && d.intentoToken ? await intentoConToken(d.intentoId, d.intentoToken) : null;
-  const { servicio, variante, monto } = await servicioReservable(d.sedeId, d.servicioId, d.subcategoriaId);
-  const ahora = new Date();
-  // Freno de abuso: pocas reservas abiertas a la vez por documento y por IP.
-  const otraQueLaPropia = intento?.reservaId ? { id: { not: intento.reservaId } } : {}; // la que este intento va a soltar no cuenta
-  const [porDni, porIp] = await Promise.all([
-    prisma.reservaWeb.count({ where: { numeroDocumento: d.numeroDocumento, estado: 'esperando_pago', expiraEn: { gt: ahora }, ...otraQueLaPropia } }),
-    meta.ip ? prisma.reservaWeb.count({ where: { ip: meta.ip, estado: 'esperando_pago', expiraEn: { gt: ahora }, ...otraQueLaPropia } }) : Promise.resolve(0),
-  ]);
-  if (porDni >= 2 || porIp >= 5) throw new AppError('Ya tienes una reserva en curso. Termina de pagarla o espera unos minutos.', 429, 'RESERVAS_EN_CURSO');
-
-  const reserva = await prisma.$transaction(async (tx) => {
-    // Un solo «apartado» a la vez por sede y día: dos personas no pueden tomar el último cupo al mismo tiempo.
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`reserva-web|${d.sedeId}|${d.fecha}`}))`;
-    // Si volvió atrás y eligió otra hora: suelta el apartado anterior de ESTE intento (no ocupa dos horarios).
-    if (intento?.reservaId) {
-      await tx.reservaWeb.updateMany({ where: { id: intento.reservaId, estado: 'esperando_pago' }, data: { estado: 'expirada', expiraEn: ahora } });
-    }
-    const libres = await horasLibres(d.sedeId, d.servicioId, d.fecha);
-    if (!libres.includes(d.horaInicio)) throw new AppError('Esa hora acaba de ocuparse. Elige otra.', 409, 'HORA_NO_DISPONIBLE');
-    for (let vuelta = 0; vuelta < 5; vuelta++) {
-      const codigo = nuevoCodigo();
-      if (await tx.reservaWeb.findUnique({ where: { codigo }, select: { id: true } })) continue;
-      return tx.reservaWeb.create({
-        data: {
-          codigo, tokenConsulta: crypto.randomBytes(24).toString('hex'), estado: 'esperando_pago',
-          tipoDocumento: 'DNI', numeroDocumento: d.numeroDocumento,
-          nombres: d.nombres.trim(), apellidoPaterno: d.apellidoPaterno.trim(), apellidoMaterno: d.apellidoMaterno?.trim() || null,
-          telefono: d.telefono, email: d.email.trim().toLowerCase(),
-          sedeId: d.sedeId, unidadNegocioId: servicio.unidadNegocioId, servicioId: d.servicioId, subcategoriaId: variante.id,
-          fecha: fechaDb(d.fecha), horaInicio: d.horaInicio, duracionMinutos: servicio.duracionMinutos,
-          monto, expiraEn: intento ? intento.expiraEn : new Date(ahora.getTime() + MINUTOS_APARTADO() * 60_000),
-          ip: meta.ip ?? null, userAgent: meta.userAgent?.slice(0, 300) ?? null,
-        },
-      });
-    }
-    throw new AppError('No se pudo generar el código de reserva, intenta de nuevo', 500, 'CODIGO_RESERVA');
-  }, { timeout: 20_000 });
-  cacheDias.clear();
-  if (intento) {
-    await enlazarReserva(intento.id, reserva.id, { sedeId: d.sedeId, servicioId: d.servicioId, subcategoriaId: variante.id, fecha: d.fecha, horaInicio: d.horaInicio });
+/** Paciente por documento (si ya existe NO se cambian sus datos) o nuevo con lo que escribió. */
+async function pacienteDeReserva(d: NuevaReservaWeb, origen: string, codigo: string) {
+  const donde = { tipoDocumento: d.tipoDocumento, numeroDocumento: d.numeroDocumento, deletedAt: null } as const;
+  const existente = await prisma.paciente.findFirst({ where: donde, select: { id: true } });
+  if (existente) return existente.id;
+  const canal = await prisma.canal.findFirst({ where: { valor: origen, deletedAt: null }, select: { id: true } });
+  try {
+    const p = await prisma.paciente.create({
+      data: {
+        nombres: d.nombres.trim(), apellidoPaterno: d.apellidoPaterno.trim(), apellidoMaterno: d.apellidoMaterno?.trim() ?? '',
+        tipoDocumento: d.tipoDocumento, numeroDocumento: d.numeroDocumento, telefono: d.telefono, email: d.email ?? null,
+        canalId: canal?.id ?? null, requiereActualizacionDatos: true, notas: `Registrado desde la reserva ${origen === 'web' ? 'web' : `por ${origen}`} (${codigo}).`,
+      },
+      select: { id: true },
+    });
+    void registrarAudit({ accion: 'crear_paciente', entidad: 'paciente', entidadId: p.id, despues: { origen: `reserva_${origen}`, tipoDocumento: d.tipoDocumento, numeroDocumento: d.numeroDocumento, nombres: d.nombres, apellidoPaterno: d.apellidoPaterno } });
+    return p.id;
+  } catch {
+    // Alta simultánea del mismo documento: el índice único lo frena; se usa el que quedó.
+    const otro = await prisma.paciente.findFirst({ where: donde, select: { id: true } });
+    if (!otro) throw new AppError('No se pudo registrar al paciente', 500, 'PACIENTE_RESERVA');
+    return otro.id;
   }
-  void registrarAudit({ accion: 'reserva_web_creada', entidad: 'reserva_web', entidadId: reserva.id, sedeId: reserva.sedeId, ip: meta.ip, userAgent: meta.userAgent,
-    despues: { codigo: reserva.codigo, fecha: d.fecha, horaInicio: d.horaInicio, servicio: servicio.nombre, variante: variante.nombre, monto } });
-  return reserva;
 }
 
-// ─── Consultar / pagar ───────────────────────────────────────────────────────
-async function reservaConToken(codigo: string, token: string) {
-  const r = await prisma.reservaWeb.findUnique({ where: { codigo } });
-  const ok = !!r && r.tokenConsulta.length === token.length && crypto.timingSafeEqual(Buffer.from(r.tokenConsulta), Buffer.from(token));
-  if (!r || !ok) throw new AppError('Reserva no encontrada', 404, 'RESERVA_NO_ENCONTRADA');
-  return r;
+/** Crea la cita con el mismo endpoint de la Agenda (POST /citas) usando la llave interna de la reserva web. */
+async function crearCitaEnAgenda(p: { pacienteId: string; unidadNegocioId: string; subcategoriaId: string | null; codigo: string; monto: number; claveIdempotencia: string }, d: NuevaReservaWeb, canal: string) {
+  const llave = process.env.RESERVA_WEB_API_KEY;
+  if (!llave) throw new AppError('La reserva en línea no está disponible por el momento', 503, 'RESERVA_NO_CONFIGURADA');
+  const base = process.env.RESERVA_WEB_API_INTERNA || `http://127.0.0.1:${Number(process.env.PORT) || 3001}`;
+  const dondePaga = canal === 'web' ? 'por internet' : `por ${canal}`;
+  let resp: Response;
+  try {
+    resp = await fetch(`${base}/api/v1/citas`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `ApiKey ${llave}`, 'Idempotency-Key': p.claveIdempotencia },
+      body: JSON.stringify({
+        pacienteId: p.pacienteId, sedeId: d.sedeId, unidadNegocioId: p.unidadNegocioId, servicioId: d.servicioId,
+        ...(p.subcategoriaId ? { subcategoriaId: p.subcategoriaId } : {}),
+        fecha: d.fecha, horaInicio: d.horaInicio, canal, estadoPago: 'pendiente',
+        comentarioRecepcion: `Reserva ${p.codigo}: reservó ${dondePaga} sin pago en línea; paga S/ ${p.monto.toFixed(2)} en la sede.`,
+      }),
+    });
+  } catch {
+    throw new AppError('El sistema no pudo registrar la cita en este momento. Intenta de nuevo.', 502, 'AGENDA_NO_RESPONDE');
+  }
+  const cuerpo = await resp.json().catch(() => ({})) as { id?: string; message?: string; error?: string };
+  if (!resp.ok || !cuerpo.id) {
+    console.error(`[reserva-web] ${p.codigo}: la Agenda no creó la cita (HTTP ${resp.status}): ${cuerpo.message || cuerpo.error || ''}`);
+    if (resp.status >= 500) throw new AppError('El sistema no pudo registrar la cita en este momento. Intenta de nuevo.', 502, 'AGENDA_ERROR');
+    // Casi siempre: alguien tomó ese horario justo antes. La Agenda explica el motivo en español.
+    throw new AppError(cuerpo.message || 'Esa hora acaba de ocuparse. Elige otra.', 409, 'HORA_NO_DISPONIBLE');
+  }
+  return cuerpo.id;
 }
 
-export async function estadoReserva(codigo: string, token: string) {
-  const r = await reservaConToken(codigo, token);
-  const vencida = r.estado === 'esperando_pago' && r.expiraEn <= new Date();
+async function nombreCanalValido(canal: string) {
+  const c = await prisma.canal.findFirst({ where: { valor: canal, deletedAt: null }, select: { valor: true } });
+  if (!c) throw new AppError(`El canal «${canal}» no existe en la Agenda`, 400, 'CANAL_INVALIDO');
+}
+
+export interface ReservaCreada {
+  codigo: string; token: string; estado: 'confirmada'; citaId: string; repetida: boolean;
+  fecha: string; horaInicio: string; duracionMinutos: number; monto: number; moneda: string;
+  sede: { nombre: string; direccion: string | null } | null; servicio: string; variante: string | null;
+}
+
+async function detalleDe(r: { codigo: string; tokenConsulta: string; citaId: string | null; fecha: Date; horaInicio: string; duracionMinutos: number; monto: unknown; moneda: string; sedeId: string; servicioId: string; subcategoriaId: string | null }, repetida: boolean): Promise<ReservaCreada> {
   const [sede, servicio, variante] = await Promise.all([
     prisma.sede.findUnique({ where: { id: r.sedeId }, select: { nombre: true, direccion: true } }),
     prisma.servicio.findUnique({ where: { id: r.servicioId }, select: { nombre: true } }),
     r.subcategoriaId ? prisma.subcategoriaServicio.findUnique({ where: { id: r.subcategoriaId }, select: { nombre: true } }) : Promise.resolve(null),
   ]);
   return {
-    codigo: r.codigo, estado: vencida ? 'expirada' : r.estado, nombres: r.nombres,
-    fecha: fechaAStr(r.fecha), horaInicio: r.horaInicio, duracionMinutos: r.duracionMinutos,
-    sede, servicio: servicio?.nombre ?? null, variante: variante?.nombre ?? null,
-    monto: Number(r.monto), moneda: r.moneda, expiraEn: r.expiraEn, pagadoEn: r.pagadoEn,
-    pagoPendiente: r.pasarela === 'sin_pago', // reservó sin pagar: paga en la sede
+    codigo: r.codigo, token: r.tokenConsulta, estado: 'confirmada', citaId: r.citaId ?? '', repetida,
+    fecha: fechaAStr(r.fecha), horaInicio: r.horaInicio, duracionMinutos: r.duracionMinutos, monto: Number(r.monto), moneda: r.moneda,
+    sede, servicio: servicio?.nombre ?? '', variante: variante?.nombre ?? null,
   };
 }
 
-export async function iniciarPago(codigo: string, token: string): Promise<DatosCheckout> {
-  const r = await reservaConToken(codigo, token);
-  if (r.estado !== 'esperando_pago') throw new AppError('Esta reserva ya no está esperando pago', 409, 'RESERVA_NO_PAGABLE');
-  if (r.expiraEn <= new Date()) throw new AppError('Se venció el tiempo para pagar. Vuelve a elegir tu horario.', 410, 'RESERVA_VENCIDA');
-  const p = pasarelaActiva();
-  const servicio = await prisma.servicio.findUnique({ where: { id: r.servicioId }, select: { nombre: true } });
-  const checkout = await p.iniciarPago({
-    codigo: r.codigo, monto: Number(r.monto), moneda: r.moneda, email: r.email, nombres: r.nombres, apellidoPaterno: r.apellidoPaterno,
-    descripcion: `Limablue · ${servicio?.nombre ?? 'Cita'} · ${fechaAStr(r.fecha)} ${r.horaInicio}`,
-  });
-  await prisma.reservaWeb.update({ where: { id: r.id }, data: { pasarela: p.nombre } });
-  return checkout;
-}
+export async function reservar(d: NuevaReservaWeb, o: OrigenReserva): Promise<ReservaCreada> {
+  await nombreCanalValido(o.canal);
+  const intento = o.intentoId && o.intentoToken ? await intentoConToken(o.intentoId, o.intentoToken, false) : null;
+  const { servicio, variante, monto } = await servicioReservable(d.sedeId, d.servicioId, d.subcategoriaId);
 
-// ─── Aviso de pago → crear la cita ────────────────────────────────────────────
-/** Procesa un aviso de la pasarela. Idempotente: un aviso repetido no crea dos citas. */
-export async function procesarAvisoPago(aviso: AvisoPago, pasarela: string) {
-  const r = await prisma.reservaWeb.findUnique({ where: { codigo: aviso.codigo } });
-  if (!r) { console.warn('[reserva-web] aviso de pago de una reserva que no existe:', aviso.codigo); return { ok: false, motivo: 'no_existe' }; }
-  if (r.estado === 'confirmada' || r.estado === 'reembolsar') return { ok: true, estado: r.estado };
-  if (!aviso.aprobado) {
-    await prisma.reservaWeb.update({ where: { id: r.id }, data: { pagoEstado: aviso.estado, pagoReferencia: aviso.referencia, pagoDetalle: (aviso.detalle ?? null) as never } });
-    return { ok: true, estado: r.estado };
+  // Freno de abuso de la página pública (el chat entra con llave y tiene su propio límite): pocas reservas por
+  // documento y por conexión en 24 h.
+  if (o.canal === 'web') {
+    const desde = new Date(Date.now() - 24 * 3_600_000);
+    const [porDoc, porIp] = await Promise.all([
+      prisma.reservaWeb.count({ where: { canal: 'web', tipoDocumento: d.tipoDocumento, numeroDocumento: d.numeroDocumento, estado: 'confirmada', creadoEn: { gt: desde } } }),
+      o.ip ? prisma.reservaWeb.count({ where: { canal: 'web', ip: o.ip, estado: 'confirmada', creadoEn: { gt: desde } } }) : Promise.resolve(0),
+    ]);
+    if (porDoc >= 3 || porIp >= 8) throw new AppError('Ya hiciste varias reservas hoy. Si necesitas otra, comunícate con nosotros.', 429, 'DEMASIADAS_RESERVAS');
   }
-  // Solo UNO de dos avisos simultáneos pasa a «pagada» (guarda de estado).
-  const u = await prisma.reservaWeb.updateMany({
-    where: { id: r.id, estado: { in: ['esperando_pago', 'expirada', 'fallida'] } },
-    data: { estado: 'pagada', pasarela, pagoReferencia: aviso.referencia, pagoEstado: aviso.estado, pagoDetalle: (aviso.detalle ?? null) as never, pagadoEn: new Date() },
-  });
-  if (u.count === 0) return { ok: true, estado: 'en_proceso' };
-  void registrarAudit({ accion: 'reserva_web_pagada', entidad: 'reserva_web', entidadId: r.id, sedeId: r.sedeId, despues: { codigo: r.codigo, pasarela, referencia: aviso.referencia, monto: Number(r.monto) } });
-  return crearCitaDeReserva(r.id);
-}
 
-/** Paciente por DNI (si ya existe NO se cambian sus datos) o nuevo con lo que escribió en la web. */
-async function pacienteDeReserva(r: { numeroDocumento: string; nombres: string; apellidoPaterno: string; apellidoMaterno: string | null; telefono: string; email: string; id: string }) {
-  const existente = await prisma.paciente.findFirst({ where: { tipoDocumento: 'DNI', numeroDocumento: r.numeroDocumento, deletedAt: null }, select: { id: true } });
-  if (existente) return existente.id;
-  const canalWeb = await prisma.canal.findFirst({ where: { valor: 'web', deletedAt: null }, select: { id: true } });
-  try {
-    const p = await prisma.paciente.create({
-      data: {
-        nombres: r.nombres, apellidoPaterno: r.apellidoPaterno, apellidoMaterno: r.apellidoMaterno ?? '',
-        tipoDocumento: 'DNI', numeroDocumento: r.numeroDocumento, telefono: r.telefono, email: r.email,
-        canalId: canalWeb?.id ?? null, requiereActualizacionDatos: true, notas: `Registrado desde la reserva web (${r.id}).`,
-      },
-      select: { id: true },
-    });
-    void registrarAudit({ accion: 'crear_paciente', entidad: 'paciente', entidadId: p.id, despues: { origen: 'reserva_web', numeroDocumento: r.numeroDocumento, nombres: r.nombres, apellidoPaterno: r.apellidoPaterno } });
-    return p.id;
-  } catch {
-    // Alta simultánea del mismo DNI: el índice único lo frena; se usa el que quedó.
-    const otro = await prisma.paciente.findFirst({ where: { tipoDocumento: 'DNI', numeroDocumento: r.numeroDocumento, deletedAt: null }, select: { id: true } });
-    if (!otro) throw new AppError('No se pudo registrar al paciente', 500, 'PACIENTE_WEB');
-    return otro.id;
-  }
-}
-
-/** Crea la cita con el mismo endpoint de la Agenda (POST /citas) usando la llave interna de la reserva web. */
-export async function crearCitaDeReserva(reservaId: string) {
-  const r = await prisma.reservaWeb.findUniqueOrThrow({ where: { id: reservaId } });
-  if (r.estado !== 'pagada') return { ok: true, estado: r.estado };
-  const sinPago = r.pasarela === 'sin_pago';
-  try {
-    const llave = process.env.RESERVA_WEB_API_KEY;
-    if (!llave) throw new Error('Falta RESERVA_WEB_API_KEY');
-    const pacienteId = r.pacienteId ?? await pacienteDeReserva(r);
-    const base = process.env.RESERVA_WEB_API_INTERNA || `http://127.0.0.1:${Number(process.env.PORT) || 3001}`;
-    const resp = await fetch(`${base}/api/v1/citas`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `ApiKey ${llave}`, 'Idempotency-Key': `reserva-web-${r.id}` },
-      body: JSON.stringify({
-        pacienteId, sedeId: r.sedeId, unidadNegocioId: r.unidadNegocioId, servicioId: r.servicioId,
-        ...(r.subcategoriaId ? { subcategoriaId: r.subcategoriaId } : {}),
-        fecha: fechaAStr(r.fecha), horaInicio: r.horaInicio, canal: 'web', estadoPago: sinPago ? 'pendiente' : 'completo',
-        comentarioRecepcion: sinPago
-          ? `Reserva web ${r.codigo}: reservó por internet sin pagar; paga S/ ${Number(r.monto).toFixed(2)} en la sede.`
-          : `Reserva web ${r.codigo}: pagó S/ ${Number(r.monto).toFixed(2)} en línea (${r.pasarela ?? 'pasarela'} ${r.pagoReferencia ?? ''}).`.trim(),
-      }),
-    });
-    const cuerpo = await resp.json().catch(() => ({})) as { id?: string; message?: string; error?: string };
-    if (!resp.ok || !cuerpo.id) throw new Error(cuerpo.message || cuerpo.error || `HTTP ${resp.status}`);
-    await prisma.reservaWeb.update({ where: { id: r.id }, data: { estado: 'confirmada', citaId: cuerpo.id, pacienteId, error: null } });
-    void registrarAudit({ citaId: cuerpo.id, accion: 'reserva_web_confirmada', entidad: 'reserva_web', entidadId: r.id, sedeId: r.sedeId, despues: { codigo: r.codigo, citaId: cuerpo.id } });
-    cacheDias.clear();
-    return { ok: true, estado: 'confirmada', citaId: cuerpo.id };
-  } catch (e) {
-    // Pagó pero ya no hay cupo (o falló la Agenda): queda para que administración devuelva el dinero o reubique.
-    // Sin pago no hay nada que devolver: la reserva queda «fallida» y el paciente elige otra hora.
-    const msg = (e as Error).message.slice(0, 500);
-    if (sinPago) {
-      await prisma.reservaWeb.update({ where: { id: r.id }, data: { estado: 'fallida', error: msg } });
-      console.error(`[reserva-web] ${r.codigo} sin pago, no se pudo crear la cita: ${msg}`);
-      return { ok: false, estado: 'fallida', error: msg };
+  const codigo = nuevoCodigo();
+  const hecho = await prisma.$transaction(async (tx) => {
+    // Un solo registro a la vez por sede y día: dos personas no pueden tomar el último cupo al mismo tiempo.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`reserva-web|${d.sedeId}|${d.fecha}`}))`;
+    if (o.referencia) {
+      const previa = await tx.reservaWeb.findFirst({ where: { canal: o.canal, referenciaExterna: o.referencia, estado: 'confirmada' } });
+      if (previa) return { previa };
     }
-    await prisma.reservaWeb.update({ where: { id: r.id }, data: { estado: 'reembolsar', error: msg } });
-    void registrarAudit({ accion: 'reserva_web_sin_cita', entidad: 'reserva_web', entidadId: r.id, sedeId: r.sedeId, despues: { codigo: r.codigo, error: msg } });
-    console.error(`[reserva-web] ${r.codigo} pagada pero sin cita: ${msg}`);
-    return { ok: false, estado: 'reembolsar', error: msg };
-  }
+    const libres = await horasLibres(d.sedeId, d.servicioId, d.fecha);
+    if (!libres.includes(d.horaInicio)) throw new AppError('Esa hora acaba de ocuparse. Elige otra.', 409, 'HORA_NO_DISPONIBLE');
+    const pacienteId = await pacienteDeReserva(d, o.canal, codigo);
+    const citaId = await crearCitaEnAgenda({
+      pacienteId, unidadNegocioId: servicio.unidadNegocioId, subcategoriaId: variante.id, codigo, monto,
+      claveIdempotencia: o.referencia ? `reserva-${o.canal}-${crypto.createHash('sha256').update(o.referencia).digest('hex').slice(0, 40)}` : `reserva-web-${codigo}`,
+    }, d, o.canal);
+    return { pacienteId, citaId };
+  }, { timeout: 30_000, maxWait: 10_000 });
+
+  if ('previa' in hecho && hecho.previa) return detalleDe(hecho.previa, true);
+
+  const { pacienteId, citaId } = hecho as { pacienteId: string; citaId: string };
+  const tokenConsulta = crypto.randomBytes(24).toString('hex');
+  const reserva = await prisma.reservaWeb.create({
+    data: {
+      codigo, tokenConsulta, estado: 'confirmada', canal: o.canal, referenciaExterna: o.referencia ?? null,
+      tipoDocumento: d.tipoDocumento, numeroDocumento: d.numeroDocumento,
+      nombres: d.nombres.trim(), apellidoPaterno: d.apellidoPaterno.trim(), apellidoMaterno: d.apellidoMaterno?.trim() || null,
+      telefono: d.telefono, email: d.email ?? '',
+      sedeId: d.sedeId, unidadNegocioId: servicio.unidadNegocioId, servicioId: d.servicioId, subcategoriaId: variante.id,
+      fecha: fechaDb(d.fecha), horaInicio: d.horaInicio, duracionMinutos: servicio.duracionMinutos,
+      monto, expiraEn: new Date(), pacienteId, citaId,
+      ip: o.ip ?? null, userAgent: o.userAgent?.slice(0, 300) ?? null,
+    },
+  });
+  cacheDias.clear();
+  if (intento) await enlazarReserva(intento.id, reserva.id, { sedeId: d.sedeId, servicioId: d.servicioId, subcategoriaId: variante.id, fecha: d.fecha, horaInicio: d.horaInicio }).catch(() => undefined);
+  void registrarAudit({
+    citaId, accion: 'reserva_web_confirmada', entidad: 'reserva_web', entidadId: reserva.id, sedeId: reserva.sedeId, ip: o.ip, userAgent: o.userAgent,
+    despues: { codigo, canal: o.canal, citaId, fecha: d.fecha, horaInicio: d.horaInicio, servicio: servicio.nombre, variante: variante.nombre, monto },
+  });
+  return detalleDe(reserva, false);
 }
 
-/** Mantenimiento cada minuto: vence los apartados sin pago. */
+// ─── Consultar ────────────────────────────────────────────────────────────────
+function tokenIgual(a: string, b: string) {
+  return a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+}
+
+/** Estado de una reserva con su token (la página, al volver con su código). */
+export async function estadoReserva(codigo: string, token: string) {
+  const r = await prisma.reservaWeb.findUnique({ where: { codigo } });
+  if (!r || !tokenIgual(r.tokenConsulta, token)) throw new AppError('Reserva no encontrada', 404, 'RESERVA_NO_ENCONTRADA');
+  return estadoDe(r);
+}
+
+/** Estado de una reserva por su código (el chat, que entra con llave). Solo reservas hechas por ese canal. */
+export async function estadoReservaPorCodigo(codigo: string, canal: string) {
+  const r = await prisma.reservaWeb.findFirst({ where: { codigo, canal } });
+  if (!r) throw new AppError('Reserva no encontrada', 404, 'RESERVA_NO_ENCONTRADA');
+  return estadoDe(r);
+}
+
+async function estadoDe(r: NonNullable<Awaited<ReturnType<typeof prisma.reservaWeb.findFirst>>>) {
+  const d = await detalleDe(r, false);
+  const cita = r.citaId ? await prisma.cita.findUnique({ where: { id: r.citaId }, select: { estado: true, deletedAt: true } }) : null;
+  const vigente = !!cita && !cita.deletedAt;
+  return {
+    codigo: r.codigo, estado: r.estado === 'confirmada' && cita && (cita.deletedAt || cita.estado === 'cancelada') ? 'cancelada' : r.estado,
+    citaVigente: vigente && cita!.estado !== 'cancelada', estadoCita: cita?.estado ?? null,
+    nombres: r.nombres, fecha: d.fecha, horaInicio: d.horaInicio, duracionMinutos: d.duracionMinutos,
+    sede: d.sede, servicio: d.servicio, variante: d.variante, monto: d.monto, moneda: d.moneda,
+  };
+}
+
+/** Mantenimiento cada minuto: cierra lo que quedó «esperando pago» de antes de quitar la pasarela (ya no se usa). */
 export async function mantenimientoReservasWeb() {
   const u = await prisma.reservaWeb.updateMany({ where: { estado: 'esperando_pago', expiraEn: { lt: new Date() } }, data: { estado: 'expirada' } });
   if (u.count) cacheDias.clear();

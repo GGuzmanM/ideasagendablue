@@ -1,7 +1,7 @@
 import { api } from './client';
 
-// Reserva web (05-oct-2026): reservas hechas desde la página pública que aún no son cita
-// (el paciente está pagando) o que se pagaron pero no pudieron convertirse en cita.
+// Reserva web (05-oct-2026): avisos de reservas con problema. Sin pasarela (29-oct-2026) la cita se crea al confirmar, así que
+// ya no hay horarios «apartados»; solo quedan las de antes que se pagaron y no pudieron convertirse en cita.
 export type EstadoReservaWeb = 'esperando_pago' | 'pagada' | 'reembolsar';
 
 export interface ReservaWebEnCurso {
@@ -21,8 +21,9 @@ export interface ReservaWebEnCurso {
 }
 
 // Intentos (06-oct-2026): quién empezó a reservar en la web y hasta dónde llegó (para contactarlo).
-export type PasoIntentoWeb = 'datos' | 'sede' | 'servicio' | 'fecha' | 'hora' | 'pago';
-export type ResultadoIntentoWeb = 'en_curso' | 'abandono' | 'pagando' | 'vencio_pagando' | 'pago_rechazado' | 'reservo' | 'pago_sin_cupo' | 'retomo';
+// 'pago' = intentos anteriores a quitar la pasarela (hoy el último paso es 'confirmar').
+export type PasoIntentoWeb = 'datos' | 'sede' | 'servicio' | 'fecha' | 'hora' | 'confirmar' | 'pago';
+export type ResultadoIntentoWeb = 'en_curso' | 'abandono' | 'pagando' | 'vencio_pagando' | 'pago_rechazado' | 'reservo' | 'pago_sin_cupo' | 'sin_cupo' | 'retomo';
 
 export interface IntentoReservaWeb {
   id: string;

@@ -2,9 +2,9 @@
  * Intentos de RESERVA WEB (06-oct-2026).
  *
  * El intento nace en el PRIMER «Continuar» de la página (datos del paciente) y se actualiza en cada paso (sede,
- * servicio, fecha, hora). Desde ese momento corren los minutos del apartado (RESERVA_WEB_MINUTOS_APARTADO, 10): el
- * apartado del horario (reservas_web) hereda el MISMO vencimiento. Así recepción / contact center ve quién empezó,
- * hasta dónde llegó y lo puede llamar (con «contactado» + nota).
+ * servicio, fecha, hora). Ya no hay cronómetro ni apartado de horario (29-oct-2026, sin pasarela): el intento solo
+ * vive RESERVA_WEB_MINUTOS_INTENTO (60) para seguir guardando el avance. Así recepción / contact center ve quién
+ * empezó, hasta dónde llegó y lo puede llamar (con «contactado» + nota).
  */
 import crypto from 'crypto';
 import { prisma } from '../../db';
@@ -13,13 +13,14 @@ import { fechaDb, fechaAStr } from '../../utils/fechaLima';
 import { registrarAudit } from '../audit';
 
 const num = (v: string | undefined, def: number) => (v && Number.isFinite(Number(v)) ? Number(v) : def);
-const MINUTOS = () => num(process.env.RESERVA_WEB_MINUTOS_APARTADO, 10);
+const MINUTOS = () => num(process.env.RESERVA_WEB_MINUTOS_INTENTO, 60);
 
-export const PASOS_INTENTO = ['datos', 'sede', 'servicio', 'fecha', 'hora', 'pago'] as const;
+// «pago» quedó de las reservas anteriores a quitar la pasarela: se sigue leyendo, ya no se escribe.
+export const PASOS_INTENTO = ['datos', 'sede', 'servicio', 'fecha', 'hora', 'confirmar'] as const;
 export type PasoIntento = (typeof PASOS_INTENTO)[number];
 
 export interface DatosPaciente {
-  numeroDocumento: string; nombres: string; apellidoPaterno: string; apellidoMaterno?: string | null; telefono: string; email: string;
+  tipoDocumento?: string; numeroDocumento: string; nombres: string; apellidoPaterno: string; apellidoMaterno?: string | null; telefono: string; email?: string | null;
 }
 export interface CambiosIntento extends Partial<DatosPaciente> {
   paso?: PasoIntento;
@@ -33,7 +34,7 @@ function limpiarDatos(d: Partial<DatosPaciente>) {
     ...(d.apellidoPaterno !== undefined ? { apellidoPaterno: d.apellidoPaterno.trim() } : {}),
     ...(d.apellidoMaterno !== undefined ? { apellidoMaterno: d.apellidoMaterno?.trim() || null } : {}),
     ...(d.telefono !== undefined ? { telefono: d.telefono } : {}),
-    ...(d.email !== undefined ? { email: d.email.trim().toLowerCase() } : {}),
+    ...(d.email !== undefined ? { email: (d.email ?? '').trim().toLowerCase() } : {}),
   };
 }
 
@@ -46,7 +47,7 @@ export async function crearIntento(d: DatosPaciente, meta: { ip?: string; userAg
   const i = await prisma.reservaWebIntento.create({
     data: {
       numeroDocumento: d.numeroDocumento, nombres: d.nombres.trim(), apellidoPaterno: d.apellidoPaterno.trim(),
-      apellidoMaterno: d.apellidoMaterno?.trim() || null, telefono: d.telefono, email: d.email.trim().toLowerCase(),
+      apellidoMaterno: d.apellidoMaterno?.trim() || null, telefono: d.telefono, email: (d.email ?? '').trim().toLowerCase(),
       pasoAlcanzado: 'sede', // ya completó sus datos: está eligiendo la sede
       token: crypto.randomBytes(24).toString('hex'),
       expiraEn: new Date(Date.now() + MINUTOS() * 60_000),
@@ -85,16 +86,17 @@ export async function actualizarIntento(id: string, token: string, c: CambiosInt
   return { expiraEn: u.expiraEn, pasoAlcanzado: u.pasoAlcanzado };
 }
 
-/** Al apartar el horario: enlaza la reserva y marca el paso «pago». */
+/** Al confirmar la reserva: enlaza la cita creada y marca el paso «confirmar». */
 export async function enlazarReserva(intentoId: string, reservaId: string, d: { sedeId: string; servicioId: string; subcategoriaId: string | null; fecha: string; horaInicio: string }) {
   await prisma.reservaWebIntento.update({
     where: { id: intentoId },
-    data: { reservaId, pasoAlcanzado: 'pago', sedeId: d.sedeId, servicioId: d.servicioId, subcategoriaId: d.subcategoriaId, fecha: fechaDb(d.fecha), horaInicio: d.horaInicio },
+    data: { reservaId, pasoAlcanzado: 'confirmar', sedeId: d.sedeId, servicioId: d.servicioId, subcategoriaId: d.subcategoriaId, fecha: fechaDb(d.fecha), horaInicio: d.horaInicio },
   });
 }
 
 // ─── Uso interno (Agenda) ─────────────────────────────────────────────────────
-export type ResultadoIntento = 'en_curso' | 'abandono' | 'pagando' | 'vencio_pagando' | 'pago_rechazado' | 'reservo' | 'pago_sin_cupo' | 'retomo';
+// pagando / vencio_pagando / pago_rechazado / pago_sin_cupo: solo de reservas hechas antes de quitar la pasarela.
+export type ResultadoIntento = 'en_curso' | 'abandono' | 'pagando' | 'vencio_pagando' | 'pago_rechazado' | 'reservo' | 'pago_sin_cupo' | 'sin_cupo' | 'retomo';
 
 export async function listarIntentos(f: { desde: string; hasta: string; soloPendientes: boolean }) {
   const ini = new Date(f.desde + 'T05:00:00Z'); // 00:00 Lima
@@ -106,7 +108,7 @@ export async function listarIntentos(f: { desde: string; hasta: string; soloPend
     prisma.servicio.findMany({ where: { id: { in: ids(filas.map((x) => x.servicioId)) } }, select: { id: true, nombre: true } }),
     prisma.subcategoriaServicio.findMany({ where: { id: { in: ids(filas.map((x) => x.subcategoriaId)) } }, select: { id: true, nombre: true } }),
     prisma.reservaWeb.findMany({ where: { id: { in: ids(filas.map((x) => x.reservaId)) } }, select: { id: true, codigo: true, estado: true, pagoEstado: true, monto: true, citaId: true, expiraEn: true } }),
-    prisma.paciente.findMany({ where: { tipoDocumento: 'DNI', numeroDocumento: { in: ids(filas.map((x) => x.numeroDocumento)) }, deletedAt: null }, select: { id: true, numeroDocumento: true } }),
+    prisma.paciente.findMany({ where: { tipoDocumento: { in: ['DNI', 'CE'] }, numeroDocumento: { in: ids(filas.map((x) => x.numeroDocumento)) }, deletedAt: null }, select: { id: true, numeroDocumento: true } }),
     prisma.usuario.findMany({ where: { id: { in: ids(filas.map((x) => x.contactadoPorId)) } }, select: { id: true, nombre: true } }),
   ]);
   const m = <T extends { id: string }>(xs: T[]) => new Map(xs.map((x) => [x.id, x]));
@@ -120,6 +122,7 @@ export async function listarIntentos(f: { desde: string; hasta: string; soloPend
     if (r) {
       resultado = r.estado === 'confirmada' || r.estado === 'pagada' ? 'reservo'
         : r.estado === 'reembolsar' ? 'pago_sin_cupo'
+        : r.estado === 'fallida' ? 'sin_cupo'
         : r.estado === 'esperando_pago' && r.expiraEn > ahora ? (r.pagoEstado === 'rechazado' ? 'pago_rechazado' : 'pagando')
         : r.pagoEstado === 'rechazado' ? 'pago_rechazado' : 'vencio_pagando';
     } else {
@@ -149,7 +152,7 @@ export async function listarIntentos(f: { desde: string; hasta: string; soloPend
   }
   for (const x of out) {
     const r = reservoDespues.get(x.numeroDocumento);
-    if (r && x.creadoEn < r && x.resultado !== 'reservo' && x.resultado !== 'pago_sin_cupo') x.resultado = 'retomo';
+    if (r && x.creadoEn < r && x.resultado !== 'reservo' && x.resultado !== 'pago_sin_cupo' && x.resultado !== 'sin_cupo') x.resultado = 'retomo';
   }
   // «Pendientes» = no terminó de reservar (ni volvió a hacerlo) y nadie lo contactó aún.
   const noLlamar: ResultadoIntento[] = ['reservo', 'retomo', 'en_curso', 'pagando'];

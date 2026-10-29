@@ -230,6 +230,28 @@ export interface Servicio {
   subcategorias?: SubcategoriaServicio[];
 }
 
+// Reserva web (29-oct-2026): qué servicios se ofrecen en línea y a qué precio (Administración › Reserva web).
+export interface TipoReservaWeb {
+  id: string; nombre: string; precioReferencial: number | null; precioOnline: number | null; reservaOnline: boolean;
+  /** Precio web propio de cada sede (id de la sede → precio). Sin entrada = rige el precio general. */
+  preciosSede: Record<string, number>;
+}
+export interface ServicioReservaWeb {
+  id: string; codigo: string; nombre: string; duracionMinutos: number;
+  precioReferencial: number | null; precioOnline: number | null; reservaOnline: boolean;
+  unidad: { id: string; nombre: string };
+  /** Sedes donde opera el área del servicio (las únicas donde puede tener precio propio). */
+  sedes: { id: string; nombre: string }[];
+  preciosSede: Record<string, number>;
+  /** El área exige elegir profesional: no se puede reservar en línea. */
+  exigeProfesional: boolean;
+  /** Se ofrece de verdad ahora mismo en la reserva web (cumple todo). Si está marcado y no se ofrece, «motivo» dice por qué. */
+  ofrecido: boolean;
+  motivo: string | null;
+  subcategorias: TipoReservaWeb[];
+}
+export type CambiosReservaWeb = { reservaOnline?: boolean; precioOnline?: number | null };
+
 export const serviciosApi = {
   listar: (params?: { unidadNegocioId?: string; activo?: boolean }) =>
     api.get<Servicio[]>('/servicios', {
@@ -242,6 +264,18 @@ export const serviciosApi = {
 
   editar: (id: string, data: Partial<{ nombre: string; codigo: string; duracionMinutos: number; color: string; precioReferencial: number; unidadNegocioId: string; activo: boolean; cupoSimultaneo: number | null }>) =>
     api.patch<Servicio>(`/servicios/${id}`, data),
+
+  // ── Reserva web ──
+  reservaWeb: () => api.get<ServicioReservaWeb[]>('/servicios/reserva-web'),
+  editarReservaWeb: (id: string, data: CambiosReservaWeb) =>
+    api.patch<{ id: string; reservaOnline: boolean; precioOnline: number | null }>(`/servicios/${id}/reserva-web`, data),
+  editarTipoReservaWeb: (subId: string, data: CambiosReservaWeb) =>
+    api.patch<{ id: string; reservaOnline: boolean; precioOnline: number | null }>(`/servicios/subcategorias/${subId}/reserva-web`, data),
+  /** Precio web de UNA sede para un servicio (precio null = quitarlo: esa sede vuelve al precio general). */
+  precioWebSedeServicio: (id: string, sedeId: string, precio: number | null) =>
+    api.put<{ sedeId: string; precio: number | null }>(`/servicios/${id}/reserva-web/sedes/${sedeId}`, { precio }),
+  precioWebSedeTipo: (subId: string, sedeId: string, precio: number | null) =>
+    api.put<{ sedeId: string; precio: number | null }>(`/servicios/subcategorias/${subId}/reserva-web/sedes/${sedeId}`, { precio }),
 
   // ── Subcategorías (administración) ──
   listarSubcategorias: (servicioId: string) =>

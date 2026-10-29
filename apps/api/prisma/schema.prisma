@@ -207,8 +207,10 @@ model Sede {
   atencionesClinicas AtencionClinica[]
   dispositivos       DispositivoConsultorio[]
   tiemposTratamiento TiempoTratamiento[]
+  preciosWebServicio     ServicioPrecioWebSede[]
+  preciosWebSubcategoria SubcategoriaPrecioWebSede[]
 
-  creadoPor     String?  @db.Uuid // Usuario que creó el registro (auditoría)
+  creadoPor    String?  @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
@@ -582,6 +584,7 @@ model Servicio {
   recetaItems               RecetaItem[] // ítems tipo SERVICIO en indicaciones (profilaxis, láser)
   tratamientosDiagnostico   TratamientoDiagnostico[]
   controlesSugeridos        ControlSugerido[]
+  preciosWebSede            ServicioPrecioWebSede[]
 
   creadoPor     String?  @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
@@ -589,6 +592,23 @@ model Servicio {
 
   @@index([unidadNegocioId, activo])
   @@map("servicios")
+}
+
+// Precio de la RESERVA WEB de un servicio en UNA sede (30-oct-2026). Sin fila = rige el precio web general
+// (servicios.precioOnline) o, si no hay, el referencial. Como `sede_unidad_negocio`, es una tabla de configuración:
+// quitar el precio de una sede borra la fila (el cambio queda en el AuditLog).
+model ServicioPrecioWebSede {
+  servicioId    String   @db.Uuid
+  sedeId        String   @db.Uuid
+  precio        Decimal  @db.Decimal(10, 2)
+  actualizadoEn DateTime @updatedAt
+
+  servicio Servicio @relation(fields: [servicioId], references: [id])
+  sede     Sede     @relation(fields: [sedeId], references: [id])
+
+  @@id([servicioId, sedeId])
+  @@index([sedeId])
+  @@map("servicio_precio_web_sede")
 }
 
 // ─── SubcategoriaServicio ─────────────────────────────────────────────────────
@@ -607,9 +627,12 @@ model SubcategoriaServicio {
   deletedAt         DateTime?
   // Reserva web (05-oct-2026): la variante se ofrece online si su servicio lo está y esta marca sigue en true.
   reservaOnline     Boolean   @default(true)
+  // Precio en la reserva web (29-oct-2026). null = se usa precioReferencial.
+  precioOnline      Decimal?  @db.Decimal(10, 2)
 
-  servicio Servicio @relation(fields: [servicioId], references: [id])
-  citas    Cita[]
+  servicio    Servicio                    @relation(fields: [servicioId], references: [id])
+  citas       Cita[]
+  preciosWebSede SubcategoriaPrecioWebSede[]
 
   creadoPor     String?  @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
@@ -620,6 +643,21 @@ model SubcategoriaServicio {
   // en la migración `20260706160000_subcategorias_servicio`.
   @@index([servicioId, activo])
   @@map("subcategorias_servicio")
+}
+
+// Igual que ServicioPrecioWebSede pero para un tipo (subcategoría) del servicio.
+model SubcategoriaPrecioWebSede {
+  subcategoriaId String   @db.Uuid
+  sedeId         String   @db.Uuid
+  precio         Decimal  @db.Decimal(10, 2)
+  actualizadoEn  DateTime @updatedAt
+
+  subcategoria SubcategoriaServicio @relation(fields: [subcategoriaId], references: [id])
+  sede         Sede                 @relation(fields: [sedeId], references: [id])
+
+  @@id([subcategoriaId, sedeId])
+  @@index([sedeId])
+  @@map("subcategoria_precio_web_sede")
 }
 
 // ─── CombinacionPermitida ─────────────────────────────────────────────────────
@@ -2697,6 +2735,9 @@ model ReservaWeb {
   pagoEstado       String?
   pagoDetalle      Json?
   pagadoEn         DateTime?
+  // 29-oct-2026: sin pasarela. canal = por dónde entró (web | whatsapp); referenciaExterna = id que manda el chat para no duplicar un reintento (índice único parcial en la migración).
+  canal             String    @default("web")
+  referenciaExterna String?
   expiraEn         DateTime
   pacienteId       String?   @db.Uuid
   citaId           String?   @db.Uuid

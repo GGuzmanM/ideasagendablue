@@ -34,7 +34,7 @@ export const idea1NavItems: NavItem[] = [
   // Rebote: citas por volver a llamar. Quienes reprograman (admin, coordinación, contact, especial contact, recepción).
   { to: '/rebote', label: 'Rebote', icon: 'phone_callback', permiso: 'citas.reprogramar' },
   // Reserva web (06-oct-2026): quién empezó a reservar en la página y no terminó. Solo con la reserva web encendida.
-  { to: '/reservas-web', label: 'Reservas web', icon: 'language', permiso: 'citas.crear', soloReservaWeb: true },
+  { to: '/reservas-web', label: 'Reservas web', icon: 'language', permiso: 'reservas_web.ver', soloReservaWeb: true },
   { to: '/horarios', label: 'Horarios y Restricciones', icon: 'schedule', permiso: 'horarios.ver' },
   { to: '/herramientas', label: 'Herramientas', icon: 'home_repair_service', permiso: HERRAMIENTAS_PERMS },
   { to: '/movimientos', label: 'Movimientos', icon: 'sync_alt', permiso: 'movimientos.ver' },
@@ -47,7 +47,7 @@ export function Idea1Sidebar() {
   const { usuario, logout } = useAuthStore();
 
   const perms = usuario?.permisos ?? [];
-  const reservaWebOn = useReservaWebHabilitada(perms.includes('citas.crear'));
+  const reservaWebOn = useReservaWebHabilitada(perms.includes('reservas_web.ver'));
 
   // Si hay permisos en el usuario, filtramos por ellos; si no hay objeto usuario cargado aún, mostramos los items
   const items = (perms.length > 0

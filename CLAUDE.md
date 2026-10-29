@@ -21,6 +21,16 @@ Reemplaza un ERP de escritorio de 14 años. 5 sedes, ~400 citas diarias, 40 pod�
   router (`window.open`, `window.location`, imágenes de `/public`) usa `rutaWeb()`. `/api`, `/socket.io`, `/uploads` y
   `/reserva` siguen en la raíz. En producción `tools/servidor/lanzador.js` sirve solo ese prefijo (`PREFIJO_WEB`) y responde
   404 neutro a todo lo demás; `/verificar/<código>` sin prefijo (QR de recetas ya impresas) redirige. En dev: `http://localhost:5180/acceso_agenda_lb/`.
+- **Reserva web SIN pasarela de pago (29-oct-2026)**: la cita se crea al confirmar (pago pendiente: se paga en la sede). Dos entradas que
+  comparten `services/reservaWeb/`: la página pública `/reserva` (`routes/reservaWeb.ts`, sin login) y la API del chat de WhatsApp
+  (`routes/reservaChat.ts`, `/api/v1/integraciones/reservas`, llave con scope `reservas:write`; docs/API-RESERVAS-WHATSAPP.md). Documento DNI o CE
+  (`services/reservaWeb/validaciones.ts`). La cita se crea con POST /citas usando la llave interna `RESERVA_WEB_API_KEY`.
+  Qué servicios se ofrecen y a qué precio: Administración › Reserva web (`/admin/reserva-web`; `servicios.reservaOnline` + `precioOnline` y, por
+  tipo, `subcategorias_servicio.reservaOnline` + `precioOnline`; vacío = precio referencial; las áreas «preferencia_obligatoria» no se pueden).
+  **Precio por SEDE (30-oct-2026)**: tablas `servicio_precio_web_sede` y `subcategoria_precio_web_sede` (PK compuesta; sin fila = rige el general).
+  Orden de precedencia en `services/reservaWeb/precios.ts` (`precioWebEnSede`: tipo-sede › tipo web › tipo referencial › servicio-sede › servicio web ›
+  servicio referencial). `catalogo()` devuelve por variante `precio` (general) y `precios` (id de sede → precio; una sede ausente no ofrece ese tipo);
+  `servicioReservable` cobra `precios[sedeId]`. Rutas `PUT /servicios/:id/reserva-web/sedes/:sedeId` y `/servicios/subcategorias/:subId/reserva-web/sedes/:sedeId`.
 - TypeScript estricto en todo el proyecto
 - Errores API: `{ error: string, code?: string }` via `AppError` en `middleware/errorHandler.ts`
 - Fechas: UTC en DB, convertir a America/Lima en frontend
@@ -39,7 +49,7 @@ Reemplaza un ERP de escritorio de 14 años. 5 sedes, ~400 citas diarias, 40 pod�
 - **Estructura va en migraciones, NO en `seed.ts`.** El seed es SOLO datos (sedes, roles,
   profesionales). Los índices/constraints viven en las migraciones.
 - **Índices únicos PARCIALES** (con `WHERE`): Prisma no los representa en el schema, así que
-  viven como SQL crudo dentro de las migraciones. Son 14 (verificados contra `pg_indexes`):
+  viven como SQL crudo dentro de las migraciones. Son 15 (verificados contra `pg_indexes`):
   - En la baseline (`00000000000000_baseline/migration.sql`): `recordatorios_cita_unico`,
     `asignaciones_sede_una_abierta`, `pacientes_documento_unico`, `citas_idempotency_unico`.
   - En `20260624120000_bloques_combinados`: `citas_slot_primario_unique` y
@@ -55,6 +65,8 @@ Reemplaza un ERP de escritorio de 14 años. 5 sedes, ~400 citas diarias, 40 pod�
     `dispositivos_consultorio_unico` (máx 1 aparato activo por sede + unidad + consultorio),
     `tiempos_en_curso_consultorio_unico` (máx 1 tiempo en curso por consultorio) y
     `tiempos_cita_vigente_unico` (máx 1 tiempo no descartado por cita).
+  - En `20261029120000_reservas_web_directas` (reserva web sin pasarela): `reservas_web_referencia_unica` (canal + referenciaExterna:
+    un reintento del chat de WhatsApp no crea otra cita).
   - Además, índices **GIN pg_trgm** (no únicos, tampoco en el schema) en
     `20260903120000_catalogos_hce_cie10_medicamento`: `cie10_descripcion_trgm`,
     `medicamentos_dci_trgm`, `medicamentos_comercial_trgm`; y en

@@ -115,7 +115,9 @@ export async function sedesDerivadasDeFicha(u: { rol: string; recepcionistaId: s
 // por `permisos`/requireRol; contact_center NO es coordinadora). Espeja authStore.puedeAccederSede.
 // 24-sep-2026: RECEPCIÓN también ve y agenda en todas las sedes; su sede asignada (Movimientos, en
 // `user.sedes`) sigue siendo con la que la agenda abre por defecto.
-const ROLES_TODAS_SEDES = ['admin', 'coordinadora_sedes', 'contact_center', 'especial_contact', 'recursos_humanos', 'recepcionista'];
+// 28-oct-2026: el MÉDICO AUDITOR también (revisa historias y recetas de todas las sedes; sigue sin gestionar nada: sus
+// poderes salen de `permisos`). El médico común sigue limitado a su sede.
+const ROLES_TODAS_SEDES = ['admin', 'coordinadora_sedes', 'contact_center', 'especial_contact', 'recursos_humanos', 'recepcionista', 'medico_auditor'];
 
 export function puedeTodasLasSedes(user: AuthPayload): boolean {
   return ROLES_TODAS_SEDES.includes(user.rol);

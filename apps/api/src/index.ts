@@ -10,6 +10,7 @@ import firmaMedicoRouter from './routes/firmaMedico';
 import verificacionPublicaRouter from './routes/verificacionPublica';
 import reservaWebRouter from './routes/reservaWeb';
 import reservaWebAgendaRouter from './routes/reservaWebAgenda';
+import reservaChatRouter from './routes/reservaChat';
 import { reservaWebHabilitada, mantenimientoReservasWeb } from './services/reservaWeb/reservaWebService';
 import { cerrarTiemposAbandonados } from './services/tiempoTratamientoService';
 import { iniciarBarridoEncuestas } from './services/encuestaSatisfaccionService';
@@ -261,6 +262,7 @@ app.use(`${v1}/reportes-clinicos`, reportesClinicosRouter); // Diagnosticos, pro
 app.use(`${v1}/reporte-creacion-citas`, reporteCreacionCitasRouter); // Quién creó cada cita y el día/hora en que la creó
 app.use(`${v1}/verificar`, verificacionPublicaRouter); // PÚBLICO (sin login): verificación de recetas por el QR
 app.use(`${v1}/publico/reservas`, reservaWebRouter); // PÚBLICO: reserva web con pago (apagada salvo RESERVA_WEB_HABILITADA=1)
+app.use(`${v1}/integraciones/reservas`, reservaChatRouter); // Chat de WhatsApp (servidor a servidor, con llave «reservas:write»): reserva sin pasarela
 app.use(`${v1}/reservas-web`, reservaWebAgendaRouter); // Interno: reservas web en curso para la agenda (lista vacía si está apagada)
 
 // ─── Error handler ────────────────────────────────────────────────────────────
@@ -341,7 +343,7 @@ const autocompletar = () => void cerrarTiemposAbandonados()
 setTimeout(autocompletar, 15_000); // al arrancar (deja que la BD/redis estén listos)
 setInterval(autocompletar, 5 * 60_000).unref();
 
-// ─── Reserva web: vence cada minuto los horarios apartados que no se pagaron (solo si está habilitada) ───
+// ─── Reserva web: cierra lo que quedó «esperando pago» de antes de quitar la pasarela (solo si está habilitada) ───
 if (reservaWebHabilitada()) {
   setInterval(() => void mantenimientoReservasWeb().catch((e) => console.error('[reserva-web] mantenimiento:', e)), 60_000).unref();
 }

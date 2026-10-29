@@ -219,6 +219,8 @@ export const ACCION_LABEL: Record<string, AccionStyle> = {
   editar_paciente:              def('Paciente editado', 'edit', 'primario'),
   crear_subcategoria_servicio:  def('Subcategoría creada', 'add_circle', 'verde'),
   editar_subcategoria_servicio: def('Subcategoría editada', 'edit', 'primario'),
+  editar_reserva_web_servicio:  def('Reserva web: servicio editado', 'language', 'primario'),
+  editar_reserva_web_subcategoria: def('Reserva web: tipo editado', 'language', 'primario'),
   eliminar_subcategoria_servicio: def('Subcategoría eliminada', 'delete', 'rojo'),
   crear_cie10:                  def('Diagnóstico CIE-10 creado', 'add_circle', 'verde'),
   editar_cie10:                 def('Diagnóstico CIE-10 editado', 'edit', 'primario'),

@@ -1,7 +1,9 @@
-# Limablue Agenda - reserva web para pacientes en https://<servidor>/reserva. Dos estados:
-#   VITRINA   se recorre completa con los horarios reales, pero NO aparta, NO cobra y NO crea citas.
+# Limablue Agenda - reserva web para pacientes en https://<servidor>/reserva. Tres estados:
+#   ENCENDIDA se reserva de verdad: al confirmar se registra al paciente y se CREA LA CITA (sin pago en línea: paga en la sede).
+#   VITRINA   se recorre completa con los horarios reales, pero NO crea citas (para mostrarla).
 #   APAGADA   la página /reserva no responde.
-# La cita se crea SOLO cuando el pago queda aprobado (21-oct-2026): sin pasarela de pago no se agenda nada.
+# Sin pasarela de pago (29-oct-2026). Los servicios que se ofrecen se marcan en la base (servicios.reservaOnline).
+# El chat de WhatsApp NO depende de este interruptor: usa su propia llave (Llave API del chat.bat).
 # El día del corte («Cargar datos del corte.bat», definitivo) se apaga sola.
 $ErrorActionPreference = 'Stop'
 $RAIZ = Split-Path -Parent $PSScriptRoot
@@ -40,7 +42,7 @@ function Reiniciar() {
 if (-not (Test-Path $ENVF)) { throw 'La Agenda no esta instalada: corre «Instalar o actualizar.bat» primero.' }
 $cfg = LeerEnv $ENVF
 $prueba = $cfg['MODO_PRUEBA'] -eq 'true'
-$actual = if ($cfg['RESERVA_WEB_HABILITADA'] -ne '1') { 'APAGADA' } elseif ($cfg['RESERVA_WEB_MODO'] -eq 'vitrina') { 'VITRINA (solo se ve)' } else { 'ENCENDIDA (sin pasarela de pago no agenda: elige 1 para dejarla en vitrina)' }
+$actual = if ($cfg['RESERVA_WEB_HABILITADA'] -ne '1') { 'APAGADA' } elseif ($cfg['RESERVA_WEB_MODO'] -eq 'vitrina') { 'VITRINA (solo se ve)' } else { 'ENCENDIDA (las reservas crean citas reales)' }
 $puerto = if ($cfg['WEB_PUERTO'] -and $cfg['WEB_PUERTO'] -ne '443') { ":$($cfg['WEB_PUERTO'])" } else { '' }
 $host1 = if ($cfg['DIRECCION_PUBLICA']) { $cfg['DIRECCION_PUBLICA'].Split(',')[0].Trim() } else { $env:COMPUTERNAME.ToLower() }
 
@@ -48,12 +50,12 @@ Write-Host ''
 Write-Host '== Reserva web para pacientes ==' -ForegroundColor Cyan
 Write-Host "  Estado actual: $actual"
 Write-Host ''
-Write-Host '  1 = VITRINA   se ve completa, no aparta ni crea citas'
+Write-Host '  2 = ENCENDER  los pacientes reservan de verdad: se crea la cita (se paga en la sede)'
+Write-Host '  1 = VITRINA   se ve completa, no crea citas'
 Write-Host '  0 = APAGAR'
-Write-Host '  (La cita solo se crea cuando el pago queda aprobado: hace falta la pasarela de pago.)'
 $op = (Read-Host '  Elige (Enter = no cambiar)').Trim()
 if (-not $op) { exit 0 }
-if ($op -notin @('0', '1')) { Aviso 'Opcion no valida. No se cambio nada.'; exit 1 }
+if ($op -notin @('0', '1', '2')) { Aviso 'Opcion no valida. No se cambio nada.'; exit 1 }
 
 if ($prueba) {
   # En modo prueba, que el corte devuelva los valores originales (si el instalador no los guardo ya).
@@ -71,13 +73,22 @@ if ($op -eq '0') {
   exit 0
 }
 
-Base 'sin-llave' | Out-Null; $r = Base 'marcar'
-$cfg['RESERVA_WEB_MODO'] = 'vitrina'
+if ($op -eq '2') {
+  # La cita la crea la propia Agenda con una llave interna (solo existe en este servidor, en agenda.env).
+  $r = Base 'llave'
+  $cfg['RESERVA_WEB_API_KEY'] = $r.llave
+  $cfg.Remove('RESERVA_WEB_MODO')
+} else {
+  Base 'sin-llave' | Out-Null; $r = Base 'marcar'
+  $cfg['RESERVA_WEB_MODO'] = 'vitrina'
+}
 $cfg['RESERVA_WEB_HABILITADA'] = '1'
 EscribirEnv $ENVF $cfg
-Ok "Servicios que se muestran: $($r.servicios)."
+if ($r.servicios -gt 0) { Ok "Servicios marcados para la web: $($r.servicios) (se cambian en Administracion > Reserva web)." }
+else { Aviso 'Todavia no hay servicios marcados para la web: la pagina saldra sin servicios. Marcalos en Administracion > Reserva web.' }
 Reiniciar
 Write-Host ''
 Write-Host "  Pagina de reserva:  https://$host1$puerto/reserva" -ForegroundColor White
 Write-Host "  API (para la web):  https://$host1$puerto/api/v1/publico/reservas" -ForegroundColor White
-Write-Host '  VITRINA: muestra horarios reales, pero no aparta ni crea citas.' -ForegroundColor White
+if ($op -eq '2') { Write-Host '  ENCENDIDA: las reservas crean citas reales (canal Web, pago pendiente: se paga en la sede).' -ForegroundColor White }
+else { Write-Host '  VITRINA: muestra horarios reales, pero no crea citas.' -ForegroundColor White }

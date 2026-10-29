@@ -51,6 +51,7 @@ import { BandejaClinicaPage } from './pages/BandejaClinicaPage';
 import { VisorPacientesPage } from './pages/VisorPacientesPage';
 import { ReboteBandejaPage } from './pages/ReboteBandejaPage';
 import { ReservasWebPage } from './pages/ReservasWebPage';
+import { ReservaWebServiciosPage } from './pages/admin/ReservaWebServiciosPage';
 import { rutaInicio } from './utils/rutaInicio';
 import { RUTA_LOGIN } from './utils/rutaLogin';
 
@@ -129,7 +130,7 @@ export default function App() {
         {/* Historia clínica: módulo aparte (dos paneles), solo con hc.ver */}
         <Route path="/historia-clinica/bandeja" element={<RequirePermiso permiso="hc.ver"><BandejaClinicaPage /></RequirePermiso>} />
         <Route path="/rebote" element={<RequirePermiso permiso="citas.reprogramar"><ReboteBandejaPage /></RequirePermiso>} />
-        <Route path="/reservas-web" element={<RequirePermiso permiso="citas.crear"><ReservasWebPage /></RequirePermiso>} />
+        <Route path="/reservas-web" element={<RequirePermiso permiso="reservas_web.ver"><ReservasWebPage /></RequirePermiso>} />
         <Route path="/pacientes-del-dia" element={<RequirePermiso permiso={['medico.autoasignar', 'medico.asignar']}><VisorPacientesPage /></RequirePermiso>} />
         <Route path="/historia-clinica/:pacienteId" element={<RequirePermiso permiso="hc.ver"><HistoriaClinicaPage /></RequirePermiso>} />
         <Route path="/horarios" element={<RequirePermiso permiso="horarios.ver"><HorariosRestriccionesPage /></RequirePermiso>} />
@@ -163,6 +164,7 @@ export default function App() {
         <Route path="/admin/paquetes" element={<RequirePermiso permiso="membresias.gestionar"><PaquetesPage /></RequirePermiso>} />
         <Route path="/admin/podologas" element={<RequirePermiso permiso="profesionales.ver"><PodologasPage /></RequirePermiso>} />
         <Route path="/admin/servicios" element={<RequirePermiso permiso="servicios.ver"><ServiciosPage /></RequirePermiso>} />
+        <Route path="/admin/reserva-web" element={<RequirePermiso permiso="servicios.ver"><ReservaWebServiciosPage /></RequirePermiso>} />
         <Route path="/admin/auditoria" element={<RequirePermiso permiso="auditoria.ver"><AuditoriaPage /></RequirePermiso>} />
         <Route path="/admin/usuarios" element={<RequirePermiso permiso="usuarios.ver"><UsersPage /></RequirePermiso>} />
         <Route path="/admin/roles" element={<RequirePermiso permiso="roles.editar"><RolesPage /></RequirePermiso>} />

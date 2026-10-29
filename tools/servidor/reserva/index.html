@@ -68,9 +68,9 @@ html:not(.fuentes) .ms { display: none; }
 .campo label small { font-weight: 400; color: var(--outline); font-size: 12px; }
 .campo .in { position: relative; }
 .campo .in .ms { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--outline); font-size: 18px; pointer-events: none; }
-.campo input { width: 100%; padding: 11px 12px 11px 38px; border: 1px solid var(--outline-variant); border-radius: 10px; background: #fff; font-size: 14px; transition: border-color .15s, box-shadow .15s; }
-.campo input:hover { border-color: var(--outline); }
-.campo input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(0, 68, 171, 0.15); }
+.campo input, .campo select { width: 100%; padding: 11px 12px 11px 38px; border: 1px solid var(--outline-variant); border-radius: 10px; background: #fff; font-size: 14px; transition: border-color .15s, box-shadow .15s; }
+.campo input:hover, .campo select:hover { border-color: var(--outline); }
+.campo input:focus, .campo select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(0, 68, 171, 0.15); }
 .campo input[aria-invalid="true"] { border-color: var(--error); }
 .campo .err { color: var(--error); font-size: 12px; min-height: 0; }
 .campo .err:empty { display: none; }
@@ -152,17 +152,13 @@ html:not(.fuentes) .ms { display: none; }
 .resumen dl { margin: 0; display: grid; gap: 12px; }
 .total { border-top: 1px solid var(--high); padding-top: 12px; display: flex; justify-content: space-between; align-items: baseline; }
 .total b { font: 700 24px Geist, Inter, sans-serif; color: var(--primary); font-variant-numeric: tabular-nums; }
-.timer { display: flex; gap: 8px; align-items: center; background: var(--amber-bg); border: 1px solid var(--amber-line); color: var(--amber-ink); border-radius: 12px; padding: 9px 12px; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.timer.fin { background: var(--error-bg); border-color: #f5b5ae; color: #93000a; }
 
-/* Pago */
+/* Resumen de confirmación */
 .pago { border: 1px solid var(--outline-variant); border-radius: 12px; overflow: hidden; }
 .pago-head { display: flex; align-items: center; gap: 8px; background: var(--low); padding: 10px 14px; font-weight: 600; font-size: 13px; }
 .pago-head .ms { color: var(--primary); }
 .pago-body { padding: 14px; display: grid; gap: 12px; }
 .pago-body p { margin: 0; font-size: 13px; color: var(--variant); }
-.tarjetas { display: flex; gap: 6px; flex-wrap: wrap; }
-.tarjetas span { border: 1px solid var(--outline-variant); border-radius: 6px; padding: 2px 8px; font-size: 11px; font-weight: 700; color: var(--variant); letter-spacing: 0.04em; }
 
 /* Final */
 .final { text-align: center; display: grid; gap: 12px; justify-items: center; padding: 16px 0 8px; }
@@ -207,10 +203,11 @@ html:not(.fuentes) .ms { display: none; }
   if (document.fonts && document.fonts.load) document.fonts.load('20px "Material Symbols Outlined"', 'event').then(marcar, function () {});
   setTimeout(marcar, 3000);
 
+  // Sin pasarela de pago (29-oct-2026): al confirmar se registra la cita; el pago se hace en la sede.
   var API = '/api/v1/publico/reservas';
   var DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
   var MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'setiembre', 'octubre', 'noviembre', 'diciembre'];
-  var PASOS = ['Tus datos', 'Sede', 'Servicio', 'Fecha', 'Hora', 'Pago'];
+  var PASOS = ['Tus datos', 'Sede', 'Servicio', 'Fecha', 'Hora', 'Confirmar'];
 
   var cat = null;
   var s = nuevoEstado();
@@ -218,22 +215,19 @@ html:not(.fuentes) .ms { display: none; }
   var resumen = document.getElementById('resumen');
 
   function nuevoEstado() {
-    return { paso: 0, dni: '', nombres: '', apPat: '', apMat: '', cel: '', email: '', acepta: false,
+    return { paso: 0, tipoDoc: 'DNI', dni: '', nombres: '', apPat: '', apMat: '', cel: '', email: '', acepta: false,
       sede: null, serv: null, variante: undefined, fecha: null, hora: null, mes: null,
-      dias: null, horas: null, cargando: false, error: '', reserva: null, estado: null, acepta2: false, pagando: false,
-      intento: null, tiempoVencido: false };
+      dias: null, horas: null, cargando: false, error: '', estado: null, intento: null };
   }
 
-  // ─── intento: los 10 min corren desde el primer «Continuar» y cada paso se guarda ───
-  var PASO_NOMBRE = ['datos', 'sede', 'servicio', 'fecha', 'hora', 'pago'];
+  // ─── intento: desde el primer «Continuar» se guarda cada paso (hasta dónde llegó). No aparta horario ni corre tiempo. ───
+  var PASO_NOMBRE = ['datos', 'sede', 'servicio', 'fecha', 'hora', 'confirmar'];
   function datosPaciente() {
-    return { numeroDocumento: s.dni, nombres: s.nombres.trim(), apellidoPaterno: s.apPat.trim(), apellidoMaterno: s.apMat.trim() || null, telefono: s.cel, email: s.email.trim() };
+    return { tipoDocumento: s.tipoDoc, numeroDocumento: s.dni, nombres: s.nombres.trim(), apellidoPaterno: s.apPat.trim(), apellidoMaterno: s.apMat.trim() || null, telefono: s.cel, email: s.email.trim() };
   }
-  function limite() { return s.reserva ? s.reserva.expiraEn : s.intento ? s.intento.expiraEn : null; }
-  function vencio() { var l = limite(); return !!l && new Date(l).getTime() <= Date.now(); }
   function iniciarIntento() {
     return llamar('POST', API + '/intentos', Object.assign(datosPaciente(), { aceptaDatos: true })).then(function (r) {
-      s.intento = { id: r.intentoId, token: r.token, expiraEn: r.expiraEn }; s.tiempoVencido = false;
+      s.intento = { id: r.intentoId, token: r.token };
     });
   }
   function guardarAvance() {
@@ -242,19 +236,9 @@ html:not(.fuentes) .ms { display: none; }
       token: s.intento.token, paso: PASO_NOMBRE[s.paso], sedeId: s.sede || null, servicioId: s.serv || null,
       subcategoriaId: s.variante === undefined ? null : s.variante, fecha: s.fecha || null, horaInicio: s.hora || null,
     })).catch(function (e) {
-      if (e.codigo === 'TIEMPO_VENCIDO' || e.codigo === 'INTENTO_NO_ENCONTRADO') { s.tiempoVencido = true; render(); }
+      // El seguimiento nunca estorba la reserva: si el intento ya no vale, se sigue sin él.
+      if (e.codigo === 'TIEMPO_VENCIDO' || e.codigo === 'INTENTO_NO_ENCONTRADO') s.intento = null;
     });
-  }
-  // «Volver a empezar» tras vencer: nuevo reloj con los mismos datos y lo ya elegido.
-  function reiniciar() {
-    s.reserva = null; s.estado = null; s.acepta2 = false; s.error = ''; s.cargando = true;
-    if (s.paso === 5) { s.paso = 4; s.hora = null; }
-    if (s.paso < 1) s.paso = 1;
-    limpiarUrl(); render();
-    iniciarIntento().then(guardarAvance).then(function () {
-      s.cargando = false;
-      if (s.paso === 4) { cargarHoras(); } else if (s.paso === 3) { cargarDias(); } else { render(); }
-    }, function (e) { s.cargando = false; s.error = e.message; s.paso = 0; s.tiempoVencido = false; render(); });
   }
 
   // ─── utilidades ───
@@ -270,6 +254,9 @@ html:not(.fuentes) .ms { display: none; }
   function sede() { return cat && cat.sedes.find(function (x) { return x.id === s.sede; }); }
   function serv() { return cat && cat.servicios.find(function (x) { return x.id === s.serv; }); }
   function variante() { var sv = serv(); return sv && s.variante !== undefined ? sv.variantes.find(function (v) { return v.id === s.variante; }) : null; }
+  // Precio por sede: `precios[sedeId]` es lo que cobra la sede elegida; un tipo que no aparece ahí no se ofrece en esa sede.
+  function precioEn(v) { return v.precios && v.precios[s.sede] !== undefined ? v.precios[s.sede] : v.precio; }
+  function variantesDe(sv) { return sv.variantes.filter(function (v) { return !v.precios || v.precios[s.sede] !== undefined; }); }
   function esBaro(sv) { return sv && /baro/i.test(sv.unidad); }
   function iconoServicio(sv) { return esBaro(sv) ? 'directions_walk' : /curaci/i.test(sv.nombre) ? 'healing' : /evaluaci/i.test(sv.nombre) ? 'stethoscope' : 'footprint'; }
 
@@ -288,8 +275,13 @@ html:not(.fuentes) .ms { display: none; }
   }
 
   // ─── validación de datos (paso 1) ───
+  function esCE() { return s.tipoDoc === 'CE'; }
+  function docValido(v) { return esCE() ? /^[A-Za-z0-9]{8,12}$/.test(v) : /^\d{8}$/.test(v); }
+  function ayudaDoc() { return esCE() ? '8 a 12 letras o números' : '8 dígitos'; }
+  function mensajeDoc() { return esCE() ? 'El carné de extranjería tiene entre 8 y 12 letras o números.' : 'El DNI tiene 8 dígitos.'; }
   var CAMPOS = [
-    { id: 'dni', et: 'DNI', ayuda: '8 dígitos', icono: 'badge', tipo: 'text', num: 8, ok: function (v) { return /^\d{8}$/.test(v); }, msj: 'El DNI tiene 8 dígitos.' },
+    { id: 'tipoDoc', et: 'Tipo de documento', icono: 'badge', tipo: 'select', ok: function () { return true; }, msj: '' },
+    { id: 'dni', et: 'Número de documento', icono: 'badge', tipo: 'text', ok: function (v) { return docValido(v); }, msj: '' },
     { id: 'cel', et: 'Celular', ayuda: 'Ej. 987654321', icono: 'smartphone', tipo: 'tel', num: 9, ok: function (v) { return /^9\d{8}$/.test(v); }, msj: 'Ingresa un celular de 9 dígitos que empiece con 9.', auto: 'tel-national' },
     { id: 'nombres', et: 'Nombres', icono: 'person', tipo: 'text', ok: function (v) { return v.trim().length > 1; }, msj: 'Escribe tus nombres.', auto: 'given-name' },
     { id: 'apPat', et: 'Apellido paterno', icono: 'person', tipo: 'text', ok: function (v) { return v.trim().length > 1; }, msj: 'Escribe tu apellido paterno.', auto: 'family-name' },
@@ -305,7 +297,7 @@ html:not(.fuentes) .ms { display: none; }
       if (!el || !inp) return;
       var mostrar = s[c.id] !== '' && c.tocado;
       var mal = mostrar && !c.ok(s[c.id]);
-      el.textContent = mal ? c.msj : '';
+      el.textContent = mal ? (c.id === 'dni' ? mensajeDoc() : c.msj) : '';
       inp.setAttribute('aria-invalid', mal ? 'true' : 'false');
     });
     var b = panel.querySelector('[data-a="sig"]'); if (b) b.disabled = !datosOk() || s.cargando;
@@ -328,38 +320,23 @@ html:not(.fuentes) .ms { display: none; }
       s.horas = j.horas; render();
     }, function (e) { s.error = e.message; s.horas = []; render(); });
   }
-  function apartar() {
+  // Confirmar: registra al paciente y CREA la cita en la Agenda (sin pago en línea).
+  function confirmar() {
     s.cargando = true; s.error = ''; render();
     llamar('POST', API, Object.assign(datosPaciente(), {
       sedeId: s.sede, servicioId: s.serv, subcategoriaId: s.variante,
       fecha: s.fecha, horaInicio: s.hora, aceptaDatos: true,
       intentoId: s.intento ? s.intento.id : null, intentoToken: s.intento ? s.intento.token : null,
     })).then(function (r) {
-      s.reserva = r; s.cargando = false;
+      s.estado = r; s.cargando = false;
       try { history.replaceState(null, '', '?codigo=' + encodeURIComponent(r.codigo) + '&token=' + encodeURIComponent(r.token)); } catch (e) {}
-      // El horario queda separado; la cita se crea solo cuando el pago se aprueba.
-      s.paso = 5;
-      return llamar('POST', API + '/' + encodeURIComponent(r.codigo) + '/pago', { token: r.token }).then(function () { render(); });
+      render(); panel.scrollIntoView({ block: 'start', behavior: 'smooth' });
     }).catch(function (e) {
       s.cargando = false; s.error = e.message;
-      if (e.codigo === 'TIEMPO_VENCIDO') { s.error = ''; s.tiempoVencido = true; render(); return; }
-      if (e.codigo === 'HORA_NO_DISPONIBLE') { s.hora = null; cargarHoras(); return; }
+      // Alguien tomó ese horario justo antes: vuelve a elegir hora con la lista al día.
+      if (e.codigo === 'HORA_NO_DISPONIBLE') { s.hora = null; s.paso = 4; cargarHoras(); return; }
       render();
     });
-  }
-  function pagar(aprobado) {
-    s.pagando = true; s.error = ''; render();
-    llamar('POST', '/reserva/pagar-prueba', { codigo: s.reserva.codigo, token: s.reserva.token, aprobado: aprobado }).then(function () {
-      if (!aprobado) { s.pagando = false; s.error = 'El pago fue rechazado. Puedes intentarlo de nuevo mientras tu horario siga separado.'; render(); return; }
-      seguirEstado(0);
-    }, function (e) { s.pagando = false; s.error = e.message; render(); });
-  }
-  function seguirEstado(intento) {
-    llamar('GET', API + '/' + encodeURIComponent(s.reserva.codigo) + '?token=' + encodeURIComponent(s.reserva.token)).then(function (e) {
-      s.estado = e;
-      if ((e.estado === 'pagada' || e.estado === 'esperando_pago') && intento < 20) { setTimeout(function () { seguirEstado(intento + 1); }, 1000); return; }
-      s.pagando = false; render();
-    }, function (e) { s.pagando = false; s.error = e.message; render(); });
   }
 
   // ─── pintar ───
@@ -367,24 +344,14 @@ html:not(.fuentes) .ms { display: none; }
   function pintarResumen() {
     if (!cat) { resumen.innerHTML = ''; return; }
     var se = sede(), sv = serv(), v = variante(), nombre = (s.nombres + ' ' + s.apPat).trim();
-    var e = s.estado, enCurso = !!limite() && (!e || e.estado === 'esperando_pago') && !s.tiempoVencido;
+    var e = s.estado;
     resumen.innerHTML = '<div class="caps">Tu reserva</div><dl>' +
-      fila('person', 'Paciente', nombre ? esc(nombre) + (s.dni ? '<small>DNI ' + esc(s.dni) + '</small>' : '') : '—') +
+      fila('person', 'Paciente', nombre ? esc(nombre) + (s.dni ? '<small>' + (esCE() ? 'CE ' : 'DNI ') + esc(s.dni) + '</small>' : '') : '—') +
       fila('location_on', 'Sede', se ? esc(se.nombre) + '<small>' + esc(se.direccion) + '</small>' : (e && e.sede ? esc(e.sede.nombre) : '—')) +
       fila('medical_services', 'Servicio', sv ? esc(sv.nombre) + (v && v.id ? '<small>' + esc(v.nombre) + '</small>' : '') : (e && e.servicio ? esc(e.servicio) : '—')) +
       fila('groups', 'Profesional', sv ? (esBaro(sv) ? 'Especialista disponible' : 'Cualquier podóloga disponible') : '—') +
       fila('event', 'Fecha y hora', s.fecha ? esc(fechaLarga(s.fecha)) + (s.hora ? '<small>' + s.hora + ' h</small>' : '') : '—') +
-      '</dl><div class="total"><span class="caps">Total</span><b>' + (v ? soles(v.precio) : s.reserva ? soles(s.reserva.monto) : '—') + '</b></div>' +
-      (enCurso ? '<div class="timer" id="timer"></div>' : '');
-    tick();
-  }
-  function tick() {
-    var el = document.getElementById('timer'), l = limite(); if (!el || !l) return;
-    var resta = Math.max(0, Math.round((new Date(l).getTime() - Date.now()) / 1000));
-    var mmss = Math.floor(resta / 60) + ':' + pad(resta % 60);
-    el.className = 'timer' + (resta > 0 ? '' : ' fin');
-    el.innerHTML = ic(resta > 0 ? 'timer' : 'timer_off') + '<span>' + (resta <= 0 ? 'Se terminó el tiempo'
-      : s.reserva ? 'Horario separado · ' + mmss + ' min para pagar' : 'Tienes ' + mmss + ' min para completar tu reserva') + '</span>';
+      '</dl><div class="total"><span class="caps">Precio · se paga en la sede</span><b>' + (v ? soles(precioEn(v)) : e ? soles(e.monto) : '—') + '</b></div>';
   }
   function pasos() {
     return '<nav class="steps" aria-label="Pasos">' + PASOS.map(function (p, i) {
@@ -405,15 +372,8 @@ html:not(.fuentes) .ms { display: none; }
       panel.innerHTML = s.error ? avisoHtml() + '<div><button class="btn sec" data-a="reintentar" type="button">' + ic('refresh') + 'Reintentar</button></div>' : cargandoHtml('Cargando sedes y servicios…');
       resumen.innerHTML = ''; return;
     }
-    panel.innerHTML = s.estado && s.estado.estado !== 'esperando_pago' && s.estado.estado !== 'pagada' ? final()
-      : s.tiempoVencido ? vencidoHtml() : pasos() + paso();
+    panel.innerHTML = s.estado ? final() : pasos() + paso();
     pintarResumen();
-  }
-  function vencidoHtml() {
-    return '<div class="final"><div class="big mal">' + ic('timer_off') + '</div><h2>Se terminó el tiempo</h2>' +
-      '<p>Tenías ' + cat.reglas.minutosApartado + ' minutos para completar la reserva' + (s.reserva ? ' y pagar' : '') + '. ' + (s.reserva ? 'El horario se liberó y no se te cobró nada. ' : '') +
-      'Puedes volver a empezar: tus datos y lo que elegiste se mantienen.</p>' +
-      '<button class="btn pri" data-a="reiniciar" type="button"' + (s.cargando ? ' disabled' : '') + '>' + ic('restart_alt') + (s.cargando ? 'Reiniciando…' : 'Volver a empezar') + '</button></div>';
   }
 
   function final() {
@@ -421,32 +381,37 @@ html:not(.fuentes) .ms { display: none; }
     if (e.estado === 'confirmada') {
       return '<div class="final"><div class="big">' + ic('check_circle', 'fill') + '</div><h2>¡Cita confirmada!</h2>' +
         '<p>Te esperamos el <b>' + esc(fechaLarga(e.fecha)) + ' a las ' + esc(e.horaInicio) + '</b> en <b>' + esc(e.sede && e.sede.nombre) + '</b>, ' + esc(e.sede && e.sede.direccion) + '.</p>' +
-        '<div class="codigo">' + esc(e.codigo) + '</div><p>Código de reserva · ' + (e.pagoPendiente ? 'pagas ' + soles(e.monto) + ' en la sede' : 'pagaste ' + soles(e.monto)) + '. Llega 10 minutos antes con tu DNI.</p>' +
-        (e.demo ? '<div class="demo">' + ic('info') + '<span>Demostración: no se reservó ninguna cita ni se cobró nada.</span></div>' : '') +
+        '<div class="codigo">' + esc(e.codigo) + '</div><p>Código de reserva · pagas ' + soles(e.monto) + ' en la sede. Llega 10 minutos antes con tu documento de identidad.</p>' +
+        (e.demo ? '<div class="demo">' + ic('info') + '<span>Demostración: no se reservó ninguna cita.</span></div>' : '') +
         '<button class="btn sec" data-a="nuevo" type="button">' + ic('add') + 'Hacer otra reserva</button></div>';
     }
-    if (e.estado === 'reembolsar') {
-      return '<div class="final"><div class="big mal">' + ic('priority_high') + '</div><h2>Recibimos tu pago</h2>' +
-        '<p>Pero ese horario se ocupó justo antes de confirmar. Te llamaremos para darte otro horario o devolverte el dinero.</p>' +
-        '<div class="codigo">' + esc(e.codigo) + '</div><button class="btn sec" data-a="nuevo" type="button">Volver al inicio</button></div>';
+    return '<div class="final"><div class="big mal">' + ic('event_busy') + '</div><h2>Esta reserva ya no está vigente</h2>' +
+      '<p>Si necesitas una cita, puedes hacer una nueva reserva.</p>' +
+      '<button class="btn pri" data-a="nuevo" type="button">' + ic('add') + 'Hacer otra reserva</button></div>';
+  }
+
+  function campoHtml(c) {
+    if (c.tipo === 'select') {
+      return '<div class="campo"><label for="in-tipoDoc">' + c.et + '</label><div class="in">' + ic(c.icono) +
+        '<select id="in-tipoDoc" data-campo="tipoDoc"><option value="DNI"' + (esCE() ? '' : ' selected') + '>DNI</option>' +
+        '<option value="CE"' + (esCE() ? ' selected' : '') + '>Carné de extranjería (CE)</option></select></div></div>';
     }
-    return '<div class="final"><div class="big mal">' + ic('timer_off') + '</div><h2>Se venció el tiempo</h2>' +
-      '<p>No se completó el pago a tiempo y el horario se liberó. No se te cobró nada.</p>' +
-      '<button class="btn pri" data-a="reiniciar" type="button">' + ic('restart_alt') + 'Volver a empezar</button></div>';
+    var ayuda = c.id === 'dni' ? ayudaDoc() : c.ayuda;
+    var max = c.id === 'dni' ? (esCE() ? 12 : 8) : c.num;
+    var numerico = c.id === 'dni' ? !esCE() : !!c.num;
+    return '<div class="campo"><label for="in-' + c.id + '">' + c.et + (ayuda ? ' <small>' + ayuda + '</small>' : '') + '</label>' +
+      '<div class="in">' + ic(c.icono) + '<input id="in-' + c.id + '" data-campo="' + c.id + '" type="' + c.tipo + '"' +
+      (numerico ? ' inputmode="numeric"' : '') + (max ? ' maxlength="' + max + '"' : '') + ' value="' + esc(s[c.id]) + '" autocomplete="' + (c.auto || 'off') + '" aria-describedby="err-' + c.id + '"></div>' +
+      '<span class="err" id="err-' + c.id + '"></span></div>';
   }
 
   function paso() {
     var h = avisoHtml();
     if (s.paso === 0) {
       return titulo('Tus datos', 'Los usamos para registrarte y enviarte la confirmación de tu cita.') + h +
-        '<div class="grid2">' + CAMPOS.map(function (c) {
-          return '<div class="campo"><label for="in-' + c.id + '">' + c.et + (c.ayuda ? ' <small>' + c.ayuda + '</small>' : '') + '</label>' +
-            '<div class="in">' + ic(c.icono) + '<input id="in-' + c.id + '" data-campo="' + c.id + '" type="' + c.tipo + '"' +
-            (c.num ? ' inputmode="numeric" maxlength="' + c.num + '"' : '') + ' value="' + esc(s[c.id]) + '" autocomplete="' + (c.auto || 'off') + '" aria-describedby="err-' + c.id + '"></div>' +
-            '<span class="err" id="err-' + c.id + '"></span></div>';
-        }).join('') + '</div>' +
+        '<div class="grid2">' + CAMPOS.map(campoHtml).join('') + '</div>' +
         '<label class="check"><input type="checkbox" id="acepta"' + (s.acepta ? ' checked' : '') + '><span>Acepto el tratamiento de mis datos personales para gestionar mi cita, según la política de privacidad de Limablue.</span></label>' +
-        '<p class="nota">' + ic('timer') + 'Al continuar tendrás ' + cat.reglas.minutosApartado + ' minutos para elegir tu horario y pagar.</p>' +
+        '<p class="nota">' + ic('info') + 'Tu cita se confirma al final. El pago se hace en la sede.</p>' +
         nav(datosOk() && !s.cargando, s.cargando ? 'Guardando…' : 'Continuar');
     }
     if (s.paso === 1) {
@@ -457,16 +422,16 @@ html:not(.fuentes) .ms { display: none; }
     }
     if (s.paso === 2) {
       var lista = cat.servicios.filter(function (x) { return x.sedes.indexOf(s.sede) >= 0; }), sv = serv();
-      h = titulo('Elige el servicio', 'Precios de la clínica. El pago se hace al final.') + h;
+      h = titulo('Elige el servicio', 'Precios de la clínica. El pago se hace en la sede.') + h;
       if (!lista.length) return h + '<p class="nota">' + ic('info') + 'Esta sede no tiene servicios para reservar en línea por ahora.</p>' + nav(false);
       h += '<div class="opts">' + lista.map(function (x) {
-        var mn = Math.min.apply(null, x.variantes.map(function (v) { return v.precio; }));
+        var vs = variantesDe(x), mn = Math.min.apply(null, vs.map(precioEn));
         return '<button class="opt" type="button" data-serv="' + x.id + '" aria-pressed="' + (s.serv === x.id) + '"><span class="ico">' + ic(iconoServicio(x)) + '</span><span class="tx"><b>' + esc(x.nombre) + '</b>' +
-          '<span class="d">' + esc(x.unidad) + ' · ' + x.duracionMinutos + ' min</span><span class="precio">' + (x.variantes.length > 1 ? 'Desde ' : '') + soles(mn) + '</span></span></button>';
+          '<span class="d">' + esc(x.unidad) + ' · ' + x.duracionMinutos + ' min</span><span class="precio">' + (vs.length > 1 ? 'Desde ' : '') + soles(mn) + '</span></span></button>';
       }).join('') + '</div>';
-      if (sv && sv.variantes.length > 1) {
+      if (sv && variantesDe(sv).length > 1) {
         h += '<div><p class="subtit">Tipo de ' + esc(sv.nombre.toLowerCase()) + '</p><div class="chips">' +
-          sv.variantes.map(function (v) { return '<button class="chip" type="button" data-var="' + v.id + '" aria-pressed="' + (s.variante === v.id) + '">' + esc(v.nombre) + ' · ' + soles(v.precio) + '</button>'; }).join('') + '</div></div>';
+          variantesDe(sv).map(function (v) { return '<button class="chip" type="button" data-var="' + v.id + '" aria-pressed="' + (s.variante === v.id) + '">' + esc(v.nombre) + ' · ' + soles(precioEn(v)) + '</button>'; }).join('') + '</div></div>';
       }
       if (sv) h += '<div class="cualquiera">' + ic('groups') + '<div><b>' + (esBaro(sv) ? 'Especialista disponible' : 'Cualquier podóloga disponible') + '</b>Te asignamos a la profesional libre en el horario que elijas.</div></div>';
       return h + nav(!!sv && s.variante !== undefined);
@@ -495,26 +460,28 @@ html:not(.fuentes) .ms { display: none; }
       if (!s.horas.length) return h + '<p class="nota">' + ic('event_busy') + 'Ya no quedan horarios libres ese día. Elige otra fecha.</p>' + nav(false);
       var man = s.horas.filter(function (x) { return x < '12:00'; }), tar = s.horas.filter(function (x) { return x >= '12:00'; });
       var grupo = function (t, icono, l) { return l.length ? '<div class="grupo"><div class="caps">' + ic(icono) + t + '</div><div class="horas">' + l.map(function (x) { return '<button class="hora" type="button" data-hora="' + x + '" aria-pressed="' + (s.hora === x) + '">' + x + '</button>'; }).join('') + '</div></div>' : ''; };
-      return h + grupo('Mañana', 'wb_sunny', man) + grupo('Tarde', 'wb_twilight', tar) +
-        '<p class="nota">' + ic('lock_clock') + 'Al continuar separamos tu horario mientras pagas, dentro del tiempo que te queda.</p>' +
-        nav(!!s.hora && !s.cargando, s.cargando ? 'Separando tu horario…' : 'Separar horario y pagar', 'lock');
+      return h + grupo('Mañana', 'wb_sunny', man) + grupo('Tarde', 'wb_twilight', tar) + nav(!!s.hora);
     }
-    var v = variante(), monto = v ? v.precio : s.reserva.monto;
-    return titulo('Paga y confirma', 'Tu horario ya está separado. La cita se confirma cuando el pago queda aprobado.') + h +
-      '<div class="pago"><div class="pago-head">' + ic('credit_card') + 'Pasarela de pago <span style="font-weight:400;color:var(--outline)">· simulada</span></div><div class="pago-body">' +
-      '<div class="tarjetas"><span>VISA</span><span>MASTERCARD</span><span>AMEX</span><span>YAPE</span></div>' +
-      '<p>Aquí irá el formulario seguro de la pasarela que elija la clínica. Limablue nunca ve los datos de la tarjeta. En esta prueba no se cobra nada.</p>' +
-      '<label class="check"><input type="checkbox" id="acepta2"' + (s.acepta2 ? ' checked' : '') + '><span>Acepto las condiciones de reserva.</span></label></div></div>' +
-      '<div class="nav"><button class="link" data-a="rechazar" type="button"' + (s.pagando ? ' disabled' : '') + '>Probar un pago rechazado</button>' +
-      '<button class="btn pri" data-a="pagar" type="button"' + (s.acepta2 && !s.pagando ? '' : ' disabled') + '>' + ic('lock') + (s.pagando ? 'Procesando pago…' : 'Pagar ' + soles(monto)) + '</button>' +
-      '</div>' + (s.pagando ? cargandoHtml('Confirmando tu cita en la agenda…') : '');
+    // Paso 6: revisar y confirmar
+    var v = variante(), se = sede(), sv2 = serv();
+    return titulo('Confirma tu reserva', 'Revisa los datos. Al confirmar se registra tu cita; el pago se hace en la sede.') + h +
+      '<div class="pago"><div class="pago-head">' + ic('fact_check') + 'Resumen de tu cita</div><div class="pago-body">' +
+      '<p><b>' + esc((s.nombres + ' ' + s.apPat + ' ' + s.apMat).replace(/\s+/g, ' ').trim()) + '</b> · ' + (esCE() ? 'CE ' : 'DNI ') + esc(s.dni) + '</p>' +
+      '<p>' + esc(sv2 ? sv2.nombre : '') + (v && v.id ? ' · ' + esc(v.nombre) : '') + ' — ' + esc(se ? se.nombre : '') + '</p>' +
+      '<p>' + esc(fechaLarga(s.fecha)) + ' a las ' + esc(s.hora) + ' h · <b>' + soles(v ? precioEn(v) : 0) + '</b> a pagar en la sede</p></div></div>' +
+      '<div class="nav"><button class="btn sec" data-a="atras" type="button"' + (s.cargando ? ' disabled' : '') + '>' + ic('arrow_back') + 'Atrás</button>' +
+      '<button class="btn pri" data-a="confirmar" type="button"' + (s.cargando ? ' disabled' : '') + '>' + ic('check') + (s.cargando ? 'Confirmando…' : 'Confirmar mi cita') + '</button></div>' +
+      (s.cargando ? cargandoHtml('Registrando tu cita en la agenda…') : '');
   }
 
   // ─── eventos ───
   panel.addEventListener('input', function (e) {
-    var id = e.target.getAttribute('data-campo'); if (!id) return;
+    var id = e.target.getAttribute('data-campo'); if (!id || id === 'tipoDoc') return;
     var c = CAMPOS.find(function (x) { return x.id === id; });
-    if (c && c.num) { var limpio = e.target.value.replace(/\D/g, ''); if (limpio !== e.target.value) e.target.value = limpio; }
+    if (id === 'dni') {
+      var limpioDoc = esCE() ? e.target.value.replace(/[^A-Za-z0-9]/g, '').toUpperCase() : e.target.value.replace(/\D/g, '');
+      if (limpioDoc !== e.target.value) e.target.value = limpioDoc;
+    } else if (c && c.num) { var limpio = e.target.value.replace(/\D/g, ''); if (limpio !== e.target.value) e.target.value = limpio; }
     s[id] = e.target.value; s.error = '';
     refrescarDatos();
   });
@@ -524,7 +491,11 @@ html:not(.fuentes) .ms { display: none; }
   });
   panel.addEventListener('change', function (e) {
     if (e.target.id === 'acepta') { s.acepta = e.target.checked; refrescarDatos(); }
-    if (e.target.id === 'acepta2') { s.acepta2 = e.target.checked; render(); }
+    if (e.target.id === 'in-tipoDoc') {
+      s.tipoDoc = e.target.value === 'CE' ? 'CE' : 'DNI'; s.dni = ''; s.error = '';
+      CAMPOS.forEach(function (c) { if (c.id === 'dni') c.tocado = false; });
+      render(); var d = document.getElementById('in-dni'); if (d) d.focus();
+    }
   });
   panel.addEventListener('click', function (e) {
     var b = e.target.closest('button'); if (!b || b.disabled) return;
@@ -532,35 +503,31 @@ html:not(.fuentes) .ms { display: none; }
     if (b.dataset.sede) { if (s.sede !== b.dataset.sede) { s.sede = b.dataset.sede; s.serv = null; s.variante = undefined; s.fecha = null; s.hora = null; } }
     if (b.dataset.serv && s.serv !== b.dataset.serv) {
       s.serv = b.dataset.serv; var sv = serv();
-      s.variante = sv.variantes.length === 1 ? sv.variantes[0].id : undefined; s.fecha = null; s.hora = null;
+      s.variante = variantesDe(sv).length === 1 ? variantesDe(sv)[0].id : undefined; s.fecha = null; s.hora = null;
     }
     if (b.dataset.var) s.variante = b.dataset.var === 'null' ? null : b.dataset.var;
     if (b.dataset.dia) { s.fecha = b.dataset.dia; s.hora = null; }
     if (b.dataset.hora) s.hora = b.dataset.hora;
     if (a === 'reintentar') { s.error = ''; iniciar(); return; }
     if (a === 'mesAnt' || a === 'mesSig') { s.mes = new Date(s.mes.getFullYear(), s.mes.getMonth() + (a === 'mesAnt' ? -1 : 1), 1); cargarDias(); return; }
-    if (a === 'atras') { s.error = ''; s.paso = Math.max(0, s.paso - 1); if (s.paso === 3) { cargarDias(); return; } }
-    if (a === 'pagar') { pagar(true); return; }
-    if (a === 'rechazar') { pagar(false); return; }
-    if (a === 'reiniciar') { reiniciar(); return; }
+    if (a === 'atras') { s.error = ''; s.paso = Math.max(0, s.paso - 1); if (s.paso === 3) { cargarDias(); return; } if (s.paso === 4) { cargarHoras(); return; } }
+    if (a === 'confirmar') { confirmar(); return; }
     if (a === 'nuevo') {
-      // Otra reserva: mismos datos, pero un intento (y un reloj) nuevo al pulsar «Continuar».
-      var datos = { dni: s.dni, nombres: s.nombres, apPat: s.apPat, apMat: s.apMat, cel: s.cel, email: s.email, acepta: s.acepta };
+      // Otra reserva: mismos datos, con un seguimiento nuevo al pulsar «Continuar».
+      var datos = { tipoDoc: s.tipoDoc, dni: s.dni, nombres: s.nombres, apPat: s.apPat, apMat: s.apMat, cel: s.cel, email: s.email, acepta: s.acepta };
       s = Object.assign(nuevoEstado(), datos, { paso: 0 }); limpiarUrl();
     }
     if (a === 'sig') {
       s.error = '';
-      if (s.paso >= 1 && vencio()) { s.tiempoVencido = true; render(); return; }
       if (s.paso === 0) {
-        // Primer «Continuar»: crea el intento (arrancan los minutos). Si ya existe y sigue vigente, solo actualiza los datos.
+        // Primer «Continuar»: crea el intento (seguimiento). Si ya existe, solo actualiza los datos.
         s.cargando = true; render();
-        var p = s.intento && !vencio() ? guardarAvance() : iniciarIntento();
+        var p = s.intento ? guardarAvance().then(function () { if (!s.intento) return iniciarIntento(); }) : iniciarIntento();
         p.then(function () { s.cargando = false; s.paso = 1; render(); panel.scrollIntoView({ block: 'start', behavior: 'smooth' }); },
           function (er) { s.cargando = false; s.error = er.message; render(); });
         return;
       }
-      if (s.paso === 4) { apartar(); return; }
-      s.paso = Math.min(4, s.paso + 1);
+      s.paso = Math.min(5, s.paso + 1);
       guardarAvance(); // se guarda en segundo plano: hasta dónde llegó y qué eligió
       if (s.paso === 3) { var f = s.fecha ? deIso(s.fecha) : deIso(hoyLima()); s.mes = new Date(f.getFullYear(), f.getMonth(), 1); cargarDias(); return; }
       if (s.paso === 4) { cargarHoras(); return; }
@@ -570,22 +537,14 @@ html:not(.fuentes) .ms { display: none; }
   });
   function limpiarUrl() { try { history.replaceState(null, '', location.pathname); } catch (e) {} }
 
-  setInterval(function () {
-    tick();
-    // Se acabó el tiempo (desde el primer «Continuar»): pantalla para volver a empezar.
-    if (s.paso >= 1 && !s.estado && !s.pagando && !s.tiempoVencido && vencio()) { s.tiempoVencido = true; render(); }
-  }, 1000);
-
   function iniciar() {
     llamar('GET', API + '/catalogo').then(function (c) {
       cat = c;
-      // ¿Volvió con su código? (por ejemplo, al regresar de la pasarela)
+      // ¿Volvió con su código? Se muestra su confirmación.
       var q = new URLSearchParams(location.search), codigo = q.get('codigo'), token = q.get('token');
       if (codigo && token) {
         return llamar('GET', API + '/' + encodeURIComponent(codigo) + '?token=' + encodeURIComponent(token)).then(function (e) {
-          s.reserva = { codigo: e.codigo, token: token, monto: e.monto, expiraEn: e.expiraEn };
-          s.fecha = e.fecha; s.hora = e.horaInicio; s.nombres = e.nombres || '';
-          if (e.estado === 'esperando_pago') { s.paso = 5; } else { s.estado = e; }
+          s.estado = e; s.fecha = e.fecha; s.hora = e.horaInicio; s.nombres = e.nombres || '';
           render();
         }, function () { limpiarUrl(); render(); });
       }

@@ -1,29 +1,26 @@
 /**
- * API PÚBLICA de la reserva web (05-oct-2026) — /api/v1/publico/reservas
+ * API PÚBLICA de la reserva web (05-oct-2026; sin pasarela de pago desde el 29-oct-2026) — /api/v1/publico/reservas
  * Sin login. Apagada (404) salvo RESERVA_WEB_HABILITADA=1. Solo acepta llamadas del navegador desde los
  * dominios de RESERVA_WEB_ORIGENES (p. ej. https://www.limablue.com). Ver services/reservaWeb/.
+ * Es la que usa la página /reserva. El chat de WhatsApp usa otra, con llave: routes/reservaChat.ts.
  *
- *  GET  /catalogo                               sedes, servicios reservables, variantes y precios
+ *  GET  /catalogo                               sedes, servicios reservables, variantes y precios (se pagan en la sede)
  *  GET  /dias?sedeId&servicioId&desde&hasta      días con horas libres (calendario)
  *  GET  /horas?sedeId&servicioId&fecha           horas libres de un día
- *  POST /intentos                                primer «Continuar»: guarda los datos y arranca los 10 min
+ *  POST /intentos                                primer «Continuar»: guarda los datos (seguimiento de quién empezó)
  *  PATCH /intentos/:id   { token, paso, … }      guarda el avance (sede, servicio, fecha, hora)
- *  POST /                                        crea la reserva y aparta el horario
- *  POST /:codigo/pago      { token }             inicia el pago en la pasarela
- *  GET  /:codigo?token=                          estado (página de «gracias»)
- *  POST /pagos/webhook/:pasarela                 aviso de pago de la pasarela → crea la cita
+ *  POST /                                        confirma: registra al paciente y CREA LA CITA
+ *  GET  /:codigo?token=                          estado (al volver con su código)
  */
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { AppError } from '../middleware/errorHandler';
-import {
-  reservaWebHabilitada, catalogo, horasLibres, diasDisponibles, crearReserva, iniciarPago, estadoReserva, procesarAvisoPago,
-} from '../services/reservaWeb/reservaWebService';
-import { pasarelaPorNombre } from '../services/reservaWeb/pasarelas';
+import { reservaWebHabilitada, catalogo, horasLibres, diasDisponibles, reservar, estadoReserva } from '../services/reservaWeb/reservaWebService';
 import { crearIntento, actualizarIntento, PASOS_INTENTO } from '../services/reservaWeb/intentos';
-import { modoVitrina, intentoDemo, avanceDemo, crearReservaDemo, pagoDemo, confirmarDemo, estadoDemo } from '../services/reservaWeb/vitrina';
+import { modoVitrina, intentoDemo, avanceDemo, reservaDemo, estadoDemo } from '../services/reservaWeb/vitrina';
+import { camposPaciente, revisarDocumento, normalizarPaciente, normalizarCelular, normalizarDocumento, datosPacienteSchema } from '../services/reservaWeb/validaciones';
 
 const router = Router();
 
@@ -68,7 +65,8 @@ async function verificarCaptcha(token: string | undefined, ip?: string) {
 }
 
 router.get('/catalogo', limiteConsultas, async (_req, res) => {
-  res.set('Cache-Control', 'public, max-age=60');
+  // Sin caché: lo que la clínica activa o desactiva en Administración › Reserva web debe verse de inmediato.
+  res.set('Cache-Control', 'no-cache');
   res.json(await catalogo());
 });
 
@@ -82,83 +80,54 @@ router.get('/horas', limiteConsultas, async (req, res) => {
   res.json({ fecha: q.fecha, horas: await horasLibres(q.sedeId, q.servicioId, q.fecha) });
 });
 
-const datosPacienteSchema = z.object({
-  numeroDocumento: z.string().regex(/^\d{8}$/, 'El DNI tiene 8 dígitos'),
-  nombres: z.string().trim().min(2).max(80),
-  apellidoPaterno: z.string().trim().min(2).max(60),
-  apellidoMaterno: z.string().trim().max(60).optional().nullable(),
-  telefono: z.string().regex(/^9\d{8}$/, 'Celular de 9 dígitos'),
-  email: z.string().trim().email('Correo inválido').max(120),
-});
+// En la página el correo es obligatorio (ahí le llega la confirmación). Documento: DNI o CE.
 const aceptaDatos = z.literal(true, { errorMap: () => ({ message: 'Debes aceptar el tratamiento de datos personales' }) });
-const crearSchema = datosPacienteSchema.extend({
+const datosPaciente = datosPacienteSchema({ emailObligatorio: true });
+const crearSchema = camposPaciente({ emailObligatorio: true }).extend({
   sedeId: uuid, servicioId: uuid, subcategoriaId: uuid.optional().nullable(),
   fecha, horaInicio: hora,
   aceptaDatos,
   captcha: z.string().max(4000).optional(),
-  // 06-oct-2026: intento de la página (el apartado vence cuando vence el intento)
+  // intento de la página (seguimiento de quién empezó y hasta dónde llegó)
   intentoId: uuid.optional().nullable(),
   intentoToken: z.string().min(10).max(100).optional().nullable(),
-});
+}).superRefine(revisarDocumento);
 
 // ─── Intentos (06-oct-2026): avance del paciente desde el primer «Continuar» ──
 const limiteIntentos = limite(60, 15 * 60_000, 'Demasiados intentos desde esta conexión. Espera unos minutos.');
 router.post('/intentos', limiteIntentos, async (req, res) => {
-  const d = datosPacienteSchema.extend({ aceptaDatos, captcha: z.string().max(4000).optional() }).parse(req.body);
-  await verificarCaptcha(d.captcha, req.ip);
+  const { captcha, aceptaDatos: _acepta, ...resto } = (req.body ?? {}) as Record<string, unknown>;
+  const d = datosPaciente.parse(resto);
+  z.object({ aceptaDatos }).parse({ aceptaDatos: _acepta });
+  await verificarCaptcha(typeof captcha === 'string' ? captcha : undefined, req.ip);
   if (modoVitrina()) { res.status(201).json(intentoDemo()); return; } // vitrina: no se guarda nada
   res.status(201).json(await crearIntento(d, { ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined }));
 });
 
 router.patch('/intentos/:id', limiteConsultas, async (req, res) => {
   const id = uuid.parse(req.params.id);
-  const c = datosPacienteSchema.partial().extend({
+  const c = camposPaciente({ emailObligatorio: true }).partial().extend({
     token: z.string().min(10).max(100),
     paso: z.enum(PASOS_INTENTO).optional(),
     sedeId: uuid.nullable().optional(), servicioId: uuid.nullable().optional(), subcategoriaId: uuid.nullable().optional(),
     fecha: fecha.nullable().optional(), horaInicio: hora.nullable().optional(),
   }).parse(req.body);
   const { token, ...cambios } = c;
+  if (cambios.numeroDocumento !== undefined) cambios.numeroDocumento = normalizarDocumento(cambios.numeroDocumento);
+  if (cambios.telefono !== undefined) cambios.telefono = normalizarCelular(cambios.telefono) ?? cambios.telefono;
   if (modoVitrina()) { res.json(avanceDemo(id, cambios.paso)); return; }
   res.json(await actualizarIntento(id, token, cambios));
 });
 
 router.post('/', limiteReservas, async (req, res) => {
-  const d = crearSchema.parse(req.body);
-  await verificarCaptcha(d.captcha, req.ip);
-  // Vitrina: valida servicio y hora con la disponibilidad real, pero no aparta nada.
-  if (modoVitrina()) {
-    const v = await crearReservaDemo(d);
-    res.status(201).json({ codigo: v.codigo, token: v.tokenConsulta, estado: v.estado, monto: v.monto, moneda: v.moneda, fecha: d.fecha, horaInicio: v.horaInicio, expiraEn: v.expiraEn });
-    return;
-  }
-  const r = await crearReserva(d, { ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined });
-  // La cita NO se crea aquí: solo aparta el horario. Se agenda cuando el pago queda aprobado (webhook de la pasarela).
-  res.status(201).json({
-    codigo: r.codigo, token: r.tokenConsulta, estado: r.estado, monto: Number(r.monto), moneda: r.moneda,
-    fecha: d.fecha, horaInicio: r.horaInicio, expiraEn: r.expiraEn,
-  });
-});
-
-router.post('/:codigo/pago', limiteReservas, async (req, res) => {
-  const { token } = z.object({ token: z.string().min(10).max(100) }).parse(req.body);
-  res.json(modoVitrina() ? pagoDemo(req.params.codigo, token) : await iniciarPago(req.params.codigo, token));
-});
-
-// Vitrina: el «pago» de la demostración (no cobra ni crea la cita). Fuera de la vitrina no existe.
-router.post('/:codigo/confirmar-demo', limiteConsultas, async (req, res) => {
-  if (!modoVitrina()) throw new AppError('No encontrado', 404, 'NOT_FOUND');
-  const { token } = z.object({ token: z.string().min(10).max(100) }).parse(req.body);
-  res.json(confirmarDemo(req.params.codigo, token));
-});
-
-// Avisos de la pasarela: sin CORS de navegador (servidor a servidor); la firma la valida cada pasarela.
-router.post('/pagos/webhook/:pasarela', async (req, res) => {
-  const p = pasarelaPorNombre(req.params.pasarela);
-  if (!p) throw new AppError('Pasarela desconocida', 404, 'NOT_FOUND');
-  const aviso = await p.leerAviso(req);
-  if (!aviso) { res.json({ ok: true, ignorado: true }); return; }
-  res.json(await procesarAvisoPago(aviso, p.nombre));
+  const { captcha, intentoId, intentoToken, aceptaDatos: _acepta, sedeId, servicioId, subcategoriaId, fecha: f, horaInicio, ...paciente } = crearSchema.parse(req.body);
+  void _acepta;
+  const p = normalizarPaciente(paciente);
+  await verificarCaptcha(captcha, req.ip);
+  const datos = { ...p, sedeId, servicioId, subcategoriaId, fecha: f, horaInicio };
+  // Vitrina: valida servicio y hora con la disponibilidad real, pero no registra nada.
+  if (modoVitrina()) { res.status(201).json(await reservaDemo(datos)); return; }
+  res.status(201).json(await reservar(datos, { canal: 'web', ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined, intentoId, intentoToken }));
 });
 
 router.get('/:codigo', limiteConsultas, async (req, res) => {

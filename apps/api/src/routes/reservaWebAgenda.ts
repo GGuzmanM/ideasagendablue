@@ -2,7 +2,7 @@
  * Reserva web — uso INTERNO (con login) (05/06-oct-2026)
  *
  *  GET   /api/v1/reservas-web/estado                  { habilitada } (para mostrar o no el menú)
- *  GET   /api/v1/reservas-web/en-curso?sedeId&fecha   horarios apartados mientras el paciente paga (aviso de la agenda)
+ *  GET   /api/v1/reservas-web/en-curso?sedeId&fecha   avisos de reservas con problema (ya no hay horarios apartados: sin pasarela la cita se crea al confirmar)
  *  GET   /api/v1/reservas-web/intentos?desde&hasta&pendientes=1   quién empezó a reservar y hasta dónde llegó
  *  PATCH /api/v1/reservas-web/intentos/:id/contacto   { contactado, nota }   marcar que ya se le llamó
  *
@@ -27,11 +27,10 @@ router.get('/en-curso', requireAuth, requirePermiso('citas.ver'), async (req, re
   const q = z.object({ sedeId: z.string().uuid(), fecha: fechaQ }).parse(req.query);
   assertSede(req, q.sedeId);
   if (!reservaWebHabilitada()) { res.json([]); return; }
-  const ahora = new Date();
   const filas = await prisma.reservaWeb.findMany({
     where: {
       sedeId: q.sedeId, fecha: fechaDb(q.fecha),
-      OR: [{ estado: 'esperando_pago', expiraEn: { gt: ahora } }, { estado: { in: ['pagada', 'reembolsar'] } }],
+      estado: 'reembolsar', // solo las de antes de quitar la pasarela que quedaron pagadas sin cita
     },
     orderBy: [{ horaInicio: 'asc' }, { creadoEn: 'asc' }],
   });
@@ -50,14 +49,14 @@ router.get('/en-curso', requireAuth, requirePermiso('citas.ver'), async (req, re
   })));
 });
 
-// Seguimiento de intentos (06-oct-2026): lo usan quienes agendan (recepción, contact center, coordinación).
-router.get('/intentos', requireAuth, requirePermiso('citas.crear'), async (req, res) => {
+// Seguimiento de intentos (06-oct-2026): lo ve quien tenga el permiso «reservas_web.ver» (apagado por defecto; Administración › Roles).
+router.get('/intentos', requireAuth, requirePermiso('reservas_web.ver'), async (req, res) => {
   const q = z.object({ desde: fechaQ, hasta: fechaQ, pendientes: z.enum(['0', '1']).optional() }).parse(req.query);
   if (!reservaWebHabilitada()) { res.json([]); return; }
   res.json(await listarIntentos({ desde: q.desde, hasta: q.hasta, soloPendientes: q.pendientes === '1' }));
 });
 
-router.patch('/intentos/:id/contacto', requireAuth, requirePermiso('citas.crear'), async (req, res) => {
+router.patch('/intentos/:id/contacto', requireAuth, requirePermiso('reservas_web.ver'), async (req, res) => {
   const id = z.string().uuid().parse(req.params.id);
   const b = z.object({ contactado: z.boolean(), nota: z.string().trim().max(500).optional().nullable() }).parse(req.body);
   res.json(await marcarContactado(id, req.user!.userId, b.nota || null, b.contactado));

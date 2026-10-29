@@ -1,5 +1,5 @@
 /**
- * Catálogo de permisos (44) y la matriz de los roles del sistema. ÚNICA fuente: la usan
+ * Catálogo de permisos y la matriz de los roles del sistema. ÚNICA fuente: la usan
  * `routes/roles.ts` (validación al crear/editar roles) y `prisma/seed.ts` (base nueva). Cada permiso
  * es una acción cableada a su candado (`requirePermiso`): si agregas uno, cablea su endpoint o no
  * hace nada. Los permisos nuevos se otorgan a los roles existentes por MIGRACIÓN de datos (p. ej.
@@ -17,6 +17,9 @@ export const PERMISOS_VALIDOS = [
   'citas.ver', 'citas.crear', 'citas.reprogramar', 'citas.cancelar', 'citas.estado', 'citas.revertir',
   // Solo cambiar el CANAL de una cita ya registrada (05-oct-2026), sin tocar estado ni promoción (eso es citas.revertir).
   'citas.canal',
+  // «Reservas web» en el menú (29-oct-2026): seguimiento de quién empezó a reservar por internet. Apagado para todos los roles
+  // (solo admin); se enciende desde Administración › Roles.
+  'reservas_web.ver',
   // Pacientes
   'pacientes.ver', 'pacientes.crear', 'pacientes.editar',
   // Membresías

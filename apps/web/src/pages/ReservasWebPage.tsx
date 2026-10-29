@@ -9,14 +9,14 @@ import { cn } from '../utils/cn';
 /**
  * RESERVAS WEB · seguimiento (06-oct-2026): quién empezó a reservar en la página pública, hasta qué paso llegó y si
  * terminó. Los que no terminaron se pueden llamar (celular / WhatsApp) y marcar como «contactado» con una nota.
- * Lo usan quienes agendan (permiso citas.crear). Solo aparece en el menú si la reserva web está encendida.
+ * Lo ve quien tenga el permiso reservas_web.ver (apagado por defecto: Administración › Roles). Solo aparece en el menú si la reserva web está encendida.
  */
 const PASOS: { id: PasoIntentoWeb; label: string }[] = [
   { id: 'sede', label: 'Sede' },
   { id: 'servicio', label: 'Servicio' },
   { id: 'fecha', label: 'Fecha' },
   { id: 'hora', label: 'Hora' },
-  { id: 'pago', label: 'Pago' },
+  { id: 'confirmar', label: 'Confirmar' },
 ];
 const RESULTADO: Record<ResultadoIntentoWeb, { label: string; clase: string }> = {
   en_curso: { label: 'Reservando ahora', clase: 'bg-sky-100 text-sky-800' },
@@ -25,7 +25,8 @@ const RESULTADO: Record<ResultadoIntentoWeb, { label: string; clase: string }> =
   vencio_pagando: { label: 'No terminó de pagar', clase: 'bg-amber-100 text-amber-800' },
   pago_rechazado: { label: 'Pago rechazado', clase: 'bg-rose-100 text-rose-700' },
   pago_sin_cupo: { label: 'Pagó sin cupo', clase: 'bg-rose-100 text-rose-700' },
-  reservo: { label: 'Reservó y pagó', clase: 'bg-emerald-100 text-emerald-800' },
+  sin_cupo: { label: 'Sin cupo al confirmar', clase: 'bg-rose-100 text-rose-700' },
+  reservo: { label: 'Reservó', clase: 'bg-emerald-100 text-emerald-800' },
   retomo: { label: 'Volvió y reservó', clase: 'bg-emerald-50 text-emerald-700' },
 };
 const PERIODOS = [
@@ -126,7 +127,7 @@ export function ReservasWebPage() {
 
 function FilaIntento({ x, onContactar }: { x: IntentoReservaWeb; onContactar: () => void }) {
   const r = RESULTADO[x.resultado];
-  const llego = PASOS.findIndex((p) => p.id === x.pasoAlcanzado);
+  const llego = PASOS.findIndex((p) => p.id === (x.pasoAlcanzado === 'pago' ? 'confirmar' : x.pasoAlcanzado)); // 'pago': intentos de antes de quitar la pasarela
   const termino = x.resultado === 'reservo';
   return (
     <tr className="border-t border-outline-variant/20 align-top" data-testid="rw-fila">

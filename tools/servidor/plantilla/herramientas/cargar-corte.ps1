@@ -107,12 +107,12 @@ if ($uploads) {
 # Reserva web encendida: la base nueva trae los servicios sin marcar y no tiene la llave interna; se rehacen.
 if (-not $definitivo -and $cfg['RESERVA_WEB_HABILITADA'] -eq '1') {
   $env:DATABASE_URL = $cfg['DATABASE_URL']
-  $sinPago = $cfg['RESERVA_WEB_MODO'] -eq 'sin_pago'
+  $sinPago = $cfg['RESERVA_WEB_MODO'] -ne 'vitrina'  # encendida: necesita la llave interna con la que la Agenda crea la cita
   $salida = & (Join-Path $RAIZ 'node\node.exe') (Join-Path $PSScriptRoot 'reserva-servicios.js') $(if ($sinPago) { 'llave' } else { 'marcar' })
   Remove-Item Env:\DATABASE_URL -ErrorAction SilentlyContinue
   if ($LASTEXITCODE -eq 0) {
     if ($sinPago) { $cfg['RESERVA_WEB_API_KEY'] = ($salida | Select-Object -Last 1 | ConvertFrom-Json).llave; EscribirEnv $ENVF $cfg }
-    Ok 'Reserva web: servicios y llave interna listos en la base nueva.'
+    Ok 'Reserva web: llave interna lista en la base nueva. Revisa en Administracion > Reserva web que servicios se ofrecen (la base del corte trae los suyos).'
   } else { Aviso 'Reserva web: no se pudo preparar; vuelve a correr «Reserva web de prueba.bat».' }
 }
 

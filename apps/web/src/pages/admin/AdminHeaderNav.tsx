@@ -14,6 +14,7 @@ export const ADMIN_TABS: AdminTabItem[] = [
   { to: '/admin/paquetes', label: 'Paquetes', icon: 'package', permiso: 'membresias.gestionar' },
   { to: '/admin/podologas', label: 'Podólogas', icon: 'person', permiso: 'profesionales.ver' },
   { to: '/admin/servicios', label: 'Servicios', icon: 'medical_services', permiso: 'servicios.ver' },
+  { to: '/admin/reserva-web', label: 'Reserva web', icon: 'language', permiso: 'servicios.ver' },
   { to: '/admin/auditoria', label: 'Auditoría', icon: 'receipt_long', permiso: 'auditoria.ver' },
   { to: '/admin/usuarios', label: 'Usuarios', icon: 'group', permiso: 'usuarios.ver' },
   { to: '/admin/roles', label: 'Roles', icon: 'key', permiso: 'roles.editar' },
