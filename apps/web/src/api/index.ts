@@ -105,7 +105,9 @@ export interface DiaEntrada {
   diaSemana: number;   // 1=Lun .. 6=Sáb
   horaEntrada: '08:00' | '09:00';
   esExcepcion: boolean; // true si tiene override explícito para esa fecha
-  trabaja: boolean;     // false = ese día de la semana no tiene horario base (el toggle no aplica)
+  trabaja: boolean;     // false = ese día no está en esta sede o no tiene horario base (el toggle no aplica)
+  enSede: boolean;      // false = ese día pertenece a otra sede (movimiento)
+  sedeOtra: string | null; // nombre de la otra sede ese día, si enSede=false
 }
 export interface PodologaSemana {
   id: string;

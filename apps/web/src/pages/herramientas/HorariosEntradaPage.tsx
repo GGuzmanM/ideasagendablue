@@ -105,11 +105,14 @@ function FilaPodologa({ p, sedeId, semanaRef }: { p: PodologaSemana; sedeId: str
             return (
               <div
                 key={d.fecha}
-                title={`${DIA_LABEL[d.diaSemana]} ${format(parseISO(d.fecha.slice(0, 10)), 'd MMM', { locale: es })} · no trabaja este día`}
-                className="flex flex-col items-center justify-center py-2.5 rounded-xl border border-outline-variant/20 bg-surface-container-low/40 text-on-surface-variant/40 select-none cursor-not-allowed"
+                title={`${DIA_LABEL[d.diaSemana]} ${format(parseISO(d.fecha.slice(0, 10)), 'd MMM', { locale: es })} · ${d.enSede ? 'no trabaja este día' : d.sedeOtra ? `ese día está en ${d.sedeOtra}` : 'no está asignada a esta sede ese día'}`}
+                className={cn(
+                  'flex flex-col items-center justify-center py-2.5 rounded-xl border select-none cursor-not-allowed',
+                  d.enSede ? 'border-outline-variant/20 bg-surface-container-low/40 text-on-surface-variant/40' : 'border-violet-300/50 bg-violet-50/60 text-violet-700/70',
+                )}
               >
                 <span className="text-[10px] font-bold uppercase">{DIA_LABEL[d.diaSemana]}</span>
-                <span className="text-[10px] font-semibold">Libre</span>
+                <span className="text-[10px] font-semibold truncate max-w-full px-1">{d.enSede ? 'Libre' : d.sedeOtra ?? 'Otra sede'}</span>
               </div>
             );
           }

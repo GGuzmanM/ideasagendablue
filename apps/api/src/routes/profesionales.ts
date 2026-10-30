@@ -9,6 +9,7 @@ import { turnosDelDia } from '../services/disponibilidad';
 import { fechaDb, hoyLimaStr } from '../utils/fechaLima';
 import { esFichaAdicional, fijarSedeBaseEnTx, notificarCambioMovimiento } from '../services/asignacionService';
 import { auditEnTx, registrarAudit } from '../services/audit';
+import { asignacionesDeLaSemana, estadoEnDia } from '../services/personalSemana';
 import { setOverrideTurnoFecha, setPresenciaExcepcion, setHorarioBase, efectosCambioHorario } from '../services/horarioService';
 
 const router = Router();
@@ -454,15 +455,13 @@ function fechasSemana(fechaISO: string): { fecha: Date; iso: string; diaSemana: 
 router.get('/horarios-entrada', requireAuth, requirePermiso('horarios.editar'), async (req, res) => {
   const { sedeId, semana } = req.query as { sedeId?: string; semana?: string };
   if (!sedeId) throw new AppError('sedeId requerido', 400);
-  const semanaRef = semana && /^\d{4}-\d{2}-\d{2}$/.test(semana) ? semana : new Date().toISOString().slice(0, 10);
+  const semanaRef = semana && /^\d{4}-\d{2}-\d{2}$/.test(semana) ? semana : hoyLimaStr();
   const dias = fechasSemana(semanaRef);
 
-  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
-  const asignaciones = await prisma.asignacionSede.findMany({
-    where: { sedeId, activa: true, fechaInicio: { lte: hoy }, OR: [{ fechaFin: null }, { fechaFin: { gte: hoy } }] },
-    select: { profesionalId: true },
-  });
-  const ids = asignaciones.map(a => a.profesionalId);
+  // Quién es de la sede ESA SEMANA (por rango de fechas, no por la asignación de hoy): una podóloga con un movimiento
+  // futuro sigue en su sede hasta el día anterior y aparece en la nueva desde su primer día.
+  const asignacionesSemana = await asignacionesDeLaSemana(sedeId, dias[0]!.iso, dias[4]!.iso);
+  const ids = [...asignacionesSemana.keys()];
 
   const profs = await prisma.profesional.findMany({
     where: { id: { in: ids }, tipo: 'podologa', deletedAt: null, activo: true },
@@ -491,9 +490,10 @@ router.get('/horarios-entrada', requireAuth, requirePermiso('horarios.editar'), 
       dias: dias.map(d => {
         const baseRow = p.horarios.find(h => h.diaSemana === d.diaSemana);
         const ov = ovMap.get(`${p.id}|${d.iso}`);
-        // `trabaja=false` = sin horario base ese día de la semana: el toggle 8/9 no aplica
-        // (el resolvedor lo ignora en días normales) y la UI lo muestra como "No trabaja".
-        return { fecha: d.iso, diaSemana: d.diaSemana, horaEntrada: ov ?? baseRow?.horaInicio ?? '08:00', esExcepcion: !!ov, trabaja: !!baseRow };
+        const { enSede, sedeOtra } = estadoEnDia(asignacionesSemana.get(p.id) ?? [], sedeId, d.iso);
+        // `trabaja=false` = ese día no está en esta sede (movimiento) o no tiene horario base ese día de la semana:
+        // el toggle 8/9 no aplica (el resolvedor lo ignora en días normales) y la UI lo muestra como "Libre"/"Otra sede".
+        return { fecha: d.iso, diaSemana: d.diaSemana, horaEntrada: ov ?? baseRow?.horaInicio ?? '08:00', esExcepcion: !!ov, trabaja: enSede && !!baseRow, enSede, sedeOtra };
       }),
     })),
   });

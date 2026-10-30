@@ -106,7 +106,8 @@ router.get('/horas-extra', requireAuth, requireGestor, async (req, res) => {
 
     // Profesionales asignados a esa sede esa fecha (base + coberturas de un día).
     const asignados = await prisma.asignacionSede.findMany({
-      where: { sedeId: exc.sedeId, activa: true, fechaInicio: { lte: exc.fecha }, OR: [{ fechaFin: null }, { fechaFin: { gte: exc.fecha } }] },
+      // Por RANGO, sin `activa`: un movimiento deja la asignación anterior activa=false aunque siga siendo su sede hasta el día previo.
+      where: { sedeId: exc.sedeId, fechaInicio: { lte: exc.fecha }, OR: [{ fechaFin: null }, { fechaFin: { gte: exc.fecha } }] },
       select: { profesionalId: true },
       distinct: ['profesionalId'],
     });
@@ -223,7 +224,9 @@ router.get('/rotacion', requireAuth, requireGestor, async (req, res) => {
   // Todas las asignaciones que tocan el rango, horarios base, entradas y sedes (una sola query c/u).
   const [asignaciones, horarios, entradas, sedes] = await Promise.all([
     prisma.asignacionSede.findMany({
-      where: { profesionalId: { in: ids }, activa: true, fechaInicio: { lte: hastaD }, OR: [{ fechaFin: null }, { fechaFin: { gte: desdeD } }] },
+      // Por RANGO, sin `activa`: toda asignación cerrada por un movimiento queda activa=false, y sin ella los días
+      // trabajados en la sede anterior (antes del movimiento) no se contaban en el reporte.
+      where: { profesionalId: { in: ids }, fechaInicio: { lte: hastaD }, OR: [{ fechaFin: null }, { fechaFin: { gte: desdeD } }] },
       include: { sede: { select: { id: true, nombre: true, color: true, horario: true } } },
       orderBy: { fechaInicio: 'asc' },
     }),
