@@ -112,7 +112,7 @@ OTRAS ACCIONES
 - Detener.bat / Iniciar.bat     detener o iniciar la Agenda.
 - Desinstalar.bat               quita el servicio y la regla del firewall (no borra base ni archivos).
 - Si se cambia algo en agenda.env: Detener.bat y luego Iniciar.bat.
-- Reserva web de prueba.bat     pagina de reservas para pacientes en https://<servidor>/reserva (sin pago en linea). Opciones:
+- Reserva web de prueba.bat     pagina de reservas para pacientes en https://<servidor>/agendamiento_directo_limablue_un_paso_cerca_de_ti/reserva (sin pago en linea). Opciones:
                                 2 ENCENDER: los pacientes reservan de verdad (se crea la cita; se paga en la sede).
                                 1 VITRINA: se recorre con los horarios reales, pero no crea citas.
                                 0 APAGAR. El corte definitivo la apaga sola.

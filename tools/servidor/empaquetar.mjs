@@ -71,7 +71,7 @@ run(`npx vite build --outDir "${path.join(APP, 'web')}" --emptyOutDir --logLevel
 // ── 3. Archivos que el API lee al correr + Prisma ───────────────────────────────
 paso('Copiando assets, schema y migraciones');
 fs.cpSync(path.join(API, 'assets'), path.join(APP, 'assets'), { recursive: true });
-fs.cpSync(path.join(REPO, 'tools', 'servidor', 'reserva'), path.join(APP, 'reserva'), { recursive: true }); // página de reserva web (/reserva)
+fs.cpSync(path.join(REPO, 'tools', 'servidor', 'reserva'), path.join(APP, 'reserva'), { recursive: true }); // página de reserva web (/agendamiento_directo_limablue_un_paso_cerca_de_ti/reserva)
 fs.mkdirSync(path.join(APP, 'prisma'), { recursive: true });
 fs.copyFileSync(path.join(API, 'prisma', 'schema.prisma'), path.join(APP, 'prisma', 'schema.prisma'));
 fs.cpSync(path.join(API, 'prisma', 'migrations'), path.join(APP, 'prisma', 'migrations'), { recursive: true });

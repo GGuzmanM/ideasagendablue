@@ -21,16 +21,17 @@ const certificadoPropio = (mode: string): { key: Buffer; cert: Buffer } | null =
   return { key: fs.readFileSync(key), cert: fs.readFileSync(cert) };
 };
 
-// Página pública de reserva web (tools/servidor/reserva). En producción la sirve el lanzador en /reserva/;
-// este plugin hace lo mismo en dev/preview para poder probarla en localhost.
+// Página pública de reserva web (tools/servidor/reserva). En producción la sirve el lanzador en RUTA_RESERVA (con «/» final);
+// este plugin hace lo mismo en dev/preview para poder probarla en localhost. Si cambia, cambia también tools/servidor/lanzador.js.
+const RUTA_RESERVA = '/agendamiento_directo_limablue_un_paso_cerca_de_ti/reserva';
 const reservaPublica = (): Plugin => {
   const carpeta = path.resolve(__dirname, '../../tools/servidor/reserva');
   const tipos: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.png': 'image/png', '.js': 'text/javascript', '.css': 'text/css' };
   const middleware = (req: { url?: string }, res: any, next: () => void) => {
     const ruta = (req.url || '').split('?')[0];
-    if (ruta === '/reserva') { res.statusCode = 301; res.setHeader('Location', '/reserva/'); res.end(); return; }
-    if (!ruta.startsWith('/reserva/')) return next();
-    const rel = decodeURIComponent(ruta.slice('/reserva/'.length)) || 'index.html';
+    if (ruta === RUTA_RESERVA || ruta === '/reserva' || ruta === '/reserva/') { res.statusCode = 301; res.setHeader('Location', `${RUTA_RESERVA}/`); res.end(); return; }
+    if (!ruta.startsWith(`${RUTA_RESERVA}/`)) return next();
+    const rel = decodeURIComponent(ruta.slice(RUTA_RESERVA.length + 1)) || 'index.html';
     const archivo = path.resolve(carpeta, rel);
     if (!archivo.startsWith(carpeta) || !fs.existsSync(archivo) || !fs.statSync(archivo).isFile()) return next();
     res.setHeader('Content-Type', tipos[path.extname(archivo)] || 'application/octet-stream');
@@ -49,7 +50,7 @@ export default defineConfig(({ mode }) => {
   return {
   // TODA la web cuelga de este prefijo: https://<servidor>/acceso_agenda_lb/login, /acceso_agenda_lb/pacientes, etc.
   // (assets, router y enlaces lo toman de aquí vía import.meta.env.BASE_URL → utils/rutaBase.ts). /api, /socket.io,
-  // /uploads y /reserva siguen en la raíz. Si cambia, cambia también PREFIJO_WEB en tools/servidor/lanzador.js.
+  // /uploads y la reserva web (RUTA_RESERVA) siguen en la raíz. Si cambia, cambia también PREFIJO_WEB en tools/servidor/lanzador.js.
   base: '/acceso_agenda_lb/',
   plugins: [react(), reservaPublica(), ...(httpsHabilitado(mode) && !https ? [basicSsl()] : [])],
   resolve: {

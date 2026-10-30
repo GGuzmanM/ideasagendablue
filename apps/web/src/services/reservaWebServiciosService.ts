@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import { serviciosApi, type ServicioReservaWeb } from '../api';
+import { serviciosApi, type ServicioReservaWeb, type SedeReservaWeb } from '../api';
 import { useAuthStore } from '../stores/authStore';
 
 export type FiltroReservaWeb = 'todos' | 'web' | 'sin_web';
@@ -18,9 +18,11 @@ export function useReservaWebServicios() {
   const [filtro, setFiltro] = useState<FiltroReservaWeb>('todos');
 
   const { data, isLoading } = useQuery({ queryKey: ['reserva-web-servicios'], queryFn: serviciosApi.reservaWeb });
+  const { data: sedes } = useQuery({ queryKey: ['reserva-web-sedes'], queryFn: serviciosApi.sedesReservaWeb });
 
   const refrescar = () => {
     qc.invalidateQueries({ queryKey: ['reserva-web-servicios'] });
+    qc.invalidateQueries({ queryKey: ['reserva-web-sedes'] });
     qc.invalidateQueries({ queryKey: ['servicios'] });
   };
   const onError = (e: Error) => toast.error(e.message);
@@ -41,6 +43,19 @@ export function useReservaWebServicios() {
     mutationFn: ({ id, tipo, sedeId, precio }: { id: string; tipo: boolean; sedeId: string; precio: number | null }) =>
       tipo ? serviciosApi.precioWebSedeTipo(id, sedeId, precio) : serviciosApi.precioWebSedeServicio(id, sedeId, precio),
     onSuccess: (_r, v) => { refrescar(); toast.success(v.precio === null ? 'Esa sede vuelve al precio general' : 'Precio de la sede guardado'); },
+    onError,
+  });
+
+  // Sede visible (o no) en la web. Apagarla no toca la agenda interna.
+  const sedeMut = useMutation({
+    mutationFn: ({ sedeId, reservaWeb }: { sedeId: string; reservaWeb: boolean }) => serviciosApi.editarSedeReservaWeb(sedeId, reservaWeb),
+    onSuccess: (_r, v) => { refrescar(); toast.success(v.reservaWeb ? 'La sede se muestra en la reserva web' : 'La sede ya no se muestra en la reserva web'); },
+    onError,
+  });
+  // Un servicio en UNA sede: ofrecer = se ofrece ahí; false = oculto ahí.
+  const ofertaSedeMut = useMutation({
+    mutationFn: ({ id, sedeId, ofrecer }: { id: string; sedeId: string; ofrecer: boolean }) => serviciosApi.ofertaWebSedeServicio(id, sedeId, ofrecer),
+    onSuccess: (_r, v) => { refrescar(); toast.success(v.ofrecer ? 'Se ofrece en esa sede' : 'Ya no se ofrece en esa sede'); },
     onError,
   });
 
@@ -72,6 +87,7 @@ export function useReservaWebServicios() {
     } satisfies Record<FiltroReservaWeb, number>,
     /** Servicios y tipos que cobran distinto en alguna sede. */
     conPrecioPorSede: (data ?? []).filter((s) => Object.keys(s.preciosSede).length > 0 || s.subcategorias.some((t) => Object.keys(t.preciosSede).length > 0)).length,
-    servicioMut, tipoMut, precioSedeMut,
+    sedes: (sedes ?? []) as SedeReservaWeb[],
+    servicioMut, tipoMut, precioSedeMut, sedeMut, ofertaSedeMut,
   };
 }

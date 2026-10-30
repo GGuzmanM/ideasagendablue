@@ -96,17 +96,21 @@ app.use(proxyApi);
 app.use(proxyWs);
 app.use(proxyUploads);
 
-// ─── Reserva web: página del paciente en /reserva (15-oct-2026; sin pasarela de pago desde el 29-oct-2026) ──────────
-// Solo con RESERVA_WEB_HABILITADA=1 (la activa «Reserva web.bat»). La página llama al API por la misma dirección
-// (/api/v1/publico/reservas): al confirmar se crea la cita y el pago se hace en la sede. No hay pasarela ni secretos aquí.
+// ─── Reserva web: página del paciente en /agendamiento_directo_limablue_un_paso_cerca_de_ti/reserva ──────────────────
+// (15-oct-2026; sin pasarela de pago desde el 29-oct-2026; dirección con prefijo desde el 30-oct-2026). Se puede cambiar con
+// RUTA_RESERVA_WEB en agenda.env. Solo con RESERVA_WEB_HABILITADA=1 (la activa «Reserva web de prueba.bat»). La página llama
+// al API por la misma dirección (/api/v1/publico/reservas): al confirmar se crea la cita y el pago se hace en la sede.
 const RESERVA = path.join(APP, 'reserva');
+const RUTA_RESERVA = `/${(cfg.RUTA_RESERVA_WEB || 'agendamiento_directo_limablue_un_paso_cerca_de_ti/reserva').replace(/^\/+|\/+$/g, '')}`;
 if (cfg.RESERVA_WEB_HABILITADA === '1' && fs.existsSync(RESERVA)) {
-  // Con «/» final para que el logo (ruta relativa) cargue. Express trata /reserva y /reserva/ igual en app.get: se compara exacto.
-  app.use((req, res, next) => (req.path === '/reserva' ? res.redirect(301, '/reserva/') : next()));
-  app.use('/reserva', express.static(RESERVA, { setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache') }));
+  // Con «/» final para que el logo (ruta relativa) cargue. Express trata la ruta con y sin «/» igual en app.get: se compara exacto.
+  app.use((req, res, next) => (req.path === RUTA_RESERVA ? res.redirect(301, `${RUTA_RESERVA}/`) : next()));
+  // La dirección anterior (/reserva) ya pudo compartirse: se lleva a la nueva.
+  app.use((req, res, next) => (req.path === '/reserva' || req.path === '/reserva/' ? res.redirect(301, `${RUTA_RESERVA}/`) : next()));
+  app.use(RUTA_RESERVA, express.static(RESERVA, { setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache') }));
   log('servidor', cfg.RESERVA_WEB_MODO === 'vitrina'
-    ? 'Reserva web en /reserva en MODO VITRINA (solo se ve: no aparta horarios ni crea citas).'
-    : 'Reserva web activa en /reserva (la cita se crea al confirmar; se paga en la sede).');
+    ? `Reserva web en ${RUTA_RESERVA} en MODO VITRINA (solo se ve: no aparta horarios ni crea citas).`
+    : `Reserva web activa en ${RUTA_RESERVA} (la cita se crea al confirmar; se paga en la sede).`);
 }
 
 // ─── Pantallas: TODA la web cuelga de /acceso_agenda_lb (login en /acceso_agenda_lb/login) ───────────────────────

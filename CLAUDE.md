@@ -19,10 +19,10 @@ Reemplaza un ERP de escritorio de 14 años. 5 sedes, ~400 citas diarias, 40 pod�
 - **Toda la web cuelga de `/acceso_agenda_lb`** (login en `/acceso_agenda_lb/login`, ventanas en `/acceso_agenda_lb/<ventana>`).
   Se define una vez en `base` de `vite.config.ts`; el router usa `basename` (`utils/rutaBase.ts`) y lo que NO pasa por el
   router (`window.open`, `window.location`, imágenes de `/public`) usa `rutaWeb()`. `/api`, `/socket.io`, `/uploads` y
-  `/reserva` siguen en la raíz. En producción `tools/servidor/lanzador.js` sirve solo ese prefijo (`PREFIJO_WEB`) y responde
+  la reserva web pública (`/agendamiento_directo_limablue_un_paso_cerca_de_ti/reserva/`, `RUTA_RESERVA_WEB`; `/reserva` redirige ahí) siguen en la raíz. En producción `tools/servidor/lanzador.js` sirve solo ese prefijo (`PREFIJO_WEB`) y responde
   404 neutro a todo lo demás; `/verificar/<código>` sin prefijo (QR de recetas ya impresas) redirige. En dev: `http://localhost:5180/acceso_agenda_lb/`.
 - **Reserva web SIN pasarela de pago (29-oct-2026)**: la cita se crea al confirmar (pago pendiente: se paga en la sede). Dos entradas que
-  comparten `services/reservaWeb/`: la página pública `/reserva` (`routes/reservaWeb.ts`, sin login) y la API del chat de WhatsApp
+  comparten `services/reservaWeb/`: la página pública `/agendamiento_directo_limablue_un_paso_cerca_de_ti/reserva/` (`routes/reservaWeb.ts`, sin login) y la API del chat de WhatsApp
   (`routes/reservaChat.ts`, `/api/v1/integraciones/reservas`, llave con scope `reservas:write`; docs/API-RESERVAS-WHATSAPP.md). Documento DNI o CE
   (`services/reservaWeb/validaciones.ts`). La cita se crea con POST /citas usando la llave interna `RESERVA_WEB_API_KEY`.
   Qué servicios se ofrecen y a qué precio: Administración › Reserva web (`/admin/reserva-web`; `servicios.reservaOnline` + `precioOnline` y, por
@@ -31,6 +31,11 @@ Reemplaza un ERP de escritorio de 14 años. 5 sedes, ~400 citas diarias, 40 pod�
   Orden de precedencia en `services/reservaWeb/precios.ts` (`precioWebEnSede`: tipo-sede › tipo web › tipo referencial › servicio-sede › servicio web ›
   servicio referencial). `catalogo()` devuelve por variante `precio` (general) y `precios` (id de sede → precio; una sede ausente no ofrece ese tipo);
   `servicioReservable` cobra `precios[sedeId]`. Rutas `PUT /servicios/:id/reserva-web/sedes/:sedeId` y `/servicios/subcategorias/:subId/reserva-web/sedes/:sedeId`.
+  **Sedes visibles y oferta por sede (30-oct-2026)**: `sedes.reservaWeb` (default true; apagarla la saca de la reserva web, no de la agenda) y la tabla
+  `servicio_sede_web_oculto` (una fila = ese servicio NO se ofrece en esa sede; sin fila = se ofrece en todas las sedes de su área). La regla vive en
+  `services/reservaWeb/visibilidad.ts` (`sedesQueOfrecen`) y la usan `catalogo()` y la pantalla; `horasLibres` devuelve [] para una sede apagada o un servicio
+  oculto ahí. Rutas: `GET /servicios/reserva-web/sedes`, `PATCH /servicios/reserva-web/sedes/:sedeId {reservaWeb}`, `PUT /servicios/:id/reserva-web/sedes/:sedeId/oferta {ofrecer}`.
+  Los tipos (subcategorías) siguen al servicio: solo tienen precio propio por sede, no oferta propia.
 - TypeScript estricto en todo el proyecto
 - Errores API: `{ error: string, code?: string }` via `AppError` en `middleware/errorHandler.ts`
 - Fechas: UTC en DB, convertir a America/Lima en frontend

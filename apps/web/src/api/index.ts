@@ -242,9 +242,11 @@ export interface ServicioReservaWeb {
   id: string; codigo: string; nombre: string; duracionMinutos: number;
   precioReferencial: number | null; precioOnline: number | null; reservaOnline: boolean;
   unidad: { id: string; nombre: string };
-  /** Sedes donde opera el área del servicio (las únicas donde puede tener precio propio). */
-  sedes: { id: string; nombre: string }[];
+  /** Sedes donde opera el área del servicio (las únicas donde puede tener precio propio). `reservaWeb` = la sede se ve en la web. */
+  sedes: { id: string; nombre: string; reservaWeb: boolean }[];
   preciosSede: Record<string, number>;
+  /** Sedes del área donde este servicio NO se ofrece en la web (en las demás sí, si la sede está visible). */
+  sedesOcultas: string[];
   /** El área exige elegir profesional: no se puede reservar en línea. */
   exigeProfesional: boolean;
   /** Se ofrece de verdad ahora mismo en la reserva web (cumple todo). Si está marcado y no se ofrece, «motivo» dice por qué. */
@@ -253,6 +255,7 @@ export interface ServicioReservaWeb {
   subcategorias: TipoReservaWeb[];
 }
 export type CambiosReservaWeb = { reservaOnline?: boolean; precioOnline?: number | null };
+export interface SedeReservaWeb { id: string; nombre: string; direccion: string; reservaWeb: boolean }
 
 export const serviciosApi = {
   listar: (params?: { unidadNegocioId?: string; activo?: boolean }) =>
@@ -276,6 +279,13 @@ export const serviciosApi = {
   /** Precio web de UNA sede para un servicio (precio null = quitarlo: esa sede vuelve al precio general). */
   precioWebSedeServicio: (id: string, sedeId: string, precio: number | null) =>
     api.put<{ sedeId: string; precio: number | null }>(`/servicios/${id}/reserva-web/sedes/${sedeId}`, { precio }),
+  /** Sedes que se ven (o no) en la reserva web. */
+  sedesReservaWeb: () => api.get<SedeReservaWeb[]>('/servicios/reserva-web/sedes'),
+  editarSedeReservaWeb: (sedeId: string, reservaWeb: boolean) =>
+    api.patch<{ id: string; reservaWeb: boolean }>(`/servicios/reserva-web/sedes/${sedeId}`, { reservaWeb }),
+  /** Ofrecer (o no) un servicio en UNA sede de la reserva web. */
+  ofertaWebSedeServicio: (id: string, sedeId: string, ofrecer: boolean) =>
+    api.put<{ sedeId: string; ofrecer: boolean }>(`/servicios/${id}/reserva-web/sedes/${sedeId}/oferta`, { ofrecer }),
   precioWebSedeTipo: (subId: string, sedeId: string, precio: number | null) =>
     api.put<{ sedeId: string; precio: number | null }>(`/servicios/subcategorias/${subId}/reserva-web/sedes/${sedeId}`, { precio }),
 

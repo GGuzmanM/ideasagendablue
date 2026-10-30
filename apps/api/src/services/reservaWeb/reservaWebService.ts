@@ -20,6 +20,7 @@ import { timeToMinutes } from '@limablue/shared';
 import { intentoConToken, enlazarReserva } from './intentos';
 import type { TipoDocumentoReserva } from './validaciones';
 import { precioWebEnSede, aNumero } from './precios';
+import { sedesQueOfrecen, claveOculta } from './visibilidad';
 
 const num = (v: string | undefined, def: number) => (v && Number.isFinite(Number(v)) ? Number(v) : def);
 const DIAS_MAX = () => num(process.env.RESERVA_WEB_DIAS_MAX, 30);
@@ -47,8 +48,8 @@ export interface VarianteWeb { id: string | null; nombre: string; precio: number
 export interface ServicioWeb { id: string; nombre: string; duracionMinutos: number; unidad: string; sedes: string[]; variantes: VarianteWeb[] }
 
 export async function catalogo() {
-  const [sedes, sedeUnidades, servicios, preciosServicio, preciosTipo] = await Promise.all([
-    prisma.sede.findMany({ where: { activa: true, deletedAt: null }, orderBy: [{ orden: 'asc' }, { nombre: 'asc' }], select: { id: true, nombre: true, direccion: true, horario: true } }),
+  const [sedes, sedeUnidades, servicios, preciosServicio, preciosTipo, ocultas] = await Promise.all([
+    prisma.sede.findMany({ where: { activa: true, deletedAt: null, reservaWeb: true }, orderBy: [{ orden: 'asc' }, { nombre: 'asc' }], select: { id: true, nombre: true, direccion: true, horario: true, reservaWeb: true } }),
     prisma.sedeUnidadNegocio.findMany({ select: { sedeId: true, unidadNegocioId: true } }),
     prisma.servicio.findMany({
       where: { reservaOnline: true, activo: true, deletedAt: null, unidadNegocio: { activa: true, deletedAt: null, modoReserva: { not: 'preferencia_obligatoria' } } },
@@ -60,13 +61,18 @@ export async function catalogo() {
     }),
     prisma.servicioPrecioWebSede.findMany(),
     prisma.subcategoriaPrecioWebSede.findMany(),
+    prisma.servicioSedeWebOculto.findMany({ select: { servicioId: true, sedeId: true } }),
   ]);
   const sedesActivas = new Set(sedes.map((s) => s.id));
+  const ocultasSet = new Set(ocultas.map((o) => claveOculta(o.servicioId, o.sedeId)));
   const delServicio = new Map(preciosServicio.map((p) => [`${p.servicioId}|${p.sedeId}`, Number(p.precio)]));
   const delTipo = new Map(preciosTipo.map((p) => [`${p.subcategoriaId}|${p.sedeId}`, Number(p.precio)]));
   const out: ServicioWeb[] = [];
   for (const s of servicios) {
-    const sedesDelArea = sedeUnidades.filter((x) => x.unidadNegocioId === s.unidadNegocio.id && sedesActivas.has(x.sedeId)).map((x) => x.sedeId);
+    // Solo sedes visibles en la web (el findMany de arriba ya las filtra) donde el servicio no esté oculto.
+    const delArea = sedeUnidades.filter((x) => x.unidadNegocioId === s.unidadNegocio.id && sedesActivas.has(x.sedeId)).map((x) => ({ id: x.sedeId, reservaWeb: true }));
+    const ocultasDelServicio = new Set(delArea.filter((x) => ocultasSet.has(claveOculta(s.id, x.id))).map((x) => x.id));
+    const sedesDelArea = sedesQueOfrecen(delArea, ocultasDelServicio);
     const armar = (id: string | null, nombre: string, tipo: { web: number | null; referencial: number | null } | null): VarianteWeb | null => {
       const calcular = (sedeId: string | null) => precioWebEnSede(
         { servicioWeb: aNumero(s.precioOnline), servicioReferencial: aNumero(s.precioReferencial), servicioSede: sedeId ? delServicio.get(`${s.id}|${sedeId}`) ?? null : null },
@@ -124,6 +130,12 @@ export async function horasLibres(sedeId: string, servicioId: string, fecha: str
   if (!servicio) return [];
   const opera = await prisma.sedeUnidadNegocio.findUnique({ where: { sedeId_unidadNegocioId: { sedeId, unidadNegocioId: servicio.unidadNegocioId } } });
   if (!opera) return [];
+  // Sede fuera de la web o servicio no ofrecido ahí: no se dan horas (aunque llamen a la API directo).
+  const [sede, oculto] = await Promise.all([
+    prisma.sede.findUnique({ where: { id: sedeId }, select: { reservaWeb: true, activa: true, deletedAt: true } }),
+    prisma.servicioSedeWebOculto.findUnique({ where: { servicioId_sedeId: { servicioId, sedeId } } }),
+  ]);
+  if (!sede || !sede.reservaWeb || !sede.activa || sede.deletedAt || oculto) return [];
 
   const slots = await calcularDisponibilidad({ sedeId, unidadNegocioId: servicio.unidadNegocioId, servicioId, fecha, desglosado: true });
   const libresPorHora = new Map<string, number>();

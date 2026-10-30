@@ -6,6 +6,7 @@ import { AppError } from '../middleware/errorHandler';
 import { auditEnTx, registrarAudit } from '../services/audit';
 import { catalogo } from '../services/reservaWeb/reservaWebService';
 import { precioWebEnSede } from '../services/reservaWeb/precios';
+import { sedesQueOfrecen, claveOculta } from '../services/reservaWeb/visibilidad';
 
 const router = Router();
 
@@ -48,7 +49,7 @@ const aNum = (v: unknown) => (v == null ? null : Number(v));
 // 30-oct-2026: cada sede puede tener su propio precio web (servicio_precio_web_sede / subcategoria_precio_web_sede). Sin precio
 // en una sede rige el general. El orden de precedencia vive en services/reservaWeb/precios.ts.
 router.get('/reserva-web', requireAuth, requirePermiso('servicios.ver'), async (_req, res) => {
-  const [servicios, cat, sedes, sedeUnidades, preciosServicio, preciosTipo] = await Promise.all([
+  const [servicios, cat, sedes, sedeUnidades, preciosServicio, preciosTipo, ocultas] = await Promise.all([
     prisma.servicio.findMany({
       where: { deletedAt: null, activo: true },
       include: {
@@ -58,11 +59,13 @@ router.get('/reserva-web', requireAuth, requirePermiso('servicios.ver'), async (
       orderBy: [{ orden: 'asc' }, { nombre: 'asc' }],
     }),
     catalogo(),
-    prisma.sede.findMany({ where: { activa: true, deletedAt: null }, orderBy: [{ orden: 'asc' }, { nombre: 'asc' }], select: { id: true, nombre: true } }),
+    prisma.sede.findMany({ where: { activa: true, deletedAt: null }, orderBy: [{ orden: 'asc' }, { nombre: 'asc' }], select: { id: true, nombre: true, reservaWeb: true } }),
     prisma.sedeUnidadNegocio.findMany({ select: { sedeId: true, unidadNegocioId: true } }),
     prisma.servicioPrecioWebSede.findMany(),
     prisma.subcategoriaPrecioWebSede.findMany(),
+    prisma.servicioSedeWebOculto.findMany({ select: { servicioId: true, sedeId: true } }),
   ]);
+  const ocultasSet = new Set(ocultas.map((o) => claveOculta(o.servicioId, o.sedeId)));
   const ofrecidos = new Map(cat.servicios.map((s) => [s.id, s]));
   const delServicio = new Map(preciosServicio.map((p) => [`${p.servicioId}|${p.sedeId}`, Number(p.precio)]));
   const delTipo = new Map(preciosTipo.map((p) => [`${p.subcategoriaId}|${p.sedeId}`, Number(p.precio)]));
@@ -72,9 +75,12 @@ router.get('/reserva-web', requireAuth, requirePermiso('servicios.ver'), async (
     const ofrecido = ofrecidos.get(s.id);
     const exigeProfesional = s.unidadNegocio.modoReserva === 'preferencia_obligatoria';
     const sedesDelArea = sedes.filter((x) => sedeUnidades.some((su) => su.sedeId === x.id && su.unidadNegocioId === s.unidadNegocio.id));
-    // ¿Hay precio en alguna sede (o el general)? Si no, el servicio no se puede mostrar.
+    // Sedes donde de verdad se ofrece: visibles en la web y sin este servicio oculto (misma regla que el catálogo público).
+    const ocultasDelServicio = new Set(sedesDelArea.filter((x) => ocultasSet.has(claveOculta(s.id, x.id))).map((x) => x.id));
+    const sedesOfrecen = sedesQueOfrecen(sedesDelArea, ocultasDelServicio);
+    // ¿Hay precio en alguna sede donde se ofrece (o el general)? Si no, el servicio no se puede mostrar.
     const hayPrecio = (tipo: { id: string; precioOnline: unknown; precioReferencial: unknown } | null) =>
-      [null, ...sedesDelArea.map((x) => x.id)].some((sedeId) => precioWebEnSede(
+      [null, ...sedesOfrecen].some((sedeId) => precioWebEnSede(
         { servicioWeb: aNum(s.precioOnline), servicioReferencial: aNum(s.precioReferencial), servicioSede: sedeId ? delServicio.get(`${s.id}|${sedeId}`) ?? null : null },
         tipo ? { tipoWeb: aNum(tipo.precioOnline), tipoReferencial: aNum(tipo.precioReferencial), tipoSede: sedeId ? delTipo.get(`${tipo.id}|${sedeId}`) ?? null : null } : null,
       ) !== null);
@@ -84,6 +90,7 @@ router.get('/reserva-web', requireAuth, requirePermiso('servicios.ver'), async (
       if (exigeProfesional) motivo = 'Esta área exige elegir profesional: no se puede reservar en línea';
       else if (!s.unidadNegocio.activa) motivo = 'El área del servicio está inactiva';
       else if (s.subcategorias.length && !s.subcategorias.some((v) => v.reservaOnline)) motivo = 'Todos sus tipos están desactivados para la web';
+      else if (!sedesOfrecen.length) motivo = sedesDelArea.some((x) => x.reservaWeb) ? 'No está activado en ninguna sede' : 'Ninguna sede de su área está visible en la web';
       else if (!tienePrecio) motivo = 'Falta el precio';
       else motivo = 'Ninguna sede de su área lo ofrece';
     }
@@ -94,6 +101,8 @@ router.get('/reserva-web', requireAuth, requirePermiso('servicios.ver'), async (
       ofrecido: !!ofrecido, motivo,
       // Sedes donde opera el área del servicio (las únicas donde puede tener precio propio) y su precio web, por sede.
       sedes: sedesDelArea, preciosSede: mapaSedes(s.id, sedesDelArea, delServicio),
+      // Sedes del área donde este servicio NO se ofrece en la web (en las demás sí, si la sede está visible).
+      sedesOcultas: [...ocultasDelServicio],
       subcategorias: s.subcategorias.map((v) => ({
         id: v.id, nombre: v.nombre, precioReferencial: aNum(v.precioReferencial), precioOnline: aNum(v.precioOnline), reservaOnline: v.reservaOnline,
         preciosSede: mapaSedes(v.id, sedesDelArea, delTipo),
@@ -129,6 +138,45 @@ router.put('/:id/reserva-web/sedes/:sedeId', requireAuth, requirePermiso('servic
     ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
   });
   res.json({ sedeId, precio });
+});
+
+// Ofrecer (o no) un servicio en UNA sede de la reserva web. ofrecer=false → queda oculto ahí; true → se borra la marca.
+router.put('/:id/reserva-web/sedes/:sedeId/oferta', requireAuth, requirePermiso('servicios.editar'), async (req, res) => {
+  const { ofrecer } = z.object({ ofrecer: z.boolean() }).parse(req.body);
+  const id = uuid.parse(req.params.id), sedeId = uuid.parse(req.params.sedeId);
+  const servicio = await prisma.servicio.findFirst({ where: { id, deletedAt: null }, select: { id: true, nombre: true, unidadNegocioId: true } });
+  if (!servicio) throw new AppError('Servicio no encontrado', 404);
+  const sede = await sedeDelArea(sedeId, servicio.unidadNegocioId);
+  const oculto = await prisma.servicioSedeWebOculto.findUnique({ where: { servicioId_sedeId: { servicioId: id, sedeId } } });
+  if (ofrecer) await prisma.servicioSedeWebOculto.deleteMany({ where: { servicioId: id, sedeId } });
+  else if (!oculto) await prisma.servicioSedeWebOculto.create({ data: { servicioId: id, sedeId } });
+  void registrarAudit({
+    usuarioId: req.user?.userId, accion: 'editar_oferta_web_sede_servicio', entidad: 'servicio', entidadId: id, sedeId,
+    antes: { ofrecido: !oculto }, despues: { servicio: servicio.nombre, sede: sede.nombre, ofrecido: ofrecer },
+    ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
+  });
+  res.json({ sedeId, ofrecer });
+});
+
+// Qué sedes se ven en la reserva web (sedes.reservaWeb). Apagar una NO toca la agenda interna ni las citas que ya tiene.
+router.get('/reserva-web/sedes', requireAuth, requirePermiso('servicios.ver'), async (_req, res) => {
+  res.json(await prisma.sede.findMany({ where: { activa: true, deletedAt: null }, orderBy: [{ orden: 'asc' }, { nombre: 'asc' }], select: { id: true, nombre: true, direccion: true, reservaWeb: true } }));
+});
+
+router.patch('/reserva-web/sedes/:sedeId', requireAuth, requirePermiso('servicios.editar'), async (req, res) => {
+  const { reservaWeb } = z.object({ reservaWeb: z.boolean() }).parse(req.body);
+  const sedeId = uuid.parse(req.params.sedeId);
+  const antes = await prisma.sede.findFirst({ where: { id: sedeId, activa: true, deletedAt: null }, select: { id: true, nombre: true, reservaWeb: true } });
+  if (!antes) throw new AppError('Sede no encontrada', 404);
+  if (antes.reservaWeb !== reservaWeb) {
+    await prisma.sede.update({ where: { id: sedeId }, data: { reservaWeb } });
+    void registrarAudit({
+      usuarioId: req.user?.userId, accion: 'editar_sede_reserva_web', entidad: 'sede', entidadId: sedeId, sedeId,
+      antes: { reservaWeb: antes.reservaWeb }, despues: { sede: antes.nombre, reservaWeb },
+      ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
+    });
+  }
+  res.json({ id: sedeId, reservaWeb });
 });
 
 router.put('/subcategorias/:subId/reserva-web/sedes/:sedeId', requireAuth, requirePermiso('servicios.editar'), async (req, res) => {

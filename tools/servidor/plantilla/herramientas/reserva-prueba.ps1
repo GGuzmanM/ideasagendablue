@@ -1,7 +1,7 @@
-# Limablue Agenda - reserva web para pacientes en https://<servidor>/reserva. Tres estados:
+# Limablue Agenda - reserva web para pacientes en https://<servidor>/agendamiento_directo_limablue_un_paso_cerca_de_ti/reserva. Tres estados:
 #   ENCENDIDA se reserva de verdad: al confirmar se registra al paciente y se CREA LA CITA (sin pago en línea: paga en la sede).
 #   VITRINA   se recorre completa con los horarios reales, pero NO crea citas (para mostrarla).
-#   APAGADA   la página /reserva no responde.
+#   APAGADA   la página /agendamiento_directo_limablue_un_paso_cerca_de_ti/reserva no responde.
 # Sin pasarela de pago (29-oct-2026). Los servicios que se ofrecen se marcan en la base (servicios.reservaOnline).
 # El chat de WhatsApp NO depende de este interruptor: usa su propia llave (Llave API del chat.bat).
 # El día del corte («Cargar datos del corte.bat», definitivo) se apaga sola.
@@ -68,7 +68,7 @@ if ($op -eq '0') {
   Base 'sin-llave' | Out-Null
   $cfg['RESERVA_WEB_HABILITADA'] = '0'
   EscribirEnv $ENVF $cfg
-  Ok 'Reserva web apagada (la pagina /reserva deja de responder).'
+  Ok 'Reserva web apagada (la pagina /agendamiento_directo_limablue_un_paso_cerca_de_ti/reserva deja de responder).'
   Reiniciar
   exit 0
 }
@@ -88,7 +88,7 @@ if ($r.servicios -gt 0) { Ok "Servicios marcados para la web: $($r.servicios) (s
 else { Aviso 'Todavia no hay servicios marcados para la web: la pagina saldra sin servicios. Marcalos en Administracion > Reserva web.' }
 Reiniciar
 Write-Host ''
-Write-Host "  Pagina de reserva:  https://$host1$puerto/reserva" -ForegroundColor White
+Write-Host "  Pagina de reserva:  https://$host1$puerto/agendamiento_directo_limablue_un_paso_cerca_de_ti/reserva/" -ForegroundColor White
 Write-Host "  API (para la web):  https://$host1$puerto/api/v1/publico/reservas" -ForegroundColor White
 if ($op -eq '2') { Write-Host '  ENCENDIDA: las reservas crean citas reales (canal Web, pago pendiente: se paga en la sede).' -ForegroundColor White }
 else { Write-Host '  VITRINA: muestra horarios reales, pero no crea citas.' -ForegroundColor White }

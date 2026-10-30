@@ -5,7 +5,7 @@ sin pasarela de pago: **la cita se crea al confirmar y el paciente paga en la se
 
 - Servidor a servidor (no se llama desde un navegador).
 - Misma disponibilidad real que la Agenda: no hay doble reserva, respeta horarios, almuerzos, permisos y días especiales.
-- Solo se ofrecen los servicios que la clínica marcó como «reserva en línea» en Administración › Reserva web (los mismos de la página `/reserva`).
+- Solo se ofrecen los servicios que la clínica marcó como «reserva en línea» en Administración › Reserva web (los mismos de la página `/agendamiento_directo_limablue_un_paso_cerca_de_ti/reserva`).
 - Cada reserva entra a la Agenda con el **canal «WhatsApp»**, pago **pendiente** y un comentario con el código de reserva.
 
 ## 1. Conexión y llave

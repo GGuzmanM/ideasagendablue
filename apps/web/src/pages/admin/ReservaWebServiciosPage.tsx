@@ -54,24 +54,41 @@ function PrecioWeb({ valor, referencia, onGuardar, deshabilitado, etiqueta, anch
 }
 
 /**
- * Precio web propio de cada sede (30-oct-2026). Una sede sin precio usa el general (se ve en gris dentro del campo);
- * con precio propio se resalta. Se guarda igual que el general: al salir del campo o con Enter; vacío = quitarlo.
+ * Sedes de un servicio o de un tipo (30-oct-2026). En un SERVICIO cada sede tiene un interruptor «se ofrece aquí» (apagado = ese servicio
+ * no sale en esa sede en la web) y su precio propio. En un TIPO solo se ven las sedes donde el servicio se ofrece, con su precio.
+ * Una sede sin precio usa el general (se ve en gris dentro del campo); con precio propio se resalta. El precio se guarda al salir
+ * del campo o con Enter; vacío = quitarlo.
  */
-function PreciosPorSede({ sedes, valores, general, onGuardar, deshabilitado, etiqueta }: {
-  sedes: { id: string; nombre: string }[]; valores: Record<string, number>; general: number | null;
+function SedesDelServicio({ sedes, valores, general, onGuardar, deshabilitado, etiqueta, ofrecidas, onOfrecer }: {
+  sedes: { id: string; nombre: string; reservaWeb: boolean }[]; valores: Record<string, number>; general: number | null;
   onGuardar: (sedeId: string, v: number | null) => void; deshabilitado?: boolean; etiqueta: string;
+  /** Solo en el servicio: sedes donde se ofrece, y cómo cambiarlo. */
+  ofrecidas?: Set<string>; onOfrecer?: (sedeId: string, ofrecer: boolean) => void;
 }) {
   return (
     <div className="mt-1.5 mb-1 rounded-lg bg-slate-50 border border-slate-200 px-3 py-2" data-testid="precios-por-sede">
       <p className="text-xxs text-slate-500 mb-1.5">
+        {onOfrecer ? 'Activa las sedes donde se ofrece. ' : ''}
         Pon precio solo en las sedes que cobren distinto; las vacías cobran el general{general != null ? ` (${soles(general)})` : ' (sin precio: no se ofrece ahí)'}.
       </p>
-      <div className="grid gap-x-6 gap-y-1 grid-cols-[repeat(auto-fill,minmax(13rem,1fr))]">
+      {sedes.length === 0 && <p className="text-xs text-slate-500">Este servicio no se ofrece en ninguna sede de la web.</p>}
+      <div className="grid gap-x-6 gap-y-1 grid-cols-[repeat(auto-fill,minmax(15rem,1fr))]">
         {sedes.map((x) => {
           const propio = valores[x.id] != null;
+          const ofrece = !ofrecidas || ofrecidas.has(x.id);
           return (
-            <div key={x.id} className="flex items-center justify-between gap-2">
-              <span className={cn('text-xs truncate', propio ? 'font-semibold text-slate-800' : 'text-slate-600')} title={x.nombre}>{x.nombre}</span>
+            <div key={x.id} className={cn('flex items-center justify-between gap-2', !ofrece && 'opacity-60')} data-testid="sede-del-servicio">
+              <span className="flex items-center gap-2 min-w-0">
+                {onOfrecer && (
+                  <Interruptor
+                    activo={ofrece} etiqueta={`Ofrecer ${etiqueta} en ${x.nombre}`} deshabilitado={deshabilitado}
+                    onCambiar={(v) => onOfrecer(x.id, v)}
+                  />
+                )}
+                <span className={cn('text-xs truncate', propio ? 'font-semibold text-slate-800' : 'text-slate-600')} title={x.reservaWeb ? x.nombre : `${x.nombre} (la sede está apagada en la web)`}>
+                  {x.nombre}{!x.reservaWeb && <span className="ml-1 text-[10px] text-amber-700">· apagada</span>}
+                </span>
+              </span>
               <div className="flex items-center gap-1">
                 <PrecioWeb
                   valor={valores[x.id] ?? null} referencia={general} etiqueta={`${etiqueta} en ${x.nombre}`}
@@ -91,26 +108,35 @@ function PreciosPorSede({ sedes, valores, general, onGuardar, deshabilitado, eti
   );
 }
 
-/** Botón que abre/cierra los precios por sede de una fila; muestra cuántas sedes tienen precio propio. */
-function BotonSedes({ n, abierto, onClick }: { n: number; abierto: boolean; onClick: () => void }) {
+/**
+ * Botón que abre/cierra las sedes de una fila. En un servicio muestra en cuántas sedes se ofrece («Sedes 3/5»; ámbar si no es en todas);
+ * `conPrecio` marca que alguna sede cobra distinto.
+ */
+function BotonSedes({ ofrece, total, conPrecio, abierto, onClick }: { ofrece?: number; total?: number; conPrecio: number; abierto: boolean; onClick: () => void }) {
+  const conConteo = ofrece !== undefined && total !== undefined;
+  const recorta = conConteo && ofrece < total;
   return (
     <button
-      type="button" onClick={onClick} aria-expanded={abierto} title="Precios por sede"
+      type="button" onClick={onClick} aria-expanded={abierto} title={conConteo ? 'Sedes donde se ofrece y precios por sede' : 'Precios por sede'}
       className={cn('text-[11px] leading-none font-semibold h-7 px-2 rounded-md border whitespace-nowrap transition-colors',
-        n > 0 ? 'border-limablue-300 bg-limablue-50 text-limablue-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50')}
+        recorta ? 'border-amber-300 bg-amber-50 text-amber-800'
+          : conPrecio > 0 ? 'border-limablue-300 bg-limablue-50 text-limablue-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50')}
     >
-      Sedes{n > 0 ? ` (${n})` : ''} {abierto ? '▴' : '▾'}
+      Sedes{conConteo ? ` ${ofrece}/${total}` : conPrecio > 0 ? ` (${conPrecio})` : ''}{conConteo && conPrecio > 0 ? ' · S/' : ''} {abierto ? '▴' : '▾'}
     </button>
   );
 }
 
-function FilaServicio({ s, puedeEditar, onServicio, onTipo, onSede }: {
+function FilaServicio({ s, puedeEditar, onServicio, onTipo, onSede, onOferta }: {
   s: ServicioReservaWeb; puedeEditar: boolean;
   onServicio: (id: string, c: CambiosReservaWeb) => void; onTipo: (id: string, c: CambiosReservaWeb) => void;
   /** `tipo` = true cuando `id` es el de un tipo (subcategoría) y no el del servicio. */
   onSede: (id: string, tipo: boolean, sedeId: string, precio: number | null) => void;
+  /** Ofrecer (o no) el servicio en una sede. */
+  onOferta: (id: string, sedeId: string, ofrecer: boolean) => void;
 }) {
   const tieneTipos = s.subcategorias.length > 0;
+  const ofrecidas = new Set(s.sedes.filter((x) => !s.sedesOcultas.includes(x.id)).map((x) => x.id));
   // Qué fila tiene abiertos sus precios por sede: 's' = el servicio, o el id de un tipo.
   const [abierta, setAbierta] = useState<string | null>(null);
   const alternar = (k: string) => setAbierta((a) => (a === k ? null : k));
@@ -141,12 +167,16 @@ function FilaServicio({ s, puedeEditar, onServicio, onTipo, onSede }: {
           deshabilitado={!puedeEditar}
           onGuardar={(v) => onServicio(s.id, { precioOnline: v })}
         />
-        <BotonSedes n={Object.keys(s.preciosSede).length} abierto={abierta === 's'} onClick={() => alternar('s')} />
+        <BotonSedes
+          ofrece={ofrecidas.size} total={s.sedes.length} conPrecio={Object.keys(s.preciosSede).length}
+          abierto={abierta === 's'} onClick={() => alternar('s')}
+        />
       </div>
       {abierta === 's' && (
-        <PreciosPorSede
+        <SedesDelServicio
           sedes={s.sedes} valores={s.preciosSede} general={generalServicio} deshabilitado={!puedeEditar}
-          etiqueta={`Precio web de ${s.nombre}`} onGuardar={(sedeId, v) => onSede(s.id, false, sedeId, v)}
+          etiqueta={s.nombre} onGuardar={(sedeId, v) => onSede(s.id, false, sedeId, v)}
+          ofrecidas={ofrecidas} onOfrecer={(sedeId, ofrecer) => onOferta(s.id, sedeId, ofrecer)}
         />
       )}
 
@@ -168,12 +198,12 @@ function FilaServicio({ s, puedeEditar, onServicio, onTipo, onSede }: {
                   deshabilitado={!puedeEditar}
                   onGuardar={(v) => onTipo(t.id, { precioOnline: v })}
                 />
-                <BotonSedes n={Object.keys(t.preciosSede).length} abierto={abierta === t.id} onClick={() => alternar(t.id)} />
+                <BotonSedes conPrecio={Object.keys(t.preciosSede).length} abierto={abierta === t.id} onClick={() => alternar(t.id)} />
               </div>
               {abierta === t.id && (
-                <PreciosPorSede
-                  sedes={s.sedes} valores={t.preciosSede} general={t.precioOnline ?? t.precioReferencial ?? generalServicio} deshabilitado={!puedeEditar}
-                  etiqueta={`Precio web de ${t.nombre}`} onGuardar={(sedeId, v) => onSede(t.id, true, sedeId, v)}
+                <SedesDelServicio
+                  sedes={s.sedes.filter((x) => ofrecidas.has(x.id))} valores={t.preciosSede} general={t.precioOnline ?? t.precioReferencial ?? generalServicio} deshabilitado={!puedeEditar}
+                  etiqueta={t.nombre} onGuardar={(sedeId, v) => onSede(t.id, true, sedeId, v)}
                 />
               )}
             </div>
@@ -191,7 +221,7 @@ const FILTROS: { id: FiltroReservaWeb; label: string }[] = [
 ];
 
 export function ReservaWebServiciosPage() {
-  const { isLoading, puedeEditar, busqueda, setBusqueda, filtro, setFiltro, porUnidad, conWeb, ofrecidos, conteos, conPrecioPorSede, servicioMut, tipoMut, precioSedeMut } = useReservaWebServicios();
+  const { isLoading, puedeEditar, busqueda, setBusqueda, filtro, setFiltro, porUnidad, conWeb, ofrecidos, conteos, conPrecioPorSede, sedes, servicioMut, tipoMut, precioSedeMut, sedeMut, ofertaSedeMut } = useReservaWebServicios();
 
   // Las áreas que exigen elegir profesional no se reservan en línea: no se muestran.
   const unidades = porUnidad
@@ -206,15 +236,33 @@ export function ReservaWebServiciosPage() {
           <div className="flex flex-wrap items-baseline gap-x-3">
             <h3 className="text-sm font-bold text-slate-900">Reserva web · servicios y precios</h3>
             <span className="text-xxs text-slate-500" data-testid="resumen-reserva-web">
-              <b className="text-slate-700">{conWeb}</b> marcados · <b className="text-emerald-700">{ofrecidos}</b> visibles · <b className="text-limablue-700">{conPrecioPorSede}</b> con precio por sede
+              <b className="text-slate-700">{conWeb}</b> marcados · <b className="text-emerald-700">{ofrecidos}</b> visibles · <b className="text-limablue-700">{conPrecioPorSede}</b> con precio por sede · <b className="text-slate-700">{sedes.filter((x) => x.reservaWeb).length}</b> de {sedes.length} sedes visibles
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
             Activa los servicios que se pueden reservar por internet (página de reservas y WhatsApp). Precio web vacío = precio de la clínica;
-            «Sedes» permite cobrar distinto por sede. El pago se hace en la sede.
+            «Sedes» permite elegir en qué sedes se ofrece cada servicio y cobrar distinto por sede. El pago se hace en la sede.
           </p>
           {!puedeEditar && <p className="text-xs text-amber-700 mt-1">Solo puedes ver esta lista; para cambiarla necesitas el permiso de editar servicios.</p>}
         </div>
+
+        <section className="max-w-4xl bg-white border border-slate-200 rounded-lg px-3 py-2" data-testid="sedes-reserva-web">
+          <div className="flex flex-wrap items-baseline gap-x-3">
+            <h3 className="font-bold text-xxs tracking-wide uppercase text-slate-600">Sedes en la reserva web</h3>
+            <span className="text-xxs text-slate-400">Las apagadas no aparecen en la página de reservas ni en WhatsApp. La agenda interna no cambia.</span>
+          </div>
+          <div className="mt-1.5 grid gap-x-6 gap-y-1.5 grid-cols-[repeat(auto-fill,minmax(14rem,1fr))]">
+            {sedes.map((x) => (
+              <div key={x.id} className="flex items-center gap-2 min-w-0" data-testid="sede-reserva-web">
+                <Interruptor
+                  activo={x.reservaWeb} etiqueta={`Mostrar ${x.nombre} en la reserva web`} deshabilitado={!puedeEditar || sedeMut.isPending}
+                  onCambiar={(v) => sedeMut.mutate({ sedeId: x.id, reservaWeb: v })}
+                />
+                <span className={cn('text-xs truncate', x.reservaWeb ? 'font-semibold text-slate-800' : 'text-slate-500')} title={x.direccion}>{x.nombre}</span>
+              </div>
+            ))}
+          </div>
+        </section>
 
         <div className="flex flex-wrap items-center gap-2 max-w-4xl">
           {FILTROS.map((f) => (
@@ -246,6 +294,7 @@ export function ReservaWebServiciosPage() {
                   onServicio={(id, cambios) => servicioMut.mutate({ id, cambios })}
                   onTipo={(id, cambios) => tipoMut.mutate({ id, cambios })}
                   onSede={(id, tipo, sedeId, precio) => precioSedeMut.mutate({ id, tipo, sedeId, precio })}
+                  onOferta={(id, sedeId, ofrecer) => ofertaSedeMut.mutate({ id, sedeId, ofrecer })}
                 />
               ))}
             </div>

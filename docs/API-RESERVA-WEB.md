@@ -3,7 +3,7 @@
 > **Actualizado el 29-oct-2026: se quitó la pasarela de pago.** Este documento anterior (apartar horario, pago, webhook) ya no
 > aplica. Lo vigente:
 >
-> - **Página pública `/reserva`**: el paciente elige datos (DNI o CE), sede, servicio, fecha y hora, y al **confirmar se crea la
+> - **Página pública `/agendamiento_directo_limablue_un_paso_cerca_de_ti/reserva`**: el paciente elige datos (DNI o CE), sede, servicio, fecha y hora, y al **confirmar se crea la
 >   cita** (pago pendiente: se paga en la sede). Usa la API pública `/api/v1/publico/reservas` (catálogo, días, horas, intentos,
 >   reservar, estado), sin login y solo desde navegadores de los dominios permitidos (`RESERVA_WEB_ORIGENES`).
 > - **Chat de WhatsApp**: usa otra API, servidor a servidor y con llave → **[API-RESERVAS-WHATSAPP.md](API-RESERVAS-WHATSAPP.md)**.

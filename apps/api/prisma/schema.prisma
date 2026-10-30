@@ -209,6 +209,11 @@ model Sede {
   tiemposTratamiento TiempoTratamiento[]
   preciosWebServicio     ServicioPrecioWebSede[]
   preciosWebSubcategoria SubcategoriaPrecioWebSede[]
+  serviciosOcultosWeb    ServicioSedeWebOculto[]
+
+  // Reserva web (30-oct-2026): la sede aparece en la página de reservas y en el chat de WhatsApp. Se cambia en
+  // Administración › Reserva web. Apagarla NO afecta la agenda interna ni las citas que ya tiene.
+  reservaWeb   Boolean   @default(true)
 
   creadoPor    String?  @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
@@ -585,6 +590,7 @@ model Servicio {
   tratamientosDiagnostico   TratamientoDiagnostico[]
   controlesSugeridos        ControlSugerido[]
   preciosWebSede            ServicioPrecioWebSede[]
+  sedesOcultasWeb           ServicioSedeWebOculto[]
 
   creadoPor     String?  @db.Uuid // Usuario que creó el registro (auditoría)
   creadoEn      DateTime @default(now())
@@ -592,6 +598,21 @@ model Servicio {
 
   @@index([unidadNegocioId, activo])
   @@map("servicios")
+}
+
+// Sedes donde un servicio NO se ofrece en la RESERVA WEB (30-oct-2026). Sin fila = se ofrece en todas las sedes de su área
+// (que estén visibles en la web): así lo que ya estaba configurado no cambia. Quitar la marca borra la fila (queda en el AuditLog).
+model ServicioSedeWebOculto {
+  servicioId String   @db.Uuid
+  sedeId     String   @db.Uuid
+  creadoEn   DateTime @default(now())
+
+  servicio Servicio @relation(fields: [servicioId], references: [id])
+  sede     Sede     @relation(fields: [sedeId], references: [id])
+
+  @@id([servicioId, sedeId])
+  @@index([sedeId])
+  @@map("servicio_sede_web_oculto")
 }
 
 // Precio de la RESERVA WEB de un servicio en UNA sede (30-oct-2026). Sin fila = rige el precio web general
