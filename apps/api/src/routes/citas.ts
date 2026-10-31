@@ -2816,6 +2816,131 @@ router.patch('/:id/pagada', requireAuth, requireAcceso('appointments:write', 'ci
   await aplicarEstadoPago(req, res, pagada ? 'completo' : 'pendiente');
 });
 
+// ─── GET /citas/:id/destinos-profesional ──────────────────────────────────────
+// A quién se puede pasar una cita (o su bloque de dos servicios) EN SU MISMO DÍA Y HORA (30-oct-2026, el lápiz junto a «Profesional»
+// del detalle). Por cada persona o columna «Adicional» de la sede dice si está LIBRE (mover), OCUPADA por una cita (se puede
+// INTERCAMBIAR) o NO DISPONIBLE (y por qué). Es solo una vista previa: usa las MISMAS reglas que `mover` e `intercambiar`
+// (competencia, turno, termina en turno, bloqueos y almuerzos, no estar en dos lados a la vez), y esos dos endpoints las
+// vuelven a validar al guardar. No cambia nada.
+interface LugarCita { servicioId: string; servicioNombre: string; duracionMinutos: number }
+async function motivoNoCabe(profesionalId: string, lado: LugarCita[], sedeId: string, fecha: string, horaInicio: string, excluirIds: string[]): Promise<{ codigo: string; mensaje: string } | null> {
+  try {
+    for (const c of lado) {
+      const comp = await prisma.competenciaProfesional.findFirst({ where: { profesionalId, servicioId: c.servicioId, activa: true }, select: { id: true } });
+      if (!comp) throw new AppError(`No tiene habilitado «${c.servicioNombre}»`, 400, 'SIN_COMPETENCIA');
+      if (!horaInicioValidaParaDuracion(horaInicio, c.duracionMinutos)) throw new AppError('Un servicio de 1 hora solo empieza en hora entera', 400, 'SLOT_HORA_INVALIDA');
+    }
+    await assertProfesionalActivo(profesionalId);
+    const turno = (await turnosDelDia(sedeId, fecha, [profesionalId])).get(profesionalId);
+    if (!turno) throw new AppError('No atiende ese día', 400, 'SIN_HORARIO');
+    if (horaInicio < turno.horaInicio || horaInicio >= turno.horaFin) throw new AppError(`Fuera de su horario (${turno.horaInicio}–${turno.horaFin})`, 400, 'SLOT_FUERA_HORARIO');
+    assertTerminaEnTurno(horaInicio, Math.max(...lado.map((c) => c.duracionMinutos)), turno.horaFin);
+    await validarSinBloqueo(profesionalId, fecha, horaInicio, lado[0]!.duracionMinutos, sedeId);
+    await validarProfesionalLibre(profesionalId, fecha, horaInicio, lado[0]!.duracionMinutos, undefined, excluirIds);
+    return null;
+  } catch (e) {
+    if (e instanceof AppError) return { codigo: e.code ?? 'ERROR', mensaje: e.message };
+    throw e;
+  }
+}
+
+router.get('/:id/destinos-profesional', requireAuth, requireAcceso('appointments:write', 'citas.reprogramar'), guardSedeCita, async (req, res) => {
+  const cita = await prisma.cita.findUnique({
+    where: { id: req.params.id, deletedAt: null },
+    include: {
+      unidadNegocio: true, servicio: { select: { nombre: true } },
+      profesional: { select: { id: true, nombres: true, apellidos: true } },
+      solicitadoProfesional: { select: { nombres: true, apellidos: true } },
+    },
+  });
+  if (!cita) throw new AppError('Cita no encontrada', 404);
+  const fecha = fechaAStr(cita.fecha);
+  const base = { fecha, horaInicio: cita.horaInicio, duracionMinutos: cita.duracionMinutos };
+  const noMovible = (motivo: string) => res.json({ ...base, movible: false, motivo, esBloque: false, destinos: [] });
+  if ([...ESTADOS_FINALES, 'reprogramada'].includes(cita.estado)) return noMovible('La cita ya terminó, se canceló o no vino');
+  if (cita.unidadNegocio.modoReserva === 'sin_eleccion') return noMovible('Las citas de baropodometría van en máquina: se cambian con «Reprogramar cita»');
+  if (!cita.profesionalId || !cita.profesional) return noMovible('La cita no tiene profesional');
+  const esAdmin = req.user?.rol === 'admin';
+  const profActual = cita.profesional;
+
+  // Bloque de dos servicios: viaja entero (lo pendiente; lo ya terminado se queda donde se hizo).
+  const grupo = cita.slotGrupoId
+    ? await prisma.cita.findMany({ where: { slotGrupoId: cita.slotGrupoId, deletedAt: null }, include: { servicio: { select: { nombre: true } } }, orderBy: { slotRol: 'asc' } })
+    : [];
+  const ladoMover = (grupo.length ? grupo.filter((c) => !ESTADOS_FINALES.includes(c.estado)) : [{ ...cita }]);
+  const lado: LugarCita[] = ladoMover.map((c) => ({ servicioId: c.servicioId, servicioNombre: ('servicio' in c && c.servicio ? c.servicio.nombre : cita.servicio.nombre), duracionMinutos: c.duracionMinutos }));
+  const esBloque = ladoMover.length > 1;
+  const idsMover = (grupo.length ? grupo : [cita]).map((c) => c.id);
+
+  // Candidatas: personas y columnas «Adicional» asignadas a ESTA sede ese día (por RANGO), del área o con el servicio habilitado.
+  const fechaDia = fechaDb(fecha);
+  const asignadas = await prisma.asignacionSede.findMany({
+    where: {
+      sedeId: cita.sedeId, fechaInicio: { lte: fechaDia }, OR: [{ fechaFin: null }, { fechaFin: { gte: fechaDia } }],
+      profesional: {
+        activo: true, deletedAt: null, esEquipo: false, id: { not: cita.profesionalId },
+        OR: [{ unidadNegocioId: cita.unidadNegocioId }, { competencias: { some: { activa: true, servicioId: cita.servicioId } } }],
+      },
+    },
+    select: { profesional: { select: { id: true, nombres: true, apellidos: true, colorAvatar: true } } },
+  });
+  const candidatas = [...new Map(asignadas.map((a) => [a.profesional.id, a.profesional])).values()];
+
+  const tieneAtencion = !!(await prisma.atencionClinica.findFirst({ where: { citaId: { in: idsMover } }, select: { id: true } }));
+  const nombreDe = (p: { nombres: string; apellidos: string }) => `${p.nombres.split(' ')[0]} ${p.apellidos.split(' ')[0]}`.trim();
+  const nombrePaciente = (p: { nombres: string; apellidoPaterno: string }) => `${p.nombres.split(' ')[0]} ${p.apellidoPaterno}`.trim();
+
+  const destinos = [];
+  for (const p of candidatas) {
+    const adicional = esFichaAdicional(p.nombres);
+    // Las columnas «Adicional» se distinguen por el nombre completo («Adicional Lince 1» / «2»), no por el primer nombre.
+    const nombre = adicional ? `${p.nombres} ${p.apellidos}`.trim() : nombreDe(p);
+    const avisos: string[] = [];
+    if (cita.solicitadoProfesionalId) avisos.push(`Deja de ser «Solo ${cita.solicitadoProfesional ? nombreDe(cita.solicitadoProfesional) : 'el médico pedido'}»: la atiende ${nombre}`);
+    if (tieneAtencion) avisos.push('Su atención clínica registrada pasa a esa profesional');
+    const ficha = { id: p.id, nombre, nombres: p.nombres, apellidos: p.apellidos, colorAvatar: p.colorAvatar, adicional, avisos };
+
+    const falla = await motivoNoCabe(p.id, lado, cita.sedeId, fecha, cita.horaInicio, idsMover);
+    if (!falla) { destinos.push({ ...ficha, estado: 'libre' as const }); continue; }
+    if (falla.codigo !== 'PROFESIONAL_OCUPADO') { destinos.push({ ...ficha, estado: 'no_disponible' as const, motivo: falla.mensaje }); continue; }
+
+    // Ocupada: ¿con quién? (las citas que se cruzan con el horario de esta cita en esa persona).
+    const ini = timeToMinutes(cita.horaInicio), fin = ini + lado[0]!.duracionMinutos;
+    const delDia = await prisma.cita.findMany({
+      where: { OR: [{ profesionalId: p.id }, { solicitadoProfesionalId: p.id }], fecha: fechaDia, deletedAt: null, estado: { notIn: ['cancelada', 'no_show', 'reprogramada'] }, id: { notIn: idsMover } },
+      include: { paciente: { select: { nombres: true, apellidoPaterno: true } }, servicio: { select: { nombre: true } }, unidadNegocio: { select: { modoReserva: true } } },
+    });
+    const solapan = delDia.filter((c) => timeToMinutes(c.horaInicio) < fin && timeToMinutes(c.horaInicio) + c.duracionMinutos > ini);
+    const b = solapan.length === 1 ? solapan[0]! : null;
+    const ocupante = b ? { citaId: b.id, paciente: nombrePaciente(b.paciente), horaInicio: b.horaInicio, duracionMinutos: b.duracionMinutos, servicio: b.servicio.nombre, estado: b.estado } : null;
+
+    // ¿Se puede INTERCAMBIAR? Mismas reglas que POST /citas/intercambiar: misma hora, ninguna doble (salvo admin), ninguna de baro
+    // ni terminada, y que la otra cita quepa en el lugar de esta (competencia, turno, bloqueos, no cruzarse).
+    let intercambio: { posible: boolean; motivo?: string } = { posible: false };
+    if (!b) intercambio = { posible: false, motivo: 'Hay más de una cita en ese horario: no se puede intercambiar' };
+    else if (b.profesionalId !== p.id) intercambio = { posible: false, motivo: 'Es una cita de baropodometría de ese médico: no se intercambia' };
+    else if (b.unidadNegocio.modoReserva === 'sin_eleccion') intercambio = { posible: false, motivo: 'Las citas de baropodometría van en máquina: no se intercambian' };
+    else if (ESTADOS_FINALES.includes(b.estado)) intercambio = { posible: false, motivo: 'Esa cita ya terminó' };
+    else if (b.horaInicio !== cita.horaInicio) intercambio = { posible: false, motivo: `Esa cita empieza a las ${b.horaInicio}: para intercambiar a distinta hora, arrastra una cita sobre la otra en la agenda` };
+    else if ((esBloque || b.slotGrupoId) && !esAdmin) intercambio = { posible: false, motivo: 'Una de las citas es doble (dos servicios): solo administración puede intercambiarla' };
+    else {
+      const ladoB = b.slotGrupoId ? await prisma.cita.findMany({ where: { slotGrupoId: b.slotGrupoId, deletedAt: null }, include: { servicio: { select: { nombre: true } } } }) : [{ ...b }];
+      const lugaresB: LugarCita[] = ladoB.map((c) => ({ servicioId: c.servicioId, servicioNombre: c.servicio.nombre, duracionMinutos: c.duracionMinutos }));
+      const todos = [...idsMover, ...ladoB.map((c) => c.id)];
+      const alOtroLado = await motivoNoCabe(profActual.id, lugaresB, cita.sedeId, fecha, cita.horaInicio, todos);
+      const alNuestro = await motivoNoCabe(p.id, lado, cita.sedeId, fecha, cita.horaInicio, todos);
+      if (alOtroLado) intercambio = { posible: false, motivo: `${nombrePaciente(b.paciente)} no cabe con ${nombreDe(profActual)}: ${alOtroLado.mensaje}` };
+      else if (alNuestro) intercambio = { posible: false, motivo: alNuestro.mensaje };
+      else intercambio = { posible: true };
+    }
+    destinos.push({ ...ficha, estado: 'ocupado' as const, motivo: falla.mensaje, ocupante, intercambio });
+  }
+
+  const orden = { libre: 0, ocupado: 1, no_disponible: 2 } as const;
+  destinos.sort((x, y) => orden[x.estado] - orden[y.estado] || Number(x.adicional) - Number(y.adicional) || x.nombre.localeCompare(y.nombre));
+  res.json({ ...base, movible: true, esBloque, actual: { id: profActual.id, nombre: nombreDe(profActual) }, destinos });
+});
+
 // ─── POST /citas/intercambiar ─────────────────────────────────────────────────
 // Intercambiar DOS pacientes entre podólogas (26-sep-2026): se arrastra la cita A sobre la cita B y cada una queda en el
 // lugar de la otra (profesional + hora) en un solo paso. Mismo día y misma sede. Cada una se valida como un «mover»:

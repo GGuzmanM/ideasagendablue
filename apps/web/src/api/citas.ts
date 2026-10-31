@@ -205,6 +205,26 @@ export interface OcupacionDia {
   unidad: string;
 }
 
+export interface DestinoProfesional {
+  id: string; nombre: string; nombres: string; apellidos: string; colorAvatar: string | null;
+  /** Columna «Adicional» (capacidad de emergencia), no una persona. */
+  adicional: boolean;
+  /** Efectos que conviene saber antes de confirmar (p. ej. deja de ser «Solo X»). */
+  avisos: string[];
+  estado: 'libre' | 'ocupado' | 'no_disponible';
+  /** No disponible: por qué. Ocupada: el aviso del choque. */
+  motivo?: string;
+  /** Ocupada por UNA cita: de quién es. */
+  ocupante?: { citaId: string; paciente: string; horaInicio: string; duracionMinutos: number; servicio: string; estado: string } | null;
+  intercambio?: { posible: boolean; motivo?: string };
+}
+export interface DestinosProfesional {
+  fecha: string; horaInicio: string; duracionMinutos: number;
+  movible: boolean; motivo?: string; esBloque: boolean;
+  actual?: { id: string; nombre: string };
+  destinos: DestinoProfesional[];
+}
+
 export const citasApi = {
   // `hasta`: rango fecha..hasta (Visor de Pacientes; solo admin y auditor de médicos).
   // `todas: '1'` (Visor de Pacientes, 23-oct-2026): sin filtro de sede — solo administración y el auditor de médicos.
@@ -254,6 +274,10 @@ export const citasApi = {
   // Intercambiar dos pacientes entre podólogas (mismo día y sede): cada cita queda en el lugar de la otra.
   intercambiar: (citaIdA: string, citaIdB: string) =>
     api.post<{ a: CitaResumen; b: CitaResumen }>('/citas/intercambiar', { citaIdA, citaIdB }),
+
+  // A quién se puede pasar la cita EN SU MISMO día y hora (lápiz junto a «Profesional»): libre → mover, ocupada → intercambiar,
+  // no disponible → por qué. Solo vista previa: mover/intercambiar vuelven a validar todo al guardar.
+  destinosProfesional: (id: string) => api.get<DestinosProfesional>(`/citas/${id}/destinos-profesional`),
 
   // Cambiar tratamiento (servicio) y/o subcategoría: agendada/confirmada/llegó (admin: siempre). El servidor valida todo.
   cambiarTratamiento: (id: string, data: { servicioId: string; subcategoriaId: string | null }) =>

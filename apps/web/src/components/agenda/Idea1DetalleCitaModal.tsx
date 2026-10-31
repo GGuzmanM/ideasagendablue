@@ -19,6 +19,7 @@ import { BadgeAsistencia } from '../pacientes/BadgeAsistencia';
 import { FichaPreviaCard } from '../historiaClinica/FichaPrevia';
 import { MedicoDeLaCita } from './MedicoDeLaCita';
 import { ReboteDeLaCita } from './ReboteDeLaCita';
+import { CambiarProfesionalCita } from './CambiarProfesionalCita';
 import { ComentarioCitaItem } from './ComentarioCitaItem';
 import { citaEnRebote } from '../../api/rebote';
 import { ConsentimientoDeLaCita } from '../consentimientos/ConsentimientoDeLaCita';
@@ -159,6 +160,8 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
   // no ofrecer acciones que el rol no puede ejecutar.
   const puedeEstado = permisos.includes('citas.estado');
   const puedeReprogramar = permisos.includes('citas.reprogramar');
+  // Lápiz junto a «Profesional»: pasar la cita a otra profesional (o intercambiar) en el mismo día y hora.
+  const [cambiandoProf, setCambiandoProf] = React.useState(false);
   const puedeCancelar = permisos.includes('citas.cancelar');
   const puedeCorregir = permisos.includes('citas.revertir');
   // Solo el CANAL (05-oct-2026): permiso «citas.canal» (p. ej. contact especial), sin desbloquear estado ni promoción.
@@ -552,10 +555,22 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
 
               <div className="font-label-caps text-label-caps text-on-surface-variant/70 uppercase tracking-wider">Profesional</div>
               <div className="flex items-center gap-2 font-body-lg text-primary font-semibold">
-                {/* Solo informativo (26-sep-2026): el lápiz hacía pensar que aquí se cambia la profesional. Se cambia
-                    arrastrando la cita en la agenda o con «Reprogramar cita». */}
                 <span>{profActual}</span>
+                {/* 30-oct-2026: el lápiz vuelve, ahora para pasar la cita a otra profesional o columna «Adicional» (mismo día y hora),
+                    o INTERCAMBIAR si está ocupada. Mismas reglas que arrastrar en la agenda; baro va en máquina (se cambia al reprogramar). */}
+                {puedeReprogramar && !['completada', 'cancelada', 'no_show', 'reprogramada'].includes(estadoNorm) && !equipoBaro && !/baropodometr/i.test(cita.unidadNegocio?.nombre ?? '') && (
+                  <button
+                    type="button" onClick={() => setCambiandoProf((v) => !v)} data-testid="btn-cambiar-profesional"
+                    title="Pasar a otra profesional o intercambiar" aria-label="Cambiar de profesional" aria-expanded={cambiandoProf}
+                    className={cn('inline-flex items-center justify-center w-6 h-6 rounded-full transition-colors cursor-pointer',
+                      cambiandoProf ? 'bg-primary text-white' : 'text-primary/70 hover:bg-primary/10 hover:text-primary')}
+                  >
+                    <span className="material-symbols-outlined text-[16px]">edit</span>
+                  </button>
+                )}
               </div>
+              {/* Las filas de este bloque son una grilla de 2 columnas (etiqueta | valor): el panel ocupa las dos. */}
+              {cambiandoProf && <div className="col-span-2"><CambiarProfesionalCita cita={cita} onCerrar={() => setCambiandoProf(false)} /></div>}
 
               {/* Columna «Adicional»: qué podóloga la atendió de verdad (informativo; no ocupa su agenda). */}
               {esAdicional && (
