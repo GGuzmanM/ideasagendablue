@@ -428,6 +428,30 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                         )}>
                           {ESTADO_LABEL[e] ?? c.estado}
                         </span>
+                        {/* 31-oct-2026: quien puede corregir estados cambia CADA servicio por separado (solo ese). El desplegable de
+                            «Estado» de abajo mueve la cita abierta y arrastra a su pareja; este toca solo el servicio de esta fila. */}
+                        {puedeCorregir && (
+                          <select
+                            value={e} disabled={estadoMutation.isPending} data-testid={`estado-servicio-${n}`}
+                            aria-label={`Estado de ${c.servicio?.nombre ?? 'este servicio'} (solo este servicio)`} title="Cambiar el estado solo de este servicio"
+                            onChange={(ev) => {
+                              const destino = ev.target.value;
+                              if (destino === e) return;
+                              if (esCambioEspecial(e, destino) && !window.confirm(
+                                `Cambio especial de administrador, solo en «${c.servicio?.nombre ?? 'este servicio'}»: ${ESTADO_LABEL[e] ?? e} → ${ESTADO_LABEL[destino] ?? destino}.
+
+El otro servicio de la cita doble no cambia.
+
+¿Continuar?`)) return;
+                              estadoMutation.mutate({ estado: destino, citaId: c.id, soloEsta: true });
+                            }}
+                            className="ml-auto text-[10px] font-bold uppercase rounded-md border border-outline-variant/40 bg-surface-container-lowest px-1 py-0.5 outline-none focus:ring-2 focus:ring-primary/20 cursor-pointer"
+                          >
+                            {estadosPermitidos(e, useAuthStore.getState().usuario?.rol === 'admin').map((op) => (
+                              <option key={op} value={op}>{(ESTADO_LABEL[op] ?? op).toUpperCase()}</option>
+                            ))}
+                          </select>
+                        )}
                       </div>
                     );
                   })}
@@ -483,6 +507,7 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
 
               <div className="font-label-caps text-label-caps text-on-surface-variant/70 uppercase tracking-wider">Estado</div>
               {puedeCorregir ? (
+                <div>
                 <div className="relative">
                   <select
                     value={estadoNorm}
@@ -507,6 +532,10 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                   <span className="material-symbols-outlined absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-on-surface-variant/60 text-base">
                     expand_more
                   </span>
+                </div>
+                {esCombo && bloquePrincipal && bloqueSecundaria && (
+                  <p className="text-[10px] leading-tight text-on-surface-variant mt-1">Cambia los dos servicios juntos. Para uno solo, usa el estado de cada servicio (arriba).</p>
+                )}
                 </div>
               ) : (
                 // Solo lectura: el estado se mueve con los botones de flujo, no editando este campo.

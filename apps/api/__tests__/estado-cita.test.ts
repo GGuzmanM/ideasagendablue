@@ -93,6 +93,21 @@ describe('Cascada del bloque combinado', () => {
   });
 });
 
+describe('Volver el bloque a «agendada» (31-oct-2026)', () => {
+  it('las hermanas vivas bajan con la cita; la cancelada no se resucita', () => {
+    const hs = [{ id: 'a', estado: 'llego' }, { id: 'b', estado: 'en_atencion' }, { id: 'c', estado: 'confirmada' }, { id: 'd', estado: 'cancelada' }, { id: 'e', estado: 'agendada' }];
+    expect(hermanasQueAcompanan(hs, 'agendada', 'llego').map((h) => h.id)).toEqual(['a', 'b', 'c']);
+  });
+  it('una hermana ya terminada solo baja si la cita que se revierte también estaba terminada', () => {
+    const hs = [{ id: 'a', estado: 'completada' }, { id: 'b', estado: 'no_show' }];
+    // 1º completado y el 2º en curso: devolver el 2º no toca al 1º
+    expect(hermanasQueAcompanan(hs, 'agendada', 'llego')).toEqual([]);
+    expect(hermanasQueAcompanan(hs, 'agendada')).toEqual([]);
+    // el bloque se completó junto: vuelve junto
+    expect(hermanasQueAcompanan(hs, 'agendada', 'completada').map((h) => h.id)).toEqual(['a', 'b']);
+  });
+});
+
 describe('Anclas de tiempo', () => {
   const h = new Date('2026-09-14T15:30:00.000Z');
   it('sella la hora del evento según el estado destino', () => {
@@ -103,6 +118,10 @@ describe('Anclas de tiempo', () => {
   it('revertir reinicia llegada y atención y limpia completadaEn; mismo estado no toca nada', () => {
     expect(anclasDeTiempo('completada', 'en_atencion', h)).toEqual({ llegoEn: h, enAtencionEn: h, completadaEn: null });
     expect(anclasDeTiempo('en_atencion', 'en_atencion', h)).toEqual({});
+  });
+  it('volver a «agendada» borra las horas de llegada y atención (la visita no ocurrió)', () => {
+    expect(anclasDeTiempo('llego', 'agendada', h)).toEqual({ llegoEn: null, enAtencionEn: null });
+    expect(anclasDeTiempo('completada', 'agendada', h)).toEqual({ completadaEn: null, llegoEn: null, enAtencionEn: null });
   });
 });
 

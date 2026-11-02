@@ -127,7 +127,15 @@ export function validarTransicion(actual: string, destino: string, permisos?: st
 //    segundo aviso de «completada» a las integraciones). La ÚNICA excepción: cuando la principal
 //    también estaba completada y se está REVIRTIENDO (eso sí pasó por el permiso): ahí el bloque,
 //    que se completó junto, vuelve junto.
+//  - VOLVER A «AGENDADA» (31-oct-2026; solo lo pide el admin, es un cambio libre): el bloque vuelve junto. Las hermanas que siguen
+//    vivas (confirmada / llegó / en atención) bajan con ella; una ya cancelada no se resucita; una ya terminada (completada / no vino)
+//    solo baja si la cita que se revierte TAMBIÉN estaba terminada (el bloque se terminó junto). Si el 1º está completado y el 2º en
+//    curso, devolver el 2º NO toca al 1º. Antes la cascada nunca bajaba a «agendada» y el 2º servicio se quedaba donde estaba.
 export function hermanasQueAcompanan<T extends { estado: string }>(hermanas: T[], estado: string, estadoPrincipal?: string): T[] {
+  if (estado === 'agendada') {
+    const bloqueTerminado = ['completada', 'no_show'].includes(estadoPrincipal ?? '');
+    return hermanas.filter((c) => c.estado !== 'agendada' && c.estado !== 'cancelada' && (!['completada', 'no_show'].includes(c.estado) || bloqueTerminado));
+  }
   const revierteBloque = estadoPrincipal === 'completada' && estado === 'en_atencion';
   return hermanas.filter((c) =>
     c.estado !== estado &&
@@ -149,6 +157,8 @@ export function anclasDeTiempo(actual: string, estado: string, hora: Date) {
     ...(estado === 'en_atencion' ? { enAtencionEn: hora } : {}),
     ...(estado === 'completada' ? { completadaEn: hora } : {}),
     ...(actual === 'completada' && estado !== 'completada' ? { completadaEn: null } : {}),
+    // Volver a «agendada»: la visita no ocurrió (aún), no deben quedar sus horas de llegada / atención (salían en «Tiempos»).
+    ...(estado === 'agendada' ? { llegoEn: null, enAtencionEn: null } : {}),
   };
 }
 
