@@ -19,13 +19,42 @@ const ENV_FILE = path.join(DATOS, 'config', 'agenda.env');
 const DIR_LOGS = path.join(DATOS, 'logs');
 fs.mkdirSync(DIR_LOGS, { recursive: true });
 
+// ── registro ────────────────────────────────────────────────────────────────────
+// 06-nov-2026 (rendimiento): este proceso atiende TODAS las pantallas y el proxy al API. Antes cada línea se escribía con
+// `appendFileSync`: una escritura a disco sincrónica por petición que, con antivirus o disco ocupado, frenaba a todos.
+// Ahora las líneas se juntan en memoria y se vuelcan cada segundo con una escritura asíncrona (un archivo por día, Lima).
+// Al salir se vuelca lo pendiente de forma sincrónica para no perder las últimas líneas.
+const pendientes = new Map(); // archivo -> texto por escribir
+let volcando = false;
+function volcar() {
+  if (volcando || pendientes.size === 0) return;
+  volcando = true;
+  const lote = [...pendientes];
+  pendientes.clear();
+  let faltan = lote.length;
+  for (const [archivo, texto] of lote) {
+    fs.appendFile(archivo, texto, () => { // si falla (sin disco), se pierde esa línea: sigue la consola
+      faltan -= 1;
+      if (faltan === 0) volcando = false;
+    });
+  }
+}
+setInterval(volcar, 1000).unref();
+process.on('exit', () => {
+  for (const [archivo, texto] of pendientes) { try { fs.appendFileSync(archivo, texto); } catch { /* sin disco */ } }
+  pendientes.clear();
+});
+
 function log(origen, texto) {
   const ahora = new Date();
   const lima = new Date(ahora.getTime() - 5 * 3600_000).toISOString();
   const linea = `${lima.slice(0, 19).replace('T', ' ')} [${origen}] ${String(texto).trimEnd()}\n`;
-  try { fs.appendFileSync(path.join(DIR_LOGS, `agenda-${lima.slice(0, 10)}.log`), linea); } catch { /* sin disco: solo consola */ }
-  process.stdout.write(linea);
+  const archivo = path.join(DIR_LOGS, `agenda-${lima.slice(0, 10)}.log`);
+  pendientes.set(archivo, (pendientes.get(archivo) ?? '') + linea);
+  // Como tarea de Windows nadie lee la consola: solo se escribe ahí cuando hay una terminal (arranque a mano).
+  if (process.stdout.isTTY) process.stdout.write(linea);
 }
+// ── fin del registro ─────────────────────────────────────────────────────────────
 
 if (!fs.existsSync(ENV_FILE)) {
   log('servidor', `No existe ${ENV_FILE}. Corre «Instalar o actualizar.bat» primero.`);

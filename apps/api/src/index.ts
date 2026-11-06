@@ -140,8 +140,13 @@ const redactarTokens = (s?: string | null): string => {
 };
 morgan.token('url-safe', (req: express.Request) => redactarTokens(req.originalUrl || req.url));
 morgan.token('ref-safe', (req: express.Request) => redactarTokens(req.headers.referer || '-'));
+// 06-nov-2026 (rendimiento): en producción solo se anotan las peticiones con error (>= 400): una línea por cada petición
+// normal llenaba el registro y cada línea es una escritura a disco. Las lentas ya salen como [LENTO] (más abajo) y los
+// cambios importantes quedan en la auditoría. Con LOG_PETICIONES=todas se vuelve a anotar cada petición.
+const anotarTodasLasPeticiones = process.env.NODE_ENV !== 'production' || process.env.LOG_PETICIONES === 'todas';
 app.use(morgan(
   ':remote-addr - :remote-user [:date[clf]] ":method :url-safe HTTP/:http-version" :status :res[content-length] ":ref-safe" ":user-agent" :response-time ms',
+  { skip: (_req, res) => !anotarTodasLasPeticiones && res.statusCode < 400 },
 ));
 // 23-oct-2026 (rendimiento): aviso de peticiones lentas, para encontrar en los logs de producción qué se demora.
 // Solo método, ruta (sin query string: la búsqueda lleva nombres) y estado.

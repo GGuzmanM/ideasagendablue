@@ -71,12 +71,16 @@ export async function alertasDePacientes(pacienteIds: (string | null | undefined
   //    Se compara solo la parte de fecha (YYYY-MM-DD) porque "antes" guarda un
   //    timestamp ISO y "despues" guarda "YYYY-MM-DD". Un cambio solo de profesional
   //    el mismo día NO cuenta como reprogramación.
+  //    Rendimiento (06-nov-2026): los ids se comparan COMO uuid. Con `c."pacienteId"::text` Postgres no podía usar
+  //    el índice de citas.pacienteId y leía audit_logs y citas enteras en cada carga de la agenda y en cada búsqueda
+  //    de pacientes (153 ms → 0,7 ms con 181 mil filas de auditoría; crece con el historial).
+  //    El índice parcial `audit_logs_mover_cita_idx` (migración 20261106120000) acelera el cruce por cita.
   const rep = await prisma.$queryRaw<{ pacienteId: string; n: bigint }[]>`
     SELECT c."pacienteId" AS "pacienteId", COUNT(*) AS n
     FROM audit_logs a
     JOIN citas c ON c.id = a."citaId"
     WHERE a.accion = 'mover'
-      AND c."pacienteId"::text IN (${Prisma.join(ids)})
+      AND c."pacienteId" IN (${Prisma.join(ids.map((id) => Prisma.sql`${id}::uuid`))})
       AND LEFT(a.antes->>'fecha', 10) IS DISTINCT FROM LEFT(a.despues->>'fecha', 10)
     GROUP BY c."pacienteId"
   `;

@@ -77,6 +77,9 @@ Reemplaza un ERP de escritorio de 14 años. 5 sedes, ~400 citas diarias, 40 pod�
     `medicamentos_dci_trgm`, `medicamentos_comercial_trgm`; y en
     `20261023190000_busqueda_pacientes_trgm` (búsqueda de pacientes): `pacientes_nombre_completo_trgm`,
     `pacientes_documento_trgm`, `pacientes_telefono_trgm`.
+  - Y un índice **parcial no único** `audit_logs_mover_cita_idx` (`"citaId" WHERE accion = 'mover'`) en
+    `20261106120000_indice_audit_mover`: acelera las reprogramaciones del paciente (`services/alertaPaciente.ts`),
+    que corren en cada carga de la agenda y en cada búsqueda. Tampoco está en el schema: no lo dejes caer en `migrate dev`.
 
   Como NO están en `schema.prisma`, al correr `migrate dev` Prisma intentará "dropearlos" en la
   migración generada → **revisa el SQL generado y borra cualquier `DROP INDEX` de esos** (o
