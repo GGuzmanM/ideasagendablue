@@ -181,9 +181,13 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
     if (!usuario || usuario.deletedAt || !usuario.activo) {
       throw new AppError('Sesión revocada: usuario inactivo o eliminado', 401, 'SESION_REVOCADA');
     }
-    // Permisos Y SEDES SIEMPRE frescos desde la BD: si el admin cambia los permisos del rol o
-    // reasigna/quita sedes del usuario, aplican al instante sin cerrar sesión (no esperar al token).
-    payload.permisos = await getPermisosRol(payload.rol);
+    // Rol, permisos Y SEDES SIEMPRE frescos desde la BD: si el admin cambia los permisos del rol, le CAMBIA EL ROL al
+    // usuario o le reasigna/quita sedes, aplica al instante sin cerrar sesión (no esperar al token, que dura hasta 30 días).
+    // 11-nov-2026: antes se usaba el rol del TOKEN (el de cuando inició sesión) y `/auth/me` el de la BD: a un usuario
+    // pasado a admin (o a un rol con «ver auditoría») la pantalla le mostraba la Auditoría pero el API le respondía 403 y la
+    // lista salía vacía. Y al revés: a quien se le bajaba el rol, el API le seguía dando los permisos del rol anterior.
+    payload.rol = usuario.rol;
+    payload.permisos = await getPermisosRol(usuario.rol);
     payload.profesionalId = usuario.profesionalId ?? null;
     // Acceso a sedes: si el usuario está VINCULADO a una ficha del roster (Movimientos), su acceso se
     // DERIVA EN VIVO de la sede donde el roster lo tiene HOY (una sola fuente de verdad → moverlo en

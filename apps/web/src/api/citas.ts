@@ -28,6 +28,8 @@ export interface TiempoTratamientoCita {
 
 export interface CitaResumen {
   id: string;
+  /** N.º de cita correlativo (11-nov-2026); se muestra con `formatoNumeroCita` («C-000123»). */
+  numero?: number;
   pacienteId: string;
   paciente: {
     id: string; nombres: string; apellidoPaterno: string; apellidoMaterno: string;

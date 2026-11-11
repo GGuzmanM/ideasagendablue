@@ -48,7 +48,7 @@ export async function reservaDemo(d: NuevaReservaWeb): Promise<ReservaCreada & {
   reservas.set(codigo, { token, datos: d, subcategoriaId: variante.id, duracionMinutos: servicio.duracionMinutos, monto, vence: Date.now() + VIDA });
   const sede = await prisma.sede.findUnique({ where: { id: d.sedeId }, select: { nombre: true, direccion: true } });
   return {
-    codigo, token, estado: 'confirmada', citaId: '', repetida: false, fecha: d.fecha, horaInicio: d.horaInicio, duracionMinutos: servicio.duracionMinutos,
+    codigo, token, estado: 'confirmada', citaId: '', numeroCita: null, repetida: false, fecha: d.fecha, horaInicio: d.horaInicio, duracionMinutos: servicio.duracionMinutos,
     monto, moneda: 'PEN', sede, servicio: servicio.nombre, variante: variante.id ? variante.nombre : null, demo: true,
   };
 }

@@ -48,9 +48,16 @@ function IPsDelServidor() {
 
 Write-Host ''
 Write-Host '  Limablue Agenda - instalacion en el servidor' -ForegroundColor White
+$verArchivo = Join-Path $RAIZ 'version.txt'
+if (Test-Path $verArchivo) { Write-Host "  Version:  $((Get-Content $verArchivo -TotalCount 1).Trim())" -ForegroundColor White }
 Write-Host "  Programa: $RAIZ"
 Write-Host "  Datos:    $DATOS"
 if (-not (Test-Path $NODE)) { throw "No se encuentra $NODE. Copia la carpeta completa del programa." }
+# Si la Agenda instalada corría desde OTRA carpeta, se avisa: desde ahora corre desde esta.
+$tareaPrevia = Get-ScheduledTask -TaskName $TAREA -ErrorAction SilentlyContinue
+if ($tareaPrevia -and $tareaPrevia.Actions[0].WorkingDirectory -and ($tareaPrevia.Actions[0].WorkingDirectory.TrimEnd('\') -ne $APP.TrimEnd('\'))) {
+  Aviso "La Agenda corria desde $(Split-Path -Parent $tareaPrevia.Actions[0].WorkingDirectory). Desde ahora corre desde $RAIZ (la carpeta anterior se puede borrar despues)."
+}
 
 # ─── 1. Configuración ──────────────────────────────────────────────────────────
 Titulo 'Configuracion'
@@ -124,7 +131,8 @@ $base = if ($publicas.Count) { "https://$($publicas[0])$sufijo" } else { "https:
 # Enlaces de los correos (confirmar / cancelar / encuesta) y verificación de recetas. Se recalculan en cada
 # instalación si apuntan a una IP de este servidor (p. ej. cambió el puerto de 5180 a 443); un dominio propio se respeta.
 $propias = @($publicas) + @(IPsDelServidor) + @('localhost')
-foreach ($k in @('APP_BASE_URL', 'API_BASE_URL')) {
+# RESERVA_WEB_URL_PUBLICA: direccion a la que vuelve el paciente despues de pagar con Niubiz (se toma la misma si esta vacia).
+foreach ($k in @('APP_BASE_URL', 'API_BASE_URL', 'RESERVA_WEB_URL_PUBLICA')) {
   $v = [string]$cfg[$k]
   # También se corrige una dirección rota sin punto en el nombre (p. ej. "https://1" que dejó el error de arriba).
   $esPropia = -not $v -or $v -notmatch '^https?://[^/:]+\.[^/:]+' -or @($propias | Where-Object { $v -match ('^https?://' + [regex]::Escape($_) + '(:\d+)?/?$') }).Count -gt 0
@@ -166,10 +174,22 @@ Ok "Configuracion guardada en $ENVF"
 
 # ─── 3. Detener lo que esté corriendo ──────────────────────────────────────────
 Titulo 'Servicio'
-if (Get-ScheduledTask -TaskName $TAREA -ErrorAction SilentlyContinue) {
-  Stop-ScheduledTask -TaskName $TAREA -ErrorAction SilentlyContinue
-  Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object { $_.CommandLine -like "*$APP*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-  Ok 'Version anterior detenida.'
+if (Get-ScheduledTask -TaskName $TAREA -ErrorAction SilentlyContinue) { Stop-ScheduledTask -TaskName $TAREA -ErrorAction SilentlyContinue }
+# Se cierra la Agenda que esté corriendo AUNQUE sea de otra carpeta (antes solo se cerraba la de esta carpeta: si la
+# versión nueva se copiaba a otra ruta, el API viejo seguía vivo en el puerto y la «nueva» le pasaba todo a él).
+$puertos = @([int]$cfg['PORT'], [int]$webPort) | Where-Object { $_ }
+$enPuertos = @(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object { $puertos -contains $_.LocalPort } | Select-Object -ExpandProperty OwningProcess -Unique)
+$viejos = @(Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object {
+  $_.CommandLine -like '*\app\servidor.js*' -or $_.CommandLine -like '*\app\api.js*' -or $enPuertos -contains $_.ProcessId })
+foreach ($p in $viejos) { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue }
+if ($viejos.Count) {
+  Start-Sleep -Seconds 2
+  Ok ("Version anterior detenida ({0} proceso(s))." -f $viejos.Count)
+}
+$ocupado = @(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object { $puertos -contains $_.LocalPort })
+if ($ocupado.Count) {
+  $quien = ($ocupado | ForEach-Object { $pr = Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue; "puerto $($_.LocalPort): $($pr.ProcessName) (PID $($_.OwningProcess))" }) -join '; '
+  throw "Los puertos de la Agenda siguen ocupados por otro programa ($quien). Cierralo y vuelve a correr el instalador."
 }
 
 # ─── 4. Base de datos: carga del respaldo (solo en una base vacía) y migraciones ─
@@ -259,7 +279,12 @@ if (-not $SinIniciar) {
     Start-Sleep -Seconds 3
     try { $r = Invoke-WebRequest -UseBasicParsing -TimeoutSec 3 "http://127.0.0.1:$($cfg['PORT'])/health"; $listo = $r.StatusCode -eq 200 } catch { }
   }
-  if ($listo) { Ok 'La Agenda esta funcionando.' } else { Aviso "Todavia no responde. Revisa el log en $DATOS\logs" }
+  # Que responda no basta: debe responder el API de ESTA carpeta (no uno viejo que haya quedado vivo).
+  $dueno = Get-NetTCPConnection -State Listen -LocalPort ([int]$cfg['PORT']) -ErrorAction SilentlyContinue | Select-Object -First 1
+  $cmdApi = if ($dueno) { (Get-CimInstance Win32_Process -Filter "ProcessId=$($dueno.OwningProcess)").CommandLine } else { '' }
+  if ($listo -and $cmdApi -and $cmdApi -notlike "*$(Join-Path $APP 'api.js')*") {
+    Aviso "Responde un API que NO es de esta carpeta: $cmdApi. Cierra ese proceso y vuelve a correr el instalador."
+  } elseif ($listo) { Ok 'La Agenda esta funcionando (version nueva).' } else { Aviso "Todavia no responde. Revisa el log en $DATOS\logs" }
 }
 
 Titulo 'Listo'

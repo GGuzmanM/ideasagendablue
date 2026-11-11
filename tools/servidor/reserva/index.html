@@ -151,7 +151,7 @@ html:not(.fuentes) .ms { display: none; }
 .resumen dd small { display: block; color: var(--variant); font-weight: 400; font-size: 12px; }
 .resumen dl { margin: 0; display: grid; gap: 12px; }
 .total { border-top: 1px solid var(--high); padding-top: 12px; display: flex; justify-content: space-between; align-items: baseline; }
-.total b { font: 700 24px Geist, Inter, sans-serif; color: var(--primary); font-variant-numeric: tabular-nums; }
+.total b { font: 700 24px Geist, Inter, sans-serif; color: var(--primary); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* Resumen de confirmación */
 .pago { border: 1px solid var(--outline-variant); border-radius: 12px; overflow: hidden; }
@@ -203,8 +203,10 @@ html:not(.fuentes) .ms { display: none; }
   if (document.fonts && document.fonts.load) document.fonts.load('20px "Material Symbols Outlined"', 'event').then(marcar, function () {});
   setTimeout(marcar, 3000);
 
-  // Sin pasarela de pago (29-oct-2026): al confirmar se registra la cita; el pago se hace en la sede.
+  // Dos formas de reservar: sin pago (la cita se registra al confirmar y se paga en la sede) o con pago en línea (Niubiz,
+  // 10-nov-2026). Cuál se ofrece lo dice `catalogo.pago` ({habilitado, modo: 'opcional' | 'obligatorio'}); apagado = solo sede.
   var API = '/api/v1/publico/reservas';
+  var CLAVE_SESION = 'lb-reserva-pago';
   var DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
   var MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'setiembre', 'octubre', 'noviembre', 'diciembre'];
   var PASOS = ['Tus datos', 'Sede', 'Servicio', 'Fecha', 'Hora', 'Confirmar'];
@@ -217,8 +219,91 @@ html:not(.fuentes) .ms { display: none; }
   function nuevoEstado() {
     return { paso: 0, tipoDoc: 'DNI', dni: '', nombres: '', apPat: '', apMat: '', cel: '', email: '', acepta: false,
       sede: null, serv: null, variante: undefined, fecha: null, hora: null, mes: null,
-      dias: null, horas: null, cargando: false, error: '', estado: null, intento: null };
+      dias: null, horas: null, cargando: false, error: '', estado: null, intento: null,
+      forma: null, aceptaPago: false, pagoIni: null, esperando: false, resultado: null };
   }
+
+  // ─── pago en línea ───
+  function pagoCfg() { return cat && cat.pago && cat.pago.habilitado ? cat.pago : null; }
+  function obligatorio() { var p = pagoCfg(); return !!p && p.modo === 'obligatorio'; }
+  function formaActual() { return !pagoCfg() ? 'sede' : obligatorio() ? 'linea' : (s.forma || 'linea'); }
+  function textoPago() {
+    return !pagoCfg() ? 'El pago se hace en la sede.' : obligatorio() ? 'Pagas con tarjeta al confirmar tu reserva.' : 'Puedes pagar ahora con tarjeta o en la sede.';
+  }
+  function claveSeleccion() { return [s.sede, s.serv, s.variante, s.fecha, s.hora].join('|'); }
+  // Si el pago falla, el paciente vuelve a la página sin perder lo que eligió (queda en esta pestaña, no en el servidor).
+  function guardarSesion() {
+    try {
+      sessionStorage.setItem(CLAVE_SESION, JSON.stringify({ tipoDoc: s.tipoDoc, dni: s.dni, nombres: s.nombres, apPat: s.apPat, apMat: s.apMat, cel: s.cel, email: s.email,
+        acepta: s.acepta, sede: s.sede, serv: s.serv, variante: s.variante === undefined ? '__ninguna__' : s.variante, fecha: s.fecha, hora: s.hora }));
+    } catch (e) {}
+  }
+  function borrarSesion() { try { sessionStorage.removeItem(CLAVE_SESION); } catch (e) {} }
+  function restaurarSesion(paso) {
+    var o = null;
+    try { o = JSON.parse(sessionStorage.getItem(CLAVE_SESION) || 'null'); } catch (e) {}
+    if (!o || !o.sede || !o.serv || !o.fecha || !o.hora) return false;
+    s = Object.assign(nuevoEstado(), o, { variante: o.variante === '__ninguna__' ? undefined : o.variante, paso: paso, acepta: !!o.acepta });
+    var f = deIso(s.fecha); s.mes = new Date(f.getFullYear(), f.getMonth(), 1);
+    if (paso === 4) { s.hora = null; cargarHoras(); } else render();
+    return true;
+  }
+  function cargarCheckout(url) {
+    return new Promise(function (ok, mal) {
+      if (window.VisanetCheckout) return ok();
+      var u; try { u = new URL(url); } catch (e) { return mal(e); }
+      // El script de pago solo puede venir de Niubiz (o de un servidor de pruebas local).
+      if (!(/(^|\.)vnforapps\.com$/.test(u.hostname) || /^(localhost|127\.0\.0\.1)$/.test(u.hostname))) return mal(new Error('origen del botón de pago no permitido'));
+      var sc = document.createElement('script'); sc.src = url;
+      sc.onload = function () { window.VisanetCheckout ? ok() : mal(new Error('el botón de pago no cargó')); };
+      sc.onerror = function () { mal(new Error('no se pudo descargar el botón de pago')); };
+      document.head.appendChild(sc);
+    });
+  }
+  function abrirVentanaPago(p) {
+    s.esperando = true; s.error = ''; render();
+    cargarCheckout(p.checkoutJs).then(function () {
+      var restan = Math.max(1, Math.floor((s.pagoIni.vence - Date.now()) / 60000));
+      VisanetCheckout.configure({
+        sessiontoken: p.sessionKey, channel: 'web', merchantid: p.merchantId, purchasenumber: p.numeroCompra, amount: p.monto,
+        expirationminutes: String(Math.min(p.minutos, restan)), timeouturl: location.origin + location.pathname + '?pago=expirada',
+        formbuttoncolor: '#0044ab', action: p.action,
+        cardholdername: s.nombres.trim(), cardholderlastname: s.apPat.trim(), cardholderemail: s.email.trim(),
+      });
+      VisanetCheckout.open();
+    }).catch(function () {
+      s.esperando = false; s.error = 'No pudimos abrir la ventana de pago. Revisa tu conexión e intenta de nuevo, o reserva y paga en la sede.'; render();
+    });
+  }
+  // Pide a la Agenda apartar el horario y un token de pago; el cobro lo hace Niubiz y la cita se crea al volver (ver /pago/retorno).
+  function pagarEnLinea() {
+    var ini = s.pagoIni;
+    // Si ya hay un pago iniciado para esta misma elección y no venció, se vuelve a abrir la ventana (no se aparta otro horario).
+    if (ini && ini.clave === claveSeleccion() && Date.now() < ini.vence - 20000) { abrirVentanaPago(ini.datos); return; }
+    s.cargando = true; s.error = ''; s.pagoIni = null; render();
+    llamar('POST', API + '/pago/iniciar', Object.assign(datosPaciente(), {
+      sedeId: s.sede, servicioId: s.serv, subcategoriaId: s.variante, fecha: s.fecha, horaInicio: s.hora, aceptaDatos: true,
+      intentoId: s.intento ? s.intento.id : null, intentoToken: s.intento ? s.intento.token : null,
+      retornoUrl: location.origin + location.pathname,
+    })).then(function (p) {
+      s.cargando = false;
+      s.pagoIni = { clave: claveSeleccion(), vence: new Date(p.expiraEn).getTime(), datos: p };
+      guardarSesion();
+      abrirVentanaPago(p);
+    }).catch(function (e) {
+      s.cargando = false; s.error = e.message;
+      if (e.codigo === 'HORA_NO_DISPONIBLE') { s.hora = null; s.paso = 4; cargarHoras(); return; }
+      render();
+    });
+  }
+  var RESULTADOS = {
+    denegado: { icono: 'credit_card_off', titulo: 'No se pudo procesar el pago', texto: 'El banco no autorizó el pago y no se te cobró. Puedes probar con otra tarjeta o reservar y pagar en la sede.', boton: 'pagar' },
+    expirada: { icono: 'timer_off', titulo: 'Se acabó el tiempo para pagar', texto: 'El horario se libera si no se completa el pago a tiempo. No se te cobró. Puedes intentarlo de nuevo.', boton: 'pagar' },
+    sin_horario: { icono: 'event_busy', titulo: 'Esa hora ya no está disponible', texto: 'Otra persona tomó ese horario mientras pagabas. Si se llegó a cobrar, el cobro se anula o te lo devolvemos. Elige otra hora.', boton: 'hora' },
+    incierto: { icono: 'hourglass_top', titulo: 'Estamos verificando tu pago', texto: 'No pudimos confirmar el resultado. Si te cobraron, te devolveremos el dinero o confirmaremos tu cita; te contactaremos. No vuelvas a pagar todavía.', boton: 'nuevo' },
+    medio_no_soportado: { icono: 'payments', titulo: 'Ese medio de pago no está disponible', texto: 'Por ahora solo aceptamos tarjetas de crédito o débito en la reserva en línea. También puedes reservar y pagar en la sede.', boton: 'pagar' },
+    error: { icono: 'error', titulo: 'No pudimos completar el pago', texto: 'Ocurrió un problema con el pago. Si ves un cargo en tu tarjeta, escríbenos o llámanos y lo revisamos.', boton: 'pagar' },
+  };
 
   // ─── intento: desde el primer «Continuar» se guarda cada paso (hasta dónde llegó). No aparta horario ni corre tiempo. ───
   var PASO_NOMBRE = ['datos', 'sede', 'servicio', 'fecha', 'hora', 'confirmar'];
@@ -351,7 +436,7 @@ html:not(.fuentes) .ms { display: none; }
       fila('medical_services', 'Servicio', sv ? esc(sv.nombre) + (v && v.id ? '<small>' + esc(v.nombre) + '</small>' : '') : (e && e.servicio ? esc(e.servicio) : '—')) +
       fila('groups', 'Profesional', sv ? (esBaro(sv) ? 'Especialista disponible' : 'Cualquier podóloga disponible') : '—') +
       fila('event', 'Fecha y hora', s.fecha ? esc(fechaLarga(s.fecha)) + (s.hora ? '<small>' + s.hora + ' h</small>' : '') : '—') +
-      '</dl><div class="total"><span class="caps">Precio · se paga en la sede</span><b>' + (v ? soles(precioEn(v)) : e ? soles(e.monto) : '—') + '</b></div>';
+      '</dl><div class="total"><span class="caps">' + (e && e.pagado ? 'Pagado con tarjeta' : formaActual() === 'linea' ? 'Precio · pago con tarjeta' : 'Precio · se paga en la sede') + '</span><b>' + (v ? soles(precioEn(v)) : e ? soles(e.monto) : '—') + '</b></div>';
   }
   function pasos() {
     return '<nav class="steps" aria-label="Pasos">' + PASOS.map(function (p, i) {
@@ -372,16 +457,27 @@ html:not(.fuentes) .ms { display: none; }
       panel.innerHTML = s.error ? avisoHtml() + '<div><button class="btn sec" data-a="reintentar" type="button">' + ic('refresh') + 'Reintentar</button></div>' : cargandoHtml('Cargando sedes y servicios…');
       resumen.innerHTML = ''; return;
     }
-    panel.innerHTML = s.estado ? final() : pasos() + paso();
+    panel.innerHTML = s.resultado ? resultadoPago() : s.estado ? final() : pasos() + paso();
+    resumen.style.display = s.resultado ? 'none' : '';
     pintarResumen();
+  }
+
+  // Pantalla al volver de Niubiz sin cita confirmada. Los textos son fijos: lo que trae la dirección (?pago=…) solo elige cuál mostrar.
+  function resultadoPago() {
+    var r = s.resultado, x = RESULTADOS[r.pago] || RESULTADOS.error;
+    var boton = x.boton === 'hora' ? '<button class="btn pri" data-a="otraHora" type="button">' + ic('schedule') + 'Elegir otra hora</button>'
+      : x.boton === 'pagar' ? '<button class="btn pri" data-a="reintentarPago" type="button">' + ic('refresh') + 'Volver a intentar</button>'
+      : '<button class="btn sec" data-a="nuevo" type="button">' + ic('add') + 'Volver al inicio</button>';
+    return '<div class="final"><div class="big mal">' + ic(x.icono) + '</div><h2>' + x.titulo + '</h2><p>' + x.texto + '</p>' +
+      (r.codigo ? '<div class="codigo">' + esc(r.codigo) + '</div><p>Guarda este código de reserva por si necesitas comunicarte con nosotros.</p>' : '') + boton + '</div>';
   }
 
   function final() {
     var e = s.estado;
     if (e.estado === 'confirmada') {
-      return '<div class="final"><div class="big">' + ic('check_circle', 'fill') + '</div><h2>¡Cita confirmada!</h2>' +
+      return '<div class="final"><div class="big">' + ic('check_circle', 'fill') + '</div><h2>' + (e.pagado ? '¡Pago recibido y cita confirmada!' : '¡Cita confirmada!') + '</h2>' +
         '<p>Te esperamos el <b>' + esc(fechaLarga(e.fecha)) + ' a las ' + esc(e.horaInicio) + '</b> en <b>' + esc(e.sede && e.sede.nombre) + '</b>, ' + esc(e.sede && e.sede.direccion) + '.</p>' +
-        '<div class="codigo">' + esc(e.codigo) + '</div><p>Código de reserva · pagas ' + soles(e.monto) + ' en la sede. Llega 10 minutos antes con tu documento de identidad.</p>' +
+        '<div class="codigo">' + esc(e.codigo) + '</div><p>Código de reserva · ' + (e.pagado ? 'pagaste ' + soles(e.monto) + ' con tarjeta' : 'pagas ' + soles(e.monto) + ' en la sede') + '. Llega 10 minutos antes con tu documento de identidad.</p>' +
         (e.demo ? '<div class="demo">' + ic('info') + '<span>Demostración: no se reservó ninguna cita.</span></div>' : '') +
         '<button class="btn sec" data-a="nuevo" type="button">' + ic('add') + 'Hacer otra reserva</button></div>';
     }
@@ -411,7 +507,7 @@ html:not(.fuentes) .ms { display: none; }
       return titulo('Tus datos', 'Los usamos para registrarte y enviarte la confirmación de tu cita.') + h +
         '<div class="grid2">' + CAMPOS.map(campoHtml).join('') + '</div>' +
         '<label class="check"><input type="checkbox" id="acepta"' + (s.acepta ? ' checked' : '') + '><span>Acepto el tratamiento de mis datos personales para gestionar mi cita, según la política de privacidad de Limablue.</span></label>' +
-        '<p class="nota">' + ic('info') + 'Tu cita se confirma al final. El pago se hace en la sede.</p>' +
+        '<p class="nota">' + ic('info') + 'Tu cita se confirma al final. ' + textoPago() + '</p>' +
         nav(datosOk() && !s.cargando, s.cargando ? 'Guardando…' : 'Continuar');
     }
     if (s.paso === 1) {
@@ -422,7 +518,7 @@ html:not(.fuentes) .ms { display: none; }
     }
     if (s.paso === 2) {
       var lista = cat.servicios.filter(function (x) { return x.sedes.indexOf(s.sede) >= 0; }), sv = serv();
-      h = titulo('Elige el servicio', 'Precios de la clínica. El pago se hace en la sede.') + h;
+      h = titulo('Elige el servicio', 'Precios de la clínica. ' + textoPago()) + h;
       if (!lista.length) return h + '<p class="nota">' + ic('info') + 'Esta sede no tiene servicios para reservar en línea por ahora.</p>' + nav(false);
       h += '<div class="opts">' + lista.map(function (x) {
         var vs = variantesDe(x), mn = Math.min.apply(null, vs.map(precioEn));
@@ -463,15 +559,27 @@ html:not(.fuentes) .ms { display: none; }
       return h + grupo('Mañana', 'wb_sunny', man) + grupo('Tarde', 'wb_twilight', tar) + nav(!!s.hora);
     }
     // Paso 6: revisar y confirmar
-    var v = variante(), se = sede(), sv2 = serv();
-    return titulo('Confirma tu reserva', 'Revisa los datos. Al confirmar se registra tu cita; el pago se hace en la sede.') + h +
+    var v = variante(), se = sede(), sv2 = serv(), precio = v ? precioEn(v) : 0, enLinea = formaActual() === 'linea';
+    var formas = pagoCfg() && !obligatorio()
+      ? '<div class="opts">' +
+        '<button class="opt" type="button" data-forma="linea" aria-pressed="' + enLinea + '"><span class="ico">' + ic('credit_card') + '</span><span class="tx"><b>Pagar ahora con tarjeta</b><span class="d">Pago seguro con Niubiz. Tu cita queda confirmada al pagar.</span></span></button>' +
+        '<button class="opt" type="button" data-forma="sede" aria-pressed="' + !enLinea + '"><span class="ico">' + ic('storefront') + '</span><span class="tx"><b>Pagar en la sede</b><span class="d">Se registra tu cita y pagas al llegar.</span></span></button></div>'
+      : '';
+    var condiciones = enLinea
+      ? '<label class="check"><input type="checkbox" id="acepta-pago"' + (s.aceptaPago ? ' checked' : '') + '><span>Acepto pagar ' + soles(precio) + ' con tarjeta por esta cita. Si el horario ya no estuviera disponible al pagar, el cobro se anula.</span></label>' +
+        '<p class="nota">' + ic('lock') + 'El pago lo procesa Niubiz. Limablue no ve ni guarda los datos de tu tarjeta.</p>'
+      : '';
+    var etiqueta = s.cargando ? (enLinea ? 'Preparando el pago…' : 'Confirmando…') : enLinea ? (s.esperando ? 'Abrir ventana de pago' : 'Pagar ' + soles(precio)) : 'Confirmar mi cita';
+    var espera = enLinea && s.esperando && !s.cargando ? '<div class="cargando"><span class="spin"></span>Completa el pago en la ventana de Niubiz. Tu horario está apartado unos minutos.</div>' : '';
+    return titulo('Confirma tu reserva', enLinea ? 'Revisa los datos. Tu cita se confirma cuando el pago se aprueba.' : 'Revisa los datos. Al confirmar se registra tu cita; el pago se hace en la sede.') + h +
       '<div class="pago"><div class="pago-head">' + ic('fact_check') + 'Resumen de tu cita</div><div class="pago-body">' +
       '<p><b>' + esc((s.nombres + ' ' + s.apPat + ' ' + s.apMat).replace(/\s+/g, ' ').trim()) + '</b> · ' + (esCE() ? 'CE ' : 'DNI ') + esc(s.dni) + '</p>' +
       '<p>' + esc(sv2 ? sv2.nombre : '') + (v && v.id ? ' · ' + esc(v.nombre) : '') + ' — ' + esc(se ? se.nombre : '') + '</p>' +
-      '<p>' + esc(fechaLarga(s.fecha)) + ' a las ' + esc(s.hora) + ' h · <b>' + soles(v ? precioEn(v) : 0) + '</b> a pagar en la sede</p></div></div>' +
+      '<p>' + esc(fechaLarga(s.fecha)) + ' a las ' + esc(s.hora) + ' h · <b>' + soles(precio) + '</b>' + (enLinea ? ' con tarjeta' : ' a pagar en la sede') + '</p></div></div>' +
+      formas + condiciones + espera +
       '<div class="nav"><button class="btn sec" data-a="atras" type="button"' + (s.cargando ? ' disabled' : '') + '>' + ic('arrow_back') + 'Atrás</button>' +
-      '<button class="btn pri" data-a="confirmar" type="button"' + (s.cargando ? ' disabled' : '') + '>' + ic('check') + (s.cargando ? 'Confirmando…' : 'Confirmar mi cita') + '</button></div>' +
-      (s.cargando ? cargandoHtml('Registrando tu cita en la agenda…') : '');
+      '<button class="btn pri" data-a="' + (enLinea ? 'pagar' : 'confirmar') + '" type="button"' + (s.cargando || (enLinea && !s.aceptaPago) ? ' disabled' : '') + '>' + ic(enLinea ? 'credit_card' : 'check') + etiqueta + '</button></div>' +
+      (s.cargando && !enLinea ? cargandoHtml('Registrando tu cita en la agenda…') : '');
   }
 
   // ─── eventos ───
@@ -491,6 +599,10 @@ html:not(.fuentes) .ms { display: none; }
   });
   panel.addEventListener('change', function (e) {
     if (e.target.id === 'acepta') { s.acepta = e.target.checked; refrescarDatos(); }
+    if (e.target.id === 'acepta-pago') {
+      s.aceptaPago = e.target.checked;
+      var bp = panel.querySelector('[data-a="pagar"]'); if (bp) bp.disabled = !s.aceptaPago || s.cargando;
+    }
     if (e.target.id === 'in-tipoDoc') {
       s.tipoDoc = e.target.value === 'CE' ? 'CE' : 'DNI'; s.dni = ''; s.error = '';
       CAMPOS.forEach(function (c) { if (c.id === 'dni') c.tocado = false; });
@@ -508,14 +620,23 @@ html:not(.fuentes) .ms { display: none; }
     if (b.dataset.var) s.variante = b.dataset.var === 'null' ? null : b.dataset.var;
     if (b.dataset.dia) { s.fecha = b.dataset.dia; s.hora = null; }
     if (b.dataset.hora) s.hora = b.dataset.hora;
+    if (b.dataset.forma) { s.forma = b.dataset.forma === 'sede' ? 'sede' : 'linea'; s.error = ''; }
+    if (a === 'pagar') { pagarEnLinea(); return; }
+    // Volver a la pantalla de confirmación (o a elegir hora) después de un pago que no se completó.
+    if (a === 'reintentarPago' || a === 'otraHora') {
+      var paso0 = a === 'otraHora' ? 4 : 5;
+      limpiarUrl();
+      if (!restaurarSesion(paso0)) { s = nuevoEstado(); render(); }
+      return;
+    }
     if (a === 'reintentar') { s.error = ''; iniciar(); return; }
     if (a === 'mesAnt' || a === 'mesSig') { s.mes = new Date(s.mes.getFullYear(), s.mes.getMonth() + (a === 'mesAnt' ? -1 : 1), 1); cargarDias(); return; }
-    if (a === 'atras') { s.error = ''; s.paso = Math.max(0, s.paso - 1); if (s.paso === 3) { cargarDias(); return; } if (s.paso === 4) { cargarHoras(); return; } }
+    if (a === 'atras') { s.error = ''; s.esperando = false; s.paso = Math.max(0, s.paso - 1); if (s.paso === 3) { cargarDias(); return; } if (s.paso === 4) { cargarHoras(); return; } }
     if (a === 'confirmar') { confirmar(); return; }
     if (a === 'nuevo') {
       // Otra reserva: mismos datos, con un seguimiento nuevo al pulsar «Continuar».
       var datos = { tipoDoc: s.tipoDoc, dni: s.dni, nombres: s.nombres, apPat: s.apPat, apMat: s.apMat, cel: s.cel, email: s.email, acepta: s.acepta };
-      s = Object.assign(nuevoEstado(), datos, { paso: 0 }); limpiarUrl();
+      s = Object.assign(nuevoEstado(), datos, { paso: 0 }); limpiarUrl(); borrarSesion();
     }
     if (a === 'sig') {
       s.error = '';
@@ -541,10 +662,17 @@ html:not(.fuentes) .ms { display: none; }
     llamar('GET', API + '/catalogo').then(function (c) {
       cat = c;
       // ¿Volvió con su código? Se muestra su confirmación.
-      var q = new URLSearchParams(location.search), codigo = q.get('codigo'), token = q.get('token');
+      var q = new URLSearchParams(location.search), codigo = q.get('codigo'), token = q.get('token'), pago = q.get('pago');
+      // ¿Volvió de Niubiz? (?pago=ok|denegado|…). Solo «ok» (con su código y token) muestra la cita; lo demás es una pantalla con texto fijo.
+      if (pago) {
+        if (pago === 'ok' && codigo && q.get('t')) token = q.get('t');
+        else { s.resultado = { pago: pago, codigo: pago === 'incierto' ? codigo : null }; limpiarUrl(); render(); return; }
+      }
       if (codigo && token) {
         return llamar('GET', API + '/' + encodeURIComponent(codigo) + '?token=' + encodeURIComponent(token)).then(function (e) {
           s.estado = e; s.fecha = e.fecha; s.hora = e.horaInicio; s.nombres = e.nombres || '';
+          if (pago) { try { history.replaceState(null, '', '?codigo=' + encodeURIComponent(codigo) + '&token=' + encodeURIComponent(token)); } catch (x) {} }
+          if (e.pagado) borrarSesion();
           render();
         }, function () { limpiarUrl(); render(); });
       }

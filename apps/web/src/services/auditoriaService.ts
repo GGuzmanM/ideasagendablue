@@ -585,7 +585,8 @@ function detalleCita(log: AuditLog, nombresPorId: Record<string, string>, legibl
       const paso = a.estado || d.estado ? `${etiquetaEstadoCita(a.estado as string)} → ${etiquetaEstadoCita(d.estado as string)}` : undefined;
       const origen = d.origen ? val('origen', d.origen) : undefined;
       const conf = !paso && d.estadoConfirmacion ? `Confirmación: ${val('estadoConfirmacion', d.estadoConfirmacion)}` : undefined;
-      return [paso ?? conf, motivo, origen].filter(Boolean).join(' · ') + cascada || undefined;
+      const especial = d.rescateNoShow ? ' · rescatada de «No show»' : d.cambioLibre || d.cambioLibreAdmin ? ' · cambio libre de estado' : '';
+      return [paso ?? conf, motivo, origen].filter(Boolean).join(' · ') + especial + cascada || undefined;
     }
     case 'mover': {
       const de = [fechaCorta(a.fecha as string), a.horaInicio].filter(Boolean).join(' ');
@@ -878,6 +879,9 @@ export const CAMPO_LABEL: Record<string, string> = {
   bloque: 'Bloque combinado',
   slotRol: 'Rol en el bloque',
   cascada: 'Aplicado también a la otra cita del bloque',
+  rescateNoShow: 'Rescatada de «No show»',
+  cambioLibre: 'Cambio libre de estado (permiso)',
+  cambioLibreAdmin: 'Cambio libre de estado (administrador)',
   sesionConsumida: 'Sesión consumida',
   sesionExonerada: 'Sesión no descontada',
   sesionExoneradaMotivo: 'Motivo de no descuento',
@@ -1055,7 +1059,7 @@ export function useAuditoriaData() {
   if (sedeId) params.sedeId = sedeId;
   if (q.trim()) params.q = q.trim();
 
-  const { data: logsResp, isLoading } = useQuery<AuditLogsResponse>({
+  const { data: logsResp, isLoading, error } = useQuery<AuditLogsResponse>({
     queryKey: ['audit', params],
     queryFn: () => api.get<AuditLogsResponse>('/audit', params),
   });
@@ -1111,6 +1115,8 @@ export function useAuditoriaData() {
     totalPages: logsResp?.totalPages ?? 0,
     limit,
     isLoading,
+    // 11-nov-2026: antes un error del API (p. ej. 403) se veía como «no hay registros»: ahora se muestra.
+    errorCarga: error ? (error instanceof Error ? error.message : String(error)) : null,
     stats,
     facetas,
     sedes: sedes ?? [],

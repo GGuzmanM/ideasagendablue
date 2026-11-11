@@ -27,7 +27,7 @@ export function AuditoriaPage() {
     usuarioId, setUsuarioId, sedeId, setSedeId,
     q, setQ, page, setPage,
     logs, total, totalPages, limit,
-    isLoading, stats, facetas, sedes,
+    isLoading, errorCarga, stats, facetas, sedes,
     nombresPorId, valoresLegibles, opcionesAccion, opcionesEntidad, resetFiltros, hayFiltroActivo,
   } = useAuditoriaData();
 
@@ -55,6 +55,16 @@ export function AuditoriaPage() {
             <KpiCard icon="group" label="Usuarios activos" value={stats?.usuariosActivos ?? '—'} tint="bg-amber-100" iconColor="text-amber-700" />
           </div>
         </div>
+
+        {errorCarga && (
+          <div role="alert" data-testid="auditoria-error" className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+            <span className="material-symbols-outlined text-lg">error</span>
+            <div>
+              <p className="font-bold">No se pudo cargar la auditoría.</p>
+              <p className="text-rose-700">{errorCarga}</p>
+            </div>
+          </div>
+        )}
 
         {/* Acceso rápido a Vistas (Todos vs Logins) */}
         <div className="flex items-center justify-between gap-2 flex-wrap bg-slate-100/70 p-1.5 rounded-xl border border-slate-200/80">

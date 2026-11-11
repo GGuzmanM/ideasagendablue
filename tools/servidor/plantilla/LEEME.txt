@@ -77,6 +77,12 @@ B) Enter en esa pregunta: el instalador crea un certificado propio. La primera v
      C:\ProgramData\Limablue Agenda\config\certificado\servidor-para-las-PCs.cer
 Para cambiar de certificado despues: en agenda.env deja solo HTTPS_CERT/HTTPS_KEY (o HTTPS_PFX/HTTPS_PFX_CLAVE)
 apuntando a archivos de la carpeta config\certificado. Luego Detener.bat e Iniciar.bat.
+C) CON DOMINIO PROPIO (ej. limablueagenda.com): certificado publico (Let's Encrypt) para ese dominio. Ningun navegador
+   avisa y no hay que instalar nada en las PCs. Se renueva cada ~60 dias: la Agenda relee el certificado sola cada
+   6 horas (no hace falta reiniciar). Para que los enlaces de los correos y el retorno del pago usen el dominio, en
+   agenda.env:  DIRECCION_PUBLICA, API_BASE_URL, APP_BASE_URL y RESERVA_WEB_URL_PUBLICA  con  https://<dominio>
+   (y el dominio dentro de CORS_ORIGIN). Si se vuelve a correr "Instalar o actualizar.bat" con DIRECCION_PUBLICA=<dominio>,
+   el instalador lo deja todo asi solo.
 
 
 SI EL SERVIDOR ESTA EN INTERNET (IP PUBLICA)

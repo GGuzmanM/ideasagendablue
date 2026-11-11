@@ -29,10 +29,12 @@ export function initSocket(server: HttpServer): void {
       const payload = verifyToken(token);
       const usuario = await prisma.usuario.findUnique({
         where: { id: payload.userId },
-        select: { activo: true, deletedAt: true },
+        select: { activo: true, deletedAt: true, rol: true },
       });
       if (!usuario || usuario.deletedAt || !usuario.activo) return next(new Error('SESION_REVOCADA'));
-      payload.permisos = await getPermisosRol(payload.rol);
+      // Rol de la BD, no el del token (mismo criterio que requireAuth: un cambio de rol aplica sin volver a iniciar sesión).
+      payload.rol = usuario.rol;
+      payload.permisos = await getPermisosRol(usuario.rol);
       socket.data.user = payload;
       next();
     } catch {

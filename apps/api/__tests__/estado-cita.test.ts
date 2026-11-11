@@ -108,6 +108,63 @@ describe('Volver el bloque a «agendada» (31-oct-2026)', () => {
   });
 });
 
+describe('Rescate de «No show» con permiso propio (11-nov-2026)', () => {
+  const recepcion = ['citas.estado', 'citas.noshow_llego'];
+  const contact = ['citas.estado', 'citas.noshow_agendada'];
+  it('sin permiso, «No show» sigue sin salida', () => {
+    expect(() => validarTransicion('no_show', 'llego', ['citas.estado'])).toThrow(expect.objectContaining({ code: 'TRANSICION_INVALIDA' }));
+    expect(() => validarTransicion('no_show', 'agendada', ['citas.estado'])).toThrow(expect.objectContaining({ code: 'TRANSICION_INVALIDA' }));
+  });
+  it('recepción solo va a «Llegó» y contact center solo a «Agendada»', () => {
+    expect(() => validarTransicion('no_show', 'llego', recepcion)).not.toThrow();
+    expect(() => validarTransicion('no_show', 'agendada', recepcion)).toThrow(expect.objectContaining({ code: 'TRANSICION_INVALIDA' }));
+    expect(() => validarTransicion('no_show', 'agendada', contact)).not.toThrow();
+    expect(() => validarTransicion('no_show', 'llego', contact)).toThrow(expect.objectContaining({ code: 'TRANSICION_INVALIDA' }));
+  });
+  it('el permiso vale solo desde «No show»: de una cancelada o completada no rescata', () => {
+    expect(() => validarTransicion('cancelada', 'llego', recepcion)).toThrow(expect.objectContaining({ code: 'TRANSICION_INVALIDA' }));
+    expect(() => validarTransicion('completada', 'agendada', contact)).toThrow(expect.objectContaining({ code: 'TRANSICION_INVALIDA' }));
+    expect(() => validarTransicion('no_show', 'completada', [...recepcion, ...contact])).toThrow(expect.objectContaining({ code: 'TRANSICION_INVALIDA' }));
+  });
+  it('rescatar a «Llegó»: sella la hora de llegada y deja el rastro «rescateNoShow» en la auditoría', async () => {
+    prisma.cita.findUnique.mockResolvedValue(cita({ estado: 'no_show' }));
+    const hora = new Date('2026-09-14T16:00:00.000Z');
+    await cambiarEstadoCita({ citaId: 'c1', estado: 'llego', hora }, { ...actor, permisos: recepcion });
+    expect(tx.cita.updateMany).toHaveBeenCalledWith({
+      where: { id: 'c1', estado: 'no_show', deletedAt: null },
+      data: expect.objectContaining({ estado: 'llego', llegoEn: hora }),
+    });
+    expect(tx.auditLog.create).toHaveBeenCalledWith({ data: expect.objectContaining({ despues: expect.objectContaining({ estado: 'llego', rescateNoShow: true }) }) });
+  });
+  it('rescatar a «Agendada» borra las horas de llegada y atención', async () => {
+    prisma.cita.findUnique.mockResolvedValue(cita({ estado: 'no_show' }));
+    await cambiarEstadoCita({ citaId: 'c1', estado: 'agendada' }, { ...actor, permisos: contact });
+    expect(tx.cita.updateMany).toHaveBeenCalledWith({
+      where: { id: 'c1', estado: 'no_show', deletedAt: null },
+      data: expect.objectContaining({ estado: 'agendada', llegoEn: null, enAtencionEn: null }),
+    });
+  });
+  it('en un bloque, el rescate NO baja a la hermana completada o en curso (solo el cambio libre lo hace)', async () => {
+    prisma.cita.findUnique.mockResolvedValue(cita({ estado: 'no_show', slotGrupoId: 'g1', slotRol: 'PRINCIPAL' }));
+    prisma.cita.findMany.mockResolvedValue([{ id: 'h1', estado: 'completada', sedeId: 's1', fecha: FECHA, slotGrupoId: 'g1' }]);
+    await cambiarEstadoCita({ citaId: 'c1', estado: 'agendada' }, { ...actor, permisos: contact });
+    expect(tx.cita.updateMany).toHaveBeenCalledTimes(1);
+    // …mientras que el admin (libre) sí arrastra al bloque terminado
+    jest.clearAllMocks();
+    tx.cita.updateMany.mockResolvedValue({ count: 1 });
+    prisma.cita.findUnique.mockResolvedValue(cita({ estado: 'no_show', slotGrupoId: 'g1', slotRol: 'PRINCIPAL' }));
+    prisma.cita.findMany.mockResolvedValue([{ id: 'h1', estado: 'completada', sedeId: 's1', fecha: FECHA, slotGrupoId: 'g1' }]);
+    await cambiarEstadoCita({ citaId: 'c1', estado: 'agendada' }, { ...actor, libre: true });
+    expect(tx.cita.updateMany).toHaveBeenCalledTimes(2);
+  });
+  it('si el horario ya lo tomó otra cita → 409 SLOT_OCUPADO claro (no un error genérico)', async () => {
+    prisma.cita.findUnique.mockResolvedValue(cita({ estado: 'no_show' }));
+    tx.cita.updateMany.mockRejectedValueOnce(Object.assign(new Error('Unique constraint'), { code: 'P2002' }));
+    await expect(cambiarEstadoCita({ citaId: 'c1', estado: 'llego' }, { ...actor, permisos: recepcion }))
+      .rejects.toMatchObject({ statusCode: 409, code: 'SLOT_OCUPADO' });
+  });
+});
+
 describe('Anclas de tiempo', () => {
   const h = new Date('2026-09-14T15:30:00.000Z');
   it('sella la hora del evento según el estado destino', () => {

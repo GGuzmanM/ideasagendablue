@@ -1788,8 +1788,10 @@ router.patch('/:id/estado', requireAuth, requireAcceso('appointments:write', 'ci
       ip: req.ip,
       userAgent: req.headers['user-agent'] as string | undefined,
       // 06-oct-2026: el ADMINISTRADOR pasa la cita a cualquier estado (el rol admin manda por su rol).
-      libre: req.user?.rol === 'admin',
-      ...(req.user?.rol === 'admin' ? { auditExtra: { cambioLibreAdmin: true } } : {}),
+      // 11-nov-2026: cualquier rol con el permiso `citas.estado_libre` tiene el mismo poder (queda marcado en la auditoría).
+      libre: req.user?.rol === 'admin' || !!req.user?.permisos?.includes('citas.estado_libre'),
+      ...(req.user?.rol === 'admin' ? { auditExtra: { cambioLibreAdmin: true } }
+        : req.user?.permisos?.includes('citas.estado_libre') ? { auditExtra: { cambioLibre: true } } : {}),
     },
   );
   res.json(citaCompleta);

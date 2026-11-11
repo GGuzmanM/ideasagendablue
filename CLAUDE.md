@@ -36,6 +36,16 @@ Reemplaza un ERP de escritorio de 14 años. 5 sedes, ~400 citas diarias, 40 pod�
   `services/reservaWeb/visibilidad.ts` (`sedesQueOfrecen`) y la usan `catalogo()` y la pantalla; `horasLibres` devuelve [] para una sede apagada o un servicio
   oculto ahí. Rutas: `GET /servicios/reserva-web/sedes`, `PATCH /servicios/reserva-web/sedes/:sedeId {reservaWeb}`, `PUT /servicios/:id/reserva-web/sedes/:sedeId/oferta {ofrecer}`.
   Los tipos (subcategorías) siguen al servicio: solo tienen precio propio por sede, no oferta propia.
+- **Pago en línea con Niubiz en la reserva web (10-nov-2026, APAGADO por defecto)**: `services/reservaWeb/niubiz.ts` (cliente de las 4 llamadas: token de
+  acceso → token de sesión → `checkout.js` en el navegador → autorización/reversa) y `pago.ts` (`iniciarPago` aparta el horario unos minutos y pide el token
+  de sesión; `procesarRetorno` autoriza —único momento en que se cobra—, compara el monto autorizado, crea la cita con el mismo `POST /citas` y, si la cita falla,
+  ANULA el cobro). Rutas en `routes/reservaWeb.ts`: `POST /pago/iniciar` y `POST /pago/retorno/:codigo` (formulario de Niubiz → 303 a la página con `?pago=<destino>`).
+  Estados de `reservas_web`: esperando_pago → autorizando → confirmada | fallida | reembolsar (cobro incierto o sin cita: revisar en Niubiz a mano); `pagoEstado`
+  (pendiente, aprobado, denegado, anulado, cobrado_sin_cita, incierto, rechazado, sin_sesion, medio_no_soportado). `pagoReferencia` = pedido de Niubiz (secuencia
+  `reservas_web_numero_compra_seq`). `horasLibres` descuenta lo apartado (`esperando_pago` vigente o `autorizando`); un intento nuevo del mismo documento reemplaza sus apartados.
+  Config en `agenda.env`: `NIUBIZ_HABILITADO=1`, `NIUBIZ_ENTORNO` (sandbox|produccion), `NIUBIZ_MERCHANT_ID/USUARIO/CLAVE`, `NIUBIZ_LIQUIDACION` (automatica|manual),
+  `RESERVA_WEB_PAGO` (opcional|obligatorio), `RESERVA_WEB_URL_PUBLICA` (https público para el retorno), `NIUBIZ_URL_API`/`NIUBIZ_CHECKOUT_JS` (solo pruebas). El chat de
+  WhatsApp NO usa este flujo. Probar sin Niubiz: `node apps/api/scripts/niubiz-simulado.cjs 4010` + `NIUBIZ_URL_API=http://localhost:4010`. Tests: `__tests__/niubiz-cliente`, `pago-retorno`.
 - TypeScript estricto en todo el proyecto
 - Errores API: `{ error: string, code?: string }` via `AppError` en `middleware/errorHandler.ts`
 - Fechas: UTC en DB, convertir a America/Lima en frontend
@@ -46,6 +56,20 @@ Reemplaza un ERP de escritorio de 14 años. 5 sedes, ~400 citas diarias, 40 pod�
 - **Usuario admin**: `admin@limablue.pe` / `Admin1234!` (rol: `admin`)
 - Roles en DB: `admin`, `coordinadora_sedes`, `recepcionista` (enum `RolUsuario`)
 - Middleware: `requireAuth`, `requireRol(...roles)`, `requireScope(scope)` en `middleware/auth.ts`
+- **Permisos de ESTADO de la cita (11-nov-2026)**, catálogo en `permisos.ts` y switches en Administración › Roles: `citas.estado` (botones del flujo),
+  `citas.revertir` (desplegable, pero con la máquina de estados), `citas.estado_libre` (desplegable con TODOS los estados = el poder que antes tenía solo el
+  rol admin; `forzar` sigue siendo solo admin), `citas.noshow_llego` (recepción) y `citas.noshow_agendada` (contact center / especial contact): botón suelto
+  en una cita en «No show» que la pasa a «Llegó» / «Agendada» y nada más (`puedeRescatarNoShow` en `estadoCitaService.ts`; queda `rescateNoShow` en la auditoría).
+  Migración `20261111120000_permisos_estado_no_show` (data). El rol `admin` no se edita por API: todo permiso nuevo se le otorga por migración.
+  La auditoría (`auditoria.ver`) es un permiso independiente: lo tienen admin y coordinadora; cualquier otro rol lo recibe encendiéndolo en Roles.
+- **El rol se lee de la BD en cada request** (`requireAuth` y el socket), NO del token: el JWT dura hasta 30 días y un cambio de rol
+  (ascenso a admin, o quitarle permisos) debe aplicar al instante. Antes `/auth/me` usaba el de la BD y el resto el del token → la pantalla
+  ofrecía la Auditoría y el API respondía 403 (lista vacía). Corregido 11-nov-2026.
+- **N.º de cita** (11-nov-2026): `citas.numero`, correlativo (`citas_numero_seq`, índice único `citas_numero_key`, ambos en el schema), se
+  muestra como «C-000123» con `formatoNumeroCita` de `@limablue/shared` (reconstruir `packages/shared` si lo tocas). Lo recibe TODA cita al crearse;
+  las existentes se numeraron por `creadoEn` en `20261111130000_numero_cita`. Sale en el detalle de la cita, en los correos de reserva y recordatorio,
+  y como `numeroCita` en la API del chat / reserva web. No confundir con el `codigo` «LB-…», que es de la RESERVA web/chat, no de la cita.
+  Puede tener huecos (una creación que falla consume el número): es normal en una secuencia.
 
 ## Migraciones de base de datos (Prisma Migrate — NO `db push`)
 - **Flujo correcto:** en local `prisma migrate dev` genera migraciones versionadas en
@@ -54,7 +78,7 @@ Reemplaza un ERP de escritorio de 14 años. 5 sedes, ~400 citas diarias, 40 pod�
 - **Estructura va en migraciones, NO en `seed.ts`.** El seed es SOLO datos (sedes, roles,
   profesionales). Los índices/constraints viven en las migraciones.
 - **Índices únicos PARCIALES** (con `WHERE`): Prisma no los representa en el schema, así que
-  viven como SQL crudo dentro de las migraciones. Son 15 (verificados contra `pg_indexes`):
+  viven como SQL crudo dentro de las migraciones. Son 16 únicos parciales (verificados contra `pg_indexes`):
   - En la baseline (`00000000000000_baseline/migration.sql`): `recordatorios_cita_unico`,
     `asignaciones_sede_una_abierta`, `pacientes_documento_unico`, `citas_idempotency_unico`.
   - En `20260624120000_bloques_combinados`: `citas_slot_primario_unique` y
@@ -72,6 +96,8 @@ Reemplaza un ERP de escritorio de 14 años. 5 sedes, ~400 citas diarias, 40 pod�
     `tiempos_cita_vigente_unico` (máx 1 tiempo no descartado por cita).
   - En `20261029120000_reservas_web_directas` (reserva web sin pasarela): `reservas_web_referencia_unica` (canal + referenciaExterna:
     un reintento del chat de WhatsApp no crea otra cita).
+  - En `20261110120000_niubiz_numero_compra` (pago en línea): `reservas_web_numero_compra_unico` (`pagoReferencia` único cuando `pasarela = 'niubiz'`:
+    un pedido de Niubiz no se repite) y la secuencia `reservas_web_numero_compra_seq`.
   - Además, índices **GIN pg_trgm** (no únicos, tampoco en el schema) en
     `20260903120000_catalogos_hce_cie10_medicamento`: `cie10_descripcion_trgm`,
     `medicamentos_dci_trgm`, `medicamentos_comercial_trgm`; y en

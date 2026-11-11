@@ -9,16 +9,20 @@
  *  GET  /horas?sedeId&servicioId&fecha           horas libres de un día
  *  POST /intentos                                primer «Continuar»: guarda los datos (seguimiento de quién empezó)
  *  PATCH /intentos/:id   { token, paso, … }      guarda el avance (sede, servicio, fecha, hora)
- *  POST /                                        confirma: registra al paciente y CREA LA CITA
+ *  POST /                                        confirma: registra al paciente y CREA LA CITA (pago pendiente: se paga en la sede)
+ *  POST /pago/iniciar                            pago en línea (Niubiz): aparta el horario y devuelve lo que necesita el botón de pago
+ *  POST /pago/retorno/:codigo                    a donde vuelve Niubiz con el resultado: cobra, crea la cita y redirige a la página
  *  GET  /:codigo?token=                          estado (al volver con su código)
  */
-import { Router, type Request, type Response, type NextFunction } from 'express';
+import express, { Router, type Request, type Response, type NextFunction } from 'express';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { AppError } from '../middleware/errorHandler';
 import { reservaWebHabilitada, catalogo, horasLibres, diasDisponibles, reservar, estadoReserva } from '../services/reservaWeb/reservaWebService';
 import { crearIntento, actualizarIntento, PASOS_INTENTO } from '../services/reservaWeb/intentos';
+import { niubizHabilitado, modoPago } from '../services/reservaWeb/niubiz';
+import { iniciarPago, procesarRetorno } from '../services/reservaWeb/pago';
 import { modoVitrina, intentoDemo, avanceDemo, reservaDemo, estadoDemo } from '../services/reservaWeb/vitrina';
 import { camposPaciente, revisarDocumento, normalizarPaciente, normalizarCelular, normalizarDocumento, datosPacienteSchema } from '../services/reservaWeb/validaciones';
 
@@ -67,7 +71,8 @@ async function verificarCaptcha(token: string | undefined, ip?: string) {
 router.get('/catalogo', limiteConsultas, async (_req, res) => {
   // Sin caché: lo que la clínica activa o desactiva en Administración › Reserva web debe verse de inmediato.
   res.set('Cache-Control', 'no-cache');
-  res.json(await catalogo());
+  // `pago`: si la página debe ofrecer el pago en línea (y si es obligatorio u opcional). El chat de WhatsApp no lo usa.
+  res.json({ ...(await catalogo()), pago: { habilitado: niubizHabilitado() && !modoVitrina(), modo: modoPago() } });
 });
 
 router.get('/dias', limiteConsultas, async (req, res) => {
@@ -83,7 +88,7 @@ router.get('/horas', limiteConsultas, async (req, res) => {
 // En la página el correo es obligatorio (ahí le llega la confirmación). Documento: DNI o CE.
 const aceptaDatos = z.literal(true, { errorMap: () => ({ message: 'Debes aceptar el tratamiento de datos personales' }) });
 const datosPaciente = datosPacienteSchema({ emailObligatorio: true });
-const crearSchema = camposPaciente({ emailObligatorio: true }).extend({
+const crearBase = camposPaciente({ emailObligatorio: true }).extend({
   sedeId: uuid, servicioId: uuid, subcategoriaId: uuid.optional().nullable(),
   fecha, horaInicio: hora,
   aceptaDatos,
@@ -91,7 +96,9 @@ const crearSchema = camposPaciente({ emailObligatorio: true }).extend({
   // intento de la página (seguimiento de quién empezó y hasta dónde llegó)
   intentoId: uuid.optional().nullable(),
   intentoToken: z.string().min(10).max(100).optional().nullable(),
-}).superRefine(revisarDocumento);
+});
+const crearSchema = crearBase.superRefine(revisarDocumento);
+const crearPagoSchema = crearBase.extend({ retornoUrl: z.string().url().max(500) }).superRefine(revisarDocumento);
 
 // ─── Intentos (06-oct-2026): avance del paciente desde el primer «Continuar» ──
 const limiteIntentos = limite(60, 15 * 60_000, 'Demasiados intentos desde esta conexión. Espera unos minutos.');
@@ -120,6 +127,8 @@ router.patch('/intentos/:id', limiteConsultas, async (req, res) => {
 });
 
 router.post('/', limiteReservas, async (req, res) => {
+  // Con el pago en línea obligatorio, la reserva web ya no se confirma sin pagar (el chat de WhatsApp tiene su propia API).
+  if (niubizHabilitado() && modoPago() === 'obligatorio' && !modoVitrina()) throw new AppError('Esta reserva requiere pagar en línea', 400, 'PAGO_REQUERIDO');
   const { captcha, intentoId, intentoToken, aceptaDatos: _acepta, sedeId, servicioId, subcategoriaId, fecha: f, horaInicio, ...paciente } = crearSchema.parse(req.body);
   void _acepta;
   const p = normalizarPaciente(paciente);
@@ -128,6 +137,60 @@ router.post('/', limiteReservas, async (req, res) => {
   // Vitrina: valida servicio y hora con la disponibilidad real, pero no registra nada.
   if (modoVitrina()) { res.status(201).json(await reservaDemo(datos)); return; }
   res.status(201).json(await reservar(datos, { canal: 'web', ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined, intentoId, intentoToken }));
+});
+
+
+// ─── Pago en línea (Niubiz) ───────────────────────────────────────────────────
+const PAGINA_RESERVA = () => process.env.RUTA_RESERVA_WEB || '/agendamiento_directo_limablue_un_paso_cerca_de_ti/reserva/';
+/** Dirección pública de la Agenda, para armar la URL de retorno que Niubiz recibe. */
+const urlPublica = (req: Request) => (process.env.RESERVA_WEB_URL_PUBLICA || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
+/** La página a la que se vuelve debe ser de un origen permitido (nunca una dirección cualquiera: sería una redirección abierta). */
+function paginaDeRetorno(url: string, req: Request): string {
+  let u: URL;
+  try { u = new URL(url); } catch { throw new AppError('Dirección de retorno inválida', 400, 'RETORNO_INVALIDO'); }
+  const permitido = origenes().includes(u.origin) || u.origin === urlPublica(req)
+    || (process.env.NODE_ENV !== 'production' && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(u.origin));
+  if (!permitido) throw new AppError('Dirección de retorno no permitida', 400, 'RETORNO_INVALIDO');
+  return u.origin + u.pathname;
+}
+const limitePagos = limite(10, 15 * 60_000, 'Demasiados intentos de pago desde esta conexión. Espera unos minutos.');
+// El retorno lo dispara Niubiz desde el navegador del paciente una vez por pago (y se puede refrescar): tope más holgado que el de iniciar.
+const limiteRetorno = limite(40, 15 * 60_000, 'Demasiadas solicitudes desde esta conexión. Espera unos minutos.');
+
+router.post('/pago/iniciar', limitePagos, async (req, res) => {
+  if (!niubizHabilitado() || modoVitrina()) throw new AppError('El pago en línea no está disponible', 404, 'PAGO_NO_DISPONIBLE');
+  const { captcha, intentoId, intentoToken, aceptaDatos: _acepta, sedeId, servicioId, subcategoriaId, fecha: f, horaInicio, retornoUrl, ...paciente } = crearPagoSchema.parse(req.body);
+  void _acepta;
+  const p = normalizarPaciente(paciente);
+  await verificarCaptcha(captcha, req.ip);
+  res.set('Cache-Control', 'no-store');
+  res.status(201).json(await iniciarPago(
+    { ...p, sedeId, servicioId, subcategoriaId, fecha: f, horaInicio },
+    { ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined, intentoId, intentoToken, retornoUrl: paginaDeRetorno(retornoUrl, req), baseUrl: urlPublica(req) },
+  ));
+});
+
+// Niubiz (el navegador del paciente) hace POST aquí como formulario (transactionToken, channel, customerEmail). Se responde con una
+// redirección a la página de la reserva: ahí se ve el resultado. Nunca devuelve JSON ni datos del paciente.
+router.post('/pago/retorno/:codigo', limiteRetorno, express.urlencoded({ extended: false, limit: '20kb' }), async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  let resultado: Awaited<ReturnType<typeof procesarRetorno>>;
+  try {
+    const form = (req.body ?? {}) as Record<string, unknown>;
+    resultado = await procesarRetorno(String(req.params.codigo), {
+      transactionToken: typeof form.transactionToken === 'string' ? form.transactionToken : undefined,
+      channel: typeof form.channel === 'string' ? form.channel : undefined,
+    }, { ip: req.ip });
+  } catch (e) {
+    console.error('[pago] error inesperado en el retorno:', (e as Error).message);
+    resultado = { destino: 'error' };
+  }
+  const u = new URL(resultado.retornoUrl || PAGINA_RESERVA(), urlPublica(req));
+  u.searchParams.set('pago', resultado.destino);
+  if (resultado.codigo) u.searchParams.set('codigo', resultado.codigo);
+  if (resultado.token) u.searchParams.set('t', resultado.token);
+  if (resultado.motivo) u.searchParams.set('motivo', resultado.motivo.slice(0, 200));
+  res.redirect(303, u.toString());
 });
 
 router.get('/:codigo', limiteConsultas, async (req, res) => {

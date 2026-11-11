@@ -99,10 +99,23 @@ export interface PlanTransicion {
   atencionesConservadas: { id: string; citaId: string }[];
 }
 
+/**
+ * 11-nov-2026: rescatar una cita en «No show» sin ser admin. Cada destino tiene su propio permiso (recepción → «Llegó»,
+ * contact center → «Agendada»); solo vale desde `no_show`, nunca otro salto.
+ */
+export const PERMISO_RESCATE_NO_SHOW: Record<string, string> = { llego: 'citas.noshow_llego', agendada: 'citas.noshow_agendada' };
+
+/** ¿Este actor puede pasar la cita de «No show» a `destino` con su permiso de rescate? */
+export function puedeRescatarNoShow(actual: string, destino: string, permisos?: string[]): boolean {
+  const permiso = PERMISO_RESCATE_NO_SHOW[destino];
+  return actual === 'no_show' && !!permiso && !!permisos?.includes(permiso);
+}
+
 /** Valida la transición `actual → destino`. Mismo estado = permitido (solo agrega comentario). */
 export function validarTransicion(actual: string, destino: string, permisos?: string[], libre = false): void {
   if (destino === actual) return;
-  if (libre) return; // admin: cualquier estado (06-oct-2026)
+  if (libre) return; // admin (o permiso `citas.estado_libre`): cualquier estado (06-oct-2026)
+  if (puedeRescatarNoShow(actual, destino, permisos)) return;
   if (!(TRANSICIONES_VALIDAS[actual] ?? []).includes(destino)) {
     throw new AppError(`Transición inválida: ${actual} → ${destino}`, 400, 'TRANSICION_INVALIDA');
   }
@@ -200,13 +213,16 @@ export async function prepararTransicion(
 
   // Solo cascadea un CAMBIO REAL (re-enviar el mismo estado para comentar NO mueve a las hermanas
   // ni re-consume sesiones). `soloEsta` desactiva la cascada.
-  const hermanas = (cita.slotGrupoId && cambioReal && !sol.soloEsta)
+  let hermanas = (cita.slotGrupoId && cambioReal && !sol.soloEsta)
     ? hermanasQueAcompanan(
         await client.cita.findMany({ where: { slotGrupoId: cita.slotGrupoId, id: { not: cita.id }, deletedAt: null } }),
         sol.estado,
         cita.estado,
       )
     : [];
+  // Rescate de «No show» con permiso propio (no admin): solo arrastra a la pareja que TAMBIÉN está en «No show»; una hermana
+  // completada o en curso no se toca (ese poder, que sí baja un bloque entero, es del cambio libre).
+  if (!actor.libre && puedeRescatarNoShow(cita.estado, sol.estado, actor.permisos)) hermanas = hermanas.filter((h) => h.estado === 'no_show');
 
   const comentario = sol.comentario?.trim() || undefined;
   const motivoNuevo = sol.motivoCancelacion != null && sol.motivoCancelacion !== cita.motivoCancelacion;
@@ -237,6 +253,12 @@ export async function transicionarEnTx(tx: Prisma.TransactionClient, plan: PlanT
     where: { id: cita.id, estado: cita.estado, deletedAt: null },
     // Si sale de «cancelada» (devolver el 2º, cambio libre del admin), el motivo de cancelación ya no aplica.
     data: { estado, motivoCancelacion: cita.estado === 'cancelada' && estado !== 'cancelada' ? null : plan.motivoCancelacion ?? cita.motivoCancelacion, ...anclas },
+  }).catch((err: unknown) => {
+    // «No show» / «cancelada» liberan el horario: si otra cita lo tomó, reactivar esta choca con el índice anti doble-booking.
+    if ((err as { code?: string })?.code === 'P2002' && ESTADOS_FINALES.includes(cita.estado)) {
+      throw new AppError('Ese horario ya lo tomó otra cita: no se puede reactivar esta. Reprograma al paciente en otro horario.', 409, 'SLOT_OCUPADO');
+    }
+    throw err;
   });
   if (r.count === 0) {
     throw new AppError('La cita cambió de estado mientras tanto. Actualiza la agenda y vuelve a intentar.', 409, 'ESTADO_CAMBIADO');
@@ -256,7 +278,11 @@ export async function transicionarEnTx(tx: Prisma.TransactionClient, plan: PlanT
     entidad: 'cita',
     entidadId: cita.id,
     antes: { estado: cita.estado, ...(plan.esCancelacion && cita.motivoCancelacion ? { motivoCancelacion: cita.motivoCancelacion } : {}) },
-    despues: { estado, ...(plan.esCancelacion && plan.motivoCancelacion ? { motivoCancelacion: plan.motivoCancelacion } : {}), ...actor.auditExtra },
+    despues: {
+      estado, ...(plan.esCancelacion && plan.motivoCancelacion ? { motivoCancelacion: plan.motivoCancelacion } : {}),
+      ...(!actor.libre && plan.cambioReal && puedeRescatarNoShow(cita.estado, estado, actor.permisos) ? { rescateNoShow: true } : {}),
+      ...actor.auditExtra,
+    },
     sedeId: cita.sedeId,
     ip: actor.ip, userAgent: actor.userAgent,
   });

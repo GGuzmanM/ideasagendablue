@@ -120,6 +120,7 @@ Respuesta **201** (o **200** si es un reintento ya procesado, con `"repetida": t
 ```json
 {
   "codigo": "LB-567405",
+  "numeroCita": "C-008323",
   "estado": "confirmada",
   "citaId": "9f8e…",
   "repetida": false,
@@ -133,6 +134,9 @@ Respuesta **201** (o **200** si es un reintento ya procesado, con `"repetida": t
   "variante": null
 }
 ```
+- **Dos códigos distintos:** `codigo` (`LB-…`) es el de la **reserva**: con él el chat consulta el estado (§3.5) y se evita
+  duplicar en un reintento. `numeroCita` (`C-…`) es el N.º de la **cita en la Agenda**, el mismo que tienen las citas que
+  registra recepción y el que sale en el correo; es el que conviene darle al paciente si llama a la sede.
 - La **profesional** se asigna automáticamente (la que esté libre a esa hora). No se informa su nombre.
 - Si el paciente ya existe (mismo tipo y número de documento), se usa su ficha **sin modificar sus datos**; si no, se registra uno nuevo.
 - Si hay correo, el paciente recibe el correo de confirmación de la Agenda.
@@ -140,7 +144,7 @@ Respuesta **201** (o **200** si es un reintento ya procesado, con `"repetida": t
 ### 3.5 `GET /:codigo` — estado de una reserva hecha por el chat
 ```json
 {
-  "codigo": "LB-567405", "estado": "confirmada", "citaVigente": true, "estadoCita": "agendada",
+  "codigo": "LB-567405", "numeroCita": "C-008323", "estado": "confirmada", "citaVigente": true, "estadoCita": "agendada",
   "nombres": "Ana María", "fecha": "2026-11-02", "horaInicio": "09:00", "duracionMinutos": 30,
   "sede": { "nombre": "Los Olivos", "direccion": "Av. …" }, "servicio": "Evaluación PO", "variante": null,
   "monto": 50, "moneda": "PEN"

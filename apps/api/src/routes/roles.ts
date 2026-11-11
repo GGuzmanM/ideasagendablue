@@ -60,6 +60,9 @@ router.get('/permisos', requireAuth, async (_req, res) => {
       { id: 'citas.estado', label: 'Cambiar estado (llegó / en atención / completar / no-show)' },
       { id: 'citas.revertir', label: 'Revertir una cita ya atendida' },
       { id: 'citas.canal', label: 'Cambiar el canal de la cita (sin tocar estado ni promoción)' },
+      { id: 'citas.estado_libre', label: 'Pasar la cita a CUALQUIER estado desde el desplegable de «Estado» (como el administrador; cada cambio queda auditado)' },
+      { id: 'citas.noshow_llego', label: 'En una cita en «No show»: botón para pasarla a «Llegó» (solo eso)' },
+      { id: 'citas.noshow_agendada', label: 'En una cita en «No show»: botón para pasarla a «Agendada» (solo eso)' },
       { id: 'reservas_web.ver', label: 'Ver «Reservas web» en el menú: seguimiento de quién empezó a reservar por internet y contactarlo' },
     ],
     'Pacientes': [

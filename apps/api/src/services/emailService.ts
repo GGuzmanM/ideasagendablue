@@ -16,6 +16,7 @@
  */
 import { Resend } from 'resend';
 import { prisma } from '../db';
+import { formatoNumeroCita } from '@limablue/shared';
 import {
   logoAdjunto,
   LOGO_CID,
@@ -294,6 +295,7 @@ export async function enviarCorreoReserva(citaId: string): Promise<{ to: string;
     profesional,
     urlCalendario: construirUrlGoogleCalendarDeCita(citaIcs),
     urlMapa: urlMapaDireccion(cita.sede.direccion),
+    numeroCita: formatoNumeroCita(cita.numero),
   });
 
   const res = await enviarEmail({
@@ -333,6 +335,7 @@ export async function enviarCorreoRecordatorio(args: {
     urlReprogramar: args.urlReprogramar,
     urlCalendario: construirUrlGoogleCalendarDeCita(citaIcs),
     urlMapa: urlMapaDireccion(cita.sede.direccion),
+    numeroCita: formatoNumeroCita(cita.numero),
   });
 
   const res = await enviarEmail({

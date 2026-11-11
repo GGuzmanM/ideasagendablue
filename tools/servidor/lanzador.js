@@ -67,11 +67,13 @@ const API = `http://127.0.0.1:${API_PUERTO}`;
 const enConfig = (p) => (p && !path.isAbsolute(p) ? path.join(DATOS, 'config', p) : p);
 
 // ─── API (proceso hijo) ──────────────────────────────────────────────────────────
-// Si la tarea se detuvo de golpe, un API viejo de ESTE programa pudo quedar vivo ocupando el puerto: se cierra.
+// Si la tarea se detuvo de golpe, un API viejo pudo quedar vivo ocupando el puerto: se cierra. Vale también para un API
+// de OTRA carpeta (versión anterior instalada en otra ruta): si no, la versión nueva le pasaría todo al API viejo.
 function cerrarApiHuerfano() {
   const api = path.join(APP, 'api.js').replace(/'/g, "''");
   spawnSync('powershell.exe', ['-NoProfile', '-Command',
-    `Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object { $_.CommandLine -like '*${api}*' -and $_.ProcessId -ne ${process.pid} } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }`,
+    `$enPuerto = @(Get-NetTCPConnection -State Listen -LocalPort ${API_PUERTO} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess); ` +
+    `Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object { ($_.CommandLine -like '*${api}*' -or $enPuerto -contains $_.ProcessId) -and $_.ProcessId -ne ${process.pid} } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }`,
   ], { windowsHide: true, timeout: 20_000 });
 }
 cerrarApiHuerfano();
@@ -177,6 +179,26 @@ function opcionesHttps() {
 const tls = opcionesHttps();
 const servidor = tls ? https.createServer(tls, app) : http.createServer(app);
 servidor.on('upgrade', proxyWs.upgrade);
+// Certificado publico (Let's Encrypt, ~60 dias): si el archivo cambia en disco se aplica sin reiniciar. Sin esto, el dia que el
+// certificado vence el navegador avisa «No es seguro» hasta que alguien reinicie la Agenda. Los reinicios no se afectan: si el
+// archivo no se puede leer, se sigue con el certificado actual.
+if (tls) {
+  let huella = JSON.stringify(tls, (_k, v) => (Buffer.isBuffer(v) ? v.toString('base64') : v));
+  setInterval(() => {
+    try {
+      const nuevo = cfg.HTTPS_PFX
+        ? { pfx: fs.readFileSync(enConfig(cfg.HTTPS_PFX)), passphrase: cfg.HTTPS_PFX_CLAVE || '' }
+        : { cert: fs.readFileSync(enConfig(cfg.HTTPS_CERT)), key: fs.readFileSync(enConfig(cfg.HTTPS_KEY)) };
+      const h = JSON.stringify(nuevo, (_k, v) => (Buffer.isBuffer(v) ? v.toString('base64') : v));
+      if (h === huella) return;
+      servidor.setSecureContext(nuevo);
+      huella = h;
+      log('servidor', 'Certificado HTTPS renovado: aplicado sin reiniciar.');
+    } catch (e) {
+      log('servidor', `No se pudo releer el certificado HTTPS (${e.message}): se sigue con el actual.`);
+    }
+  }, 6 * 3600_000).unref();
+}
 servidor.listen(WEB_PUERTO, '0.0.0.0', () => {
   const sufijoPuerto = (tls && WEB_PUERTO === 443) || (!tls && WEB_PUERTO === 80) ? '' : `:${WEB_PUERTO}`;
   log('servidor', `Limablue Agenda en ${tls ? 'https' : 'http'}://<ip-del-servidor>${sufijoPuerto}${PREFIJO}/login (API interno ${API}). Datos: ${DATOS}`);

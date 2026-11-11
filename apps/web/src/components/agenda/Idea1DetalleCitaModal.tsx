@@ -1,6 +1,7 @@
 import { urlArchivo } from '../../utils/urlArchivo';
 import { ESTADOS_PAGO } from '../../utils/estadoPago';
 import { calcularEdad } from '../../services/pacientesService';
+import { formatoNumeroCita } from '@limablue/shared';
 import React from 'react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -166,6 +167,13 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
   const puedeCorregir = permisos.includes('citas.revertir');
   // Solo el CANAL (05-oct-2026): permiso «citas.canal» (p. ej. contact especial), sin desbloquear estado ni promoción.
   const puedeCambiarCanal = puedeCorregir || permisos.includes('citas.canal');
+  // 11-nov-2026: `citas.estado_libre` da a cualquier rol el desplegable de estado con TODOS los estados (antes solo el rol admin).
+  // Se lee el rol sin hook para no cambiar los hooks de este modal.
+  const cambioLibreEstado = permisos.includes('citas.estado_libre') || useAuthStore.getState().usuario?.rol === 'admin';
+  const puedeDesplegableEstado = puedeCorregir || cambioLibreEstado;
+  // Rescate de «No show» (botones sueltos, sin desplegable): recepción → «Llegó», contact center → «Agendada».
+  const puedeNoShowLlego = !cambioLibreEstado && permisos.includes('citas.noshow_llego');
+  const puedeNoShowAgendada = !cambioLibreEstado && permisos.includes('citas.noshow_agendada');
   // Rebote (solo admin por ahora): la cita salió de la agenda para volver a llamar al paciente.
   const enRebote = citaEnRebote(cita);
 
@@ -207,6 +215,12 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                     })()}
                   </h2>
                   <div className="font-body-md text-on-surface-variant flex items-center gap-2 mt-1 flex-wrap text-xs">
+                    {cita.numero != null && (
+                      <span data-testid="detalle-numero-cita" title="N.º de cita: dáselo al paciente para ubicar su cita"
+                        className="font-mono font-bold text-primary bg-primary/10 rounded px-1.5 py-0.5 select-all">
+                        {formatoNumeroCita(cita.numero)}
+                      </span>
+                    )}
                     <span>{cita.paciente.telefono || 'Sin teléfono'}</span>
                     {cita.paciente.numeroDocumento && (
                       <span className="flex items-center gap-1" data-campo="documento-paciente">
@@ -430,7 +444,7 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                         </span>
                         {/* 31-oct-2026: quien puede corregir estados cambia CADA servicio por separado (solo ese). El desplegable de
                             «Estado» de abajo mueve la cita abierta y arrastra a su pareja; este toca solo el servicio de esta fila. */}
-                        {puedeCorregir && (
+                        {puedeDesplegableEstado && (
                           <select
                             value={e} disabled={estadoMutation.isPending} data-testid={`estado-servicio-${n}`}
                             aria-label={`Estado de ${c.servicio?.nombre ?? 'este servicio'} (solo este servicio)`} title="Cambiar el estado solo de este servicio"
@@ -447,7 +461,7 @@ El otro servicio de la cita doble no cambia.
                             }}
                             className="ml-auto text-[10px] font-bold uppercase rounded-md border border-outline-variant/40 bg-surface-container-lowest px-1 py-0.5 outline-none focus:ring-2 focus:ring-primary/20 cursor-pointer"
                           >
-                            {estadosPermitidos(e, useAuthStore.getState().usuario?.rol === 'admin').map((op) => (
+                            {estadosPermitidos(e, cambioLibreEstado).map((op) => (
                               <option key={op} value={op}>{(ESTADO_LABEL[op] ?? op).toUpperCase()}</option>
                             ))}
                           </select>
@@ -506,7 +520,7 @@ El otro servicio de la cita doble no cambia.
               </div>
 
               <div className="font-label-caps text-label-caps text-on-surface-variant/70 uppercase tracking-wider">Estado</div>
-              {puedeCorregir ? (
+              {puedeDesplegableEstado ? (
                 <div>
                 <div className="relative">
                   <select
@@ -525,7 +539,7 @@ El otro servicio de la cita doble no cambia.
                   >
                     {/* Solo los pasos que el servidor acepta desde el estado actual (nada de «Transición inválida»).
                         El admin ve TODOS (06-oct-2026); se lee el rol sin hook para no cambiar los hooks de este modal. */}
-                    {estadosPermitidos(estadoNorm, useAuthStore.getState().usuario?.rol === 'admin').map((e) => (
+                    {estadosPermitidos(estadoNorm, cambioLibreEstado).map((e) => (
                       <option key={e} value={e}>{(ESTADO_LABEL[e] ?? e).toUpperCase()}</option>
                     ))}
                   </select>
@@ -885,6 +899,60 @@ El otro servicio de la cita doble no cambia.
                 )}
               </div>
             )}
+
+            {/* RESCATE DE «NO SHOW» (11-nov-2026): el paciente sí vino / sí se reagenda. Recepción solo ve «Llegó»; contact center solo «Agendada».
+                Cita doble: cada servicio en «No show» tiene sus propios botones y se mueve solo él. Quien tiene el cambio libre usa el desplegable. */}
+            {(puedeNoShowLlego || puedeNoShowAgendada) && (() => {
+              const norm = (e?: string) => (e || '').toLowerCase().replace(/\s+/g, '_');
+              const dobles = esCombo && bloquePrincipal && bloqueSecundaria;
+              const items = dobles
+                ? [{ c: bloquePrincipal!, n: '1º' }, { c: bloqueSecundaria!, n: '2º' }].filter(({ c }) => norm(c.estado) === 'no_show')
+                : estadoNorm === 'no_show' ? [{ c: cita, n: '' }] : [];
+              if (items.length === 0) return null;
+              return (
+                <div className="space-y-2.5" data-testid="rescate-no-show">
+                  {items.map(({ c, n }) => (
+                    <div key={c.id} className="space-y-2">
+                      <p className="font-headline-sm text-headline-sm text-on-surface text-sm font-bold">
+                        {dobles ? `${n} ${c.servicio?.nombre ?? 'servicio'} · ` : ''}Marcada como «No show»
+                      </p>
+                      <div className={cn('grid gap-3', puedeNoShowLlego && puedeNoShowAgendada ? 'grid-cols-2' : 'grid-cols-1')}>
+                        {puedeNoShowLlego && (
+                          <button
+                            data-testid="noshow-a-llego"
+                            disabled={estadoMutation.isPending}
+                            onClick={() => {
+                              if (window.confirm('El paciente SÍ llegó: la cita pasa de «No show» a «Llegó». ¿Continuar?')) {
+                                estadoMutation.mutate({ estado: 'llego', ...(dobles ? { citaId: c.id, soloEsta: true } : {}) });
+                              }
+                            }}
+                            className="flex items-center justify-center gap-2.5 p-3.5 border border-emerald-300 bg-emerald-50/50 hover:bg-emerald-100 text-emerald-800 rounded-2xl transition-all font-bold text-sm shadow-xs cursor-pointer disabled:opacity-50"
+                          >
+                            <span className="material-symbols-outlined text-xl text-emerald-600">check_circle</span>
+                            <span>Llegó</span>
+                          </button>
+                        )}
+                        {puedeNoShowAgendada && (
+                          <button
+                            data-testid="noshow-a-agendada"
+                            disabled={estadoMutation.isPending}
+                            onClick={() => {
+                              if (window.confirm('La cita vuelve de «No show» a «Agendada». ¿Continuar?')) {
+                                estadoMutation.mutate({ estado: 'agendada', ...(dobles ? { citaId: c.id, soloEsta: true } : {}) });
+                              }
+                            }}
+                            className="flex items-center justify-center gap-2.5 p-3.5 border border-primary/30 bg-primary/5 hover:bg-primary/10 text-primary rounded-2xl transition-all font-bold text-sm shadow-xs cursor-pointer disabled:opacity-50"
+                          >
+                            <span className="material-symbols-outlined text-xl">event_available</span>
+                            <span>Agendada</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
 
             {/* FLUJO SECUENCIAL DEL BLOQUE COMBINADO: 1º tratamiento → (continuar/cancelar) → 2º tratamiento */}
             {puedeEstado && esCombo && bloquePrincipal && bloqueSecundaria && (() => {

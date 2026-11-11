@@ -17,6 +17,9 @@ export const PERMISOS_VALIDOS = [
   'citas.ver', 'citas.crear', 'citas.reprogramar', 'citas.cancelar', 'citas.estado', 'citas.revertir',
   // Solo cambiar el CANAL de una cita ya registrada (05-oct-2026), sin tocar estado ni promoción (eso es citas.revertir).
   'citas.canal',
+  // Estados (11-nov-2026). `estado_libre` = pasar la cita a CUALQUIER estado desde el desplegable (lo que hacía solo el rol admin).
+  // `noshow_llego` / `noshow_agendada` = en una cita en «No show», un botón para pasarla a «Llegó» / «Agendada» (nada más).
+  'citas.estado_libre', 'citas.noshow_llego', 'citas.noshow_agendada',
   // «Reservas web» en el menú (29-oct-2026): seguimiento de quién empezó a reservar por internet. Apagado para todos los roles
   // (solo admin); se enciende desde Administración › Roles.
   'reservas_web.ver',
@@ -75,19 +78,19 @@ export const ROLES_SISTEMA: { nombre: string; label: string; descripcion: string
   {
     // Recepción registra la historia a nombre de la podóloga (hc.registrar) y vende membresías en su sede.
     nombre: 'recepcionista', label: 'Recepcionista', descripcion: 'Agenda, pacientes y venta de membresías (su sede)', esSistema: true,
-    permisos: [...CITAS, ...PACIENTES, 'membresias.ver', 'membresias.vender', 'membresias.consumir', 'exportar.usar', 'comunicaciones.gestionar', ...CLINICA],
+    permisos: [...CITAS, 'citas.noshow_llego', ...PACIENTES, 'membresias.ver', 'membresias.vender', 'membresias.consumir', 'exportar.usar', 'comunicaciones.gestionar', ...CLINICA],
   },
   {
     // Contact center ve TODAS las sedes (ROLES_TODAS_SEDES) y NO tiene acceso clínico.
     nombre: 'contact_center', label: 'Contact Center', descripcion: 'Agenda, pacientes y venta de membresías (todas las sedes)', esSistema: false,
-    permisos: [...CITAS, ...PACIENTES, 'membresias.ver', 'membresias.vender'],
+    permisos: [...CITAS, 'citas.noshow_agendada', ...PACIENTES, 'membresias.ver', 'membresias.vender'],
   },
   {
     // Especial Contact (23-sep-2026): contact center con más manejo. Todo lo del contact center (agenda, pacientes,
     // venta de membresías, todas las sedes) MÁS Horarios y Restricciones completo: horarios base y excepciones de
     // sede, almuerzos, permisos, vacaciones, enfermedad y reunión. Sin acceso clínico ni a administración.
     nombre: 'especial_contact', label: 'Especial Contact', descripcion: 'Contact center con gestión completa de Horarios y Restricciones (todas las sedes)', esSistema: false,
-    permisos: [...CITAS, 'citas.canal', ...PACIENTES, 'membresias.ver', 'membresias.vender', 'horarios.ver', 'horarios.editar', 'ausencias.gestionar'],
+    permisos: [...CITAS, 'citas.canal', 'citas.noshow_agendada', ...PACIENTES, 'membresias.ver', 'membresias.vender', 'horarios.ver', 'horarios.editar', 'ausencias.gestionar'],
   },
   {
     // Médico colegiado: agenda y pacientes solo lectura, historia clínica completa, receta y se asigna a las citas.

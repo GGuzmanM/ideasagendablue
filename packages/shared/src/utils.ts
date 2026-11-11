@@ -74,3 +74,11 @@ export function horaInicioValidaParaDuracion(horaInicio: string, duracionMinutos
   if (!requiereHoraEntera(duracionMinutos)) return true;
   return timeToMinutes(horaInicio) % 60 === 0;
 }
+
+/**
+ * N.º de cita visible (11-nov-2026): «C-000123». Es el correlativo `citas.numero`; se le da al paciente por teléfono y
+ * sale en los correos. No confundir con el código «LB-…» de la reserva web / chat (es la RESERVA, no la cita).
+ */
+export function formatoNumeroCita(numero: number | null | undefined): string {
+  return numero == null ? '' : `C-${String(numero).padStart(6, '0')}`;
+}

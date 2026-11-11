@@ -298,6 +298,8 @@ export interface DatosPlantilla {
   urlCalendario: string;
   /** Enlace de Google Maps a la dirección de la sede. */
   urlMapa: string;
+  /** N.º de cita ya formateado («C-000123»). Opcional: sin él la fila no se muestra. */
+  numeroCita?: string;
 }
 
 // ── Plantilla Correo 1 (reserva registrada) — diseño de tarjeta (tablas, email-safe) ──
@@ -340,6 +342,10 @@ export function renderPlantillaReserva(d: DatosPlantilla): string {
 
           <!-- detail rows -->
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:18px;">
+            ${d.numeroCita ? `<tr><td style="padding:14px 0;border-top:1px solid #eef1f6;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+              <td style="font-size:13px;font-weight:600;color:#8a93a6;">N.º de cita</td>
+              <td align="right" style="font-size:14px;font-weight:800;color:#1e3a8a;letter-spacing:.03em;">${escapar(d.numeroCita)}</td>
+            </tr></table></td></tr>` : ''}
             <tr><td style="padding:14px 0;border-top:1px solid #eef1f6;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
               <td style="font-size:13px;font-weight:600;color:#8a93a6;">Servicio</td>
               <td align="right" style="font-size:14px;font-weight:700;color:#0f1f3d;">${d.servicio}</td>
@@ -393,6 +399,7 @@ export function renderPlantillaRecordatorio(d: DatosPlantilla & { urlConfirmar: 
           <div style="color:#ffffff;font-size:14px;font-weight:600;">${diaSemana}, ${dia} de ${MESES_ES[d.fechaDate.getUTCMonth()]}</div>
           <div style="color:#ffffff;font-size:42px;font-weight:800;letter-spacing:-.03em;line-height:1.1;margin-top:2px;"><span style="color:#ffffff;">${t.hora.split('').join('&#8203;')}</span> <span style="font-size:18px;color:#ffffff;font-weight:600;">${t.suf}</span></div>
           <div style="color:#ffffff;font-size:13px;margin-top:6px;">${d.servicio} · ${d.sede}</div>
+          ${d.numeroCita ? `<div style="color:#c7d2fe;font-size:12px;font-weight:700;letter-spacing:.04em;margin-top:6px;">N.º de cita ${escapar(d.numeroCita)}</div>` : ''}
         </td></tr>
 
         <!-- cuerpo: la pregunta + acciones -->

@@ -828,6 +828,9 @@ model Paciente {
 
 model Cita {
   id                      String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  // N.º de cita (11-nov-2026): correlativo visible para darlo al paciente por teléfono o correo («C-000123», ver
+  // `formatoNumeroCita` en @limablue/shared). Toda cita lo recibe al crearse, venga de la agenda, la web o el chat.
+  numero                  Int               @unique @default(autoincrement())
   pacienteId              String            @db.Uuid
   profesionalId           String?           @db.Uuid // null en Baropodometría hasta asignación
   solicitadoProfesionalId String?           @db.Uuid // médico pedido "Solo X" (baro): la cita va en una máquina
