@@ -11,6 +11,11 @@
  *  GET  /horas?sedeId&servicioId&fecha             horas libres de un día
  *  POST /                                          registra al paciente (DNI o CE) y CREA LA CITA
  *  GET  /:codigo                                   estado de una reserva hecha por el chat
+ *  POST /:codigo/cancelar      {motivo?}            cancela la cita de la reserva (11-nov-2026)
+ *  POST /:codigo/reprogramar   {fecha, horaInicio}  la mueve a otra hora de GET /horas (misma sede y servicio)
+ *  POST /pacientes/citas       {tipoDocumento?, numeroDocumento}             citas próximas del paciente (todas)
+ *  POST /citas/:numeroCita/cancelar     {tipoDocumento?, numeroDocumento, motivo?}
+ *  POST /citas/:numeroCita/reprogramar  {tipoDocumento?, numeroDocumento, fecha, horaInicio}
  */
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import rateLimit from 'express-rate-limit';
@@ -18,7 +23,8 @@ import { z } from 'zod';
 import { AppError } from '../middleware/errorHandler';
 import { requireAuth } from '../middleware/auth';
 import { catalogo, horasLibres, diasDisponibles, reservar, estadoReservaPorCodigo } from '../services/reservaWeb/reservaWebService';
-import { camposPaciente, revisarDocumento, normalizarPaciente } from '../services/reservaWeb/validaciones';
+import { camposPaciente, revisarDocumento, normalizarPaciente, normalizarDocumento, TIPOS_DOCUMENTO_RESERVA } from '../services/reservaWeb/validaciones';
+import { cancelarReserva, reprogramarReserva, citasProximas, cancelarCitaPaciente, reprogramarCitaPaciente } from '../services/reservaWeb/gestion';
 
 const router = Router();
 export const SCOPE_RESERVAS = 'reservas:write';
@@ -80,9 +86,46 @@ router.post('/', limiteReservas, async (req, res) => {
   res.status(r.repetida ? 200 : 201).json(publico);
 });
 
+const zCanal = z.string().regex(/^[a-z0-9_]{2,30}$/, 'Canal inválido').default('whatsapp');
+const meta = (req: Request) => ({ ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined });
+
+// Citas del PACIENTE por su documento (11-nov-2026): todas sus citas próximas, también las de recepción, para cancelar o
+// reprogramar por N.º de cita. POST (no GET) para que el documento no quede en la URL ni en los registros de acceso.
+const zDocumento = z.object({
+  tipoDocumento: z.enum(TIPOS_DOCUMENTO_RESERVA).default('DNI'),
+  numeroDocumento: z.string().trim().min(1, 'Indica el número de documento').max(20),
+}).superRefine((d, ctx) => revisarDocumento({ tipoDocumento: d.tipoDocumento, numeroDocumento: normalizarDocumento(d.numeroDocumento) }, ctx));
+
+router.post('/pacientes/citas', limiteConsultas, async (req, res) => {
+  res.json({ citas: await citasProximas(zDocumento.parse(req.body ?? {})) });
+});
+
+router.post('/citas/:numeroCita/cancelar', limiteReservas, async (req, res) => {
+  const b = zDocumento.and(z.object({ motivo: z.string().trim().max(300).optional().nullable(), canal: zCanal })).parse(req.body ?? {});
+  res.json(await cancelarCitaPaciente(String(req.params.numeroCita), b, b.canal, b.motivo || null, meta(req)));
+});
+
+router.post('/citas/:numeroCita/reprogramar', limiteReservas, async (req, res) => {
+  const b = zDocumento.and(z.object({ fecha, horaInicio: hora, canal: zCanal })).parse(req.body ?? {});
+  res.json(await reprogramarCitaPaciente(String(req.params.numeroCita), b, b.canal, b.fecha, b.horaInicio, meta(req)));
+});
+
 router.get('/:codigo', limiteConsultas, async (req, res) => {
-  const canal = z.string().regex(/^[a-z0-9_]{2,30}$/).default('whatsapp').parse(req.query.canal ?? undefined);
+  const canal = zCanal.parse(req.query.canal ?? undefined);
   res.json(await estadoReservaPorCodigo(String(req.params.codigo), canal));
+});
+
+// Cancelar y reprogramar (11-nov-2026). Las reglas de negocio (anticipación, cuántas veces…) las pone el chat; ver services/reservaWeb/gestion.ts.
+const canalDe = (req: Request) => zCanal.parse(req.body?.canal ?? req.query.canal ?? undefined);
+
+router.post('/:codigo/cancelar', limiteReservas, async (req, res) => {
+  const { motivo } = z.object({ motivo: z.string().trim().max(300).optional().nullable() }).parse(req.body ?? {});
+  res.json(await cancelarReserva(String(req.params.codigo), canalDe(req), motivo || null, meta(req)));
+});
+
+router.post('/:codigo/reprogramar', limiteReservas, async (req, res) => {
+  const { fecha: f, horaInicio } = z.object({ fecha, horaInicio: hora }).parse(req.body ?? {});
+  res.json(await reprogramarReserva(String(req.params.codigo), canalDe(req), f, horaInicio, meta(req)));
 });
 
 export default router;

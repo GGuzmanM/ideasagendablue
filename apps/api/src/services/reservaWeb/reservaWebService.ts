@@ -34,7 +34,7 @@ export function reservaWebHabilitada(): boolean {
 function sumarDias(fecha: string, dias: number): string {
   const d = fechaDb(fecha); d.setUTCDate(d.getUTCDate() + dias); return fechaAStr(d);
 }
-function minutosAhoraLima(ref: Date = new Date()): number {
+export function minutosAhoraLima(ref: Date = new Date()): number {
   return ((ref.getUTCHours() - LIMA_OFFSET_H + 24) % 24) * 60 + ref.getUTCMinutes();
 }
 
@@ -227,29 +227,36 @@ export async function pacienteDeReserva(d: NuevaReservaWeb, origen: string, codi
   }
 }
 
-/** Crea la cita con el mismo endpoint de la Agenda (POST /citas) usando la llave interna de la reserva web. */
-export async function crearCitaEnAgenda(p: { pacienteId: string; unidadNegocioId: string; subcategoriaId: string | null; codigo: string; monto: number; claveIdempotencia: string; pago?: { transaccionId: string } }, d: NuevaReservaWeb, canal: string) {
+/**
+ * Llama a un endpoint de la propia Agenda (/api/v1/…) con la llave INTERNA de la reserva web (scope appointments:write).
+ * Así crear, cancelar y mover una cita pasan por exactamente las mismas reglas que en la pantalla.
+ */
+export async function llamarAgenda(metodo: 'POST' | 'PATCH', ruta: string, cuerpo: unknown, cabeceras: Record<string, string> = {}): Promise<Response> {
   const llave = process.env.RESERVA_WEB_API_KEY;
   if (!llave) throw new AppError('La reserva en línea no está disponible por el momento', 503, 'RESERVA_NO_CONFIGURADA');
   const base = process.env.RESERVA_WEB_API_INTERNA || `http://127.0.0.1:${Number(process.env.PORT) || 3001}`;
-  const dondePaga = canal === 'web' ? 'por internet' : `por ${canal}`;
-  let resp: Response;
   try {
-    resp = await fetch(`${base}/api/v1/citas`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `ApiKey ${llave}`, 'Idempotency-Key': p.claveIdempotencia },
-      body: JSON.stringify({
-        pacienteId: p.pacienteId, sedeId: d.sedeId, unidadNegocioId: p.unidadNegocioId, servicioId: d.servicioId,
-        ...(p.subcategoriaId ? { subcategoriaId: p.subcategoriaId } : {}),
-        fecha: d.fecha, horaInicio: d.horaInicio, canal, estadoPago: p.pago ? 'completo' : 'pendiente',
-        comentarioRecepcion: p.pago
-          ? `Reserva ${p.codigo}: pagó S/ ${p.monto.toFixed(2)} por internet con tarjeta (Niubiz, operación ${p.pago.transaccionId}).`
-          : `Reserva ${p.codigo}: reservó ${dondePaga} sin pago en línea; paga S/ ${p.monto.toFixed(2)} en la sede.`,
-      }),
+    return await fetch(`${base}/api/v1${ruta}`, {
+      method: metodo,
+      headers: { 'Content-Type': 'application/json', Authorization: `ApiKey ${llave}`, ...cabeceras },
+      body: JSON.stringify(cuerpo),
     });
   } catch {
-    throw new AppError('El sistema no pudo registrar la cita en este momento. Intenta de nuevo.', 502, 'AGENDA_NO_RESPONDE');
+    throw new AppError('El sistema no pudo registrar el cambio en este momento. Intenta de nuevo.', 502, 'AGENDA_NO_RESPONDE');
   }
+}
+
+/** Crea la cita con el mismo endpoint de la Agenda (POST /citas) usando la llave interna de la reserva web. */
+export async function crearCitaEnAgenda(p: { pacienteId: string; unidadNegocioId: string; subcategoriaId: string | null; codigo: string; monto: number; claveIdempotencia: string; pago?: { transaccionId: string } }, d: NuevaReservaWeb, canal: string) {
+  const dondePaga = canal === 'web' ? 'por internet' : `por ${canal}`;
+  const resp = await llamarAgenda('POST', '/citas', {
+    pacienteId: p.pacienteId, sedeId: d.sedeId, unidadNegocioId: p.unidadNegocioId, servicioId: d.servicioId,
+    ...(p.subcategoriaId ? { subcategoriaId: p.subcategoriaId } : {}),
+    fecha: d.fecha, horaInicio: d.horaInicio, canal, estadoPago: p.pago ? 'completo' : 'pendiente',
+    comentarioRecepcion: p.pago
+      ? `Reserva ${p.codigo}: pagó S/ ${p.monto.toFixed(2)} por internet con tarjeta (Niubiz, operación ${p.pago.transaccionId}).`
+      : `Reserva ${p.codigo}: reservó ${dondePaga} sin pago en línea; paga S/ ${p.monto.toFixed(2)} en la sede.`,
+  }, { 'Idempotency-Key': p.claveIdempotencia });
   const cuerpo = await resp.json().catch(() => ({})) as { id?: string; message?: string; error?: string };
   if (!resp.ok || !cuerpo.id) {
     console.error(`[reserva-web] ${p.codigo}: la Agenda no creó la cita (HTTP ${resp.status}): ${cuerpo.message || cuerpo.error || ''}`);
@@ -368,13 +375,16 @@ export async function estadoReservaPorCodigo(codigo: string, canal: string) {
 
 async function estadoDe(r: NonNullable<Awaited<ReturnType<typeof prisma.reservaWeb.findFirst>>>) {
   const d = await detalleDe(r, false);
-  const cita = r.citaId ? await prisma.cita.findUnique({ where: { id: r.citaId }, select: { estado: true, deletedAt: true } }) : null;
+  const cita = r.citaId ? await prisma.cita.findUnique({ where: { id: r.citaId }, select: { estado: true, deletedAt: true, fecha: true, horaInicio: true } }) : null;
   const vigente = !!cita && !cita.deletedAt;
   return {
     codigo: r.codigo, numeroCita: d.numeroCita,
     estado: r.estado === 'confirmada' && cita && (cita.deletedAt || cita.estado === 'cancelada') ? 'cancelada' : r.estado,
     citaVigente: vigente && cita!.estado !== 'cancelada', estadoCita: cita?.estado ?? null,
-    nombres: r.nombres, fecha: d.fecha, horaInicio: d.horaInicio, duracionMinutos: d.duracionMinutos,
+    // Fecha y hora de la CITA (11-nov-2026): si se reprogramó (por el chat o en la Agenda), manda la cita, no la reserva original.
+    nombres: r.nombres, fecha: cita ? fechaAStr(cita.fecha) : d.fecha, horaInicio: cita?.horaInicio ?? d.horaInicio, duracionMinutos: d.duracionMinutos,
+    // Ids para pedir horas al reprogramar (GET /horas?sedeId&servicioId&fecha).
+    sedeId: r.sedeId, servicioId: r.servicioId, subcategoriaId: r.subcategoriaId,
     sede: d.sede, servicio: d.servicio, variante: d.variante, monto: d.monto, moneda: d.moneda,
     /** true = la reserva se pagó en línea (la cita nace con pago completo); false = se paga en la sede. */
     pagado: r.pagoEstado === 'aprobado',

@@ -25,6 +25,13 @@ Reemplaza un ERP de escritorio de 14 años. 5 sedes, ~400 citas diarias, 40 pod�
   comparten `services/reservaWeb/`: la página pública `/agendamiento_directo_limablue_un_paso_cerca_de_ti/reserva/` (`routes/reservaWeb.ts`, sin login) y la API del chat de WhatsApp
   (`routes/reservaChat.ts`, `/api/v1/integraciones/reservas`, llave con scope `reservas:write`; docs/API-RESERVAS-WHATSAPP.md). Documento DNI o CE
   (`services/reservaWeb/validaciones.ts`). La cita se crea con POST /citas usando la llave interna `RESERVA_WEB_API_KEY`.
+  **Cancelar / reprogramar por el chat (11-nov-2026)**: `POST /integraciones/reservas/:codigo/cancelar {motivo?}` y `/:codigo/reprogramar {fecha, horaInicio}`
+  (`services/reservaWeb/gestion.ts`), misma llave `reservas:write`. Solo mecánica: las reglas de negocio las programa el chat. Llaman a
+  PATCH /citas/:id/estado y /mover con la llave interna (`llamarAgenda`); frenan cita no agendada/confirmada, hora pasada y cancelar una pagada
+  en línea. `GET /:codigo` devuelve fecha/hora ACTUALES de la cita y `sedeId`/`servicioId`. Tests: `__tests__/reserva-gestion-chat`.
+  Por DOCUMENTO (todas las citas próximas, también las de recepción): `POST /pacientes/citas {tipoDocumento?, numeroDocumento}` y
+  `POST /citas/:numeroCita/cancelar|reprogramar` con el documento del dueño (si no coincide, 404). POST para no dejar el DNI en URLs.
+  Solo DNI, sin comprobar el celular (decisión del 11-nov-2026: la verificación de la persona la hace el chat). Auditoría: `chat_cita_cancelada` / `chat_cita_reprogramada`.
   Qué servicios se ofrecen y a qué precio: Administración › Reserva web (`/admin/reserva-web`; `servicios.reservaOnline` + `precioOnline` y, por
   tipo, `subcategorias_servicio.reservaOnline` + `precioOnline`; vacío = precio referencial; las áreas «preferencia_obligatoria» no se pueden).
   **Precio por SEDE (30-oct-2026)**: tablas `servicio_precio_web_sede` y `subcategoria_precio_web_sede` (PK compuesta; sin fila = rige el general).

@@ -1,7 +1,9 @@
 # API de reservas para el chat de WhatsApp — Limablue Agenda
 
 Permite que el chat de WhatsApp de Limablue **consulte horarios y registre la cita de un paciente** conversando con él,
-sin pasarela de pago: **la cita se crea al confirmar y el paciente paga en la sede**.
+sin pasarela de pago: **la cita se crea al confirmar y el paciente paga en la sede**. También permite **cancelar o reprogramar**
+citas, con la misma llave: una reserva hecha por el chat por su código (§3.6 y §3.7), o **cualquier cita próxima del paciente**
+buscándola por su documento (§3.8), también las que registró la clínica.
 
 - Servidor a servidor (no se llama desde un navegador).
 - Misma disponibilidad real que la Agenda: no hay doble reserva, respeta horarios, almuerzos, permisos y días especiales.
@@ -12,7 +14,7 @@ sin pasarela de pago: **la cita se crea al confirmar y el paciente paga en la se
 
 | | |
 |---|---|
-| Dirección base | `https://<servidor>/api/v1/integraciones/reservas` (hoy `https://161.132.166.44/...`; con dominio, `https://agenda.limablue.com/...`) |
+| Dirección base | `https://limablueagenda.com/api/v1/integraciones/reservas` (en los ejemplos: `https://<servidor>/...`) |
 | Autenticación | Cabecera `Authorization: ApiKey <llave>` |
 | Formato | JSON (`Content-Type: application/json`), UTF-8 |
 | Horario | Todas las fechas y horas son de **Lima** (`AAAA-MM-DD`, `HH:MM` en 24 h) |
@@ -37,7 +39,27 @@ no en chats ni correos abiertos; usen una variable de entorno o un gestor de sec
 
 Si entre el paso 3 y el 6 alguien toma esa hora, el `POST /` responde **409** (`HORA_NO_DISPONIBLE`): vuelvan a consultar `/horas` y ofrezcan otra.
 
+**Cuando el paciente quiere cancelar o cambiar una cita:**
+1. Verificar a la persona (ver §7) y pedir su documento.
+2. `POST /pacientes/citas` → sus citas próximas. Si tiene varias, preguntarle cuál (fecha, hora, sede, servicio).
+3. Cancelar: `POST /citas/<numeroCita>/cancelar`. Reprogramar: `GET /dias` y `GET /horas` con el `sedeId` y `servicioId` de esa cita,
+   ofrecer las horas y `POST /citas/<numeroCita>/reprogramar` con la elegida.
+4. Confirmar al paciente con lo que responde la llamada (nuevo día y hora, o «cancelada»).
+
 ## 3. Endpoints
+
+| Método y ruta | Para qué | § |
+|---|---|---|
+| `GET /catalogo` | Sedes y servicios reservables, con precios por sede | 3.1 |
+| `GET /dias?sedeId&servicioId&desde&hasta` | Días con horarios libres | 3.2 |
+| `GET /horas?sedeId&servicioId&fecha` | Horas libres de un día | 3.3 |
+| `POST /` | Registrar la reserva (crea la cita) | 3.4 |
+| `GET /:codigo` | Estado de una reserva del chat (`LB-…`) | 3.5 |
+| `POST /:codigo/cancelar` | Cancelar la cita de una reserva del chat | 3.6 |
+| `POST /:codigo/reprogramar` | Reprogramar la cita de una reserva del chat | 3.7 |
+| `POST /pacientes/citas` | Citas próximas de un paciente por su documento (todas) | 3.8 |
+| `POST /citas/:numeroCita/cancelar` | Cancelar una cita por su N.º (`C-…`) | 3.8 |
+| `POST /citas/:numeroCita/reprogramar` | Reprogramar una cita por su N.º (`C-…`) | 3.8 |
 
 ### 3.1 `GET /catalogo`
 Sedes y servicios reservables.
@@ -146,13 +168,99 @@ Respuesta **201** (o **200** si es un reintento ya procesado, con `"repetida": t
 {
   "codigo": "LB-567405", "numeroCita": "C-008323", "estado": "confirmada", "citaVigente": true, "estadoCita": "agendada",
   "nombres": "Ana María", "fecha": "2026-11-02", "horaInicio": "09:00", "duracionMinutos": 30,
+  "sedeId": "a1b2…", "servicioId": "c3d4…", "subcategoriaId": null,
   "sede": { "nombre": "Los Olivos", "direccion": "Av. …" }, "servicio": "Evaluación PO", "variante": null,
-  "monto": 50, "moneda": "PEN"
+  "monto": 50, "moneda": "PEN", "pagado": false
 }
 ```
-`estado` es `confirmada` o `cancelada` (si recepción canceló la cita). `estadoCita` es el estado real en la Agenda
-(`agendada`, `confirmada`, `llego`, `en_atencion`, `completada`, `no_show`, `cancelada`, `reprogramada`). Si el paciente quiere
-**cambiar o cancelar**, que se comunique con la clínica (esta API solo registra).
+`estado` es `confirmada` o `cancelada` (si se canceló la cita, por el chat o en la sede). `estadoCita` es el estado real en la Agenda
+(`agendada`, `confirmada`, `llego`, `en_atencion`, `completada`, `no_show`, `cancelada`, `reprogramada`).
+`fecha` y `horaInicio` son las **actuales de la cita**: si se reprogramó (por el chat o en la sede), aquí sale el horario nuevo.
+`sedeId` y `servicioId` sirven para pedir horas al reprogramar (`GET /horas?sedeId=&servicioId=&fecha=`).
+
+### 3.6 `POST /:codigo/cancelar` — cancelar la cita de la reserva
+```bash
+curl -X POST https://<servidor>/api/v1/integraciones/reservas/LB-567405/cancelar \
+  -H "Authorization: ApiKey $LLAVE" -H "Content-Type: application/json" \
+  -d '{ "motivo": "Viaje de trabajo" }'
+```
+| Campo | Obligatorio | Detalle |
+|---|---|---|
+| `motivo` | no | Hasta 300 caracteres. Queda en la cita como «Cancelada por el paciente vía whatsapp (reserva LB-…): <motivo>» |
+| `canal` | no (por defecto `whatsapp`) | El mismo canal con que se hizo la reserva |
+
+Respuesta **200**: el mismo objeto de §3.5 (ya con `"estado": "cancelada"`) más `"sinCambios": false`. Si la reserva **ya estaba
+cancelada**, responde 200 con `"sinCambios": true` (un reintento no es error). El horario queda libre al instante para otros pacientes.
+
+### 3.7 `POST /:codigo/reprogramar` — mover la cita a otro día u hora
+```bash
+curl -X POST https://<servidor>/api/v1/integraciones/reservas/LB-567405/reprogramar \
+  -H "Authorization: ApiKey $LLAVE" -H "Content-Type: application/json" \
+  -d '{ "fecha": "2026-11-05", "horaInicio": "16:30" }'
+```
+| Campo | Obligatorio | Detalle |
+|---|---|---|
+| `fecha`, `horaInicio` | sí | Una hora que devolvió `GET /horas` con el `sedeId` y `servicioId` de la reserva (§3.5) |
+| `canal` | no (por defecto `whatsapp`) | El mismo canal con que se hizo la reserva |
+
+Respuesta **200**: el objeto de §3.5 con la nueva `fecha` y `horaInicio`, más `"sinCambios": false` (`true` si ya estaba en ese horario).
+- Es en la **misma sede y el mismo servicio** (y mismo precio). Para cambiar de sede o de servicio: cancelar y reservar de nuevo.
+- La **profesional** la asigna la Agenda: se queda la misma si está libre a esa hora; si no, otra que lo esté.
+- Si el paciente tiene correo, su recordatorio se reprograma a la nueva hora. En la Agenda la cita se mueve al instante y cuenta como reprogramación.
+- Si entre `GET /horas` y esta llamada alguien toma esa hora, responde **409**: vuelvan a consultar `/horas` y ofrezcan otra.
+
+**Qué decide el chat y qué decide la Agenda.** Las reglas de negocio (con cuánta anticipación se permite, cuántas veces, a quién)
+las programa el chat. La API solo frena lo que no se puede hacer:
+- la cita tiene que estar `agendada` o `confirmada` y su hora no puede haber pasado (si el paciente ya llegó o está en atención, no se toca);
+- una reserva **pagada en línea** (`"pagado": true`) se puede reprogramar, pero **no cancelar** por aquí: la devolución del dinero la ve la sede;
+- solo reservas del mismo `canal`.
+
+### 3.8 Citas del paciente por su documento (todas, también las de la clínica)
+Para cuando el paciente pide «quiero cambiar / cancelar mi cita» sin tener el código `LB-…`, o la cita la registró recepción o el call center.
+Las tres llamadas son `POST` (no `GET`) para que el documento **no viaje en la URL** ni quede en los registros de acceso.
+
+**`POST /pacientes/citas`** — lista sus citas próximas
+```bash
+curl -X POST https://<servidor>/api/v1/integraciones/reservas/pacientes/citas \
+  -H "Authorization: ApiKey $LLAVE" -H "Content-Type: application/json" \
+  -d '{ "tipoDocumento": "DNI", "numeroDocumento": "12345678" }'
+```
+```json
+{
+  "citas": [
+    {
+      "numeroCita": "C-008323", "estado": "agendada", "fecha": "2026-11-12", "horaInicio": "09:00", "duracionMinutos": 30,
+      "sedeId": "a1b2…", "sede": { "nombre": "Los Olivos", "direccion": "Av. …" },
+      "servicioId": "c3d4…", "servicio": "Evaluación PO", "subcategoriaId": null, "variante": null,
+      "codigoReserva": "LB-567405", "canalReserva": "whatsapp", "pagadoEnLinea": false, "enBloque": false
+    }
+  ]
+}
+```
+- Salen las citas **futuras** en estado `agendada` o `confirmada` (de hoy, solo las que aún no llegan a su hora), de la más próxima a la más lejana (hasta 50).
+- `codigoReserva` es el `LB-…` si la cita nació de una reserva web o del chat; `null` si la registró la clínica.
+- Si el documento no existe o no tiene citas próximas, responde `{ "citas": [] }` (no se distingue un caso del otro).
+- `tipoDocumento`: `DNI` (por defecto) o `CE`. El número se valida igual que al reservar (422 si está mal escrito).
+- `enBloque: true`: la cita es parte de una visita de **dos servicios a la misma hora**; aparece una vez por servicio. Al cancelar
+  se cancela la visita entera; reprogramarla por aquí responde `409 CITA_EN_BLOQUE` (eso lo hace la sede).
+
+**`POST /citas/:numeroCita/cancelar`** y **`POST /citas/:numeroCita/reprogramar`**
+```bash
+curl -X POST https://<servidor>/api/v1/integraciones/reservas/citas/C-008323/reprogramar \
+  -H "Authorization: ApiKey $LLAVE" -H "Content-Type: application/json" \
+  -d '{ "numeroDocumento": "12345678", "fecha": "2026-11-05", "horaInicio": "16:30" }'
+```
+| Campo | Obligatorio | Detalle |
+|---|---|---|
+| `:numeroCita` (en la ruta) | sí | El `numeroCita` de la lista. Se acepta `C-008323`, `C8323` u `8323` |
+| `tipoDocumento`, `numeroDocumento` | sí (`tipoDocumento` por defecto `DNI`) | El documento del paciente: **tiene que ser el dueño de la cita**; si no, `404 CITA_NO_ENCONTRADA` |
+| `motivo` | no (solo cancelar) | Hasta 300 caracteres. Queda en la cita como «Cancelada por el paciente vía whatsapp: <motivo>» |
+| `fecha`, `horaInicio` | sí (solo reprogramar) | Una hora de `GET /horas` con el `sedeId` y `servicioId` de la cita |
+| `canal` | no (por defecto `whatsapp`) | Solo para el texto del motivo y la auditoría |
+
+Respuesta **200**: la cita como sale en la lista (ya con su nuevo estado u horario) más `"sinCambios"` (`true` si ya estaba cancelada
+o ya estaba en ese horario). Valen las mismas reglas y errores que en §3.6 y §3.7: solo `agendada`/`confirmada`, hora no pasada,
+una cita pagada en línea no se cancela por aquí, y reprogramar es en la misma sede y servicio.
 
 ## 4. Reintentos sin duplicar (`referencia`)
 Si la llamada `POST /` se corta (tiempo de espera, caída de red) y no saben si se creó, **repitan exactamente la misma petición con la
@@ -177,7 +285,13 @@ Los mensajes (`message`, `mensaje`) están en español y se pueden **mostrar tal
 | 409 | `HORA_NO_DISPONIBLE` | Esa hora ya se ocupó: ofrecer otra |
 | 422 | `VALIDATION_ERROR` | Datos mal escritos (documento, celular, correo, falta `aceptaDatos`…) |
 | 404 | `RESERVA_NO_ENCONTRADA` | El código no existe (o no es de este canal) |
-| 429 | `DEMASIADOS_INTENTOS` | Límite de la llave: 240 consultas/min y 30 reservas/min. Esperar un momento |
+| 404 | `CITA_NO_ENCONTRADA` | §3.8: ese N.º de cita no existe o no es de ese documento |
+| 409 | `CITA_NO_MODIFICABLE` | Cancelar/reprogramar: la cita ya no está agendada ni confirmada (llegó, se atendió, se canceló…) |
+| 409 | `CITA_PASADA` | Cancelar/reprogramar: la hora de la cita ya pasó |
+| 409 | `PAGADA_EN_LINEA` | Cancelar: la reserva se pagó en línea; el paciente debe comunicarse con la sede |
+| 409 | `SIN_CITA` | Cancelar/reprogramar: la reserva no tiene una cita vigente en la Agenda |
+| 409 | otros (`SLOT_OCUPADO`, `CITA_EN_BLOQUE`…) | Reprogramar: la Agenda no pudo mover la cita a ese horario; `message` explica por qué |
+| 429 | `DEMASIADOS_INTENTOS` | Límite de la llave: 240 consultas/min y 30 reservas, cancelaciones o reprogramaciones/min. Esperar un momento |
 | 502 / 503 | `AGENDA_ERROR` / `AGENDA_NO_RESPONDE` / `RESERVA_NO_CONFIGURADA` | Falla temporal o sin configurar en el servidor: reintentar con la **misma** `referencia`; si persiste, avisar a Sistemas |
 
 ## 6. Pruebas
@@ -187,6 +301,10 @@ real crea citas reales.
 
 ## 7. Seguridad (resumen)
 - La llave viaja solo por HTTPS y solo en la cabecera `Authorization`; no en la URL.
-- La API no devuelve datos de pacientes (ni siquiera confirma si un documento ya existe) ni nombres de profesionales.
-- Cada reserva queda auditada en la Agenda (quién/qué canal, código, cita creada).
+- La API no devuelve datos personales del paciente (nombre, teléfono, correo, historia) ni nombres de profesionales. La única
+  consulta por documento (§3.8) devuelve solo sus **citas próximas** (fecha, hora, sede, servicio).
+- **Verificar a la persona es responsabilidad del chat**: con solo el documento, la API muestra y deja cancelar o reprogramar las
+  citas de ese documento. Si alguien escribe un DNI ajeno, podría ver y cambiar las citas de otra persona. Recomendado: comparar el
+  número de WhatsApp con el que el paciente dio al reservar, o pedirle un dato que solo él sepa (p. ej. el N.º de cita del correo).
+- Cada reserva, cancelación y reprogramación queda auditada en la Agenda (qué canal, código, cita, horario anterior y nuevo).
 - Si sospechan que la llave se filtró, avisen a Sistemas: se reemplaza en segundos.
