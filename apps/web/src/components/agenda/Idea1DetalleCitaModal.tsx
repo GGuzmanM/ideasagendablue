@@ -79,6 +79,9 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
     atendioOpciones,
     atendidoPorMutation,
     puedeCambiarTratamiento,
+    puedeCambiarTratamientoDe,
+    tratObjetivo,
+    tratEtiqueta,
     cambiandoTratamiento,
     setCambiandoTratamiento,
     abrirCambioTratamiento,
@@ -420,7 +423,41 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
               <div className="font-label-caps text-label-caps text-on-surface-variant/70 uppercase tracking-wider">
                 {esCombo && bloquePrincipal && bloqueSecundaria ? 'Servicios' : 'Servicio'}
               </div>
-              {esCombo && bloquePrincipal && bloqueSecundaria ? (
+              {cambiandoTratamiento ? (
+                // Cambiar tratamiento / subcategoría (agendada → llegó; admin siempre). En una cita doble, de UNA mitad y solo
+                // entre los servicios que permite el bloque. El servidor valida el resto.
+                <div className="flex flex-col gap-2" data-campo="cambiar-tratamiento">
+                  {tratEtiqueta && (
+                    <div className="text-xs text-on-surface-variant">
+                      Cambiando el <b className="text-on-surface">{tratEtiqueta}</b> de la cita doble ({tratObjetivo.servicio?.nombre}).
+                      {tratObjetivo.slotRol === 'PRINCIPAL' && ' Solo se puede elegir el servicio ancla y su tipo.'}
+                    </div>
+                  )}
+                  <select value={tratServicioId} onChange={(e) => elegirTratServicio(e.target.value)} aria-label="Nuevo tratamiento" data-testid="select-tratamiento"
+                    className="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-xl px-3 py-2 text-sm font-semibold text-on-surface outline-none focus:ring-2 focus:ring-primary/20">
+                    {opcionesTratamiento.length === 0 && <option value={tratServicioId}>Cargando tratamientos…</option>}
+                    {opcionesTratamiento.map((s) => <option key={s.id} value={s.id}>{s.nombre} · {s.duracionMinutos} min</option>)}
+                  </select>
+                  {subcategoriasTrat.length > 0 && (
+                    <select value={tratSubcategoriaId} onChange={(e) => setTratSubcategoriaId(e.target.value)} aria-label="Subcategoría" data-testid="select-subcategoria-tratamiento"
+                      className="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-xl px-3 py-2 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20">
+                      <option value="">Elige la subcategoría…</option>
+                      {subcategoriasTrat.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+                    </select>
+                  )}
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => tratamientoMutation.mutate()} disabled={!puedeGuardarTratamiento || tratamientoMutation.isPending}
+                      data-testid="btn-guardar-tratamiento"
+                      className="flex-1 min-h-[36px] rounded-xl bg-primary text-on-primary text-xs font-bold disabled:opacity-50">
+                      {tratamientoMutation.isPending ? 'Guardando…' : 'Guardar cambio'}
+                    </button>
+                    <button type="button" onClick={() => setCambiandoTratamiento(false)} disabled={tratamientoMutation.isPending}
+                      className="min-h-[36px] px-3 rounded-xl border border-outline-variant/40 text-xs font-semibold text-on-surface hover:bg-surface-container">
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              ) : esCombo && bloquePrincipal && bloqueSecundaria ? (
                 // Bloque combinado: ambos servicios apilados (1º arriba, 2º abajo) con su estado.
                 <div className="flex flex-col gap-1.5">
                   {[{ c: bloquePrincipal, n: '1º' }, { c: bloqueSecundaria, n: '2º' }].map(({ c, n }) => {
@@ -442,6 +479,14 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
                         )}>
                           {ESTADO_LABEL[e] ?? c.estado}
                         </span>
+                        {/* 13-nov-2026: cambiar el tratamiento de ESTE servicio (solo los que permite la cita doble). */}
+                        {puedeCambiarTratamientoDe(c) && (
+                          <button type="button" onClick={() => abrirCambioTratamiento(c)} data-testid={`btn-cambiar-tratamiento-${n}`}
+                            title={`Cambiar el tratamiento o el tipo del ${n} servicio`}
+                            className="normal-case text-xs font-semibold text-primary hover:underline flex items-center gap-0.5">
+                            <span className="material-symbols-outlined text-sm">edit</span>Cambiar
+                          </button>
+                        )}
                         {/* 31-oct-2026: quien puede corregir estados cambia CADA servicio por separado (solo ese). El desplegable de
                             «Estado» de abajo mueve la cita abierta y arrastra a su pareja; este toca solo el servicio de esta fila. */}
                         {puedeDesplegableEstado && (
@@ -470,32 +515,6 @@ El otro servicio de la cita doble no cambia.
                     );
                   })}
                 </div>
-              ) : cambiandoTratamiento ? (
-                // Cambiar tratamiento / subcategoría (agendada → llegó; admin siempre). El servidor valida el resto.
-                <div className="flex flex-col gap-2" data-campo="cambiar-tratamiento">
-                  <select value={tratServicioId} onChange={(e) => elegirTratServicio(e.target.value)} aria-label="Nuevo tratamiento"
-                    className="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-xl px-3 py-2 text-sm font-semibold text-on-surface outline-none focus:ring-2 focus:ring-primary/20">
-                    {opcionesTratamiento.length === 0 && <option value={tratServicioId}>Cargando tratamientos…</option>}
-                    {opcionesTratamiento.map((s) => <option key={s.id} value={s.id}>{s.nombre} · {s.duracionMinutos} min</option>)}
-                  </select>
-                  {subcategoriasTrat.length > 0 && (
-                    <select value={tratSubcategoriaId} onChange={(e) => setTratSubcategoriaId(e.target.value)} aria-label="Subcategoría"
-                      className="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-xl px-3 py-2 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20">
-                      <option value="">Elige la subcategoría…</option>
-                      {subcategoriasTrat.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
-                    </select>
-                  )}
-                  <div className="flex gap-2">
-                    <button type="button" onClick={() => tratamientoMutation.mutate()} disabled={!puedeGuardarTratamiento || tratamientoMutation.isPending}
-                      className="flex-1 min-h-[36px] rounded-xl bg-primary text-on-primary text-xs font-bold disabled:opacity-50">
-                      {tratamientoMutation.isPending ? 'Guardando…' : 'Guardar cambio'}
-                    </button>
-                    <button type="button" onClick={() => setCambiandoTratamiento(false)} disabled={tratamientoMutation.isPending}
-                      className="min-h-[36px] px-3 rounded-xl border border-outline-variant/40 text-xs font-semibold text-on-surface hover:bg-surface-container">
-                      Cancelar
-                    </button>
-                  </div>
-                </div>
               ) : (
                 <div className="font-body-lg text-on-surface font-bold tracking-tight uppercase flex items-center gap-2 flex-wrap">
                   <span>{cita.servicio?.nombre}</span>
@@ -505,7 +524,7 @@ El otro servicio de la cita doble no cambia.
                     </span>
                   )}
                   {puedeCambiarTratamiento && (
-                    <button type="button" onClick={abrirCambioTratamiento} data-testid="btn-cambiar-tratamiento"
+                    <button type="button" onClick={() => abrirCambioTratamiento()} data-testid="btn-cambiar-tratamiento"
                       title="Cambiar el tratamiento o la subcategoría de esta cita"
                       className="ml-auto normal-case text-xs font-semibold text-primary hover:underline flex items-center gap-1">
                       <span className="material-symbols-outlined text-sm">edit</span>Cambiar

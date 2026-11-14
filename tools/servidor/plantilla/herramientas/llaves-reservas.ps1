@@ -1,8 +1,10 @@
-﻿# Limablue Agenda - llave de la API de reservas para el chat de WhatsApp.
-#   1 = CREAR una llave nueva (reemplaza la anterior: la vieja deja de funcionar al instante).
-#   0 = DESACTIVAR la llave (el chat deja de poder reservar).
+# Limablue Agenda - llaves de las APIs de reservas (12-nov-2026: una para la WEB y otra para WhatsApp, cada una con su direccion).
+#   1 = CREAR llave de WHATSAPP   (reemplaza solo la de WhatsApp)   -> /api/v1/integraciones/whatsapp
+#   2 = CREAR llave WEB           (reemplaza solo la web)           -> /api/v1/integraciones/reservas
+#   3 = DESACTIVAR la de WhatsApp     4 = DESACTIVAR la web
+# Crear una llave nueva hace que la anterior DE ESE TIPO deje de funcionar al instante; la otra no se toca.
 # La llave se muestra UNA sola vez en esta pantalla. En la base solo queda su huella: si se pierde, se crea otra.
-# Quien la tenga puede registrar reservas (crear citas) en tu nombre: entregala solo al proveedor del chat, por un canal seguro,
+# Quien la tenga puede registrar reservas (crear citas) en tu nombre: entregala solo a su proveedor, por un canal seguro,
 # y no la pegues en chats ni correos abiertos.
 $ErrorActionPreference = 'Stop'
 $RAIZ = Split-Path -Parent $PSScriptRoot
@@ -44,18 +46,32 @@ $cfg = LeerEnv $ENVF
 $puerto = if ($cfg['WEB_PUERTO'] -and $cfg['WEB_PUERTO'] -ne '443') { ":$($cfg['WEB_PUERTO'])" } else { '' }
 $host1 = if ($cfg['DIRECCION_PUBLICA']) { $cfg['DIRECCION_PUBLICA'].Split(',')[0].Trim() } else { $env:COMPUTERNAME.ToLower() }
 
+$TIPOS = @{
+  '1' = @{ accion = 'llave-whatsapp'; nombre = 'WhatsApp'; ruta = 'whatsapp'; quien = 'el chat de WhatsApp' }
+  '2' = @{ accion = 'llave-web'; nombre = 'web'; ruta = 'reservas'; quien = 'la web' }
+}
+
 Write-Host ''
-Write-Host '== Llave de la API de reservas (chat de WhatsApp) ==' -ForegroundColor Cyan
-Write-Host '  1 = CREAR una llave nueva (reemplaza la anterior)'
-Write-Host '  0 = DESACTIVAR la llave'
+Write-Host '== Llaves de las APIs de reservas ==' -ForegroundColor Cyan
+Write-Host '  1 = CREAR llave de WHATSAPP (reemplaza solo la de WhatsApp)'
+Write-Host '  2 = CREAR llave WEB (reemplaza solo la web)'
+Write-Host '  3 = DESACTIVAR la llave de WhatsApp'
+Write-Host '  4 = DESACTIVAR la llave web'
 $op = (Read-Host '  Elige (Enter = no cambiar)').Trim()
 if (-not $op) { exit 0 }
-if ($op -notin @('0', '1')) { Aviso 'Opcion no valida. No se cambio nada.'; exit 1 }
+if ($op -notin @('1', '2', '3', '4')) { Aviso 'Opcion no valida. No se cambio nada.'; exit 1 }
 
-if ($op -eq '0') {
-  Base 'sin-llave-chat' | Out-Null
-  Ok 'Llave desactivada: el chat ya no puede reservar.'
+if ($op -in @('3', '4')) {
+  $t = if ($op -eq '3') { $TIPOS['1'] } else { $TIPOS['2'] }
+  Base "sin-$($t.accion)" | Out-Null
+  Ok "Llave $($t.nombre) desactivada: $($t.quien) ya no puede reservar."
   exit 0
+}
+
+$t = $TIPOS[$op]
+if ($op -eq '2') {
+  Aviso 'La llave web que se usa hoy dejara de funcionar en cuanto se cree la nueva.'
+  if ((Read-Host '  Escribe SI para continuar').Trim().ToUpper() -ne 'SI') { Aviso 'No se cambio nada.'; exit 0 }
 }
 
 # La Agenda crea la cita con una llave interna (solo vive en este servidor): se asegura que exista.
@@ -65,15 +81,16 @@ if (-not $cfg['RESERVA_WEB_API_KEY']) {
   Ok 'Llave interna de la reserva creada.'
   $reiniciar = $true
 }
-$r = Base 'llave-chat'
+$r = Base $t.accion
 if ($reiniciar) { Reiniciar }
 Write-Host ''
-Write-Host '  Llave del chat (se muestra UNA sola vez; copiala ahora):' -ForegroundColor White
+Write-Host "  Llave $($t.nombre) (se muestra UNA sola vez; copiala ahora):" -ForegroundColor White
 Write-Host ''
 Write-Host "    $($r.llave)" -ForegroundColor Yellow
 Write-Host ''
 Write-Host '  Como se usa (servidor a servidor):' -ForegroundColor White
-Write-Host "    Direccion base:  https://$host1$puerto/api/v1/integraciones/reservas" -ForegroundColor White
+Write-Host "    Direccion base:  https://$host1$puerto/api/v1/integraciones/$($t.ruta)" -ForegroundColor White
 Write-Host '    Cabecera:        Authorization: ApiKey <la llave>' -ForegroundColor White
+Write-Host '  Esta llave solo sirve en esa direccion (la otra API tiene su propia llave).' -ForegroundColor White
 Write-Host '  Los servicios que se pueden reservar son los marcados como «reserva en linea» en la base.' -ForegroundColor White
-Write-Host '  Si la llave se pierde, vuelve a correr este archivo (la anterior deja de servir).' -ForegroundColor White
+Write-Host '  Si la llave se pierde, vuelve a correr este archivo (la anterior de ese tipo deja de servir).' -ForegroundColor White

@@ -11,6 +11,13 @@ $CONFIG = Join-Path $DATOS 'config'
 $ENVF = Join-Path $CONFIG 'agenda.env'
 $TAREA = 'Limablue Agenda'
 
+# Archivos de versiones anteriores que ya no existen (si se copió la versión nueva encima de la vieja).
+# 12-nov-2026: «Llave API del chat.bat» pasó a «Llaves API (web y WhatsApp).bat».
+foreach ($viejo in @('Llave API del chat.bat', 'herramientas\llave-chat.ps1')) {
+  $p = Join-Path $RAIZ $viejo
+  if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue }
+}
+
 function Titulo($t) { Write-Host ''; Write-Host "== $t ==" -ForegroundColor Cyan }
 function Ok($t) { Write-Host "  OK  $t" -ForegroundColor Green }
 function Aviso($t) { Write-Host "  !   $t" -ForegroundColor Yellow }

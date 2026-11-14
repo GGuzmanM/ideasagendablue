@@ -101,7 +101,9 @@ for (const rel of fs.readdirSync(PLANTILLA, { recursive: true })) {
   const destino = path.join(OUT, rel);
   fs.mkdirSync(path.dirname(destino), { recursive: true });
   let texto = fs.readFileSync(origen, 'utf8').replace(/\r?\n/g, '\r\n').replace(/\{\{VERSION\}\}/g, VERSION);
-  if (rel.endsWith('.ps1')) texto = BOM + texto; // PowerShell 5.1 necesita BOM para leer tildes
+  // PowerShell 5.1 necesita BOM para leer tildes. UNO solo: si el archivo ya lo trae, se quita antes (con dos, la 1.ª línea
+  // deja de ser comentario y el script no arranca: pasó con llaves-reservas.ps1 el 13-nov-2026).
+  if (rel.endsWith('.ps1')) texto = BOM + texto.replace(/^﻿+/, '');
   fs.writeFileSync(destino, texto);
 }
 fs.writeFileSync(path.join(OUT, 'version.txt'), `Limablue Agenda ${VERSION}\r\nNode ${process.version}\r\n`);

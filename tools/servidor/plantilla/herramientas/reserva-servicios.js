@@ -3,27 +3,37 @@
 //                                          eso se decide en Administración › Reserva web)
 //   node reserva-servicios.js llave      → además crea la llave interna con la que la reserva registra la cita
 //   node reserva-servicios.js sin-llave  → desactiva la llave interna
-//   node reserva-servicios.js llave-chat → crea (y reemplaza la anterior) la llave del CHAT DE WHATSAPP: permiso «reservas:write»,
-//                                          solo sirve en /api/v1/integraciones/reservas. Se imprime UNA vez; en la base solo queda su huella.
-//   node reserva-servicios.js sin-llave-chat → desactiva la llave del chat
+//   node reserva-servicios.js llave-whatsapp → crea (y reemplaza la anterior) la llave de la API de WHATSAPP: permiso
+//                                              «reservas:whatsapp», solo sirve en /api/v1/integraciones/whatsapp.
+//   node reserva-servicios.js llave-web      → crea (y reemplaza la anterior) la llave de la API WEB: permiso «reservas:write»,
+//                                              solo sirve en /api/v1/integraciones/reservas.
+//   node reserva-servicios.js sin-llave-whatsapp | sin-llave-web → desactiva esa llave
+//   Las llaves se imprimen UNA vez; en la base solo queda su huella. Se reemplazan por PERMISO, no por nombre: la llave web
+//   creada antes del 12-nov-2026 se llama «Chat de WhatsApp (reservas)» pero tiene «reservas:write», así que es la web.
 // Imprime el resultado en JSON. Necesita DATABASE_URL en el entorno.
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { PrismaClient } = require('@prisma/client');
 
 const NOMBRE_LLAVE = 'Reserva web (interna)';
-const NOMBRE_LLAVE_CHAT = 'Chat de WhatsApp (reservas)';
+// Llaves de las APIs de integración (routes/reservaChat.ts): nombre, permiso y prefijo.
+const LLAVES_API = {
+  whatsapp: { nombre: 'API WhatsApp (reservas)', scope: 'reservas:whatsapp', prefijo: 'lbwsp_' },
+  web: { nombre: 'API web (reservas)', scope: 'reservas:write', prefijo: 'lbweb_' },
+};
 
 (async () => {
   const prisma = new PrismaClient();
   const accion = process.argv[2] || '';
   try {
-    if (accion === 'llave-chat' || accion === 'sin-llave-chat') {
-      await prisma.apiKey.updateMany({ where: { nombre: NOMBRE_LLAVE_CHAT, activa: true }, data: { activa: false } });
-      if (accion === 'sin-llave-chat') { console.log(JSON.stringify({ ok: true })); return; }
-      const llaveChat = `lbchat_${crypto.randomBytes(24).toString('base64url')}`;
-      await prisma.apiKey.create({ data: { nombre: NOMBRE_LLAVE_CHAT, keyHash: await bcrypt.hash(llaveChat, 10), scopes: ['reservas:write'] } });
-      console.log(JSON.stringify({ ok: true, llave: llaveChat }));
+    const api = /^(sin-)?llave-(whatsapp|web)$/.exec(accion);
+    if (api) {
+      const l = LLAVES_API[api[2]];
+      await prisma.apiKey.updateMany({ where: { scopes: { has: l.scope }, activa: true }, data: { activa: false } });
+      if (api[1]) { console.log(JSON.stringify({ ok: true })); return; }
+      const llaveApi = `${l.prefijo}${crypto.randomBytes(24).toString('base64url')}`;
+      await prisma.apiKey.create({ data: { nombre: l.nombre, keyHash: await bcrypt.hash(llaveApi, 10), scopes: [l.scope] } });
+      console.log(JSON.stringify({ ok: true, llave: llaveApi }));
       return;
     }
     if (accion === 'sin-llave' || accion === 'llave') {

@@ -23,7 +23,10 @@ Reemplaza un ERP de escritorio de 14 años. 5 sedes, ~400 citas diarias, 40 pod�
   404 neutro a todo lo demás; `/verificar/<código>` sin prefijo (QR de recetas ya impresas) redirige. En dev: `http://localhost:5180/acceso_agenda_lb/`.
 - **Reserva web SIN pasarela de pago (29-oct-2026)**: la cita se crea al confirmar (pago pendiente: se paga en la sede). Dos entradas que
   comparten `services/reservaWeb/`: la página pública `/agendamiento_directo_limablue_un_paso_cerca_de_ti/reserva/` (`routes/reservaWeb.ts`, sin login) y la API del chat de WhatsApp
-  (`routes/reservaChat.ts`, `/api/v1/integraciones/reservas`, llave con scope `reservas:write`; docs/API-RESERVAS-WHATSAPP.md). Documento DNI o CE
+  (`routes/reservaChat.ts`; docs/API-RESERVAS-WHATSAPP.md). **Desde el 12-nov-2026 son DOS APIs** (`crearApiReservas`), mismas rutas, llave y canal
+  propios: WEB `/api/v1/integraciones/reservas` (scope `reservas:write`, la llave que ya existía → canal `web`) y WHATSAPP `/api/v1/integraciones/whatsapp`
+  (scope `reservas:whatsapp` → canal `whatsapp`). El canal lo fija la llave (el campo `canal` del cliente se ignora); por código LB cada una solo ve lo suyo.
+  Llaves: «Llaves API (web y WhatsApp).bat» (reemplaza por PERMISO, no por nombre). Documento DNI o CE
   (`services/reservaWeb/validaciones.ts`). La cita se crea con POST /citas usando la llave interna `RESERVA_WEB_API_KEY`.
   **Cancelar / reprogramar por el chat (11-nov-2026)**: `POST /integraciones/reservas/:codigo/cancelar {motivo?}` y `/:codigo/reprogramar {fecha, horaInicio}`
   (`services/reservaWeb/gestion.ts`), misma llave `reservas:write`. Solo mecánica: las reglas de negocio las programa el chat. Llaman a
@@ -53,6 +56,23 @@ Reemplaza un ERP de escritorio de 14 años. 5 sedes, ~400 citas diarias, 40 pod�
   Config en `agenda.env`: `NIUBIZ_HABILITADO=1`, `NIUBIZ_ENTORNO` (sandbox|produccion), `NIUBIZ_MERCHANT_ID/USUARIO/CLAVE`, `NIUBIZ_LIQUIDACION` (automatica|manual),
   `RESERVA_WEB_PAGO` (opcional|obligatorio), `RESERVA_WEB_URL_PUBLICA` (https público para el retorno), `NIUBIZ_URL_API`/`NIUBIZ_CHECKOUT_JS` (solo pruebas). El chat de
   WhatsApp NO usa este flujo. Probar sin Niubiz: `node apps/api/scripts/niubiz-simulado.cjs 4010` + `NIUBIZ_URL_API=http://localhost:4010`. Tests: `__tests__/niubiz-cliente`, `pago-retorno`.
+- **Integraciones del chat de WhatsApp (13-nov-2026, pedidas por el equipo de Ana)** — solo `/integraciones/whatsapp`; cada una APAGADA si falta su
+  config, que vive SOLO en el `agenda.env` del servidor (la carga «Integraciones (WooCommerce y GHL).bat» → `herramientas/integraciones.ps1`, a ciegas;
+  NUNCA en `.env.example`, el repo ni el paquete):
+  - **Cupos**: `GET /horas` trae `cupos` (hora → pacientes que caben a la vez; `horasConCupos` en `reservaWebService.ts`).
+  - **Pago previo de SÁBADO y DOMINGO por WooCommerce** (`WOO_URL`, `WOO_CONSUMER_KEY`, `WOO_CONSUMER_SECRET`, `WOO_WEBHOOK_SECRET`): `woocommerce.ts`
+    (cliente REST + firma HMAC del webhook) y `pagoPrevio.ts`. `POST /` crea pedido → cita (pago pendiente) → reserva `esperando_pago`
+    (`pasarela='woocommerce'`, 10 min, enlace en `pago`). Aviso `POST /api/v1/publico/pagos/woo` (`routes/pagoWoo.ts`, ANTES de `express.json`,
+    firma `X-WC-Webhook-Signature`, sin secretos en la URL) → se RELEE el pedido → `confirmada` + `pagoEstado='aprobado'` (mismo valor que Niubiz,
+    así valen `PAGADA_EN_LINEA` y `pagado`) + `PATCH /citas/:id/pago`. Vencida sin pagar → `mantenimientoPagoPrevio` cancela cita y pedido
+    (`expirada`); pagó tarde o sin cita → `reembolsar`. Hacia el chat `pagoEstado` sale `pagado` (no `aprobado`), como en la nota del equipo de Ana. Estas reservas NO cuentan como «apartadas» en `horasLibres` (su cita ya ocupa la hora) ni
+    las cierra `mantenimientoReservasWeb`. Reprogramar por WhatsApp: con pago pendiente no (`PAGO_PENDIENTE`); sin pagar a sáb/dom no
+    (`PAGO_PREVIO_REQUERIDO`). La misma `referencia` devuelve la reserva en cualquier estado. Feriados: aún no.
+  - **Aviso 2 h antes** (`GHL_AVISO_WEBHOOK_URL`): `services/avisoWhatsappService.ts`, cada minuto, POST a un flujo de GHL con la hora ACTUAL
+    de la cita; una vez por reserva (`reservas_web.avisoWhatsappEn`, migración `20261112120000_aviso_whatsapp_reserva`, copiada IDÉNTICA a la
+    del paquete del equipo de Ana para que su huella coincida).
+  - Probar: `node apps/api/scripts/woo-simulado.cjs 4020` (+ `WOO_URL=http://localhost:4020`, `ck_prueba`/`cs_prueba`, `WOO_SIM_SECRETO` =
+    `WOO_WEBHOOK_SECRET`, `WOO_SIM_AVISO`; GHL simulado en `/_ghl`). Tests: `__tests__/pago-previo-woo`, `reserva-gestion-chat`.
 - TypeScript estricto en todo el proyecto
 - Errores API: `{ error: string, code?: string }` via `AppError` en `middleware/errorHandler.ts`
 - Fechas: UTC en DB, convertir a America/Lima en frontend
@@ -79,6 +99,13 @@ Reemplaza un ERP de escritorio de 14 años. 5 sedes, ~400 citas diarias, 40 pod�
   Puede tener huecos (una creación que falla consume el número): es normal en una secuencia.
 
 ## Migraciones de base de datos (Prisma Migrate — NO `db push`)
+- **REGLA DEL DUEÑO (12-nov-2026): migraciones solo cuando sean ESTRICTAMENTE necesarias.**
+  - Primero resolver sin tocar la base (código, columnas/tablas que ya existen, cálculo al vuelo). Si de verdad hace falta (o es
+    claramente lo más conveniente), se crea sin pedir permiso previo, pero se informa al entregar: qué toca y cuántas filas reescribe.
+  - **NO** `ALTER COLUMN`, renombrar, cambiar tipos ni reestructurar campos existentes, salvo que el dueño lo pida.
+  - **NO** reescribir datos masivos (UPDATE de toda una tabla) si se puede evitar.
+  - Una sola migración por entrega (agrupar), no una por cada cambio pequeño.
+  - **Nunca editar ni fusionar una migración ya creada/commiteada**: el servidor guarda su huella y `migrate deploy` fallaría.
 - **Flujo correcto:** en local `prisma migrate dev` genera migraciones versionadas en
   `apps/api/prisma/migrations/`; en producción `npm run db:migrate:prod` (= `prisma migrate deploy`)
   las aplica. **NUNCA `db push` en producción.**
@@ -153,3 +180,8 @@ packages/shared/     ← tipos TypeScript compartidos
 - Soft delete en todos los modelos (`deletedAt`, `activo`)
 - Un SUPER_ADMIN/admin no puede desactivarse a sí mismo
 - Drag & drop para reprogramar citas entre especialistas
+- **Cambiar tratamiento en cita doble (13-nov-2026)**: `PATCH /citas/:id/tratamiento` cambia UNA mitad (`cambiarTratamientoBloque` en `routes/citas.ts`).
+  Reglas en `services/tratamientoBloque.ts`: 2.º servicio = extra activo de `combinaciones_permitidas` para el ancla de la PRINCIPAL (fila con
+  `servicioAnclaId` null = ancla global); 1.er servicio = un ancla que permita el 2.º actual y de la MISMA duración (con una sola ancla: solo cambia su tipo).
+  Precio del bloque (1.º + 2.º) y promo en la PRINCIPAL; sesión de esa mitad no descontada y cubierta por su membresía. Opciones para la pantalla:
+  `GET /citas/:id/tratamiento/opciones` (ya filtradas por el profesional de esa mitad). Tests: `__tests__/tratamiento-bloque`.

@@ -22,6 +22,8 @@ import {
   esMismoDia,
 } from '../services/idea1AgendaService';
 import { horaInicioValidaParaDuracion } from '@limablue/shared';
+import { Gorrito } from '../components/navidad/Navidad';
+import { useNavidadVisible } from '../stores/navidadStore';
 
 /** Citas de 1 h solo en hora entera (23-oct-2026): mismo texto en soltar e intercambiar. */
 const avisoHoraEntera = (hora: string) => `Las citas de 1 hora solo empiezan en hora en punto (09:00, 10:00…), no a las ${hora}.`;
@@ -104,6 +106,7 @@ export function Idea1AgendaPage() {
   // Roles de solo lectura en la agenda (p. ej. médico): no crean citas ni las arrastran. El
   // backend lo exige igual (403); aquí se evita ofrecer la acción.
   const puedeCrearCita = useAuthStore((s) => s.tiene('citas.crear'));
+  const navidad = useNavidadVisible();
   const puedeArrastrarCita = useAuthStore((s) => s.tiene('citas.reprogramar'));
   // Horario de la sede en la cabecera: contact center no lo ve (pedido 22-sep); el lápiz y el enlace a
   // Horarios solo para quien puede entrar ahí (horarios.ver); los demás lo ven como dato, sin clic.
@@ -190,7 +193,10 @@ export function Idea1AgendaPage() {
                 onClick={() => setIsSedeOpen((prev) => !prev)}
                 className="flex items-center gap-2.5 px-4 py-2 bg-surface-container-lowest hover:bg-surface-container-low border border-outline-variant/50 rounded-xl text-on-surface font-semibold text-sm transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
               >
-                <span className="material-symbols-outlined text-primary text-xl">location_on</span>
+                <span className="relative shrink-0 leading-none">
+                  <span className="material-symbols-outlined text-primary text-xl">location_on</span>
+                  {navidad && <Gorrito className="-top-2 -left-1 w-[18px] -rotate-[20deg]" />}
+                </span>
                 <span className="truncate max-w-[140px]">{activeSedeName}</span>
                 <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
                 <span
@@ -284,7 +290,10 @@ export function Idea1AgendaPage() {
                 onClick={() => handleAbrirNuevaCita()}
                 className="bg-primary text-white px-4 py-2 rounded-lg font-body-md font-semibold hover:opacity-90 active:scale-95 transition-all shadow-md shadow-primary/20 flex items-center gap-2 cursor-pointer"
               >
-                <span className="material-symbols-outlined text-lg">add_circle</span>
+                <span className="relative shrink-0 leading-none">
+                  <span className="material-symbols-outlined text-lg">add_circle</span>
+                  {navidad && <Gorrito className="-top-2 -left-1 w-[17px] -rotate-[20deg]" />}
+                </span>
                 Nueva Cita
               </button>
             ) : (

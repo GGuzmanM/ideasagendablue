@@ -33,6 +33,7 @@ import { sincronizarSesionPaquete } from '../services/paqueteSesionService';
 import { recalcularPaquete, validarCupoItemAlAgendar, paqueteCorresponde } from '../services/consumoService';
 import { precioListaDe, validarYCalcularPromo, recalcularPromoTrasCambio } from '../services/promocionesService';
 import { getServicioAnclaId, esCombinacionPermitida } from '../services/combinacionService';
+import { serviciosPermitidosBloque, precioBloque, type RolBloque } from '../services/tratamientoBloque';
 import { enviarCorreoReserva } from '../services/emailService';
 import { verificarTokenConfirmacion } from '../utils/confirmToken';
 import { fechaDb, fechaAStr, hoyLimaStr, esFechaPasadaLima, diasEnPasadoLima } from '../utils/fechaLima';
@@ -3052,9 +3053,149 @@ router.post('/intercambiar', requireAuth, requireAcceso('appointments:write', 'c
 // Quién: admin, coordinación, contact center, especial contact y recepción. Cuándo: agendada / confirmada / llegó; después
 // ya no, salvo el ADMIN (en cualquier momento). Mismas reglas que al agendar: misma unidad, el profesional (o la máquina
 // de baro y su médico) lo tiene habilitado, subcategoría válida, si dura más debe caber (hora, turno, bloqueos y sin
-// cruzarse, dentro de la tx Serializable), membresía que lo cubra y promo que siga aplicando. Cita doble: no.
+// cruzarse, dentro de la tx Serializable), membresía que lo cubra y promo que siga aplicando.
+// Cita doble (13-nov-2026): sí, una mitad a la vez, con las reglas del bloque (cambiarTratamientoBloque, más abajo).
 const ROLES_CAMBIAN_TRATAMIENTO = ['admin', 'coordinadora_sedes', 'contact_center', 'especial_contact', 'recepcionista'];
 const ESTADOS_CAMBIO_TRATAMIENTO = ['agendada', 'confirmada', 'llego'];
+
+type CitaTratamiento = Prisma.CitaGetPayload<{ include: { servicio: { select: { nombre: true } }; subcategoria: { select: { nombre: true } } } }>;
+
+/**
+ * Cambiar el tratamiento de UNA mitad de una cita doble (13-nov-2026). Reglas del bloque (services/tratamientoBloque.ts):
+ *  - 2.º servicio: un extra permitido con el 1.º en Herramientas › Combinaciones (puede ser de otra área, si la sede la opera);
+ *  - 1.er servicio: un ancla con la que el 2.º esté permitido (con una sola ancla: solo su tipo) y de la MISMA duración, porque
+ *    el bloque ocupa la duración de su ancla y no se mueve aquí;
+ *  - el profesional de esa mitad lo tiene habilitado; membresía de esa mitad (sesión no descontada, que la cubra y con cupo);
+ *  - el precio del bloque (1.º + 2.º) y la promo viven en la PRINCIPAL y se recalculan. El horario no cambia.
+ */
+async function cambiarTratamientoBloque(req: Request, res: Response, cita: CitaTratamiento, data: { servicioId: string; subcategoriaId?: string | null }) {
+  const otra = await prisma.cita.findFirst({
+    where: { slotGrupoId: cita.slotGrupoId!, id: { not: cita.id }, deletedAt: null },
+    include: { servicio: { select: { nombre: true } } },
+  });
+  if (!otra || !cita.slotRol) throw new AppError('No se encontró la otra cita del bloque: refresque la agenda', 409, 'BLOQUE_INCOMPLETO');
+  const rol = cita.slotRol as RolBloque;
+  const profesionalId = cita.profesionalId;
+  if (!profesionalId) throw new AppError('La cita no tiene profesional asignado', 400, 'SIN_PROFESIONAL');
+
+  const servicio = await prisma.servicio.findUnique({ where: { id: data.servicioId } });
+  if (!servicio || !servicio.activo) throw new AppError('Servicio no encontrado o inactivo', 404);
+  const subcategoriaId = (await resolverSubcategoria(servicio.id, data.subcategoriaId)) ?? null;
+  if (servicio.id === cita.servicioId && subcategoriaId === (cita.subcategoriaId ?? null)) {
+    res.json(await getCitaCompleta(cita.id)); // sin cambios
+    return;
+  }
+
+  if (servicio.id !== cita.servicioId) {
+    if (servicio.id === otra.servicioId) throw new AppError('Los dos servicios de una cita doble no pueden ser el mismo', 400, 'MISMO_SERVICIO');
+    const permitidos = await serviciosPermitidosBloque(rol, otra.servicioId);
+    if (!permitidos.includes(servicio.id)) {
+      throw rol === 'SECUNDARIO'
+        ? new AppError(`«${servicio.nombre}» no está permitido como 2.º servicio junto a «${otra.servicio.nombre}» (ver Herramientas › Combinaciones)`, 400, 'COMBINACION_NO_PERMITIDA')
+        : new AppError(`El 1.er servicio de una cita doble tiene que ser el servicio ancla con el que «${otra.servicio.nombre}» se puede combinar: aquí solo se cambia su tipo. Para otro tratamiento, cancela la cita doble y agéndala de nuevo.`, 400, 'COMBINACION_NO_PERMITIDA');
+    }
+  }
+  if (rol === 'PRINCIPAL') {
+    if (servicio.unidadNegocioId !== cita.unidadNegocioId) throw new AppError('El 1.er servicio debe ser de la misma área de la cita', 400, 'OTRA_UNIDAD');
+    if (servicio.duracionMinutos !== cita.duracionMinutos) {
+      throw new AppError(`La cita doble ocupa ${cita.duracionMinutos} min y «${servicio.nombre}» dura ${servicio.duracionMinutos}: cancélala y agéndala de nuevo`, 400, 'BLOQUE_DURACION');
+    }
+  } else if (servicio.unidadNegocioId !== cita.unidadNegocioId) {
+    const su = await prisma.sedeUnidadNegocio.findUnique({ where: { sedeId_unidadNegocioId: { sedeId: cita.sedeId, unidadNegocioId: servicio.unidadNegocioId } } });
+    if (!su) throw new AppError('El área de ese servicio no opera en esta sede', 400, 'UNIDAD_NO_EN_SEDE');
+  }
+
+  // Habilitado: el profesional de ESTA mitad (o la máquina de baro) y, en baro, su médico.
+  const fecha = fechaAStr(cita.fecha);
+  const competencia = await prisma.competenciaProfesional.findFirst({ where: { profesionalId, servicioId: servicio.id, activa: true } });
+  if (!competencia) throw new AppError('El profesional de este servicio no tiene habilitado ese tratamiento', 400, 'SIN_COMPETENCIA');
+  if (cita.solicitadoProfesionalId && !(await medicoAtiendeBaroEnSede(cita.solicitadoProfesionalId, servicio.id, cita.sedeId, fecha))) {
+    throw new AppError('El médico de la cita no atiende ese tratamiento en esta sede', 400, 'MEDICO_BARO_INVALIDO');
+  }
+
+  // Sesiones: la de esta mitad no puede estar descontada y su membresía debe cubrir el nuevo tratamiento.
+  if (cita.sesionConsumida) {
+    throw new AppError('La sesión de la membresía ya se descontó con este servicio: para cambiarlo, primero hay que devolver la sesión (revertir la llegada)', 409, 'SESION_YA_DESCONTADA');
+  }
+  if (cita.paquetePacienteId) {
+    const pp = await prisma.paquetePaciente.findUnique({ where: { id: cita.paquetePacienteId }, select: { servicioNuevoId: true, composicion: true } });
+    const comp = Array.isArray(pp?.composicion) ? pp!.composicion : [];
+    if (pp && (comp.length > 0 || pp.servicioNuevoId) && !paqueteCorresponde(pp, servicio.id, subcategoriaId)) {
+      throw new AppError('La membresía o paquete de este servicio no cubre ese tratamiento', 409, 'PAQUETE_NO_CORRESPONDE');
+    }
+  }
+
+  // Dinero: el precio del bloque (1.º + 2.º) y la promo viven en la PRINCIPAL.
+  const principal = rol === 'PRINCIPAL' ? { ...cita, servicioId: servicio.id, subcategoriaId } : otra;
+  const secundaria = rol === 'SECUNDARIO' ? { servicioId: servicio.id, subcategoriaId } : otra;
+  const precioLista = precioBloque(
+    await precioListaDe(principal.servicioId, principal.subcategoriaId ?? null),
+    await precioListaDe(secundaria.servicioId, secundaria.subcategoriaId ?? null),
+  );
+  const portadora = rol === 'PRINCIPAL' ? cita : otra;
+  let montoDescuento: number | null = null;
+  let montoFinal = precioLista;
+  if (portadora.promocionId) {
+    const calc = await recalcularPromoTrasCambio(portadora.promocionId, { servicioId: principal.servicioId, sedeId: cita.sedeId, fecha, canal: portadora.canal, pacienteId: cita.pacienteId }, precioLista);
+    montoDescuento = calc.descuento;
+    montoFinal = calc.final;
+  }
+
+  const atencion = await prisma.atencionClinica.findUnique({ where: { citaId: cita.id }, select: { id: true } });
+  const subNueva = subcategoriaId ? await prisma.subcategoriaServicio.findUnique({ where: { id: subcategoriaId }, select: { nombre: true } }) : null;
+  const idsBloque = [cita.id, otra.id];
+  try {
+    await withDeadlockRetry(() => prisma.$transaction(async (tx) => {
+      if (cita.paquetePacienteId) await validarCupoItemAlAgendar(tx, cita.paquetePacienteId, servicio.id, subcategoriaId, cita.id);
+      // Sala/equipo único (Motiphysio): libre a esa hora, sin contar las dos mitades de este bloque.
+      await validarCupoServicio(tx, { servicioId: servicio.id, sedeId: cita.sedeId, fecha, horaInicio: cita.horaInicio, duracionMin: cita.duracionMinutos, excluirCitaIds: idsBloque });
+      await tx.cita.update({
+        where: { id: cita.id },
+        data: { servicioId: servicio.id, subcategoriaId, ...(rol === 'SECUNDARIO' ? { unidadNegocioId: servicio.unidadNegocioId } : {}) },
+      });
+      await tx.cita.update({ where: { id: portadora.id }, data: { precioLista, montoDescuento, montoFinal } });
+      if (atencion) await tx.atencionClinica.update({ where: { id: atencion.id }, data: { servicioId: servicio.id, subcategoriaId } });
+      await auditEnTx(tx, {
+        citaId: cita.id, usuarioId: req.user?.userId, accion: 'cambiar_tratamiento', entidad: 'cita', entidadId: cita.id,
+        antes: { citaDoble: rol, servicio: cita.servicio.nombre, subcategoria: cita.subcategoria?.nombre ?? null, montoFinalBloque: portadora.montoFinal != null ? Number(portadora.montoFinal) : null, estado: cita.estado },
+        despues: { citaDoble: rol, servicio: servicio.nombre, subcategoria: subNueva?.nombre ?? null, otroServicio: otra.servicio.nombre, montoFinalBloque: montoFinal, atencionCorregida: !!atencion },
+        sedeId: cita.sedeId, ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
+      });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
+  } catch (err) {
+    if (esConflictoDeSlot(err)) throw new AppError('Ese horario acaba de ocuparse. Refresque e intente otra vez.', 409, 'SLOT_OCUPADO');
+    throw err;
+  }
+
+  for (const cid of idsBloque) {
+    emitirEventoCita({ tipo: 'cita:actualizada', sedeId: cita.sedeId, fecha, cita: await getCitaCompleta(cid) as never, cambiadoPor: req.user?.userId ?? 'sistema' });
+  }
+  res.json(await getCitaCompleta(cita.id));
+}
+
+// ─── GET /citas/:id/tratamiento/opciones ─────────────────────────────────────
+// Para el detalle de una cita DOBLE: los tratamientos que puede tener esa mitad (reglas del bloque) y que su profesional
+// tiene habilitados, con sus subcategorías. El actual siempre va. Una cita simple usa la lista normal del área.
+router.get('/:id/tratamiento/opciones', requireAuth, requireRol(...ROLES_CAMBIAN_TRATAMIENTO), guardSedeCita, async (req, res) => {
+  const cita = await prisma.cita.findUnique({ where: { id: req.params.id, deletedAt: null }, select: { id: true, slotGrupoId: true, slotRol: true, servicioId: true, profesionalId: true } });
+  if (!cita) throw new AppError('Cita no encontrada', 404);
+  if (!cita.slotGrupoId || !cita.slotRol) { res.json({ bloque: false, servicios: [] }); return; }
+  const otra = await prisma.cita.findFirst({ where: { slotGrupoId: cita.slotGrupoId, id: { not: cita.id }, deletedAt: null }, select: { servicioId: true } });
+  const permitidos = otra ? await serviciosPermitidosBloque(cita.slotRol as RolBloque, otra.servicioId) : [];
+  const habilitados = cita.profesionalId
+    ? new Set((await prisma.competenciaProfesional.findMany({ where: { profesionalId: cita.profesionalId, activa: true }, select: { servicioId: true } })).map((c) => c.servicioId))
+    : new Set<string>();
+  const ids = [...new Set([cita.servicioId, ...permitidos.filter((id) => habilitados.has(id))])];
+  const servicios = await prisma.servicio.findMany({
+    where: { id: { in: ids }, activo: true, deletedAt: null },
+    select: {
+      id: true, nombre: true, duracionMinutos: true, unidadNegocioId: true, activo: true,
+      subcategorias: { where: { activo: true, deletedAt: null }, select: { id: true, nombre: true }, orderBy: [{ orden: 'asc' }, { nombre: 'asc' }] },
+    },
+    orderBy: { nombre: 'asc' },
+  });
+  res.json({ bloque: true, rol: cita.slotRol, servicios });
+});
 router.patch('/:id/tratamiento', requireAuth, requireRol(...ROLES_CAMBIAN_TRATAMIENTO), guardSedeCita, async (req, res) => {
   const data = z.object({ servicioId: z.string().uuid(), subcategoriaId: z.string().uuid().nullable().optional() }).parse(req.body);
   const cita = await prisma.cita.findUnique({
@@ -3070,7 +3211,8 @@ router.patch('/:id/tratamiento', requireAuth, requireRol(...ROLES_CAMBIAN_TRATAM
     throw new AppError('El tratamiento solo se cambia mientras la cita está agendada o hasta que el paciente llegó. Después, solo administración.', 403, 'TRATAMIENTO_BLOQUEADO');
   }
   if (cita.slotGrupoId) {
-    throw new AppError('Es una cita doble: para cambiar uno de sus tratamientos, cancélala y agéndala de nuevo', 400, 'CITA_DOBLE');
+    await cambiarTratamientoBloque(req, res, cita, data);
+    return;
   }
   const profesionalId = cita.profesionalId;
   if (!profesionalId) throw new AppError('La cita no tiene profesional asignado', 400, 'SIN_PROFESIONAL');

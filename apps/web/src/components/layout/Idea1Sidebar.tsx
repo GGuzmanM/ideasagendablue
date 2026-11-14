@@ -6,6 +6,8 @@ import { rutaInicio } from '../../utils/rutaInicio';
 import { useContadorControles } from '../../services/controlesService';
 import { useReservaWebHabilitada } from '../../services/reservaWebService';
 import { rutaWeb } from '../../utils/rutaBase';
+import { CuentaRegresiva, Guirnalda, Gorrito, NavidadSwitch, Nieve, useTituloNavideno } from '../navidad/Navidad';
+import { useNavidadVisible } from '../../stores/navidadStore';
 
 // Menú plegado (solo iconos): preferencia del equipo que se usa, guardada en el navegador.
 const CLAVE_PLEGADO = 'limablue-sidebar-plegado';
@@ -63,6 +65,8 @@ export function Idea1Sidebar() {
   // Alerta de controles (4.2): vencidos + los que vencen en 7 días, sobre «Bandeja clínica».
   const controles = useContadorControles();
   const [plegado, setPlegado] = useState(leerPlegado);
+  const navidad = useNavidadVisible();
+  useTituloNavideno(navidad);
   const alternar = () => { setPlegado((v) => { guardarPlegado(!v); return !v; }); };
 
   return (
@@ -72,13 +76,16 @@ export function Idea1Sidebar() {
       className={cn(
         'h-full sticky top-0 left-0 bg-[#0e4f9f] border-r border-outline-variant/20 flex flex-col py-6 z-30 shrink-0 select-none transition-[width] duration-200',
         plegado ? 'w-sidebar-collapsed px-2' : 'w-sidebar-expanded px-4',
+        navidad && 'navidad-menu',
       )}
     >
+      {navidad && <><Guirnalda /><Nieve /></>}
       {/* Header / Logo + botón para plegar/desplegar */}
       <div className={cn('mb-6 flex items-center', plegado ? 'flex-col gap-2 px-0' : 'gap-2 px-3')}>
         <Link to={rutaInicio(usuario)} className={cn('flex items-center gap-3 group min-w-0', plegado ? 'justify-center' : 'flex-1')} title="Limablue Agenda">
-          <div className="w-12 h-12 flex items-center justify-center group-hover:scale-105 transition-transform shrink-0">
+          <div className="relative w-12 h-12 flex items-center justify-center group-hover:scale-105 transition-transform shrink-0">
             <img src={rutaWeb('/logo-login.png')} alt="Limablue" className="w-full h-full object-contain" />
+            {navidad && <Gorrito className="-top-3.5 -left-2.5 w-7 -rotate-[18deg]" />}
           </div>
           {!plegado && (
             <div className="min-w-0">
@@ -104,6 +111,8 @@ export function Idea1Sidebar() {
         </button>
       </div>
 
+      {navidad && <CuentaRegresiva compacto={plegado} />}
+
       {/* Navigation items */}
       <nav className="idea1-sidebar-nav flex-1 space-y-1 overflow-y-auto custom-scrollbar pr-1">
         {items.map((item) => {
@@ -120,7 +129,7 @@ export function Idea1Sidebar() {
                 "relative flex items-center rounded-xl transition-all duration-200 group text-sm font-medium",
                 plegado ? "justify-center py-2.5 px-0" : "gap-3.5 py-2.5 px-3.5",
                 isActive
-                  ? cn("bg-white/15 text-white font-bold shadow-sm", !plegado && "border-l-4 border-white pl-3")
+                  ? cn("bg-white/15 text-white font-bold shadow-sm", !plegado && cn("border-l-4 pl-3", navidad ? "border-amber-300" : "border-white"))
                   : "text-blue-100/75 hover:bg-white/10 hover:text-white"
               )}
             >
@@ -148,6 +157,7 @@ export function Idea1Sidebar() {
 
       {/* Footer / User profile */}
       <div className="mt-auto pt-4 border-t border-white/10 shrink-0">
+        <div className="mb-2"><NavidadSwitch compacto={plegado} /></div>
 
         <div className={cn('bg-white/10 rounded-2xl flex items-center border border-white/15 shadow-sm', plegado ? 'flex-col gap-1.5 p-1.5' : 'justify-between gap-2 p-3')} title={plegado ? `${usuario?.nombre ?? ''} · ${usuario?.rol ?? ''}` : undefined}>
           <div className="flex items-center gap-2.5 overflow-hidden">

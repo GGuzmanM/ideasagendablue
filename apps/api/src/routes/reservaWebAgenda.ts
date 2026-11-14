@@ -14,6 +14,7 @@ import { prisma } from '../db';
 import { requireAuth, requirePermiso, assertSede } from '../middleware/auth';
 import { fechaDb } from '../utils/fechaLima';
 import { reservaWebHabilitada } from '../services/reservaWeb/reservaWebService';
+import { wooConfigurado } from '../services/reservaWeb/woocommerce';
 import { listarIntentos, marcarContactado } from '../services/reservaWeb/intentos';
 
 const router = Router();
@@ -26,11 +27,12 @@ router.get('/estado', requireAuth, (_req, res) => {
 router.get('/en-curso', requireAuth, requirePermiso('citas.ver'), async (req, res) => {
   const q = z.object({ sedeId: z.string().uuid(), fecha: fechaQ }).parse(req.query);
   assertSede(req, q.sedeId);
-  if (!reservaWebHabilitada()) { res.json([]); return; }
+  // También con la página apagada si el pago previo del chat (WooCommerce) está conectado: sus «reembolsar» deben verse.
+  if (!reservaWebHabilitada() && !wooConfigurado()) { res.json([]); return; }
   const filas = await prisma.reservaWeb.findMany({
     where: {
       sedeId: q.sedeId, fecha: fechaDb(q.fecha),
-      estado: 'reembolsar', // solo las de antes de quitar la pasarela que quedaron pagadas sin cita
+      estado: 'reembolsar', // pagadas sin cita: pago en línea incierto o pago previo del chat que llegó tarde (las resuelve un asesor)
     },
     orderBy: [{ horaInicio: 'asc' }, { creadoEn: 'asc' }],
   });

@@ -284,6 +284,9 @@ export const citasApi = {
   // Cambiar tratamiento (servicio) y/o subcategoría: agendada/confirmada/llegó (admin: siempre). El servidor valida todo.
   cambiarTratamiento: (id: string, data: { servicioId: string; subcategoriaId: string | null }) =>
     api.patch<CitaResumen>(`/citas/${id}/tratamiento`, data),
+  // Cita doble (13-nov-2026): tratamientos que puede tener ESA mitad (reglas del bloque + profesional habilitado).
+  opcionesTratamiento: (id: string) =>
+    api.get<{ bloque: boolean; rol?: 'PRINCIPAL' | 'SECUNDARIO'; servicios: { id: string; nombre: string; duracionMinutos: number; unidadNegocioId: string; activo: boolean; subcategorias: { id: string; nombre: string }[] }[] }>(`/citas/${id}/tratamiento/opciones`),
 
   // Agregar/editar el comentario de recepción en cualquier estado (antes, durante o después).
   actualizarComentario: (id: string, comentario: string) =>

@@ -3,6 +3,8 @@ import { cn } from '../../utils/cn';
 import { useAuthStore } from '../../stores/authStore';
 import { useContadorControles } from '../../services/controlesService';
 import { rutaWeb } from '../../utils/rutaBase';
+import { CuentaRegresiva, Gorrito, NavidadSwitch, Nieve, useTituloNavideno } from '../navidad/Navidad';
+import { useNavidadVisible } from '../../stores/navidadStore';
 
 // El menú se guía por PERMISOS del rol (configurables en Administración → Roles).
 const navItems = [
@@ -24,15 +26,21 @@ export function Sidebar() {
   const items = navItems.filter(n => Array.isArray(n.permiso) ? n.permiso.some(p => perms.includes(p)) : perms.includes(n.permiso));
   // Alerta de controles (4.2): vencidos + los que vencen en 7 días, sobre «Bandeja clínica».
   const controles = useContadorControles();
+  const navidad = useNavidadVisible();
+  useTituloNavideno(navidad);
 
   return (
-    <nav className="w-16 bg-[#0e4f9f] flex flex-col items-center py-3 gap-1 flex-shrink-0">
+    <nav className={cn("w-16 bg-[#0e4f9f] flex flex-col items-center py-3 gap-1 flex-shrink-0", navidad && "navidad-menu")}>
       {/* Logo */}
-      <div className="mb-4">
+      <div className="mb-4 relative">
         <div className="w-9 h-9 bg-white rounded-xl flex items-center justify-center p-1.5" title="Limablue Agenda">
           <img src={rutaWeb('/logo-login.png')} alt="Limablue" className="w-full h-full object-contain" />
         </div>
+        {navidad && <Gorrito className="-top-3 -left-2.5 w-6 -rotate-[18deg]" />}
+        {navidad && <Nieve />}
       </div>
+
+      {navidad && <CuentaRegresiva compacto />}
 
       {/* Nav */}
       {items.map(item => {
@@ -64,6 +72,7 @@ export function Sidebar() {
 
       {/* Spacer */}
       <div className="flex-1" />
+      <NavidadSwitch compacto />
 
       {/* Usuario */}
       <button

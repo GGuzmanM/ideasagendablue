@@ -10,8 +10,11 @@ import firmaMedicoRouter from './routes/firmaMedico';
 import verificacionPublicaRouter from './routes/verificacionPublica';
 import reservaWebRouter from './routes/reservaWeb';
 import reservaWebAgendaRouter from './routes/reservaWebAgenda';
-import reservaChatRouter from './routes/reservaChat';
+import { crearApiReservas, SCOPE_RESERVAS, SCOPE_RESERVAS_WHATSAPP } from './routes/reservaChat';
 import { reservaWebHabilitada, mantenimientoReservasWeb } from './services/reservaWeb/reservaWebService';
+import pagoWooRouter from './routes/pagoWoo';
+import { mantenimientoPagoPrevio } from './services/reservaWeb/pagoPrevio';
+import { barridoAvisosWhatsapp } from './services/avisoWhatsappService';
 import { cerrarTiemposAbandonados } from './services/tiempoTratamientoService';
 import { iniciarBarridoEncuestas } from './services/encuestaSatisfaccionService';
 
@@ -127,6 +130,8 @@ app.use(compression());
 // Webhook de Resend: se monta ANTES de express.json() porque valida la firma svix
 // sobre el RAW body (el router usa su propio parser raw). Ruta específica primero.
 app.use('/api/v1/webhooks/resend', resendWebhookRouter);
+// Aviso de pago de WooCommerce (13-nov-2026): también va sobre el cuerpo CRUDO (firma HMAC). PÚBLICO; ver routes/pagoWoo.ts.
+app.use('/api/v1/publico/pagos', pagoWooRouter);
 app.use(express.json({ limit: '10mb' }));
 
 // ─── Logging con REDACCIÓN de tokens ─────────────────────────────────────────
@@ -267,7 +272,10 @@ app.use(`${v1}/reportes-clinicos`, reportesClinicosRouter); // Diagnosticos, pro
 app.use(`${v1}/reporte-creacion-citas`, reporteCreacionCitasRouter); // Quién creó cada cita y el día/hora en que la creó
 app.use(`${v1}/verificar`, verificacionPublicaRouter); // PÚBLICO (sin login): verificación de recetas por el QR
 app.use(`${v1}/publico/reservas`, reservaWebRouter); // PÚBLICO: reserva web con pago (apagada salvo RESERVA_WEB_HABILITADA=1)
-app.use(`${v1}/integraciones/reservas`, reservaChatRouter); // Chat de WhatsApp (servidor a servidor, con llave «reservas:write»): reserva sin pasarela
+// APIs de reservas para integraciones (servidor a servidor, sin pasarela), una por canal y con su propia llave (12-nov-2026):
+// la WEB con «reservas:write» (la llave que ya existía) y WHATSAPP con «reservas:whatsapp». Ver routes/reservaChat.ts.
+app.use(`${v1}/integraciones/reservas`, crearApiReservas({ scope: SCOPE_RESERVAS, canal: 'web' }));
+app.use(`${v1}/integraciones/whatsapp`, crearApiReservas({ scope: SCOPE_RESERVAS_WHATSAPP, canal: 'whatsapp' }));
 app.use(`${v1}/reservas-web`, reservaWebAgendaRouter); // Interno: reservas web en curso para la agenda (lista vacía si está apagada)
 
 // ─── Error handler ────────────────────────────────────────────────────────────
@@ -352,6 +360,12 @@ setInterval(autocompletar, 5 * 60_000).unref();
 if (reservaWebHabilitada()) {
   setInterval(() => void mantenimientoReservasWeb().catch((e) => console.error('[reserva-web] mantenimiento:', e)), 60_000).unref();
 }
+// ─── Chat de WhatsApp (13-nov-2026), cada minuto. Cada uno se apaga solo si falta su configuración en agenda.env:
+//   pago previo de sábado y domingo vencido sin pagar → cancela la cita (WOO_*); aviso 2 h antes de la cita (GHL_AVISO_WEBHOOK_URL).
+setInterval(() => {
+  void mantenimientoPagoPrevio().catch((e) => console.error('[pago-previo] mantenimiento:', e));
+  void barridoAvisosWhatsapp().catch((e) => console.error('[aviso-wsp] barrido:', e));
+}, 60_000).unref();
 
 // ─── Encuesta de satisfacción: correo 2 h después de completar la cita (barrido cada 5 min, 8:00–21:00) ───
 iniciarBarridoEncuestas();

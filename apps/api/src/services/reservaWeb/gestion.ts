@@ -1,5 +1,6 @@
 /**
- * CANCELAR y REPROGRAMAR citas desde la API del chat (11-nov-2026) — /integraciones/reservas.
+ * CANCELAR y REPROGRAMAR citas desde las APIs de integración (11-nov-2026) — /integraciones/reservas (web) e
+ * /integraciones/whatsapp (chat); el `canal` lo fija la llave (routes/reservaChat.ts).
  *
  * Dos formas de llegar a la cita:
  *  - por la RESERVA del chat/web: POST /:codigo/cancelar|reprogramar (código «LB-…»);
@@ -9,7 +10,9 @@
  * Solo la MECÁNICA: las reglas de negocio (anticipación, cuántas veces, cómo se verifica a la persona) las programa el chat.
  * La Agenda solo pone lo que protege los datos:
  *  - la cita tiene que estar «Agendada» o «Confirmada» y no haber pasado ya su hora;
- *  - una cita PAGADA en línea (Niubiz) no se cancela por aquí (habría que devolver el dinero: eso lo ve la sede);
+ *  - una cita PAGADA en línea (Niubiz o pago previo del chat) no se cancela por aquí (habría que devolver el dinero: eso lo ve la sede);
+ *  - pago previo (13-nov-2026, solo WhatsApp con la tienda conectada): una cita con el pago PENDIENTE no se reprograma (primero paga)
+ *    y una cita SIN pagar no se pasa a sábado o domingo (esos días se pagan al reservar: se hace una reserva nueva);
  *  - reprogramar: misma sede y mismo servicio, a una hora que ofrezca GET /horas; el especialista lo asigna la Agenda.
  * Cancelar y mover pasan por los MISMOS endpoints de la Agenda (PATCH /citas/:id/estado y /mover) con la llave interna,
  * así que valen todas sus reglas (estados, choques de horario, turnos, bloqueos), la auditoría, el tiempo real y los recordatorios.
@@ -20,7 +23,9 @@ import { registrarAudit } from '../audit';
 import { seleccionarProfesionalOptimo } from '../disponibilidad';
 import { fechaAStr, fechaDb, hoyLimaStr } from '../../utils/fechaLima';
 import { timeToMinutes, formatoNumeroCita } from '@limablue/shared';
-import { estadoReservaPorCodigo, horasLibres, limpiarCacheDias, llamarAgenda, minutosAhoraLima } from './reservaWebService';
+import { estadoReservaPorCodigo, horasLibres, limpiarCacheDias, llamarAgenda, minutosAhoraLima, PASARELA_WOO } from './reservaWebService';
+import { requierePagoPrevio } from './woocommerce';
+import { cerrarPagoPendienteDeCita } from './pagoPrevio';
 import { normalizarDocumento } from './validaciones';
 
 const MODIFICABLES = ['agendada', 'confirmada'];
@@ -29,13 +34,13 @@ const NOMBRE_ESTADO: Record<string, string> = {
 };
 const SELECT_CITA = {
   id: true, numero: true, estado: true, deletedAt: true, fecha: true, horaInicio: true, duracionMinutos: true,
-  sedeId: true, unidadNegocioId: true, servicioId: true, profesionalId: true, pacienteId: true,
+  sedeId: true, unidadNegocioId: true, servicioId: true, profesionalId: true, pacienteId: true, estadoPago: true,
 } as const;
 
 export interface Meta { ip?: string; userAgent?: string }
 interface CitaG {
   id: string; numero: number; estado: string; deletedAt: Date | null; fecha: Date; horaInicio: string; duracionMinutos: number;
-  sedeId: string; unidadNegocioId: string; servicioId: string; profesionalId: string | null; pacienteId: string;
+  sedeId: string; unidadNegocioId: string; servicioId: string; profesionalId: string | null; pacienteId: string; estadoPago: string;
 }
 
 function yaPaso(fecha: string, hora: string) {
@@ -68,6 +73,8 @@ async function cancelar(cita: CitaG, o: { pagadaEnLinea: boolean; motivoCita: st
     throw new AppError('Esta cita se pagó en línea: para cancelarla (y devolver el pago) el paciente debe comunicarse con la sede.', 409, 'PAGADA_EN_LINEA');
   }
   await exigirOk(await llamarAgenda('PATCH', `/citas/${cita.id}/estado`, { estado: 'cancelada', motivoCancelacion: o.motivoCita }), o.ref, 'cancelar la cita');
+  // Si esperaba el pago previo: se cierra la reserva y se anula el pedido de la tienda (el enlace deja de servir).
+  await cerrarPagoPendienteDeCita(cita.id).catch((e) => console.error(`[reserva-chat] ${o.ref}: no se pudo cerrar el pago pendiente:`, (e as Error).message));
   limpiarCacheDias();
   void registrarAudit({
     citaId: cita.id, accion: 'chat_cita_cancelada', entidad: o.audit.entidad, entidadId: o.audit.entidadId, sedeId: cita.sedeId, ip: o.meta.ip, userAgent: o.meta.userAgent,
@@ -77,11 +84,25 @@ async function cancelar(cita: CitaG, o: { pagadaEnLinea: boolean; motivoCita: st
   return true;
 }
 
+/**
+ * Pago previo (solo el chat de WhatsApp con la tienda conectada): con el pago PENDIENTE no se reprograma, y una cita sin pagar
+ * no pasa a sábado o domingo por aquí (esos días se pagan al reservar). Las ya pagadas se mueven libremente.
+ */
+async function exigirPagoPrevioAlMover(cita: CitaG, fecha: string, canal: string) {
+  if (canal !== 'whatsapp') return;
+  const pendiente = await prisma.reservaWeb.count({ where: { citaId: cita.id, pasarela: PASARELA_WOO, estado: 'esperando_pago' } });
+  if (pendiente > 0) throw new AppError('Esta cita espera su pago: primero se paga y luego se puede reprogramar.', 409, 'PAGO_PENDIENTE');
+  if (cita.estadoPago !== 'completo' && requierePagoPrevio(fecha)) {
+    throw new AppError('Los sábados y domingos se pagan al reservar: para pasar la cita a ese día, cancélala y haz una reserva nueva.', 409, 'PAGO_PREVIO_REQUERIDO');
+  }
+}
+
 /** Mueve con PATCH /citas/:id/mover. Devuelve false si ya estaba en ese horario. */
-async function mover(cita: CitaG, fecha: string, horaInicio: string, o: { ref: string; audit: { entidad: string; entidadId: string; despues: Record<string, unknown> }; meta: Meta }) {
+async function mover(cita: CitaG, fecha: string, horaInicio: string, o: { canal: string; ref: string; audit: { entidad: string; entidadId: string; despues: Record<string, unknown> }; meta: Meta }) {
   exigirModificable(cita);
   const fechaActual = fechaAStr(cita.fecha);
   if (fechaActual === fecha && cita.horaInicio === horaInicio) return false;
+  await exigirPagoPrevioAlMover(cita, fecha, o.canal);
 
   // La hora tiene que ser una de las que ofrece GET /horas. Excepción: el mismo día, a una hora que se cruza con la propia
   // cita (p. ej. 30 min después): /horas la ve «ocupada» por ella misma; ahí decide la Agenda al mover.
@@ -106,7 +127,7 @@ async function mover(cita: CitaG, fecha: string, horaInicio: string, o: { ref: s
 async function reservaConCita(codigo: string, canal: string) {
   const r = await prisma.reservaWeb.findFirst({ where: { codigo, canal } });
   if (!r) throw new AppError('Reserva no encontrada', 404, 'RESERVA_NO_ENCONTRADA');
-  const cita = r.estado === 'confirmada' && r.citaId ? await prisma.cita.findUnique({ where: { id: r.citaId }, select: SELECT_CITA }) : null;
+  const cita = (r.estado === 'confirmada' || r.estado === 'esperando_pago') && r.citaId ? await prisma.cita.findUnique({ where: { id: r.citaId }, select: SELECT_CITA }) : null;
   if (!cita || cita.deletedAt) throw new AppError('Esta reserva no tiene una cita vigente en la agenda', 409, 'SIN_CITA');
   return { r, cita };
 }
@@ -123,7 +144,7 @@ export async function cancelarReserva(codigo: string, canal: string, motivo: str
 
 export async function reprogramarReserva(codigo: string, canal: string, fecha: string, horaInicio: string, meta: Meta = {}) {
   const { r, cita } = await reservaConCita(codigo, canal);
-  const hecho = await mover(cita, fecha, horaInicio, { ref: codigo, meta, audit: { entidad: 'reserva_web', entidadId: r.id, despues: { codigo, canal } } });
+  const hecho = await mover(cita, fecha, horaInicio, { canal, ref: codigo, meta, audit: { entidad: 'reserva_web', entidadId: r.id, despues: { codigo, canal } } });
   return { ...(await estadoReservaPorCodigo(codigo, canal)), sinCambios: !hecho };
 }
 
@@ -211,6 +232,6 @@ export async function cancelarCitaPaciente(numeroCita: string, d: DocumentoPacie
 export async function reprogramarCitaPaciente(numeroCita: string, d: DocumentoPaciente, canal: string, fecha: string, horaInicio: string, meta: Meta = {}) {
   const cita = await citaDelPaciente(numeroCita, d);
   const n = formatoNumeroCita(cita.numero);
-  const hecho = await mover(cita, fecha, horaInicio, { ref: n, meta, audit: { entidad: 'cita', entidadId: cita.id, despues: { numeroCita: n, canal } } });
+  const hecho = await mover(cita, fecha, horaInicio, { canal, ref: n, meta, audit: { entidad: 'cita', entidadId: cita.id, despues: { numeroCita: n, canal } } });
   return { ...(await fichaDe(cita.id)), sinCambios: !hecho };
 }

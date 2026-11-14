@@ -2762,6 +2762,8 @@ model ReservaWeb {
   // 29-oct-2026: sin pasarela. canal = por dónde entró (web | whatsapp); referenciaExterna = id que manda el chat para no duplicar un reintento (índice único parcial en la migración).
   canal             String    @default("web")
   referenciaExterna String?
+  // 13-nov-2026: aviso por WhatsApp ~2 h antes de la cita (services/avisoWhatsappService.ts → flujo de GHL). Null = pendiente.
+  avisoWhatsappEn  DateTime?
   expiraEn         DateTime
   pacienteId       String?   @db.Uuid
   citaId           String?   @db.Uuid

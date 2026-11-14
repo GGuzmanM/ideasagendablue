@@ -11,7 +11,7 @@ const citaBase = {
 };
 
 const mockPrisma = {
-  reservaWeb: { findFirst: jest.fn(), findMany: jest.fn() },
+  reservaWeb: { findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn().mockResolvedValue(0) },
   cita: { findUnique: jest.fn(), findMany: jest.fn() },
   paciente: { findFirst: jest.fn() },
 };
@@ -179,6 +179,25 @@ describe('reprogramar', () => {
     expect(mockServicio.llamarAgenda).toHaveBeenCalledWith('PATCH', '/citas/c1/mover', expect.objectContaining({ fecha: manana, horaInicio: '10:15' }));
   });
 
+  it('pago previo pendiente (13-nov-2026) → no se reprograma hasta pagar', async () => {
+    mockPrisma.reservaWeb.count.mockResolvedValueOnce(1);
+    await expect(reprogramarReserva('LB-123456', 'whatsapp', pasado, '15:00')).rejects.toMatchObject({ statusCode: 409, code: 'PAGO_PENDIENTE' });
+    expect(mockServicio.llamarAgenda).not.toHaveBeenCalled();
+  });
+
+  it('cita sin pagar → no pasa a sábado por WhatsApp con la tienda conectada; por la web sí', async () => {
+    const d = new Date(); d.setUTCDate(d.getUTCDate() + ((6 - d.getUTCDay() + 7) % 7 || 7));
+    const sabado = d.toISOString().slice(0, 10);
+    process.env.WOO_URL = 'https://tienda.test'; process.env.WOO_CONSUMER_KEY = 'ck_x'; process.env.WOO_CONSUMER_SECRET = 'cs_x';
+    try {
+      await expect(reprogramarReserva('LB-123456', 'whatsapp', sabado, '15:00')).rejects.toMatchObject({ statusCode: 409, code: 'PAGO_PREVIO_REQUERIDO' });
+      mockServicio.horasLibres.mockResolvedValueOnce(['15:00']);
+      await reprogramarReserva('LB-123456', 'web', sabado, '15:00');
+      expect(mockServicio.llamarAgenda).toHaveBeenCalledWith('PATCH', '/citas/c1/mover', expect.objectContaining({ fecha: sabado }));
+    } finally {
+      delete process.env.WOO_URL; delete process.env.WOO_CONSUMER_KEY; delete process.env.WOO_CONSUMER_SECRET;
+    }
+  });
   it('misma fecha y hora → sin cambios', async () => {
     const r = await reprogramarReserva('LB-123456', 'whatsapp', manana, '10:00');
     expect(r.sinCambios).toBe(true);

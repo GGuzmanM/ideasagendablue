@@ -5,7 +5,8 @@
  * Flujo: catálogo → días/horas libres → confirmar: se registra al paciente (si no existe) y se CREA LA CITA en la
  * Agenda en ese momento (canal «web» o «whatsapp», pago pendiente: paga en la sede) con el MISMO endpoint que usa
  * recepción (POST /citas), así hereda todas sus reglas (anti doble reserva, almuerzos, permisos, correo de reserva,
- * tiempo real, auditoría). Ya no hay apartado de horario ni cobro en línea.
+ * tiempo real, auditoría). Cobro en línea solo en dos casos: Niubiz en la página (pago.ts, apagado por defecto) y el pago previo de
+ * sábado y domingo del chat de WhatsApp por la tienda WooCommerce (woocommerce.ts + pagoPrevio.ts, apagado sin WOO_* en agenda.env).
  *
  * Disponibilidad: la de siempre (calcularDisponibilidad) desglosada por profesional. Nunca se exponen nombres de
  * profesionales ni datos de otros pacientes. La página pública queda inerte salvo RESERVA_WEB_HABILITADA=1.
@@ -21,6 +22,10 @@ import { intentoConToken, enlazarReserva } from './intentos';
 import type { TipoDocumentoReserva } from './validaciones';
 import { precioWebEnSede, aNumero } from './precios';
 import { sedesQueOfrecen, claveOculta } from './visibilidad';
+import { MINUTOS_PAGO, requierePagoPrevio, crearPedidoWoo, cancelarPedidoWoo, type PedidoWoo } from './woocommerce';
+
+/** `pasarela` de las reservas con pago previo por WooCommerce (sábado y domingo, chat de WhatsApp; ver pagoPrevio.ts). */
+export const PASARELA_WOO = 'woocommerce';
 
 const num = (v: string | undefined, def: number) => (v && Number.isFinite(Number(v)) ? Number(v) : def);
 const DIAS_MAX = () => num(process.env.RESERVA_WEB_DIAS_MAX, 30);
@@ -125,6 +130,11 @@ function validarVentana(fecha: string) {
 
 /** Horas libres (HH:MM) para ese servicio, juntando a todos los profesionales. */
 export async function horasLibres(sedeId: string, servicioId: string, fecha: string): Promise<string[]> {
+  return (await horasConCupos(sedeId, servicioId, fecha)).map((h) => h.hora);
+}
+
+/** Igual que horasLibres, con `cupos` = cuántos pacientes caben a la vez en esa hora (especialistas libres, menos los apartados). */
+export async function horasConCupos(sedeId: string, servicioId: string, fecha: string): Promise<{ hora: string; cupos: number }[]> {
   validarVentana(fecha);
   const servicio = await prisma.servicio.findUnique({ where: { id: servicioId }, select: { unidadNegocioId: true, duracionMinutos: true } });
   if (!servicio) return [];
@@ -143,10 +153,14 @@ export async function horasLibres(sedeId: string, servicioId: string, fecha: str
 
   // Horarios APARTADOS por un pago en línea en curso (services/reservaWeb/pago.ts): mientras el paciente paga, esa hora no se ofrece a otro.
   // Cada apartado ocupa a UN profesional durante la duración de su servicio: se descuenta de las horas que se le cruzan.
+  // El pago previo del chat (WooCommerce, pagoPrevio.ts) NO cuenta: esa reserva ya tiene su cita creada, que ya ocupa la hora.
   const apartadas = await prisma.reservaWeb.findMany({
     where: {
       sedeId, fecha: fechaDb(fecha), unidadNegocioId: servicio.unidadNegocioId,
-      OR: [{ estado: 'esperando_pago', expiraEn: { gt: new Date() } }, { estado: 'autorizando' }],
+      AND: [
+        { OR: [{ estado: 'esperando_pago', expiraEn: { gt: new Date() } }, { estado: 'autorizando' }] },
+        { OR: [{ pasarela: null }, { pasarela: { not: PASARELA_WOO } }] },
+      ],
     },
     select: { horaInicio: true, duracionMinutos: true },
   });
@@ -155,11 +169,12 @@ export async function horasLibres(sedeId: string, servicioId: string, fecha: str
     return apartadas.filter((a) => { const ai = timeToMinutes(a.horaInicio); return ai < fin && ini < ai + a.duracionMinutos; }).length;
   };
   const corte = fecha === hoyLimaStr() ? minutosAhoraLima(new Date()) + ANTICIPACION_MIN() : -1;
-  const out: string[] = [];
+  const out: { hora: string; cupos: number }[] = [];
   for (const [hora, libres] of libresPorHora) {
-    if (libres - cruzan(hora) > 0 && timeToMinutes(hora) >= corte) out.push(hora);
+    const cupos = libres - cruzan(hora);
+    if (cupos > 0 && timeToMinutes(hora) >= corte) out.push({ hora, cupos });
   }
-  return out.sort((a, b) => timeToMinutes(a) - timeToMinutes(b));
+  return out.sort((a, b) => timeToMinutes(a.hora) - timeToMinutes(b.hora));
 }
 
 const cacheDias = new Map<string, { vence: number; valor: { fecha: string; horas: number }[] }>();
@@ -193,6 +208,9 @@ export interface NuevaReservaWeb {
 export interface OrigenReserva {
   /** Valor de un canal de la Agenda: «web» (página) o «whatsapp» (chat). */
   canal: string;
+  /** true = viene de una API de integración con llave (web o WhatsApp, routes/reservaChat.ts), no de la página pública.
+   *  Todas sus peticiones salen del servidor del cliente (misma IP): no aplica el freno por conexión de la página. */
+  conLlave?: boolean;
   /** Id que manda el chat para que un reintento de la misma petición no cree otra cita. */
   referencia?: string | null;
   ip?: string; userAgent?: string;
@@ -247,15 +265,15 @@ export async function llamarAgenda(metodo: 'POST' | 'PATCH', ruta: string, cuerp
 }
 
 /** Crea la cita con el mismo endpoint de la Agenda (POST /citas) usando la llave interna de la reserva web. */
-export async function crearCitaEnAgenda(p: { pacienteId: string; unidadNegocioId: string; subcategoriaId: string | null; codigo: string; monto: number; claveIdempotencia: string; pago?: { transaccionId: string } }, d: NuevaReservaWeb, canal: string) {
+export async function crearCitaEnAgenda(p: { pacienteId: string; unidadNegocioId: string; subcategoriaId: string | null; codigo: string; monto: number; claveIdempotencia: string; pago?: { transaccionId: string }; comentario?: string }, d: NuevaReservaWeb, canal: string) {
   const dondePaga = canal === 'web' ? 'por internet' : `por ${canal}`;
   const resp = await llamarAgenda('POST', '/citas', {
     pacienteId: p.pacienteId, sedeId: d.sedeId, unidadNegocioId: p.unidadNegocioId, servicioId: d.servicioId,
     ...(p.subcategoriaId ? { subcategoriaId: p.subcategoriaId } : {}),
     fecha: d.fecha, horaInicio: d.horaInicio, canal, estadoPago: p.pago ? 'completo' : 'pendiente',
-    comentarioRecepcion: p.pago
+    comentarioRecepcion: p.comentario ?? (p.pago
       ? `Reserva ${p.codigo}: pagó S/ ${p.monto.toFixed(2)} por internet con tarjeta (Niubiz, operación ${p.pago.transaccionId}).`
-      : `Reserva ${p.codigo}: reservó ${dondePaga} sin pago en línea; paga S/ ${p.monto.toFixed(2)} en la sede.`,
+      : `Reserva ${p.codigo}: reservó ${dondePaga} sin pago en línea; paga S/ ${p.monto.toFixed(2)} en la sede.`),
   }, { 'Idempotency-Key': p.claveIdempotencia });
   const cuerpo = await resp.json().catch(() => ({})) as { id?: string; message?: string; error?: string };
   if (!resp.ok || !cuerpo.id) {
@@ -272,26 +290,45 @@ async function nombreCanalValido(canal: string) {
   if (!c) throw new AppError(`El canal «${canal}» no existe en la Agenda`, 400, 'CANAL_INVALIDO');
 }
 
+/** Pago previo pendiente (sábado y domingo por el chat): enlace de la tienda y hasta cuándo se puede pagar. */
+export interface PagoPendiente { url: string; expiraEn: string; minutos: number; monto: number }
+
 export interface ReservaCreada {
-  codigo: string; token: string; estado: 'confirmada'; citaId: string; repetida: boolean;
+  /** `confirmada` = lista. `esperando_pago` = la cita está apartada y falta pagar (enlace en `pago`). Al repetir una `referencia`
+   *  vencida o cerrada vuelve su estado tal cual (`expirada`, `reembolsar`): para reservar de nuevo se usa otra referencia. */
+  codigo: string; token: string; estado: string; citaId: string; repetida: boolean;
   /** N.º de la CITA que creó esta reserva («C-000123», 11-nov-2026). `codigo` es el de la reserva; este, el de la cita en la agenda. */
   numeroCita: string | null;
   fecha: string; horaInicio: string; duracionMinutos: number; monto: number; moneda: string;
   sede: { nombre: string; direccion: string | null } | null; servicio: string; variante: string | null;
+  pago?: PagoPendiente;
 }
 
-async function detalleDe(r: { codigo: string; tokenConsulta: string; citaId: string | null; fecha: Date; horaInicio: string; duracionMinutos: number; monto: unknown; moneda: string; sedeId: string; servicioId: string; subcategoriaId: string | null }, repetida: boolean): Promise<ReservaCreada> {
+/** Enlace de pago de una reserva que espera el pago previo y aún no vence (null si no aplica). */
+export function pagoPendienteDe(r: { estado: string; pasarela: string | null; pagoDetalle: unknown; expiraEn: Date; monto: unknown }): PagoPendiente | null {
+  if (r.estado !== 'esperando_pago' || r.pasarela !== PASARELA_WOO || r.expiraEn <= new Date()) return null;
+  const url = (r.pagoDetalle as { url?: string } | null)?.url;
+  return url ? { url, expiraEn: r.expiraEn.toISOString(), minutos: MINUTOS_PAGO, monto: Number(r.monto) } : null;
+}
+
+type ReservaFila = NonNullable<Awaited<ReturnType<typeof prisma.reservaWeb.findFirst>>>;
+
+async function detalleDe(r: ReservaFila, repetida: boolean): Promise<ReservaCreada> {
   const [sede, servicio, variante, cita] = await Promise.all([
     prisma.sede.findUnique({ where: { id: r.sedeId }, select: { nombre: true, direccion: true } }),
     prisma.servicio.findUnique({ where: { id: r.servicioId }, select: { nombre: true } }),
     r.subcategoriaId ? prisma.subcategoriaServicio.findUnique({ where: { id: r.subcategoriaId }, select: { nombre: true } }) : Promise.resolve(null),
     r.citaId ? prisma.cita.findUnique({ where: { id: r.citaId }, select: { numero: true } }) : Promise.resolve(null),
   ]);
+  const pago = pagoPendienteDe(r);
+  // Venció el plazo y el mantenimiento (cada minuto) aún no la cerró: ya no se ofrece pagar.
+  const estado = r.estado === 'esperando_pago' && r.pasarela === PASARELA_WOO && !pago ? 'expirada' : r.estado;
   return {
-    codigo: r.codigo, token: r.tokenConsulta, estado: 'confirmada', citaId: r.citaId ?? '', repetida,
+    codigo: r.codigo, token: r.tokenConsulta, estado, citaId: r.citaId ?? '', repetida,
     numeroCita: cita ? formatoNumeroCita(cita.numero) : null,
     fecha: fechaAStr(r.fecha), horaInicio: r.horaInicio, duracionMinutos: r.duracionMinutos, monto: Number(r.monto), moneda: r.moneda,
     sede, servicio: servicio?.nombre ?? '', variante: variante?.nombre ?? null,
+    ...(pago ? { pago } : {}),
   };
 }
 
@@ -300,13 +337,13 @@ export async function reservar(d: NuevaReservaWeb, o: OrigenReserva): Promise<Re
   const intento = o.intentoId && o.intentoToken ? await intentoConToken(o.intentoId, o.intentoToken, false) : null;
   const { servicio, variante, monto } = await servicioReservable(d.sedeId, d.servicioId, d.subcategoriaId);
 
-  // Freno de abuso de la página pública (el chat entra con llave y tiene su propio límite): pocas reservas por
-  // documento y por conexión en 24 h.
+  // Freno de abuso del canal web: pocas reservas por documento en 24 h y, solo en la página pública, por conexión
+  // (la API web con llave sale siempre desde el mismo servidor y ya tiene su propio límite por llave).
   if (o.canal === 'web') {
     const desde = new Date(Date.now() - 24 * 3_600_000);
     const [porDoc, porIp] = await Promise.all([
       prisma.reservaWeb.count({ where: { canal: 'web', tipoDocumento: d.tipoDocumento, numeroDocumento: d.numeroDocumento, estado: 'confirmada', creadoEn: { gt: desde } } }),
-      o.ip ? prisma.reservaWeb.count({ where: { canal: 'web', ip: o.ip, estado: 'confirmada', creadoEn: { gt: desde } } }) : Promise.resolve(0),
+      o.ip && !o.conLlave ? prisma.reservaWeb.count({ where: { canal: 'web', ip: o.ip, estado: 'confirmada', creadoEn: { gt: desde } } }) : Promise.resolve(0),
     ]);
     if (porDoc >= 3 || porIp >= 8) throw new AppError('Ya hiciste varias reservas hoy. Si necesitas otra, comunícate con nosotros.', 429, 'DEMASIADAS_RESERVAS');
   }
@@ -316,40 +353,63 @@ export async function reservar(d: NuevaReservaWeb, o: OrigenReserva): Promise<Re
     // Un solo registro a la vez por sede y día: dos personas no pueden tomar el último cupo al mismo tiempo.
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`reserva-web|${d.sedeId}|${d.fecha}`}))`;
     if (o.referencia) {
-      const previa = await tx.reservaWeb.findFirst({ where: { canal: o.canal, referenciaExterna: o.referencia, estado: 'confirmada' } });
+      // La misma referencia = la misma petición: se devuelve lo que pasó con ella (confirmada, esperando el pago o ya vencida).
+      const previa = await tx.reservaWeb.findFirst({ where: { canal: o.canal, referenciaExterna: o.referencia } });
       if (previa) return { previa };
     }
     const libres = await horasLibres(d.sedeId, d.servicioId, d.fecha);
     if (!libres.includes(d.horaInicio)) throw new AppError('Esa hora acaba de ocuparse. Elige otra.', 409, 'HORA_NO_DISPONIBLE');
     const pacienteId = await pacienteDeReserva(d, o.canal, codigo);
-    const citaId = await crearCitaEnAgenda({
-      pacienteId, unidadNegocioId: servicio.unidadNegocioId, subcategoriaId: variante.id, codigo, monto,
-      claveIdempotencia: o.referencia ? `reserva-${o.canal}-${crypto.createHash('sha256').update(o.referencia).digest('hex').slice(0, 40)}` : `reserva-web-${codigo}`,
-    }, d, o.canal);
-    return { pacienteId, citaId };
+
+    // PAGO PREVIO (13-nov-2026): sábado y domingo por el chat de WhatsApp, si la tienda está conectada (woocommerce.ts).
+    // El pedido se crea ANTES que la cita: si la tienda no responde no se crea nada (502 PAGO_NO_DISPONIBLE) y no queda una
+    // cita sin forma de pagarla. La página /reserva y la API web NO cobran (se paga en la sede).
+    let pedido: PedidoWoo | null = null;
+    if (o.canal === 'whatsapp' && requierePagoPrevio(d.fecha)) {
+      const sede = await tx.sede.findUnique({ where: { id: d.sedeId }, select: { nombre: true } });
+      pedido = await crearPedidoWoo({
+        codigo, monto,
+        descripcion: `Cita Limablue · ${servicio.nombre}${variante.id ? ` · ${variante.nombre}` : ''} · ${sede?.nombre ?? ''} · ${d.fecha} ${d.horaInicio} (${codigo})`,
+        nombres: d.nombres.trim(), apellidos: `${d.apellidoPaterno.trim()} ${d.apellidoMaterno?.trim() ?? ''}`.trim(),
+        telefono: d.telefono, email: d.email,
+      });
+    }
+    let citaId: string;
+    try {
+      citaId = await crearCitaEnAgenda({
+        pacienteId, unidadNegocioId: servicio.unidadNegocioId, subcategoriaId: variante.id, codigo, monto,
+        claveIdempotencia: o.referencia ? `reserva-${o.canal}-${crypto.createHash('sha256').update(o.referencia).digest('hex').slice(0, 40)}` : `reserva-web-${codigo}`,
+        ...(pedido ? { comentario: `Reserva ${codigo}: PAGO PREVIO de S/ ${monto.toFixed(2)} por la tienda en línea (pedido #${pedido.id}), PENDIENTE. Si no paga en ${MINUTOS_PAGO} minutos, la cita se cancela sola.` } : {}),
+      }, d, o.canal);
+    } catch (e) {
+      if (pedido) await cancelarPedidoWoo(pedido.id).catch(() => undefined);
+      throw e;
+    }
+    return { pacienteId, citaId, pedido };
   }, { timeout: 30_000, maxWait: 10_000 });
 
   if ('previa' in hecho && hecho.previa) return detalleDe(hecho.previa, true);
 
-  const { pacienteId, citaId } = hecho as { pacienteId: string; citaId: string };
+  const { pacienteId, citaId, pedido } = hecho as { pacienteId: string; citaId: string; pedido: PedidoWoo | null };
   const tokenConsulta = crypto.randomBytes(24).toString('hex');
   const reserva = await prisma.reservaWeb.create({
     data: {
-      codigo, tokenConsulta, estado: 'confirmada', canal: o.canal, referenciaExterna: o.referencia ?? null,
+      codigo, tokenConsulta, estado: pedido ? 'esperando_pago' : 'confirmada', canal: o.canal, referenciaExterna: o.referencia ?? null,
       tipoDocumento: d.tipoDocumento, numeroDocumento: d.numeroDocumento,
       nombres: d.nombres.trim(), apellidoPaterno: d.apellidoPaterno.trim(), apellidoMaterno: d.apellidoMaterno?.trim() || null,
       telefono: d.telefono, email: d.email ?? '',
       sedeId: d.sedeId, unidadNegocioId: servicio.unidadNegocioId, servicioId: d.servicioId, subcategoriaId: variante.id,
       fecha: fechaDb(d.fecha), horaInicio: d.horaInicio, duracionMinutos: servicio.duracionMinutos,
-      monto, expiraEn: new Date(), pacienteId, citaId,
+      monto, expiraEn: pedido ? new Date(Date.now() + MINUTOS_PAGO * 60_000) : new Date(), pacienteId, citaId,
+      ...(pedido ? { pasarela: PASARELA_WOO, pagoReferencia: String(pedido.id), pagoEstado: 'pendiente', pagoDetalle: { url: pedido.url, pedido: pedido.id } } : {}),
       ip: o.ip ?? null, userAgent: o.userAgent?.slice(0, 300) ?? null,
     },
   });
   cacheDias.clear();
   if (intento) await enlazarReserva(intento.id, reserva.id, { sedeId: d.sedeId, servicioId: d.servicioId, subcategoriaId: variante.id, fecha: d.fecha, horaInicio: d.horaInicio }).catch(() => undefined);
   void registrarAudit({
-    citaId, accion: 'reserva_web_confirmada', entidad: 'reserva_web', entidadId: reserva.id, sedeId: reserva.sedeId, ip: o.ip, userAgent: o.userAgent,
-    despues: { codigo, canal: o.canal, citaId, fecha: d.fecha, horaInicio: d.horaInicio, servicio: servicio.nombre, variante: variante.nombre, monto },
+    citaId, accion: pedido ? 'reserva_web_esperando_pago' : 'reserva_web_confirmada', entidad: 'reserva_web', entidadId: reserva.id, sedeId: reserva.sedeId, ip: o.ip, userAgent: o.userAgent,
+    despues: { codigo, canal: o.canal, citaId, fecha: d.fecha, horaInicio: d.horaInicio, servicio: servicio.nombre, variante: variante.nombre, monto, ...(pedido ? { pedidoWoo: pedido.id } : {}) },
   });
   return detalleDe(reserva, false);
 }
@@ -373,21 +433,24 @@ export async function estadoReservaPorCodigo(codigo: string, canal: string) {
   return estadoDe(r);
 }
 
-async function estadoDe(r: NonNullable<Awaited<ReturnType<typeof prisma.reservaWeb.findFirst>>>) {
+async function estadoDe(r: ReservaFila) {
   const d = await detalleDe(r, false);
   const cita = r.citaId ? await prisma.cita.findUnique({ where: { id: r.citaId }, select: { estado: true, deletedAt: true, fecha: true, horaInicio: true } }) : null;
   const vigente = !!cita && !cita.deletedAt;
   return {
     codigo: r.codigo, numeroCita: d.numeroCita,
-    estado: r.estado === 'confirmada' && cita && (cita.deletedAt || cita.estado === 'cancelada') ? 'cancelada' : r.estado,
+    estado: (d.estado === 'confirmada' || d.estado === 'esperando_pago') && cita && (cita.deletedAt || cita.estado === 'cancelada') ? 'cancelada' : d.estado,
     citaVigente: vigente && cita!.estado !== 'cancelada', estadoCita: cita?.estado ?? null,
     // Fecha y hora de la CITA (11-nov-2026): si se reprogramó (por el chat o en la Agenda), manda la cita, no la reserva original.
     nombres: r.nombres, fecha: cita ? fechaAStr(cita.fecha) : d.fecha, horaInicio: cita?.horaInicio ?? d.horaInicio, duracionMinutos: d.duracionMinutos,
     // Ids para pedir horas al reprogramar (GET /horas?sedeId&servicioId&fecha).
     sedeId: r.sedeId, servicioId: r.servicioId, subcategoriaId: r.subcategoriaId,
     sede: d.sede, servicio: d.servicio, variante: d.variante, monto: d.monto, moneda: d.moneda,
-    /** true = la reserva se pagó en línea (la cita nace con pago completo); false = se paga en la sede. */
+    /** true = la reserva se pagó en línea (Niubiz en la página o pago previo del chat); false = se paga en la sede. */
     pagado: r.pagoEstado === 'aprobado',
+    // Pago previo del chat (sábado y domingo): pendiente | pagado | rechazado | monto_distinto; `pago` (enlace) solo mientras se puede pagar.
+    // En la base se guarda «aprobado» (igual que Niubiz); hacia el chat sale «pagado», como lo definió el equipo de Ana.
+    ...(r.pasarela === PASARELA_WOO ? { pagoEstado: r.pagoEstado === 'aprobado' ? 'pagado' : r.pagoEstado, ...(d.pago ? { pago: d.pago } : {}) } : {}),
   };
 }
 
@@ -396,9 +459,13 @@ async function estadoDe(r: NonNullable<Awaited<ReturnType<typeof prisma.reservaW
  *  - un apartado de pago que venció sin que el paciente pagara pasa a «expirada» (la hora vuelve a ofrecerse);
  *  - un pago que quedó «autorizando» más de 5 min (el proceso se reinició o Niubiz no respondió) pasa a «reembolsar» con el pago
  *    «incierto»: no se sabe si se cobró, hay que verificarlo en Niubiz.
+ * El pago previo del chat (WooCommerce) NO se cierra aquí: su cita ya existe y hay que cancelarla; lo hace pagoPrevio.ts.
  */
 export async function mantenimientoReservasWeb() {
-  const u = await prisma.reservaWeb.updateMany({ where: { estado: 'esperando_pago', expiraEn: { lt: new Date() } }, data: { estado: 'expirada' } });
+  const u = await prisma.reservaWeb.updateMany({
+    where: { estado: 'esperando_pago', expiraEn: { lt: new Date() }, OR: [{ pasarela: null }, { pasarela: { not: PASARELA_WOO } }] },
+    data: { estado: 'expirada' },
+  });
   const atascadas = await prisma.reservaWeb.updateMany({
     where: { estado: 'autorizando', actualizadoEn: { lt: new Date(Date.now() - 5 * 60_000) } },
     data: { estado: 'reembolsar', pagoEstado: 'incierto', error: 'La autorización del pago no terminó (el servidor se reinició o Niubiz no respondió): verifica en Niubiz si se cobró.' },

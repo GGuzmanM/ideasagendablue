@@ -122,8 +122,16 @@ OTRAS ACCIONES
                                 2 ENCENDER: los pacientes reservan de verdad (se crea la cita; se paga en la sede).
                                 1 VITRINA: se recorre con los horarios reales, pero no crea citas.
                                 0 APAGAR. El corte definitivo la apaga sola.
-- Llave API del chat.bat         crea la llave para que el chat de WhatsApp registre reservas (API /api/v1/integraciones/reservas).
-                                La llave se muestra UNA sola vez: copiala y entregala al proveedor del chat. Ver docs\API-RESERVAS-WHATSAPP.md.
+- Llaves API (web y WhatsApp).bat  crea las llaves de las dos APIs de reservas, cada una con su direccion:
+                                1 WhatsApp -> /api/v1/integraciones/whatsapp    2 Web -> /api/v1/integraciones/reservas
+                                (3 y 4 las desactivan). Crear una reemplaza solo la de ese tipo. La llave se muestra UNA sola vez:
+                                copiala y entregala a su proveedor. Ver docs\API-RESERVAS-WHATSAPP.md.
+- Integraciones (WooCommerce y GHL).bat  extras del chat de WhatsApp (cada uno apagado mientras no se configure):
+                                1 Tienda WooCommerce: los sabados y domingos del chat se pagan antes (10 minutos para pagar
+                                  o la cita se cancela sola). Pide la direccion de la tienda y su clave API REST.
+                                2 Secreto del aviso de pago: genera el secreto y muestra como crear el webhook en WooCommerce.
+                                3 Aviso por WhatsApp 2 h antes de la cita (URL del flujo de GHL).
+                                4 y 5 los apagan. Las claves se escriben a ciegas y solo quedan en agenda.env de este servidor.
 
 
 PROBLEMAS COMUNES

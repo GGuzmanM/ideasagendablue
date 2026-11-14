@@ -38,6 +38,8 @@ import { SelectorLesion, LeyendaLesiones, calcularLeyenda, trazosComoLeyenda, re
 import { MedidorUlcera } from '../components/historiaClinica/MedidorUlcera';
 import { FUENTE_ICONO, FUENTE_LABEL, type EventoZona } from '../utils/historialZonas';
 import { PlantillasDialog } from '../components/historiaClinica/PlantillasDialog';
+import { AceboEsquina, GorritoNavideno, LucesEncabezado, SaludoNavideno } from '../components/navidad/Navidad';
+import { useNavidadVisible } from '../stores/navidadStore';
 import { ResumenPacienteDialog } from '../components/historiaClinica/ResumenPacienteDialog';
 import { ZONAS_PIE, coordZona, zonaPorId } from '../utils/zonasPie';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -87,6 +89,7 @@ export function HistoriaClinicaPage() {
     <div className="flex flex-col h-full overflow-hidden bg-background text-on-surface">
       {/* Top App Bar */}
       <header className="glass-header sticky top-0 z-40 bg-surface/80 border-b border-outline-variant/30 px-grid-gutter h-16 flex justify-between items-center shrink-0">
+        <LucesEncabezado />
         <div className="flex items-center gap-6 min-w-0">
           <button onClick={() => h.navigate(`/pacientes/${p.id}`)} className="flex items-center text-on-surface-variant hover:text-primary transition-colors">
             <span className="material-symbols-outlined mr-2">arrow_back</span><span className="font-body-md font-medium">Ficha</span>
@@ -108,7 +111,8 @@ export function HistoriaClinicaPage() {
         {h.puedeRegistrarBase && (
           <div className="relative">
             <button onClick={() => h.setMostrarCandidatas((v) => !v)} title="Nueva atención" className="min-h-[44px] px-4 lg:px-5 py-2.5 bg-primary text-on-primary font-bold rounded-xl shadow-lg shadow-primary/20 hover:opacity-90 active:scale-95 transition-all flex items-center text-sm whitespace-nowrap">
-              <span className="material-symbols-outlined mr-2 text-base">add_circle</span>Nueva atención
+              {/* Gorrito en el ícono del botón (en el título lo recortaría el «truncate»), como «Nueva cita» de la agenda. */}
+              <span className="relative inline-flex mr-2"><span className="material-symbols-outlined text-base">add_circle</span><GorritoNavideno className="-top-2 -left-1 w-[17px] -rotate-[20deg]" /></span>Nueva atención
             </button>
             {h.mostrarCandidatas && (
               <div className="absolute right-0 mt-2 w-[380px] bg-surface-container-lowest border border-outline-variant/40 rounded-2xl shadow-xl z-50 overflow-hidden">
@@ -135,11 +139,16 @@ export function HistoriaClinicaPage() {
         {/* ── Panel izquierdo ── */}
         <aside className="w-full lg:w-[380px] shrink-0 border-b lg:border-b-0 lg:border-r border-outline-variant/20 bg-surface-container-lowest lg:overflow-y-auto">
           <div className="p-4 lg:p-5 space-y-3 lg:space-y-4">
-            <div className="flex items-start gap-3">
-              <div className="w-12 h-12 lg:w-14 lg:h-14 rounded-2xl bg-primary-fixed flex items-center justify-center text-primary font-bold text-lg shrink-0">{(p.nombres[0] ?? '') + (p.apellidoPaterno[0] ?? '')}</div>
+            <div className="relative flex items-start gap-3">
+              <AceboEsquina className="-top-1 right-0" />
+              <div className="relative w-12 h-12 lg:w-14 lg:h-14 rounded-2xl bg-primary-fixed flex items-center justify-center text-primary font-bold text-lg shrink-0">
+                {(p.nombres[0] ?? '') + (p.apellidoPaterno[0] ?? '')}
+                <GorritoNavideno className="-top-3.5 -left-2.5 w-8 -rotate-[22deg]" />
+              </div>
               <div className="min-w-0">
                 <h2 className="font-headline-sm text-headline-sm font-bold text-on-surface leading-tight">{nombre}</h2>
                 <p className="text-xs text-on-surface-variant mt-0.5">{p.tipoDocumento} {p.numeroDocumento}</p>
+                <SaludoNavideno className="mt-1.5" />
               </div>
             </div>
             <div className="grid grid-cols-3 gap-2 text-xs">
@@ -2054,10 +2063,14 @@ function IndiceVistaUnica({ h }: { h: H }) {
 // 09-oct-2026: `plegable` (puntos 1, 2 y 3) agrega «Ocultar / Mostrar». Oculto = solo no se ve (CSS); el contenido
 // sigue montado, así no se pierde lo que se esté escribiendo.
 function SeccionUnica({ id, n, titulo, plegable = false, children }: { id: SeccionUnicaId; n?: number; titulo: string; plegable?: boolean; children: ReactNode }) {
+  // Modo navideño: el círculo numerado se vuelve una esfera (roja o verde, alternadas) con su gancho dorado.
+  const navidad = useNavidadVisible();
+  const esfera = navidad ? ((n ?? 0) % 2 === 0 ? 'bg-emerald-600' : 'bg-red-600') : 'bg-primary';
   return (
     <section id={`hc-sec-${id}`} className="scroll-mt-32 space-y-3 [&[data-plegada=si]>:not(h2)]:hidden" data-testid={`seccion-${id}`}>
       <h2 className="flex items-center gap-2.5 text-base font-bold text-on-surface">
-        <span className="w-7 h-7 rounded-full bg-primary text-on-primary text-sm flex items-center justify-center shrink-0">
+        <span className={`relative w-7 h-7 rounded-full ${esfera} text-on-primary text-sm flex items-center justify-center shrink-0`}>
+          {navidad && <span aria-hidden className="absolute -top-1 left-1/2 -translate-x-1/2 w-2.5 h-1.5 rounded-sm bg-amber-400 ring-1 ring-amber-600/40" />}
           {n ?? <span className="material-symbols-outlined text-base">{ICONO_SECCION[id] ?? 'monitor_heart'}</span>}
         </span>
         {titulo}

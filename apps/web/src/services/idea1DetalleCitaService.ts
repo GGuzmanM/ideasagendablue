@@ -454,55 +454,84 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
   });
 
   // Cambiar TRATAMIENTO / subcategoría (24-sep-2026): admin en cualquier momento; coordinación, contact center, especial
-  // contact y recepción solo mientras la cita está agendada, confirmada o llegó. No en citas dobles. El servidor valida
-  // lo demás (profesional habilitado, que quepa si dura más, membresía y promoción).
+  // contact y recepción solo mientras la cita está agendada, confirmada o llegó. Cita doble (13-nov-2026): cada servicio
+  // por separado, solo entre los que permite el bloque (Herramientas › Combinaciones). El servidor valida lo demás
+  // (profesional habilitado, que quepa si dura más, membresía y promoción).
   const rolSesion = useAuthStore((s) => s.usuario?.rol) ?? '';
-  const puedeCambiarTratamiento = ROLES_CAMBIAN_TRATAMIENTO.includes(rolSesion) && !cita.slotGrupoId
-    && !['cancelada', 'reprogramada'].includes(estadoNorm)
-    && (rolSesion === 'admin' || ['agendada', 'confirmada', 'llego'].includes(estadoNorm));
+  const puedeCambiarTratamientoDe = (c: Pick<CitaResumen, 'estado'>) => {
+    const e = (c.estado || '').toLowerCase().replace(/\s+/g, '_');
+    return ROLES_CAMBIAN_TRATAMIENTO.includes(rolSesion) && !['cancelada', 'reprogramada'].includes(e)
+      && (rolSesion === 'admin' || ['agendada', 'confirmada', 'llego'].includes(e));
+  };
+  const puedeCambiarTratamiento = !cita.slotGrupoId && puedeCambiarTratamientoDe(cita);
   const [cambiandoTratamiento, setCambiandoTratamiento] = useState(false);
+  // Mitad de la cita doble que se está cambiando (en una cita simple, la propia cita).
+  const [tratObjetivo, setTratObjetivo] = useState<CitaResumen | null>(null);
+  const objetivoTrat = tratObjetivo ?? cita;
+  const esBloqueTrat = !!objetivoTrat.slotGrupoId;
   const [tratServicioId, setTratServicioId] = useState('');
   const [tratSubcategoriaId, setTratSubcategoriaId] = useState('');
-  useEffect(() => { setCambiandoTratamiento(false); }, [cita.id]);
+  useEffect(() => { setCambiandoTratamiento(false); setTratObjetivo(null); }, [cita.id]);
   const { data: serviciosUnidad = [] } = useQuery({
     queryKey: ['servicios', cita.unidadNegocio?.id, 'activos'],
     queryFn: () => serviciosApi.listar({ unidadNegocioId: cita.unidadNegocio!.id, activo: true }),
-    enabled: cambiandoTratamiento && !!cita.unidadNegocio?.id,
+    enabled: cambiandoTratamiento && !esBloqueTrat && !!cita.unidadNegocio?.id,
     staleTime: 5 * 60_000,
   });
   const { data: competenciasTrat = [] } = useQuery({
     queryKey: ['competencias', cita.unidadNegocio?.id],
     queryFn: () => competenciasApi.listar({ unidadNegocioId: cita.unidadNegocio!.id }),
-    enabled: cambiandoTratamiento && !!cita.unidadNegocio?.id,
+    enabled: cambiandoTratamiento && !esBloqueTrat && !!cita.unidadNegocio?.id,
     staleTime: 10 * 60_000,
   });
+  // Cita doble: el servidor ya filtra por las reglas del bloque y por lo que el profesional de esa mitad tiene habilitado.
+  const { data: opcionesBloque } = useQuery({
+    queryKey: ['tratamiento-opciones', objetivoTrat.id],
+    queryFn: () => citasApi.opcionesTratamiento(objetivoTrat.id),
+    enabled: cambiandoTratamiento && esBloqueTrat,
+    staleTime: 30_000,
+  });
+  const fuenteTrat: { id: string; nombre: string; duracionMinutos: number; activo?: boolean; subcategorias?: { id: string; nombre: string }[] }[] =
+    esBloqueTrat ? (opcionesBloque?.servicios ?? []) : serviciosUnidad;
   // Solo los tratamientos que el profesional de la cita tiene habilitados (el actual siempre aparece).
   const opcionesTratamiento = (() => {
+    if (esBloqueTrat) return fuenteTrat;
     const habilitados = new Set(competenciasTrat.filter((c) => c.activa && c.profesional?.id === cita.profesionalId).map((c) => c.servicio?.id));
     return serviciosUnidad
       .filter((s) => s.activo !== false && (habilitados.size === 0 || habilitados.has(s.id) || s.id === cita.servicio?.id))
       .sort((a, b) => a.nombre.localeCompare(b.nombre));
   })();
-  const subcategoriasTrat = serviciosUnidad.find((s) => s.id === tratServicioId)?.subcategorias ?? [];
-  const abrirCambioTratamiento = () => {
-    setTratServicioId(cita.servicio?.id ?? '');
-    setTratSubcategoriaId(cita.subcategoria?.id ?? '');
+  const subcategoriasTrat = fuenteTrat.find((s) => s.id === tratServicioId)?.subcategorias ?? [];
+  const abrirCambioTratamiento = (objetivo?: CitaResumen) => {
+    const o = objetivo ?? cita;
+    setTratObjetivo(objetivo ?? null);
+    setTratServicioId(o.servicio?.id ?? '');
+    setTratSubcategoriaId(o.subcategoria?.id ?? '');
     setCambiandoTratamiento(true);
   };
   const elegirTratServicio = (id: string) => {
     setTratServicioId(id);
-    const subs = serviciosUnidad.find((s) => s.id === id)?.subcategorias ?? [];
+    const subs = fuenteTrat.find((s) => s.id === id)?.subcategorias ?? [];
     setTratSubcategoriaId(subs.length === 1 ? subs[0]!.id : '');
   };
-  const tratamientoSinCambios = tratServicioId === (cita.servicio?.id ?? '') && (tratSubcategoriaId || '') === (cita.subcategoria?.id ?? '');
+  const tratamientoSinCambios = tratServicioId === (objetivoTrat.servicio?.id ?? '') && (tratSubcategoriaId || '') === (objetivoTrat.subcategoria?.id ?? '');
   const puedeGuardarTratamiento = !!tratServicioId && !tratamientoSinCambios && (subcategoriasTrat.length === 0 || !!tratSubcategoriaId);
+  // Etiqueta de la mitad en el formulario («1.er servicio» / «2.º servicio»), solo en citas dobles.
+  const tratEtiqueta = esBloqueTrat ? (objetivoTrat.slotRol === 'SECUNDARIO' ? '2.º servicio' : '1.er servicio') : null;
   const tratamientoMutation = useMutation({
-    mutationFn: () => citasApi.cambiarTratamiento(cita.id, { servicioId: tratServicioId, subcategoriaId: tratSubcategoriaId || null }),
+    mutationFn: () => citasApi.cambiarTratamiento(objetivoTrat.id, { servicioId: tratServicioId, subcategoriaId: tratSubcategoriaId || null }),
     onSuccess: (c) => {
-      setCitaActiva((prev) => ({ ...prev, ...c, paciente: { ...prev.paciente, ...c.paciente } }));
+      if (c.id === cita.id) setCitaActiva((prev) => ({ ...prev, ...c, paciente: { ...prev.paciente, ...c.paciente } }));
       setCambiandoTratamiento(false);
+      setTratObjetivo(null);
       invalidarAgenda(qc);
       qc.invalidateQueries({ queryKey: ['cita-detalle', cita.id] });
+      if (c.slotGrupoId) {
+        // Cita doble: la otra mitad (precio del bloque) y la lista de ambas se refrescan.
+        qc.invalidateQueries({ queryKey: ['combo-sibling'] });
+        qc.invalidateQueries({ queryKey: ['cita-detalle'] });
+        qc.invalidateQueries({ queryKey: ['tratamiento-opciones'] });
+      }
       toast.success(`Tratamiento cambiado a ${c.servicio?.nombre ?? 'el nuevo servicio'}${c.subcategoria ? ` · ${c.subcategoria.nombre}` : ''}`);
     },
     onError: (e: Error) => toast.error(e.message),
@@ -654,6 +683,9 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
     atendioOpciones,
     atendidoPorMutation,
     puedeCambiarTratamiento,
+    puedeCambiarTratamientoDe,
+    tratObjetivo: objetivoTrat,
+    tratEtiqueta,
     cambiandoTratamiento,
     setCambiandoTratamiento,
     abrirCambioTratamiento,

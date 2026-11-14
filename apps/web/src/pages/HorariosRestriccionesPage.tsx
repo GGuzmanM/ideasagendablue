@@ -11,6 +11,7 @@ import { AlmuerzosPage } from './herramientas/AlmuerzosPage';
 import { HorariosPage } from './herramientas/HorariosPage';
 import { useAuthStore } from '../stores/authStore';
 import { cn } from '../utils/cn';
+import { GorritoNavideno, LucesEncabezado } from '../components/navidad/Navidad';
 
 export function HorariosRestriccionesPage() {
   const puedeGestionarPersonal = useAuthStore((s) => s.tiene('horarios.editar'));
@@ -32,9 +33,11 @@ export function HorariosRestriccionesPage() {
     <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-surface-container-lowest/50">
       {/* Header Superior del Módulo */}
       <header className="px-6 py-5 bg-surface-container-lowest border-b border-outline-variant/30 sticky top-0 z-20 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <LucesEncabezado />
         <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-[#0044ab]/10 text-[#0044ab] flex items-center justify-center font-bold shrink-0">
+          <div className="relative w-12 h-12 rounded-2xl bg-[#0044ab]/10 text-[#0044ab] flex items-center justify-center font-bold shrink-0">
             <span className="material-symbols-outlined text-2xl">schedule</span>
+            <GorritoNavideno className="-top-3.5 -left-2.5 w-8 -rotate-[22deg]" />
           </div>
           <div>
             <div className="flex items-center gap-2">

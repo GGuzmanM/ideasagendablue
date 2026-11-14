@@ -8,6 +8,8 @@ import { nombreMedico } from '../api/medicoCita';
 import { Skeleton } from '../components/ui/Skeleton';
 import { useVisorPacientes, TODAS_SEDES, type FiltroVisor } from '../services/visorPacientesService';
 import { cn } from '../utils/cn';
+import { AceboEsquina, GorritoNavideno, LucesEncabezado, SaludoNavideno } from '../components/navidad/Navidad';
+import { useNavidadVisible } from '../stores/navidadStore';
 
 const BTN = 'min-h-[40px] lg:min-h-0 px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 disabled:opacity-50 transition-colors';
 const BTN_SEC = `${BTN} border border-outline-variant text-on-surface hover:bg-surface-container-high`;
@@ -107,13 +109,17 @@ function SelectorFechasVisor({ v }: { v: ReturnType<typeof useVisorPacientes> })
 
 export function VisorPacientesPage() {
   const v = useVisorPacientes();
+  const navidad = useNavidadVisible();
 
   return (
-    <div className="p-4 lg:p-6 space-y-4 max-w-[1200px] overflow-y-auto h-full" data-testid="visor-pacientes">
-      <header className="flex items-center justify-between gap-3 flex-wrap">
+    <div className="relative p-4 lg:p-6 space-y-4 max-w-[1200px] overflow-y-auto h-full" data-testid="visor-pacientes">
+      {/* Aquí la guirnalda cuelga del borde de arriba de la pantalla: bajo el título vienen los filtros y los taparía. */}
+      <LucesEncabezado className="top-0" />
+      <header className="relative flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="font-headline-md text-headline-md font-bold text-on-surface flex items-center gap-2">
-            <span className="material-symbols-outlined text-primary">clinical_notes</span>Visor de Pacientes
+            <span className="relative inline-flex"><span className="material-symbols-outlined text-primary">clinical_notes</span><GorritoNavideno className="-top-2.5 -left-1.5 w-[19px] -rotate-[20deg]" /></span>Visor de Pacientes
+            <SaludoNavideno className="ml-1" />
           </h1>
           <p className="text-xs text-on-surface-variant mt-0.5">
             {v.esHoy
@@ -175,11 +181,17 @@ export function VisorPacientesPage() {
 
       {v.cargando ? <Skeleton className="h-40 w-full" /> : v.error ? <p className="text-sm text-rose-700">{v.error.message}</p> : (
         <>
-          <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4 lg:p-5">
+          <section className="relative rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4 lg:p-5">
+            <AceboEsquina />
             <h2 className="font-headline-sm text-headline-sm font-semibold text-on-surface flex items-center gap-2 mb-3">
               <span className="material-symbols-outlined text-emerald-600">how_to_reg</span>En la sede ({v.enSede.length})
             </h2>
-            {v.enSede.length === 0 && <p className="text-sm text-on-surface-variant py-4 text-center">Ningún paciente en espera ni en atención ahora mismo.</p>}
+            {v.enSede.length === 0 && (
+              <p className="text-sm text-on-surface-variant py-4 text-center">
+                {navidad && <span aria-hidden className="block text-3xl mb-1">☃️</span>}
+                Ningún paciente en espera ni en atención ahora mismo.
+              </p>
+            )}
             <div className="space-y-2">
               {v.enSede.map((c) => {
                 const a = v.acciones(c);
@@ -240,9 +252,10 @@ export function VisorPacientesPage() {
             </div>
           </section>
 
-          <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4 lg:p-5">
+          <section className="relative rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4 lg:p-5">
+            <AceboEsquina />
             <button onClick={() => v.setVerAtendidos(!v.verAtendidos)} className="w-full flex items-center gap-2 text-left">
-              <span className="material-symbols-outlined text-on-surface-variant">task_alt</span>
+              <span className="material-symbols-outlined text-on-surface-variant">{navidad ? 'featured_seasonal_and_gifts' : 'task_alt'}</span>
               <h2 className="font-headline-sm text-headline-sm font-semibold text-on-surface flex-1">Atendidos{v.esHoy ? ' hoy' : ''} ({v.atendidos.length})</h2>
               <span className="material-symbols-outlined text-on-surface-variant">{v.verAtendidos ? 'expand_less' : 'expand_more'}</span>
             </button>

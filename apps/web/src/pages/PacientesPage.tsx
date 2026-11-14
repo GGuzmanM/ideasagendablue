@@ -24,6 +24,7 @@ import { etiquetaDistrito } from '../data/ubigeo';
 import { UBIGEO_EXTRANJERO, nombrePais } from '@limablue/shared';
 import { usePacientesBusqueda, useFichaPaciente, calcularEdad } from '../services/pacientesService';
 import { useCanales } from '../hooks/useCanales';
+import { AceboTitulo, GorritoNavideno, LucesEncabezado } from '../components/navidad/Navidad';
 
 // ─── Lista/búsqueda ───────────────────────────────────────────────────────────
 
@@ -34,10 +35,11 @@ export function PacientesPage() {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      <header className="bg-white border-b border-slate-200 px-6 py-4">
+      <header className="relative bg-white border-b border-slate-200 px-6 py-4">
+        <LucesEncabezado />
         <div className="flex items-center justify-between gap-4">
           <div className="flex-1 min-w-0">
-            <h1 className="text-lg font-bold text-slate-900">Pacientes</h1>
+            <h1 className="text-lg font-bold text-slate-900 flex items-center gap-1.5">Pacientes<AceboTitulo /></h1>
             <div className="mt-3 max-w-lg">
               <div className="relative">
                 <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -233,6 +235,7 @@ export function FichaPacientePage() {
     <div className="flex flex-col h-full overflow-hidden bg-background text-on-surface">
       {/* Top App Bar */}
       <header className="glass-header sticky top-0 z-40 bg-surface/80 border-b border-outline-variant/30 px-grid-gutter h-16 flex justify-between items-center shrink-0">
+        <LucesEncabezado />
         <div className="flex items-center gap-6">
           <button
             onClick={() => navigate('/pacientes')}
@@ -254,8 +257,9 @@ export function FichaPacientePage() {
           {/* Patient Profile Header */}
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-outline-variant/20">
             <div className="flex items-start gap-5">
-              <div className="w-24 h-24 rounded-2xl bg-primary-fixed flex items-center justify-center text-primary font-bold text-headline-md shrink-0">
+              <div className="relative w-24 h-24 rounded-2xl bg-primary-fixed flex items-center justify-center text-primary font-bold text-headline-md shrink-0">
                 {iniciales || '—'}
+                <GorritoNavideno className="-top-4 -left-3 w-11 -rotate-[22deg]" />
               </div>
               <div>
                 <div className="flex items-center gap-3">
