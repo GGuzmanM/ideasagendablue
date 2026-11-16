@@ -35,6 +35,11 @@ Reemplaza un ERP de escritorio de 14 años. 5 sedes, ~400 citas diarias, 40 pod�
   Por DOCUMENTO (todas las citas próximas, también las de recepción): `POST /pacientes/citas {tipoDocumento?, numeroDocumento}` y
   `POST /citas/:numeroCita/cancelar|reprogramar` con el documento del dueño (si no coincide, 404). POST para no dejar el DNI en URLs.
   Solo DNI, sin comprobar el celular (decisión del 11-nov-2026: la verificación de la persona la hace el chat). Auditoría: `chat_cita_cancelada` / `chat_cita_reprogramada`.
+  **Contrato de la nota de Ana (14-nov-2026, compatibilidad con su paquete «CancelarReprogramar»)**: `GET /citas-paciente?numeroDocumento=` (= POST
+  /pacientes/citas; tipo de documento opcional) y `POST /:codigo/cancelar|reprogramar` con `numeroDocumento` en el cuerpo → camino por PACIENTE
+  (`cancelarCompat` / `reprogramarCompat` en `gestion.ts`): `codigo` = `LB-…` de cualquier canal, id de la cita o `C-…`; respuestas con `repetida`,
+  `codigoAnterior` (reprogramar 201). La cita se MUEVE (su versión creaba otra). Cada cita listada trae `codigo`, `estadoCita`, `puedeCancelar`,
+  `puedeReprogramar`, `puedeCambiar` y `motivo`. Sus reglas extra (2 h, paquete, profesional pedido…) NO se adoptaron: las decide el chat.
   Qué servicios se ofrecen y a qué precio: Administración › Reserva web (`/admin/reserva-web`; `servicios.reservaOnline` + `precioOnline` y, por
   tipo, `subcategorias_servicio.reservaOnline` + `precioOnline`; vacío = precio referencial; las áreas «preferencia_obligatoria» no se pueden).
   **Precio por SEDE (30-oct-2026)**: tablas `servicio_precio_web_sede` y `subcategoria_precio_web_sede` (PK compuesta; sin fila = rige el general).

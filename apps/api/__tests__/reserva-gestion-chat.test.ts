@@ -21,10 +21,11 @@ const mockProfesional = jest.fn();
 jest.mock('../src/services/disponibilidad', () => ({ seleccionarProfesionalOptimo: (...a: unknown[]) => mockProfesional(...a) }));
 const mockServicio = {
   estadoReservaPorCodigo: jest.fn(), horasLibres: jest.fn(), limpiarCacheDias: jest.fn(), llamarAgenda: jest.fn(), minutosAhoraLima: () => 12 * 60,
+  PASARELA_WOO: 'woocommerce',
 };
 jest.mock('../src/services/reservaWeb/reservaWebService', () => mockServicio);
 
-import { cancelarReserva, reprogramarReserva, citasProximas, cancelarCitaPaciente, reprogramarCitaPaciente, leerNumeroCita } from '../src/services/reservaWeb/gestion';
+import { cancelarReserva, reprogramarReserva, citasProximas, cancelarCitaPaciente, reprogramarCitaPaciente, leerNumeroCita, cancelarCompat, reprogramarCompat } from '../src/services/reservaWeb/gestion';
 
 const respuesta = (status: number, cuerpo: unknown = {}) => ({ ok: status < 300, status, json: async () => cuerpo });
 
@@ -100,6 +101,61 @@ describe('por el paciente (documento + N.º de cita)', () => {
   it('reprograma por N.º de cita', async () => {
     await reprogramarCitaPaciente('C-008323', doc, 'whatsapp', pasado, '15:00');
     expect(mockServicio.llamarAgenda).toHaveBeenCalledWith('PATCH', '/citas/c1/mover', { fecha: pasado, horaInicio: '15:00', profesionalId: 'p2' });
+  });
+
+  // ─── Contrato de la nota de Ana (14-nov-2026) ───
+  const ID_CITA = '11111111-1111-4111-8111-111111111111';
+  const docSinTipo = { numeroDocumento: '12345678' };
+
+  it('documento SIN tipo: busca al paciente solo por el número', async () => {
+    await citasProximas(docSinTipo);
+    const where = mockPrisma.paciente.findFirst.mock.calls[0][0].where;
+    expect(where).toMatchObject({ numeroDocumento: '12345678' });
+    expect(where).not.toHaveProperty('tipoDocumento');
+  });
+
+  it('cada cita trae codigo (id si la registró la clínica), estadoCita y puedeCambiar', async () => {
+    const [c] = await citasProximas(docSinTipo);
+    expect(c).toMatchObject({ codigo: 'c1', estadoCita: 'agendada', puedeCambiar: true, puedeCancelar: true, puedeReprogramar: true });
+    expect(c).not.toHaveProperty('motivo');
+  });
+
+  it('con reserva pagada en línea: codigo LB y no se puede cancelar (motivo REQUIERE_ASESOR)', async () => {
+    mockPrisma.reservaWeb.findMany.mockResolvedValue([{ citaId: 'c1', codigo: 'LB-654321', canal: 'web', pagoEstado: 'aprobado', pasarela: 'niubiz', estado: 'confirmada' }]);
+    const [c] = await citasProximas(docSinTipo);
+    expect(c).toMatchObject({ codigo: 'LB-654321', puedeCambiar: false, puedeCancelar: false, puedeReprogramar: true, motivo: 'REQUIERE_ASESOR' });
+  });
+
+  it('esperando el pago previo: no se reprograma (motivo ESPERANDO_PAGO)', async () => {
+    mockPrisma.reservaWeb.findMany.mockResolvedValue([{ citaId: 'c1', codigo: 'LB-654321', canal: 'whatsapp', pagoEstado: 'pendiente', pasarela: 'woocommerce', estado: 'esperando_pago' }]);
+    const [c] = await citasProximas(docSinTipo);
+    expect(c).toMatchObject({ puedeCancelar: true, puedeReprogramar: false, motivo: 'ESPERANDO_PAGO' });
+  });
+
+  it('cancelar con su contrato: codigo = id de la cita → { codigo, estado: "cancelada", repetida }', async () => {
+    const r = await cancelarCompat(ID_CITA, docSinTipo, 'whatsapp', 'Viaje');
+    expect(mockPrisma.cita.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: ID_CITA } }));
+    expect(mockServicio.llamarAgenda).toHaveBeenCalledWith('PATCH', '/citas/c1/estado', expect.objectContaining({ estado: 'cancelada' }));
+    expect(r).toMatchObject({ codigo: ID_CITA, estado: 'cancelada', repetida: false });
+  });
+
+  it('cancelar con su contrato: codigo LB de OTRO canal también vale si el documento es del dueño', async () => {
+    mockPrisma.reservaWeb.findFirst.mockResolvedValueOnce({ citaId: 'c1' }).mockResolvedValue(null);
+    const r = await cancelarCompat('LB-654321', docSinTipo, 'whatsapp', null);
+    expect(mockPrisma.reservaWeb.findFirst.mock.calls[0][0]).toEqual({ where: { codigo: 'LB-654321' }, select: { citaId: true } });
+    expect(r).toMatchObject({ codigo: 'LB-654321', estado: 'cancelada', repetida: false });
+  });
+
+  it('cancelar con su contrato: documento de otra persona → 404 RESERVA_NO_ENCONTRADA', async () => {
+    mockPrisma.cita.findUnique.mockResolvedValue({ ...citaPaciente, pacienteId: 'otro' });
+    await expect(cancelarCompat(ID_CITA, docSinTipo, 'whatsapp', null)).rejects.toMatchObject({ statusCode: 404, code: 'RESERVA_NO_ENCONTRADA' });
+    expect(mockServicio.llamarAgenda).not.toHaveBeenCalled();
+  });
+
+  it('reprogramar con su contrato: MUEVE la misma cita y responde con codigoAnterior', async () => {
+    const r = await reprogramarCompat(ID_CITA, docSinTipo, 'whatsapp', pasado, '15:00');
+    expect(mockServicio.llamarAgenda).toHaveBeenCalledWith('PATCH', '/citas/c1/mover', { fecha: pasado, horaInicio: '15:00', profesionalId: 'p2' });
+    expect(r).toMatchObject({ codigo: ID_CITA, codigoAnterior: ID_CITA, estado: 'confirmada', citaId: 'c1', repetida: false, moneda: 'PEN' });
   });
 });
 

@@ -149,16 +149,35 @@ export async function reprogramarReserva(codigo: string, canal: string, fecha: s
 }
 
 // ─── Por el PACIENTE (documento + N.º de cita C-…) ────────────────────────────
-export interface DocumentoPaciente { tipoDocumento: string; numeroDocumento: string }
+/** `tipoDocumento` opcional (14-nov-2026): el contrato de la nota de Ana manda solo el número; sin tipo se busca por número. */
+export interface DocumentoPaciente { tipoDocumento?: string | null; numeroDocumento: string }
 
 async function pacienteDe(d: DocumentoPaciente) {
-  return prisma.paciente.findFirst({ where: { tipoDocumento: d.tipoDocumento as never, numeroDocumento: normalizarDocumento(d.numeroDocumento), deletedAt: null }, select: { id: true } });
+  return prisma.paciente.findFirst({
+    where: { ...(d.tipoDocumento ? { tipoDocumento: d.tipoDocumento as never } : {}), numeroDocumento: normalizarDocumento(d.numeroDocumento), deletedAt: null },
+    select: { id: true },
+  });
 }
 
 /** «C-008323», «c8323» o «8323» → 8323. */
 export function leerNumeroCita(texto: string): number | null {
   const m = /^(?:c-?)?0*(\d{1,9})$/i.exec(texto.trim());
   return m ? Number(m[1]) : null;
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const CODIGO_RESERVA = /^LB-\d{6}$/i;
+
+/** La cita a la que apunta `ref`: N.º de cita («C-008323»), su id (uuid) o el código de su reserva («LB-123456», de cualquier canal). */
+async function citaPorReferencia(ref: string) {
+  const t = ref.trim();
+  if (UUID.test(t)) return prisma.cita.findUnique({ where: { id: t }, select: SELECT_CITA });
+  if (CODIGO_RESERVA.test(t)) {
+    const r = await prisma.reservaWeb.findFirst({ where: { codigo: t.toUpperCase() }, select: { citaId: true } });
+    return r?.citaId ? prisma.cita.findUnique({ where: { id: r.citaId }, select: SELECT_CITA }) : null;
+  }
+  const numero = leerNumeroCita(t);
+  return numero ? prisma.cita.findUnique({ where: { numero }, select: SELECT_CITA }) : null;
 }
 
 /** Ficha de una cita para el chat (sin datos del paciente ni del profesional). */
@@ -170,12 +189,20 @@ async function fichas(citas: CitaG[]) {
       where: { id: { in: ids } },
       select: { id: true, slotGrupoId: true, sede: { select: { nombre: true, direccion: true } }, servicio: { select: { nombre: true } }, subcategoriaId: true, subcategoria: { select: { nombre: true } } },
     }),
-    prisma.reservaWeb.findMany({ where: { citaId: { in: ids } }, select: { citaId: true, codigo: true, canal: true, pagoEstado: true } }),
+    prisma.reservaWeb.findMany({ where: { citaId: { in: ids } }, select: { citaId: true, codigo: true, canal: true, pagoEstado: true, pasarela: true, estado: true } }),
   ]);
   const ex = new Map(extra.map((e) => [e.id, e]));
   return citas.map((c) => {
     const e = ex.get(c.id);
     const rs = reservas.filter((r) => r.citaId === c.id);
+    const pagadoEnLinea = rs.some((r) => r.pagoEstado === 'aprobado');
+    const enBloque = !!e?.slotGrupoId;
+    const esperandoPago = rs.some((r) => r.pasarela === PASARELA_WOO && r.estado === 'esperando_pago');
+    // Qué se puede hacer por aquí (14-nov-2026, contrato de la nota de Ana): pagada en línea → no se cancela; bloque o pago
+    // previo pendiente → no se reprograma. `puedeCambiar` = las dos; si no, `motivo` dice por qué (Ana deriva a un asesor).
+    const puedeCancelar = !pagadoEnLinea;
+    const puedeReprogramar = !enBloque && !esperandoPago;
+    const motivo = pagadoEnLinea ? 'REQUIERE_ASESOR' : esperandoPago ? 'ESPERANDO_PAGO' : enBloque ? 'REQUIERE_ASESOR' : null;
     return {
       numeroCita: formatoNumeroCita(c.numero), estado: c.estado,
       fecha: fechaAStr(c.fecha), horaInicio: c.horaInicio, duracionMinutos: c.duracionMinutos,
@@ -183,9 +210,14 @@ async function fichas(citas: CitaG[]) {
       subcategoriaId: e?.subcategoriaId ?? null, variante: e?.subcategoria?.nombre ?? null,
       /** Código «LB-…» si la cita nació de una reserva web o del chat; null si la registró la clínica. */
       codigoReserva: rs[0]?.codigo ?? null, canalReserva: rs[0]?.canal ?? null,
-      pagadoEnLinea: rs.some((r) => r.pagoEstado === 'aprobado'),
+      pagadoEnLinea,
       /** Parte de una visita de dos servicios a la misma hora: se cancela entera; para reprogramarla, la sede. */
-      enBloque: !!e?.slotGrupoId,
+      enBloque,
+      /** Para usar en /:codigo/cancelar|reprogramar: el «LB-…» de su reserva o, si la registró la clínica, el id de la cita. */
+      codigo: rs[0]?.codigo ?? c.id,
+      estadoCita: c.estado,
+      puedeCancelar, puedeReprogramar, puedeCambiar: puedeCancelar && puedeReprogramar,
+      ...(motivo ? { motivo } : {}),
     };
   });
 }
@@ -201,13 +233,9 @@ export async function citasProximas(d: DocumentoPaciente) {
   return fichas(citas.filter((c) => !yaPaso(fechaAStr(c.fecha), c.horaInicio)));
 }
 
-/** La cita con ese número, solo si es de ese paciente (si no, 404 igual que si no existiera). */
-async function citaDelPaciente(numeroTexto: string, d: DocumentoPaciente) {
-  const numero = leerNumeroCita(numeroTexto);
-  const [cita, paciente] = await Promise.all([
-    numero ? prisma.cita.findUnique({ where: { numero }, select: SELECT_CITA }) : Promise.resolve(null),
-    pacienteDe(d),
-  ]);
+/** La cita (N.º «C-…», id o «LB-…»), solo si es de ese paciente (si no, 404 igual que si no existiera). */
+async function citaDelPaciente(ref: string, d: DocumentoPaciente) {
+  const [cita, paciente] = await Promise.all([citaPorReferencia(ref), pacienteDe(d)]);
   if (!cita || cita.deletedAt || !paciente || cita.pacienteId !== paciente.id) throw new AppError('Cita no encontrada', 404, 'CITA_NO_ENCONTRADA');
   return cita;
 }
@@ -234,4 +262,38 @@ export async function reprogramarCitaPaciente(numeroCita: string, d: DocumentoPa
   const n = formatoNumeroCita(cita.numero);
   const hecho = await mover(cita, fecha, horaInicio, { canal, ref: n, meta, audit: { entidad: 'cita', entidadId: cita.id, despues: { numeroCita: n, canal } } });
   return { ...(await fichaDe(cita.id)), sinCambios: !hecho };
+}
+
+// ─── Contrato de la NOTA DE ANA (14-nov-2026) ─────────────────────────────────
+// Su chat llama POST /:codigo/cancelar|reprogramar con { numeroDocumento, … } y `codigo` = «LB-…» o el id de la cita (lo que le da
+// GET /citas-paciente). Con el documento se usa el camino por PACIENTE (cualquier cita suya, también de recepción); las respuestas
+// llevan además los campos que su nota espera. Las reglas son las mismas de siempre (la Agenda no agrega las suyas).
+const comoReservaNoEncontrada = (e: unknown) =>
+  e instanceof AppError && e.code === 'CITA_NO_ENCONTRADA' ? new AppError('Reserva no encontrada', 404, 'RESERVA_NO_ENCONTRADA') : e;
+
+/** Cancelar con su contrato → `{ codigo, estado: "cancelada", repetida }` (+ la ficha de la cita). */
+export async function cancelarCompat(codigo: string, d: DocumentoPaciente, canal: string, motivo: string | null, meta: Meta = {}) {
+  try {
+    const r = await cancelarCitaPaciente(codigo, d, canal, motivo, meta);
+    return { ...r, codigo, estado: 'cancelada', repetida: r.sinCambios };
+  } catch (e) { throw comoReservaNoEncontrada(e); }
+}
+
+/**
+ * Reprogramar con su contrato → los campos de la respuesta de POST / más `codigoAnterior`. Aquí la cita se MUEVE (no se crea otra):
+ * conserva su código, su N.º de cita, su historial y su recordatorio, así que `codigo` y `codigoAnterior` son el mismo.
+ */
+export async function reprogramarCompat(codigo: string, d: DocumentoPaciente, canal: string, fecha: string, horaInicio: string, meta: Meta = {}) {
+  let r: Awaited<ReturnType<typeof reprogramarCitaPaciente>>;
+  try { r = await reprogramarCitaPaciente(codigo, d, canal, fecha, horaInicio, meta); } catch (e) { throw comoReservaNoEncontrada(e); }
+  const cita = await citaPorReferencia(codigo);
+  const [reserva, montos] = cita ? await Promise.all([
+    prisma.reservaWeb.findFirst({ where: { citaId: cita.id }, select: { monto: true, moneda: true } }),
+    prisma.cita.findUnique({ where: { id: cita.id }, select: { montoFinal: true, precioLista: true } }),
+  ]) : [null, null];
+  return {
+    ...r,
+    codigo, estado: 'confirmada', citaId: cita?.id ?? '', repetida: r.sinCambios, codigoAnterior: codigo,
+    monto: Number(reserva?.monto ?? montos?.montoFinal ?? montos?.precioLista ?? 0), moneda: reserva?.moneda ?? 'PEN',
+  };
 }

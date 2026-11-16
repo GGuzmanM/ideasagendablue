@@ -66,6 +66,7 @@ Si entre el paso 3 y el 6 alguien toma esa hora, el `POST /` responde **409** (`
 | `GET /dias?sedeId&servicioId&desde&hasta` | Días con horarios libres | 3.2 |
 | `GET /horas?sedeId&servicioId&fecha` | Horas libres de un día y cupos por hora | 3.3 |
 | `POST /` | Registrar la reserva (crea la cita) | 3.4 |
+| `GET /citas-paciente?numeroDocumento=` | Citas próximas del paciente (formato de la nota del chat) | 3.8.1 |
 | `GET /:codigo` | Estado de una reserva del chat (`LB-…`) | 3.5 |
 | `POST /:codigo/cancelar` | Cancelar la cita de una reserva del chat | 3.6 |
 | `POST /:codigo/reprogramar` | Reprogramar la cita de una reserva del chat | 3.7 |
@@ -275,6 +276,24 @@ curl -X POST https://<servidor>/api/v1/integraciones/whatsapp/citas/C-008323/rep
 Respuesta **200**: la cita como sale en la lista (ya con su nuevo estado u horario) más `"sinCambios"` (`true` si ya estaba cancelada
 o ya estaba en ese horario). Valen las mismas reglas y errores que en §3.6 y §3.7: solo `agendada`/`confirmada`, hora no pasada,
 una cita pagada en línea no se cancela por aquí, y reprogramar es en la misma sede y servicio.
+
+### 3.8.1 Mismas funciones con el formato de la nota del chat (14-nov-2026)
+Para que el flujo de Ana funcione sin cambios, las rutas de arriba también aceptan este formato (en las dos APIs):
+
+- **`GET /citas-paciente?numeroDocumento=12345678`** = `POST /pacientes/citas` (el tipo de documento es opcional: sin él se busca
+  por el número). Ojo: aquí el documento va en la URL; si pueden, usen el `POST`.
+- Cada cita de la lista trae además `codigo` (el `LB-…` de su reserva o, si la registró la clínica, el **id** de la cita),
+  `estadoCita`, `puedeCancelar`, `puedeReprogramar`, `puedeCambiar` (las dos) y, si no se puede, `motivo`
+  (`REQUIERE_ASESOR`: pagada en línea o visita de dos servicios; `ESPERANDO_PAGO`: pago previo pendiente). Ana deriva a un asesor.
+- **`POST /{codigo}/cancelar`** con `{ "numeroDocumento": "…", "motivo": "…" }` → `200` con `codigo`, `estado: "cancelada"` y
+  `repetida` (`true` si ya estaba cancelada).
+- **`POST /{codigo}/reprogramar`** con `{ "numeroDocumento": "…", "fecha": "…", "horaInicio": "…" }` → `201` con los campos de
+  `POST /` (`codigo`, `estado`, `citaId`, `fecha`, `horaInicio`, `sede`, `servicio`, `monto`…) más `codigoAnterior` y `repetida`.
+  **La cita se mueve, no se crea otra:** conserva su código, su N.º de cita y su historial, así que `codigo` = `codigoAnterior`.
+- Con `numeroDocumento`, `{codigo}` puede ser `LB-…` (de cualquier canal), el id de la cita o `C-…`, siempre que la cita sea
+  del dueño de ese documento; si no lo es: `404 RESERVA_NO_ENCONTRADA`. Sin `numeroDocumento` todo funciona como en 3.6 y 3.7.
+- Las reglas y los errores son los mismos de 3.6 a 3.8. La Agenda no exige anticipación mínima ni limita paquetes o profesional
+  pedido: eso lo decide el chat.
 
 ### 3.9 Pago previo de sábado y domingo (13-nov-2026) — solo la API de WhatsApp
 Las citas de **sábado y domingo** que se reservan por `/integraciones/whatsapp` se pagan **antes**, por la tienda en línea de Limablue

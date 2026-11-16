@@ -21,6 +21,9 @@
  *  POST /pacientes/citas       {tipoDocumento?, numeroDocumento}             citas próximas del paciente (todas)
  *  POST /citas/:numeroCita/cancelar     {tipoDocumento?, numeroDocumento, motivo?}
  *  POST /citas/:numeroCita/reprogramar  {tipoDocumento?, numeroDocumento, fecha, horaInicio}
+ * Contrato de la nota de Ana (14-nov-2026), sobre lo mismo:
+ *  GET  /citas-paciente?numeroDocumento=          = POST /pacientes/citas (cada cita trae `codigo`, `puedeCambiar` y `motivo`)
+ *  POST /:codigo/cancelar|reprogramar con { numeroDocumento, … }: `codigo` = «LB-…», id de la cita o «C-…» (cualquier cita del paciente)
  */
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import rateLimit from 'express-rate-limit';
@@ -29,7 +32,7 @@ import { AppError } from '../middleware/errorHandler';
 import { requireAuth } from '../middleware/auth';
 import { catalogo, horasConCupos, diasDisponibles, reservar, estadoReservaPorCodigo } from '../services/reservaWeb/reservaWebService';
 import { camposPaciente, revisarDocumento, normalizarPaciente, normalizarDocumento, TIPOS_DOCUMENTO_RESERVA } from '../services/reservaWeb/validaciones';
-import { cancelarReserva, reprogramarReserva, citasProximas, cancelarCitaPaciente, reprogramarCitaPaciente } from '../services/reservaWeb/gestion';
+import { cancelarReserva, reprogramarReserva, citasProximas, cancelarCitaPaciente, reprogramarCitaPaciente, cancelarCompat, reprogramarCompat } from '../services/reservaWeb/gestion';
 
 /** Permiso de la llave de la API WEB (es el de la llave que existía antes de separar las APIs). */
 export const SCOPE_RESERVAS = 'reservas:write';
@@ -54,6 +57,22 @@ const zDocumento = z.object({
   tipoDocumento: z.enum(TIPOS_DOCUMENTO_RESERVA).default('DNI'),
   numeroDocumento: z.string().trim().min(1, 'Indica el número de documento').max(20),
 }).superRefine((d, ctx) => revisarDocumento({ tipoDocumento: d.tipoDocumento, numeroDocumento: normalizarDocumento(d.numeroDocumento) }, ctx));
+
+// Contrato de la NOTA DE ANA (14-nov-2026): el documento llega SIN tipo (solo el número) en GET /citas-paciente y en el cuerpo de
+// /:codigo/cancelar|reprogramar. Sin tipo, vale cualquier documento de 8 a 12 letras o números; con tipo, se valida como siempre.
+const zDocumentoLibre = z.object({
+  tipoDocumento: z.enum(TIPOS_DOCUMENTO_RESERVA).optional().nullable(),
+  numeroDocumento: z.string().trim().min(1, 'Indica el número de documento').max(20),
+}).superRefine((d, ctx) => {
+  const n = normalizarDocumento(d.numeroDocumento);
+  if (d.tipoDocumento) revisarDocumento({ tipoDocumento: d.tipoDocumento, numeroDocumento: n }, ctx);
+  else if (!/^[A-Z0-9]{8,12}$/.test(n)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['numeroDocumento'], message: 'Documento inválido (8 a 12 letras o números)' });
+});
+/** Del cuerpo de /:codigo/cancelar|reprogramar: el documento si vino (contrato de Ana), o null (camino por código LB del canal). */
+const documentoOpcional = (body: unknown) => {
+  const b = (body ?? {}) as { numeroDocumento?: unknown };
+  return b.numeroDocumento == null || b.numeroDocumento === '' ? null : zDocumentoLibre.parse(body);
+};
 
 const meta = (req: Request) => ({ ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined });
 
@@ -122,19 +141,34 @@ export function crearApiReservas(o: { scope: string; canal: 'web' | 'whatsapp' }
     res.json(await reprogramarCitaPaciente(String(req.params.numeroCita), b, canal, b.fecha, b.horaInicio, meta(req)));
   });
 
+  // Contrato de la nota de Ana (14-nov-2026): lo mismo que POST /pacientes/citas, con el documento en la URL (va ANTES de /:codigo).
+  router.get('/citas-paciente', limiteConsultas, async (req, res) => {
+    res.json({ citas: await citasProximas(zDocumentoLibre.parse(req.query)) });
+  });
+
   router.get('/:codigo', limiteConsultas, async (req, res) => {
     res.json(await estadoReservaPorCodigo(String(req.params.codigo), canal));
   });
 
   // Cancelar y reprogramar (11-nov-2026). Las reglas de negocio (anticipación, cuántas veces…) las pone el cliente; ver services/reservaWeb/gestion.ts.
+  // Sin documento: `codigo` = «LB-…» de una reserva de ESTE canal. Con `numeroDocumento` (contrato de la nota de Ana, 14-nov-2026):
+  // `codigo` = «LB-…», id de la cita o «C-…», de cualquier cita del dueño de ese documento; reprogramar responde 201.
   router.post('/:codigo/cancelar', limiteReservas, async (req, res) => {
     const { motivo } = z.object({ motivo: z.string().trim().max(300).optional().nullable() }).parse(req.body ?? {});
-    res.json(await cancelarReserva(String(req.params.codigo), canal, motivo || null, meta(req)));
+    const doc = documentoOpcional(req.body);
+    const codigo = String(req.params.codigo);
+    if (doc) { res.json(await cancelarCompat(codigo, doc, canal, motivo || null, meta(req))); return; }
+    const r = await cancelarReserva(codigo, canal, motivo || null, meta(req));
+    res.json({ ...r, repetida: r.sinCambios });
   });
 
   router.post('/:codigo/reprogramar', limiteReservas, async (req, res) => {
     const { fecha: f, horaInicio } = z.object({ fecha, horaInicio: hora }).parse(req.body ?? {});
-    res.json(await reprogramarReserva(String(req.params.codigo), canal, f, horaInicio, meta(req)));
+    const doc = documentoOpcional(req.body);
+    const codigo = String(req.params.codigo);
+    if (doc) { res.status(201).json(await reprogramarCompat(codigo, doc, canal, f, horaInicio, meta(req))); return; }
+    const r = await reprogramarReserva(codigo, canal, f, horaInicio, meta(req));
+    res.json({ ...r, repetida: r.sinCambios, codigoAnterior: codigo });
   });
 
   return router;
