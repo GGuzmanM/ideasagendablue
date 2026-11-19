@@ -6,7 +6,7 @@ import { rutaInicio } from '../../utils/rutaInicio';
 import { useContadorControles } from '../../services/controlesService';
 import { useReservaWebHabilitada } from '../../services/reservaWebService';
 import { rutaWeb } from '../../utils/rutaBase';
-import { CuentaRegresiva, Guirnalda, Gorrito, NavidadSwitch, Nieve, useTituloNavideno } from '../navidad/Navidad';
+import { CuentaRegresiva, EscenaPixel, Guirnalda, Gorrito, NavidadSwitch, Nieve, useTituloNavideno } from '../navidad/Navidad';
 import { useNavidadVisible } from '../../stores/navidadStore';
 
 // Menú plegado (solo iconos): preferencia del equipo que se usa, guardada en el navegador.
@@ -157,6 +157,7 @@ export function Idea1Sidebar() {
 
       {/* Footer / User profile */}
       <div className="mt-auto pt-4 border-t border-white/10 shrink-0">
+        {navidad && <div className="mb-2 w-full flex justify-center"><EscenaPixel compacto={plegado} /></div>}
         <div className="mb-2"><NavidadSwitch compacto={plegado} /></div>
 
         <div className={cn('bg-white/10 rounded-2xl flex items-center border border-white/15 shadow-sm', plegado ? 'flex-col gap-1.5 p-1.5' : 'justify-between gap-2 p-3')} title={plegado ? `${usuario?.nombre ?? ''} · ${usuario?.rol ?? ''}` : undefined}>

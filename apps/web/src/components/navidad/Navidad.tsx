@@ -4,11 +4,13 @@
 import { useEffect } from 'react';
 import { cn } from '../../utils/cn';
 import { useEnTemporadaNavidad, useNavidadStore, useNavidadVisible } from '../../stores/navidadStore';
+import { ModalSelectorPersonaje } from './ModalSelectorPersonaje';
 
 /** Switch «Modo navideño». Solo aparece en temporada (o a las cuentas anticipadas). `compacto` = menú plegado (solo el árbol). */
 export function NavidadSwitch({ compacto = false }: { compacto?: boolean }) {
   const activo = useNavidadStore((s) => s.activo);
   const alternar = useNavidadStore((s) => s.alternar);
+  const abrirModalSelector = useNavidadStore((s) => s.abrirModalSelector);
   const enTemporada = useEnTemporadaNavidad();
   if (!enTemporada) return null;
 
@@ -26,32 +28,51 @@ export function NavidadSwitch({ compacto = false }: { compacto?: boolean }) {
 
   if (compacto) {
     return (
-      <button
-        type="button"
-        role="switch"
-        aria-checked={activo}
-        onClick={alternar}
-        data-testid="navidad-switch"
-        title={activo ? 'Apagar modo navideño' : 'Prender modo navideño'}
-        className={cn('w-10 h-10 mx-auto rounded-xl grid place-items-center text-lg transition-colors', activo ? 'bg-white/20' : 'opacity-60 hover:opacity-100 hover:bg-white/10')}
-      >
-        🎄
-      </button>
+      <>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={activo}
+          onClick={alternar}
+          data-testid="navidad-switch"
+          title={activo ? 'Apagar modo navideño' : 'Prender modo navideño'}
+          className={cn('w-10 h-10 mx-auto rounded-xl grid place-items-center text-lg transition-colors', activo ? 'bg-white/20' : 'opacity-60 hover:opacity-100 hover:bg-white/10')}
+        >
+          🎄
+        </button>
+        <ModalSelectorPersonaje />
+      </>
     );
   }
 
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={activo}
-      onClick={alternar}
-      data-testid="navidad-switch"
-      className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-xs font-medium text-blue-100/85 hover:bg-white/10 hover:text-white transition-colors"
-    >
-      <span className="flex items-center gap-2 truncate"><span className="text-base leading-none">🎄</span>Modo navideño</span>
-      {pista}
-    </button>
+    <>
+      <div className="flex flex-col gap-1 w-full">
+        <button
+          type="button"
+          role="switch"
+          aria-checked={activo}
+          onClick={alternar}
+          data-testid="navidad-switch"
+          className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-xs font-medium text-blue-100/85 hover:bg-white/10 hover:text-white transition-colors"
+        >
+          <span className="flex items-center gap-2 truncate"><span className="text-base leading-none">🎄</span>Modo navideño</span>
+          {pista}
+        </button>
+        {activo && (
+          <button
+            type="button"
+            onClick={abrirModalSelector}
+            title="Cambiar personaje navideño"
+            className="w-full flex items-center justify-center gap-1.5 py-1 px-2 rounded-lg text-[11px] font-medium text-blue-200/70 hover:text-white hover:bg-white/10 transition-colors"
+          >
+            <span>🎭</span>
+            <span>Cambiar personaje</span>
+          </button>
+        )}
+      </div>
+      <ModalSelectorPersonaje />
+    </>
   );
 }
 
@@ -113,4 +134,6 @@ export function GorritoNavideno({ className }: { className?: string }) {
   return navidad ? <Gorrito className={className} /> : null;
 }
 export { Nieve } from './Nieve';
+export { EscenaPixel } from './EscenaPixel';
 export { CuentaRegresiva } from './CuentaRegresiva';
+export { ModalSelectorPersonaje } from './ModalSelectorPersonaje';

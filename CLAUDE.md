@@ -29,7 +29,7 @@ Reemplaza un ERP de escritorio de 14 años. 5 sedes, ~400 citas diarias, 40 pod�
   Llaves: «Llaves API (web y WhatsApp).bat» (reemplaza por PERMISO, no por nombre). Documento DNI o CE
   (`services/reservaWeb/validaciones.ts`). La cita se crea con POST /citas usando la llave interna `RESERVA_WEB_API_KEY`.
   **Cancelar / reprogramar por el chat (11-nov-2026)**: `POST /integraciones/reservas/:codigo/cancelar {motivo?}` y `/:codigo/reprogramar {fecha, horaInicio}`
-  (`services/reservaWeb/gestion.ts`), misma llave `reservas:write`. Solo mecánica: las reglas de negocio las programa el chat. Llaman a
+  (`services/reservaWeb/gestion.ts`), misma llave `reservas:write`. Reglas: ver «Reglas del equipo del chat (16-nov-2026)» más abajo. Llaman a
   PATCH /citas/:id/estado y /mover con la llave interna (`llamarAgenda`); frenan cita no agendada/confirmada, hora pasada y cancelar una pagada
   en línea. `GET /:codigo` devuelve fecha/hora ACTUALES de la cita y `sedeId`/`servicioId`. Tests: `__tests__/reserva-gestion-chat`.
   Por DOCUMENTO (todas las citas próximas, también las de recepción): `POST /pacientes/citas {tipoDocumento?, numeroDocumento}` y
@@ -39,7 +39,20 @@ Reemplaza un ERP de escritorio de 14 años. 5 sedes, ~400 citas diarias, 40 pod�
   /pacientes/citas; tipo de documento opcional) y `POST /:codigo/cancelar|reprogramar` con `numeroDocumento` en el cuerpo → camino por PACIENTE
   (`cancelarCompat` / `reprogramarCompat` en `gestion.ts`): `codigo` = `LB-…` de cualquier canal, id de la cita o `C-…`; respuestas con `repetida`,
   `codigoAnterior` (reprogramar 201). La cita se MUEVE (su versión creaba otra). Cada cita listada trae `codigo`, `estadoCita`, `puedeCancelar`,
-  `puedeReprogramar`, `puedeCambiar` y `motivo`. Sus reglas extra (2 h, paquete, profesional pedido…) NO se adoptaron: las decide el chat.
+  `puedeReprogramar`, `puedeCambiar` y `motivo`.
+  **Reglas del equipo del chat (16-nov-2026, reemplazan a «solo mecánica»)**, en `evaluarCambio` de `gestion.ts` y para TODAS las rutas de cancelar/
+  reprogramar: 409 `FUERA_DE_PLAZO` (< `RESERVA_CHAT_CAMBIO_ANTICIPACION_MIN`, 120), `REQUIERE_ASESOR` (cualquier pago, paquete, visita doble,
+  profesional pedido; al reprogramar: sáb/dom, servicio no reservable en línea en esa sede, paciente sin DNI/CE), `ESPERANDO_PAGO`, `NO_SE_PUEDE_CANCELAR`
+  (en curso/atendida), `NO_VIGENTE` (reprogramar una cancelada). Reprogramar a la misma hora = reintento (`repetida`), no `MISMA_HORA`. Límites por llave:
+  20 búsquedas por documento y 10 cambios por minuto. **Rutas agrupadas para GHL** (5 acciones por agente), solo en `/integraciones/whatsapp`:
+  `GET /consultar?que=catalogo|dias|horas|reserva|citas` y `POST /cambiar {accion: cancelar|reprogramar, …}`. Lo mismo, sin N.º de cita ni rutas por
+  N.º, está en el repo de GitHub (`Documents/ag/ideasagendablue`, `gestion.ts` con `cancelarCitaChat`/`reprogramarCitaChat`).
+  **Servidor MCP para Ana (17-nov-2026)**: `POST /api/v1/mcp` (`routes/mcp.ts`, `@modelcontextprotocol/sdk`, Streamable HTTP SIN sesión). 12
+  herramientas que llaman a las MISMAS funciones de las rutas REST (canal fijado por la llave, mismas reglas; límites por llave contados en
+  `contarUso`) + `buscar_cupo` (todas las sedes un día; `diaCercano` en 14 días) y los extras de `services/reservaWeb/extrasChat.ts`
+  (`infoSedes`, `agregarNotaCita` → hilo de comentarios como «Paciente (WhatsApp · Ana)», `extenderPago` → +10 min una vez, marca
+  `pagoDetalle.extendido`). OJO: los tipos genéricos de `registerTool` dejan a tsc sin memoria → se registra con una firma simple
+  (`RegistrarHerramienta`); el SDK valida los argumentos igual. Docs §3.11. Tests: `__tests__/mcp-servidor`, `extras-chat`.
   Qué servicios se ofrecen y a qué precio: Administración › Reserva web (`/admin/reserva-web`; `servicios.reservaOnline` + `precioOnline` y, por
   tipo, `subcategorias_servicio.reservaOnline` + `precioOnline`; vacío = precio referencial; las áreas «preferencia_obligatoria» no se pueden).
   **Precio por SEDE (30-oct-2026)**: tablas `servicio_precio_web_sede` y `subcategoria_precio_web_sede` (PK compuesta; sin fila = rige el general).

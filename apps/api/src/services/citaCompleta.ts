@@ -112,11 +112,12 @@ async function reprogramacionDeCita(citaId: string): Promise<
 // del nombre) para que el hilo sea legible aunque el usuario se borre luego.
 export async function crearComentarioEnTx(
   tx: Prisma.TransactionClient,
-  args: { citaId: string; sedeId: string; autorId?: string | null; texto: string; ip?: string; userAgent?: string },
+  args: { citaId: string; sedeId: string; autorId?: string | null; texto: string; ip?: string; userAgent?: string; autorEtiqueta?: string | null },
 ) {
   const texto = args.texto.trim();
   if (!texto) return;
-  let autorEtiqueta: string | null = null;
+  // Sin usuario (p. ej. una nota del paciente por el chat, 17-nov-2026) se puede dar la etiqueta a mano.
+  let autorEtiqueta: string | null = args.autorEtiqueta ?? null;
   if (args.autorId) {
     const u = await tx.usuario.findUnique({ where: { id: args.autorId }, select: { nombre: true } });
     autorEtiqueta = u?.nombre ?? null;

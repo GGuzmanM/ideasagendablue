@@ -2,20 +2,26 @@
  * CANCELAR y REPROGRAMAR citas desde las APIs de integración (11-nov-2026) — /integraciones/reservas (web) e
  * /integraciones/whatsapp (chat); el `canal` lo fija la llave (routes/reservaChat.ts).
  *
- * Dos formas de llegar a la cita:
- *  - por la RESERVA del chat/web: POST /:codigo/cancelar|reprogramar (código «LB-…»);
- *  - por el PACIENTE: GET /pacientes/citas?numeroDocumento= lista TODAS sus citas próximas (también las de recepción) y
- *    POST /citas/:numeroCita/cancelar|reprogramar actúa sobre una («C-…»), con el documento del paciente como comprobación.
+ * Formas de llegar a la cita:
+ *  - por la RESERVA del chat/web: POST /:codigo/cancelar|reprogramar (código «LB-…» de ese canal);
+ *  - por el PACIENTE: POST /pacientes/citas (o GET /citas-paciente) lista TODAS sus citas próximas (también las de recepción) y
+ *    POST /citas/:numeroCita/… o /:codigo/… con su `numeroDocumento` actúa sobre una («C-…», «LB-…» o el id de la cita);
+ *  - rutas agrupadas para GHL (16-nov-2026): GET /consultar y POST /cambiar (solo la API de WhatsApp), que llaman a lo mismo.
  *
- * Solo la MECÁNICA: las reglas de negocio (anticipación, cuántas veces, cómo se verifica a la persona) las programa el chat.
- * La Agenda solo pone lo que protege los datos:
- *  - la cita tiene que estar «Agendada» o «Confirmada» y no haber pasado ya su hora;
- *  - una cita PAGADA en línea (Niubiz o pago previo del chat) no se cancela por aquí (habría que devolver el dinero: eso lo ve la sede);
- *  - pago previo (13-nov-2026, solo WhatsApp con la tienda conectada): una cita con el pago PENDIENTE no se reprograma (primero paga)
- *    y una cita SIN pagar no se pasa a sábado o domingo (esos días se pagan al reservar: se hace una reserva nueva);
- *  - reprogramar: misma sede y mismo servicio, a una hora que ofrezca GET /horas; el especialista lo asigna la Agenda.
- * Cancelar y mover pasan por los MISMOS endpoints de la Agenda (PATCH /citas/:id/estado y /mover) con la llave interna,
- * así que valen todas sus reglas (estados, choques de horario, turnos, bloqueos), la auditoría, el tiempo real y los recordatorios.
+ * REGLAS (16-nov-2026, las pidió el equipo del chat de Ana; antes las ponía el chat). Lo que no se puede hacer por aquí responde 409
+ * con un código y Ana deriva a un asesor:
+ *  - NO_SE_PUEDE_CANCELAR  la cita ya está en curso o atendida (llegó, en atención, completada, no show);
+ *  - FUERA_DE_PLAZO        faltan menos de RESERVA_CHAT_CAMBIO_ANTICIPACION_MIN minutos (120 por defecto) o ya pasó;
+ *  - ESPERANDO_PAGO        la reserva de fin de semana aún espera su pago previo (se libera sola si no paga);
+ *  - REQUIERE_ASESOR       la cita tiene un pago (en línea o en la sede), es de un paquete o de una visita de dos servicios, pide un
+ *                          profesional en particular; al reprogramar: a sábado o domingo, un servicio que no se reserva en línea en esa
+ *                          sede, o un paciente sin DNI/CE;
+ *  - NO_VIGENTE            reprogramar una cita ya cancelada (cancelarla otra vez no es error: «repetida»);
+ *  - HORA_NO_DISPONIBLE    la hora nueva no está libre (la cita queda como estaba).
+ * Reprogramar MUEVE la misma cita (PATCH /citas/:id/mover): conserva su código, su N.º de cita, su historial y su recordatorio. Pedirla a la
+ * misma fecha y hora que ya tiene no es error (reintento): responde como hecha, con `repetida: true`.
+ * Cancelar y mover pasan por los MISMOS endpoints de la Agenda con la llave interna, así que valen todas sus reglas (estados, choques de
+ * horario, turnos, bloqueos), la auditoría (`chat_cita_cancelada` / `chat_cita_reprogramada`), el tiempo real y los recordatorios.
  */
 import { prisma } from '../../db';
 import { AppError } from '../../middleware/errorHandler';
@@ -23,36 +29,69 @@ import { registrarAudit } from '../audit';
 import { seleccionarProfesionalOptimo } from '../disponibilidad';
 import { fechaAStr, fechaDb, hoyLimaStr } from '../../utils/fechaLima';
 import { timeToMinutes, formatoNumeroCita } from '@limablue/shared';
-import { estadoReservaPorCodigo, horasLibres, limpiarCacheDias, llamarAgenda, minutosAhoraLima, PASARELA_WOO } from './reservaWebService';
-import { requierePagoPrevio } from './woocommerce';
+import { estadoReservaPorCodigo, horasLibres, limpiarCacheDias, llamarAgenda, minutosAhoraLima, servicioReservable, PASARELA_WOO } from './reservaWebService';
+import { esFinDeSemana } from './woocommerce';
 import { cerrarPagoPendienteDeCita } from './pagoPrevio';
 import { normalizarDocumento } from './validaciones';
 
 const MODIFICABLES = ['agendada', 'confirmada'];
-const NOMBRE_ESTADO: Record<string, string> = {
-  llego: 'Llegó', en_atencion: 'En atención', completada: 'Completada', no_show: 'No show', reprogramada: 'Reprogramada', cancelada: 'Cancelada',
+const EN_CURSO_O_ATENDIDA = ['llego', 'en_atencion', 'completada', 'no_show'];
+/** Anticipación mínima para cancelar o reprogramar por el chat (minutos). */
+const ANTICIPACION_CAMBIO_MIN = () => {
+  const v = Number(process.env.RESERVA_CHAT_CAMBIO_ANTICIPACION_MIN);
+  return Number.isFinite(v) && v >= 0 ? v : 120;
 };
 const SELECT_CITA = {
   id: true, numero: true, estado: true, deletedAt: true, fecha: true, horaInicio: true, duracionMinutos: true,
-  sedeId: true, unidadNegocioId: true, servicioId: true, profesionalId: true, pacienteId: true, estadoPago: true,
+  sedeId: true, unidadNegocioId: true, servicioId: true, subcategoriaId: true, profesionalId: true, pacienteId: true,
+  estadoPago: true, pagada: true, paquetePacienteId: true, slotGrupoId: true, solicitadoProfesionalId: true,
+  paciente: { select: { tipoDocumento: true } },
 } as const;
 
 export interface Meta { ip?: string; userAgent?: string }
 interface CitaG {
   id: string; numero: number; estado: string; deletedAt: Date | null; fecha: Date; horaInicio: string; duracionMinutos: number;
-  sedeId: string; unidadNegocioId: string; servicioId: string; profesionalId: string | null; pacienteId: string; estadoPago: string;
+  sedeId: string; unidadNegocioId: string; servicioId: string; subcategoriaId: string | null; profesionalId: string | null; pacienteId: string;
+  estadoPago: string; pagada: boolean; paquetePacienteId: string | null; slotGrupoId: string | null; solicitadoProfesionalId: string | null;
+  paciente?: { tipoDocumento: string } | null;
 }
+/** Lo que importa de las reservas de una cita para las reglas. */
+interface ReservaR { pagoEstado: string | null; pasarela: string | null; estado: string }
 
 function yaPaso(fecha: string, hora: string) {
   const hoy = hoyLimaStr();
   return fecha < hoy || (fecha === hoy && timeToMinutes(hora) <= minutosAhoraLima());
 }
 
-function exigirModificable(cita: CitaG) {
-  if (!MODIFICABLES.includes(cita.estado)) {
-    throw new AppError(`La cita está en «${NOMBRE_ESTADO[cita.estado] ?? cita.estado}»: ya no se puede cambiar por aquí.`, 409, 'CITA_NO_MODIFICABLE');
+const asesor = (mensaje: string) => ({ codigo: 'REQUIERE_ASESOR', mensaje });
+
+/**
+ * ¿Se puede cambiar (cancelar o reprogramar) esta cita por el chat? Puro: recibe la cita y sus reservas.
+ * `yaCancelada` = ya no está vigente; `bloqueo` = por qué no (código del 409 y mensaje para el paciente).
+ */
+export function evaluarCambio(cita: CitaG, reservas: ReservaR[]): { yaCancelada: boolean; bloqueo: { codigo: string; mensaje: string } | null } {
+  if (cita.deletedAt || cita.estado === 'cancelada' || cita.estado === 'reprogramada') return { yaCancelada: true, bloqueo: null };
+  const no = (b: { codigo: string; mensaje: string }) => ({ yaCancelada: false, bloqueo: b });
+  if (EN_CURSO_O_ATENDIDA.includes(cita.estado) || !MODIFICABLES.includes(cita.estado)) {
+    return no({ codigo: 'NO_SE_PUEDE_CANCELAR', mensaje: 'La cita ya está en curso o fue atendida.' });
   }
-  if (yaPaso(fechaAStr(cita.fecha), cita.horaInicio)) throw new AppError('La hora de la cita ya pasó.', 409, 'CITA_PASADA');
+  if (reservas.some((r) => r.pasarela === PASARELA_WOO && r.estado === 'esperando_pago')) {
+    return no({ codigo: 'ESPERANDO_PAGO', mensaje: 'La cita está esperando el pago: se libera sola si no se paga a tiempo.' });
+  }
+  if (reservas.some((r) => r.pagoEstado === 'aprobado') || cita.pagada || cita.estadoPago !== 'pendiente') {
+    return no(asesor('La cita ya tiene un pago: lo resuelve un asesor.'));
+  }
+  if (cita.paquetePacienteId || cita.slotGrupoId) return no(asesor('La cita es parte de un paquete o de una visita de dos servicios: lo resuelve un asesor.'));
+  if (cita.solicitadoProfesionalId) return no(asesor('La cita pide un profesional en particular: lo resuelve un asesor.'));
+  const f = fechaAStr(cita.fecha), hoy = hoyLimaStr();
+  if (f < hoy || (f === hoy && timeToMinutes(cita.horaInicio) - minutosAhoraLima() < ANTICIPACION_CAMBIO_MIN())) {
+    return no({ codigo: 'FUERA_DE_PLAZO', mensaje: `Ya no hay tiempo para cambiarla desde el chat (se pide con al menos ${Math.round(ANTICIPACION_CAMBIO_MIN() / 60 * 10) / 10} horas de anticipación).` });
+  }
+  return { yaCancelada: false, bloqueo: null };
+}
+
+async function reservasDe(citaId: string): Promise<ReservaR[]> {
+  return prisma.reservaWeb.findMany({ where: { citaId }, select: { pagoEstado: true, pasarela: true, estado: true } });
 }
 
 /** Respuesta de la Agenda → error con su mismo código y mensaje (en español). Llave mal configurada o 5xx: error del servidor. */
@@ -66,14 +105,12 @@ async function exigirOk(resp: Response, ref: string, que: string) {
 }
 
 /** Cancela con PATCH /citas/:id/estado. Devuelve false si ya estaba cancelada (reintento: no es error). */
-async function cancelar(cita: CitaG, o: { pagadaEnLinea: boolean; motivoCita: string; ref: string; audit: { entidad: string; entidadId: string; despues: Record<string, unknown> }; meta: Meta }) {
-  if (cita.estado === 'cancelada') return false;
-  exigirModificable(cita);
-  if (o.pagadaEnLinea) {
-    throw new AppError('Esta cita se pagó en línea: para cancelarla (y devolver el pago) el paciente debe comunicarse con la sede.', 409, 'PAGADA_EN_LINEA');
-  }
+async function cancelar(cita: CitaG, o: { motivoCita: string; ref: string; audit: { entidad: string; entidadId: string; despues: Record<string, unknown> }; meta: Meta }) {
+  const ev = evaluarCambio(cita, await reservasDe(cita.id));
+  if (ev.yaCancelada) return false;
+  if (ev.bloqueo) throw new AppError(ev.bloqueo.mensaje, 409, ev.bloqueo.codigo);
   await exigirOk(await llamarAgenda('PATCH', `/citas/${cita.id}/estado`, { estado: 'cancelada', motivoCancelacion: o.motivoCita }), o.ref, 'cancelar la cita');
-  // Si esperaba el pago previo: se cierra la reserva y se anula el pedido de la tienda (el enlace deja de servir).
+  // Por si esperaba el pago previo (hoy no llega aquí: ESPERANDO_PAGO): se cierra la reserva y se anula el pedido de la tienda.
   await cerrarPagoPendienteDeCita(cita.id).catch((e) => console.error(`[reserva-chat] ${o.ref}: no se pudo cerrar el pago pendiente:`, (e as Error).message));
   limpiarCacheDias();
   void registrarAudit({
@@ -84,25 +121,29 @@ async function cancelar(cita: CitaG, o: { pagadaEnLinea: boolean; motivoCita: st
   return true;
 }
 
-/**
- * Pago previo (solo el chat de WhatsApp con la tienda conectada): con el pago PENDIENTE no se reprograma, y una cita sin pagar
- * no pasa a sábado o domingo por aquí (esos días se pagan al reservar). Las ya pagadas se mueven libremente.
- */
-async function exigirPagoPrevioAlMover(cita: CitaG, fecha: string, canal: string) {
-  if (canal !== 'whatsapp') return;
-  const pendiente = await prisma.reservaWeb.count({ where: { citaId: cita.id, pasarela: PASARELA_WOO, estado: 'esperando_pago' } });
-  if (pendiente > 0) throw new AppError('Esta cita espera su pago: primero se paga y luego se puede reprogramar.', 409, 'PAGO_PENDIENTE');
-  if (cita.estadoPago !== 'completo' && requierePagoPrevio(fecha)) {
-    throw new AppError('Los sábados y domingos se pagan al reservar: para pasar la cita a ese día, cancélala y haz una reserva nueva.', 409, 'PAGO_PREVIO_REQUERIDO');
+/** Reglas propias de REPROGRAMAR (además de evaluarCambio): a dónde y qué se puede mover por el chat. */
+async function exigirReprogramable(cita: CitaG, fecha: string) {
+  if (esFinDeSemana(fecha)) throw new AppError('Las citas de sábado y domingo requieren pago previo: lo coordina un asesor.', 409, 'REQUIERE_ASESOR');
+  const tipo = cita.paciente?.tipoDocumento;
+  if (tipo && tipo !== 'DNI' && tipo !== 'CE') throw new AppError('El documento del paciente no permite reservar en línea: lo resuelve un asesor.', 409, 'REQUIERE_ASESOR');
+  try {
+    await servicioReservable(cita.sedeId, cita.servicioId, cita.subcategoriaId);
+  } catch (e) {
+    if (e instanceof AppError && ['SERVICIO_NO_RESERVABLE', 'VARIANTE_REQUERIDA'].includes(e.code ?? '')) {
+      throw new AppError('Este servicio no se reprograma por el chat: lo resuelve un asesor.', 409, 'REQUIERE_ASESOR');
+    }
+    throw e;
   }
 }
 
-/** Mueve con PATCH /citas/:id/mover. Devuelve false si ya estaba en ese horario. */
+/** Mueve con PATCH /citas/:id/mover. Devuelve false si ya estaba en ese horario (reintento). */
 async function mover(cita: CitaG, fecha: string, horaInicio: string, o: { canal: string; ref: string; audit: { entidad: string; entidadId: string; despues: Record<string, unknown> }; meta: Meta }) {
-  exigirModificable(cita);
+  const ev = evaluarCambio(cita, await reservasDe(cita.id));
+  if (ev.yaCancelada) throw new AppError('Esa cita ya no está vigente.', 409, 'NO_VIGENTE');
   const fechaActual = fechaAStr(cita.fecha);
   if (fechaActual === fecha && cita.horaInicio === horaInicio) return false;
-  await exigirPagoPrevioAlMover(cita, fecha, o.canal);
+  if (ev.bloqueo) throw new AppError(ev.bloqueo.mensaje, 409, ev.bloqueo.codigo);
+  await exigirReprogramable(cita, fecha);
 
   // La hora tiene que ser una de las que ofrece GET /horas. Excepción: el mismo día, a una hora que se cruza con la propia
   // cita (p. ej. 30 min después): /horas la ve «ocupada» por ella misma; ahí decide la Agenda al mover.
@@ -118,7 +159,7 @@ async function mover(cita: CitaG, fecha: string, horaInicio: string, o: { canal:
   void registrarAudit({
     citaId: cita.id, accion: 'chat_cita_reprogramada', entidad: o.audit.entidad, entidadId: o.audit.entidadId, sedeId: cita.sedeId, ip: o.meta.ip, userAgent: o.meta.userAgent,
     antes: { fecha: fechaActual, horaInicio: cita.horaInicio, profesionalId: cita.profesionalId },
-    despues: { ...o.audit.despues, fecha, horaInicio, profesionalId },
+    despues: { ...o.audit.despues, canal: o.canal, fecha, horaInicio, profesionalId },
   });
   return true;
 }
@@ -127,15 +168,14 @@ async function mover(cita: CitaG, fecha: string, horaInicio: string, o: { canal:
 async function reservaConCita(codigo: string, canal: string) {
   const r = await prisma.reservaWeb.findFirst({ where: { codigo, canal } });
   if (!r) throw new AppError('Reserva no encontrada', 404, 'RESERVA_NO_ENCONTRADA');
-  const cita = (r.estado === 'confirmada' || r.estado === 'esperando_pago') && r.citaId ? await prisma.cita.findUnique({ where: { id: r.citaId }, select: SELECT_CITA }) : null;
-  if (!cita || cita.deletedAt) throw new AppError('Esta reserva no tiene una cita vigente en la agenda', 409, 'SIN_CITA');
+  const cita = r.citaId ? await prisma.cita.findUnique({ where: { id: r.citaId }, select: SELECT_CITA }) : null;
+  if (!cita) throw new AppError('Esta reserva no tiene una cita en la agenda', 409, 'SIN_CITA');
   return { r, cita };
 }
 
 export async function cancelarReserva(codigo: string, canal: string, motivo: string | null, meta: Meta = {}) {
   const { r, cita } = await reservaConCita(codigo, canal);
   const hecho = await cancelar(cita, {
-    pagadaEnLinea: r.pagoEstado === 'aprobado',
     motivoCita: `Cancelada por el paciente vía ${canal} (reserva ${codigo})${motivo ? `: ${motivo}` : ''}`,
     ref: codigo, meta, audit: { entidad: 'reserva_web', entidadId: r.id, despues: { codigo, canal, motivo } },
   });
@@ -144,11 +184,11 @@ export async function cancelarReserva(codigo: string, canal: string, motivo: str
 
 export async function reprogramarReserva(codigo: string, canal: string, fecha: string, horaInicio: string, meta: Meta = {}) {
   const { r, cita } = await reservaConCita(codigo, canal);
-  const hecho = await mover(cita, fecha, horaInicio, { canal, ref: codigo, meta, audit: { entidad: 'reserva_web', entidadId: r.id, despues: { codigo, canal } } });
+  const hecho = await mover(cita, fecha, horaInicio, { canal, ref: codigo, meta, audit: { entidad: 'reserva_web', entidadId: r.id, despues: { codigo } } });
   return { ...(await estadoReservaPorCodigo(codigo, canal)), sinCambios: !hecho };
 }
 
-// ─── Por el PACIENTE (documento + N.º de cita C-…) ────────────────────────────
+// ─── Por el PACIENTE (documento + N.º de cita C-…, id o LB-…) ─────────────────
 /** `tipoDocumento` opcional (14-nov-2026): el contrato de la nota de Ana manda solo el número; sin tipo se busca por número. */
 export interface DocumentoPaciente { tipoDocumento?: string | null; numeroDocumento: string }
 
@@ -180,7 +220,7 @@ async function citaPorReferencia(ref: string) {
   return numero ? prisma.cita.findUnique({ where: { numero }, select: SELECT_CITA }) : null;
 }
 
-/** Ficha de una cita para el chat (sin datos del paciente ni del profesional). */
+/** Ficha de una cita para el chat (sin datos del paciente ni del profesional), con lo que se puede hacer por aquí. */
 async function fichas(citas: CitaG[]) {
   if (!citas.length) return [];
   const ids = citas.map((c) => c.id);
@@ -195,14 +235,8 @@ async function fichas(citas: CitaG[]) {
   return citas.map((c) => {
     const e = ex.get(c.id);
     const rs = reservas.filter((r) => r.citaId === c.id);
-    const pagadoEnLinea = rs.some((r) => r.pagoEstado === 'aprobado');
-    const enBloque = !!e?.slotGrupoId;
-    const esperandoPago = rs.some((r) => r.pasarela === PASARELA_WOO && r.estado === 'esperando_pago');
-    // Qué se puede hacer por aquí (14-nov-2026, contrato de la nota de Ana): pagada en línea → no se cancela; bloque o pago
-    // previo pendiente → no se reprograma. `puedeCambiar` = las dos; si no, `motivo` dice por qué (Ana deriva a un asesor).
-    const puedeCancelar = !pagadoEnLinea;
-    const puedeReprogramar = !enBloque && !esperandoPago;
-    const motivo = pagadoEnLinea ? 'REQUIERE_ASESOR' : esperandoPago ? 'ESPERANDO_PAGO' : enBloque ? 'REQUIERE_ASESOR' : null;
+    const ev = evaluarCambio(c, rs);
+    const puede = !ev.yaCancelada && !ev.bloqueo;
     return {
       numeroCita: formatoNumeroCita(c.numero), estado: c.estado,
       fecha: fechaAStr(c.fecha), horaInicio: c.horaInicio, duracionMinutos: c.duracionMinutos,
@@ -210,14 +244,16 @@ async function fichas(citas: CitaG[]) {
       subcategoriaId: e?.subcategoriaId ?? null, variante: e?.subcategoria?.nombre ?? null,
       /** Código «LB-…» si la cita nació de una reserva web o del chat; null si la registró la clínica. */
       codigoReserva: rs[0]?.codigo ?? null, canalReserva: rs[0]?.canal ?? null,
-      pagadoEnLinea,
-      /** Parte de una visita de dos servicios a la misma hora: se cancela entera; para reprogramarla, la sede. */
-      enBloque,
-      /** Para usar en /:codigo/cancelar|reprogramar: el «LB-…» de su reserva o, si la registró la clínica, el id de la cita. */
+      pagadoEnLinea: rs.some((r) => r.pagoEstado === 'aprobado'),
+      /** Parte de una visita de dos servicios a la misma hora (no se cambia por aquí: REQUIERE_ASESOR). */
+      enBloque: !!e?.slotGrupoId,
+      /** Para usar en /:codigo/cancelar|reprogramar o /cambiar: el «LB-…» de su reserva o, si la registró la clínica, el id de la cita. */
       codigo: rs[0]?.codigo ?? c.id,
       estadoCita: c.estado,
-      puedeCancelar, puedeReprogramar, puedeCambiar: puedeCancelar && puedeReprogramar,
-      ...(motivo ? { motivo } : {}),
+      /** `puedeCambiar: false` → `motivo` (código de la tabla de reglas) y Ana deriva a un asesor. Reprogramar a sábado o domingo
+       *  tampoco se puede, aunque `puedeCambiar` sea true (depende del día nuevo). */
+      puedeCambiar: puede, puedeCancelar: puede, puedeReprogramar: puede,
+      ...(ev.bloqueo ? { motivo: ev.bloqueo.codigo } : {}),
     };
   });
 }
@@ -234,9 +270,9 @@ export async function citasProximas(d: DocumentoPaciente) {
 }
 
 /** La cita (N.º «C-…», id o «LB-…»), solo si es de ese paciente (si no, 404 igual que si no existiera). */
-async function citaDelPaciente(ref: string, d: DocumentoPaciente) {
+export async function citaDelPaciente(ref: string, d: DocumentoPaciente) {
   const [cita, paciente] = await Promise.all([citaPorReferencia(ref), pacienteDe(d)]);
-  if (!cita || cita.deletedAt || !paciente || cita.pacienteId !== paciente.id) throw new AppError('Cita no encontrada', 404, 'CITA_NO_ENCONTRADA');
+  if (!cita || !paciente || cita.pacienteId !== paciente.id) throw new AppError('Cita no encontrada', 404, 'CITA_NO_ENCONTRADA');
   return cita;
 }
 
@@ -247,10 +283,8 @@ async function fichaDe(citaId: string) {
 
 export async function cancelarCitaPaciente(numeroCita: string, d: DocumentoPaciente, canal: string, motivo: string | null, meta: Meta = {}) {
   const cita = await citaDelPaciente(numeroCita, d);
-  const pagada = await prisma.reservaWeb.findFirst({ where: { citaId: cita.id, pagoEstado: 'aprobado' }, select: { id: true } });
   const n = formatoNumeroCita(cita.numero);
   const hecho = await cancelar(cita, {
-    pagadaEnLinea: !!pagada,
     motivoCita: `Cancelada por el paciente vía ${canal}${motivo ? `: ${motivo}` : ''}`,
     ref: n, meta, audit: { entidad: 'cita', entidadId: cita.id, despues: { numeroCita: n, canal, motivo } },
   });
@@ -260,14 +294,14 @@ export async function cancelarCitaPaciente(numeroCita: string, d: DocumentoPacie
 export async function reprogramarCitaPaciente(numeroCita: string, d: DocumentoPaciente, canal: string, fecha: string, horaInicio: string, meta: Meta = {}) {
   const cita = await citaDelPaciente(numeroCita, d);
   const n = formatoNumeroCita(cita.numero);
-  const hecho = await mover(cita, fecha, horaInicio, { canal, ref: n, meta, audit: { entidad: 'cita', entidadId: cita.id, despues: { numeroCita: n, canal } } });
+  const hecho = await mover(cita, fecha, horaInicio, { canal, ref: n, meta, audit: { entidad: 'cita', entidadId: cita.id, despues: { numeroCita: n } } });
   return { ...(await fichaDe(cita.id)), sinCambios: !hecho };
 }
 
 // ─── Contrato de la NOTA DE ANA (14-nov-2026) ─────────────────────────────────
-// Su chat llama POST /:codigo/cancelar|reprogramar con { numeroDocumento, … } y `codigo` = «LB-…» o el id de la cita (lo que le da
-// GET /citas-paciente). Con el documento se usa el camino por PACIENTE (cualquier cita suya, también de recepción); las respuestas
-// llevan además los campos que su nota espera. Las reglas son las mismas de siempre (la Agenda no agrega las suyas).
+// Su chat llama POST /:codigo/cancelar|reprogramar (o POST /cambiar) con { numeroDocumento, … } y `codigo` = «LB-…» o el id de la cita
+// (lo que le da GET /citas-paciente). Con el documento se usa el camino por PACIENTE (cualquier cita suya, también de recepción); las
+// respuestas llevan además los campos que su nota espera.
 const comoReservaNoEncontrada = (e: unknown) =>
   e instanceof AppError && e.code === 'CITA_NO_ENCONTRADA' ? new AppError('Reserva no encontrada', 404, 'RESERVA_NO_ENCONTRADA') : e;
 

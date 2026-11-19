@@ -1,166 +1,112 @@
 /**
- * Cancelar y reprogramar una reserva desde la API del chat (11-nov-2026). La Agenda (PATCH /citas/:id/estado y /mover) está
- * simulada: se comprueba qué se le pide y qué se rechaza antes de llegar a ella.
+ * Cancelar y reprogramar desde las APIs del chat (11-nov-2026; reglas del equipo del chat desde el 16-nov-2026). La Agenda
+ * (PATCH /citas/:id/estado y /mover) está simulada: se comprueba qué se le pide y qué se rechaza antes de llegar a ella.
  */
-const manana = new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10);
-const pasado = new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10);
+/** Día HÁBIL (lunes a viernes) a partir de `n` días desde hoy: reprogramar a fin de semana tiene su propia regla. */
+function diaHabil(n: number): string {
+  const d = new Date(Date.now() + n * 86_400_000);
+  while (d.getUTCDay() === 0 || d.getUTCDay() === 6) d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+function proximo(diaSemana: number): string {
+  const d = new Date(); d.setUTCDate(d.getUTCDate() + ((diaSemana - d.getUTCDay() + 7) % 7 || 7));
+  return d.toISOString().slice(0, 10);
+}
+const manana = diaHabil(2);
+/** El día hábil siguiente a `manana`. */
+const pasado = (() => {
+  const d = new Date(`${manana}T12:00:00Z`);
+  do d.setUTCDate(d.getUTCDate() + 1); while (d.getUTCDay() === 0 || d.getUTCDay() === 6);
+  return d.toISOString().slice(0, 10);
+})();
+const hoyLima = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima' }).format(new Date());
+
 const reserva = { id: 'r1', codigo: 'LB-123456', canal: 'whatsapp', estado: 'confirmada', citaId: 'c1', pagoEstado: null };
 const citaBase = {
-  id: 'c1', estado: 'agendada', deletedAt: null, fecha: new Date(`${manana}T12:00:00Z`), horaInicio: '10:00', duracionMinutos: 30,
-  sedeId: 's1', unidadNegocioId: 'u1', servicioId: 'sv1', profesionalId: 'p1',
+  id: 'c1', numero: 8323, estado: 'agendada', deletedAt: null, fecha: new Date(`${manana}T12:00:00Z`), horaInicio: '10:00', duracionMinutos: 30,
+  sedeId: 's1', unidadNegocioId: 'u1', servicioId: 'sv1', subcategoriaId: null, profesionalId: 'p1', pacienteId: 'pac1',
+  estadoPago: 'pendiente', pagada: false, paquetePacienteId: null, slotGrupoId: null, solicitadoProfesionalId: null,
+  paciente: { tipoDocumento: 'DNI' },
 };
 
 const mockPrisma = {
-  reservaWeb: { findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn().mockResolvedValue(0) },
+  reservaWeb: { findFirst: jest.fn(), findMany: jest.fn() },
   cita: { findUnique: jest.fn(), findMany: jest.fn() },
   paciente: { findFirst: jest.fn() },
 };
 jest.mock('../src/db', () => ({ prisma: mockPrisma }));
 jest.mock('../src/services/audit', () => ({ registrarAudit: jest.fn().mockResolvedValue(undefined) }));
+jest.mock('../src/services/reservaWeb/pagoPrevio', () => ({ cerrarPagoPendienteDeCita: jest.fn().mockResolvedValue(undefined) }));
 const mockProfesional = jest.fn();
 jest.mock('../src/services/disponibilidad', () => ({ seleccionarProfesionalOptimo: (...a: unknown[]) => mockProfesional(...a) }));
 const mockServicio = {
   estadoReservaPorCodigo: jest.fn(), horasLibres: jest.fn(), limpiarCacheDias: jest.fn(), llamarAgenda: jest.fn(), minutosAhoraLima: () => 12 * 60,
-  PASARELA_WOO: 'woocommerce',
+  servicioReservable: jest.fn(), PASARELA_WOO: 'woocommerce',
 };
 jest.mock('../src/services/reservaWeb/reservaWebService', () => mockServicio);
 
-import { cancelarReserva, reprogramarReserva, citasProximas, cancelarCitaPaciente, reprogramarCitaPaciente, leerNumeroCita, cancelarCompat, reprogramarCompat } from '../src/services/reservaWeb/gestion';
+import { AppError } from '../src/middleware/errorHandler';
+import {
+  cancelarReserva, reprogramarReserva, citasProximas, cancelarCitaPaciente, reprogramarCitaPaciente, leerNumeroCita,
+  cancelarCompat, reprogramarCompat, evaluarCambio,
+} from '../src/services/reservaWeb/gestion';
 
 const respuesta = (status: number, cuerpo: unknown = {}) => ({ ok: status < 300, status, json: async () => cuerpo });
+const cita = (extra: Record<string, unknown> = {}) => ({ ...citaBase, ...extra });
 
 beforeEach(() => {
   jest.clearAllMocks();
   jest.spyOn(console, 'error').mockImplementation(() => undefined);
+  delete process.env.RESERVA_CHAT_CAMBIO_ANTICIPACION_MIN;
   mockPrisma.reservaWeb.findFirst.mockResolvedValue({ ...reserva });
-  mockPrisma.cita.findUnique.mockResolvedValue({ ...citaBase });
+  mockPrisma.reservaWeb.findMany.mockResolvedValue([]);
+  mockPrisma.cita.findUnique.mockResolvedValue(cita());
+  mockPrisma.cita.findMany.mockResolvedValue([]);
+  mockPrisma.paciente.findFirst.mockResolvedValue({ id: 'pac1' });
   mockServicio.estadoReservaPorCodigo.mockResolvedValue({ codigo: 'LB-123456', estado: 'confirmada' });
   mockServicio.horasLibres.mockResolvedValue(['09:00', '15:00']);
   mockServicio.llamarAgenda.mockResolvedValue(respuesta(200));
+  mockServicio.servicioReservable.mockResolvedValue({});
   mockProfesional.mockResolvedValue('p2');
-  mockPrisma.paciente.findFirst.mockResolvedValue({ id: 'pac1' });
-  mockPrisma.cita.findMany.mockResolvedValue([]);
-  mockPrisma.reservaWeb.findMany.mockResolvedValue([]);
 });
 
-describe('por el paciente (documento + N.º de cita)', () => {
-  const citaPaciente = { ...citaBase, numero: 8323, pacienteId: 'pac1' };
-  const doc = { tipoDocumento: 'DNI', numeroDocumento: '12345678' };
-  beforeEach(() => {
-    mockPrisma.cita.findUnique.mockResolvedValue({ ...citaPaciente });
-    mockPrisma.reservaWeb.findFirst.mockResolvedValue(null);
-    mockPrisma.cita.findMany.mockImplementation(async (q: { select?: { sede?: unknown } }) => (q.select?.sede
-      ? [{ id: 'c1', slotGrupoId: null, sede: { nombre: 'Los Olivos', direccion: 'Av. 1' }, servicio: { nombre: 'Evaluación' }, subcategoriaId: null, subcategoria: null }]
-      : [{ ...citaPaciente }]));
+describe('reglas (evaluarCambio)', () => {
+  const ev = (extra: Record<string, unknown> = {}, reservas: Record<string, unknown>[] = []) => evaluarCambio(cita(extra) as never, reservas as never);
+
+  it('cita normal, con tiempo: se puede', () => expect(ev()).toEqual({ yaCancelada: false, bloqueo: null }));
+  it('cancelada, reprogramada o borrada: ya no está vigente', () => {
+    expect(ev({ estado: 'cancelada' }).yaCancelada).toBe(true);
+    expect(ev({ estado: 'reprogramada' }).yaCancelada).toBe(true);
+    expect(ev({ deletedAt: new Date() }).yaCancelada).toBe(true);
   });
-
-  it('lee el N.º de cita con o sin «C-» y ceros', () => {
-    expect(leerNumeroCita('C-008323')).toBe(8323);
-    expect(leerNumeroCita('c8323')).toBe(8323);
-    expect(leerNumeroCita('8323')).toBe(8323);
-    expect(leerNumeroCita('LB-123456')).toBeNull();
+  it('en curso o atendida → NO_SE_PUEDE_CANCELAR', () => {
+    for (const estado of ['llego', 'en_atencion', 'completada', 'no_show']) expect(ev({ estado }).bloqueo?.codigo).toBe('NO_SE_PUEDE_CANCELAR');
   });
-
-  it('lista las citas próximas agendadas/confirmadas, sin datos del paciente ni del profesional', async () => {
-    const r = await citasProximas(doc);
-    expect(mockPrisma.paciente.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ tipoDocumento: 'DNI', numeroDocumento: '12345678' }) }));
-    expect(mockPrisma.cita.findMany.mock.calls[0][0].where).toMatchObject({ pacienteId: 'pac1', deletedAt: null, estado: { in: ['agendada', 'confirmada'] } });
-    expect(r).toEqual([expect.objectContaining({ numeroCita: 'C-008323', fecha: manana, horaInicio: '10:00', sedeId: 's1', servicioId: 'sv1', codigoReserva: null, pagadoEnLinea: false, enBloque: false })]);
-    expect(r[0]).not.toHaveProperty('profesionalId');
-    expect(r[0]).not.toHaveProperty('pacienteId');
+  it('esperando el pago previo → ESPERANDO_PAGO', () => {
+    expect(ev({}, [{ pasarela: 'woocommerce', estado: 'esperando_pago', pagoEstado: 'pendiente' }]).bloqueo?.codigo).toBe('ESPERANDO_PAGO');
   });
-
-  it('documento desconocido → lista vacía', async () => {
-    mockPrisma.paciente.findFirst.mockResolvedValue(null);
-    expect(await citasProximas(doc)).toEqual([]);
+  it('con cualquier pago (en línea, en la sede o parcial) → REQUIERE_ASESOR', () => {
+    expect(ev({}, [{ pasarela: 'niubiz', estado: 'confirmada', pagoEstado: 'aprobado' }]).bloqueo?.codigo).toBe('REQUIERE_ASESOR');
+    expect(ev({ pagada: true }).bloqueo?.codigo).toBe('REQUIERE_ASESOR');
+    expect(ev({ estadoPago: 'incompleto' }).bloqueo?.codigo).toBe('REQUIERE_ASESOR');
   });
-
-  it('una cita de HOY cuya hora ya pasó no aparece', async () => {
-    const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima' }).format(new Date());
-    mockPrisma.cita.findMany.mockImplementation(async (q: { select?: { sede?: unknown } }) => (q.select?.sede ? [] : [{ ...citaPaciente, fecha: new Date(`${hoy}T12:00:00Z`), horaInicio: '08:00' }]));
-    expect(await citasProximas(doc)).toEqual([]); // minutosAhoraLima simulado = 12:00
+  it('de paquete, de visita doble o con profesional pedido → REQUIERE_ASESOR', () => {
+    expect(ev({ paquetePacienteId: 'pq' }).bloqueo?.codigo).toBe('REQUIERE_ASESOR');
+    expect(ev({ slotGrupoId: 'g' }).bloqueo?.codigo).toBe('REQUIERE_ASESOR');
+    expect(ev({ solicitadoProfesionalId: 'pr' }).bloqueo?.codigo).toBe('REQUIERE_ASESOR');
   });
-
-  it('la cita es de OTRO paciente → 404 como si no existiera', async () => {
-    mockPrisma.cita.findUnique.mockResolvedValue({ ...citaPaciente, pacienteId: 'otro' });
-    await expect(cancelarCitaPaciente('C-008323', doc, 'whatsapp', null)).rejects.toMatchObject({ statusCode: 404, code: 'CITA_NO_ENCONTRADA' });
-    expect(mockServicio.llamarAgenda).not.toHaveBeenCalled();
-  });
-
-  it('cancela por N.º de cita con el motivo del chat', async () => {
-    const r = await cancelarCitaPaciente('C-008323', doc, 'whatsapp', 'Viaje');
-    expect(mockServicio.llamarAgenda).toHaveBeenCalledWith('PATCH', '/citas/c1/estado', { estado: 'cancelada', motivoCancelacion: 'Cancelada por el paciente vía whatsapp: Viaje' });
-    expect(r).toMatchObject({ numeroCita: 'C-008323', sinCambios: false });
-  });
-
-  it('pagada en línea (tiene reserva con pago aprobado) → no se cancela', async () => {
-    mockPrisma.reservaWeb.findFirst.mockResolvedValue({ id: 'r1' });
-    await expect(cancelarCitaPaciente('8323', doc, 'whatsapp', null)).rejects.toMatchObject({ statusCode: 409, code: 'PAGADA_EN_LINEA' });
-  });
-
-  it('reprograma por N.º de cita', async () => {
-    await reprogramarCitaPaciente('C-008323', doc, 'whatsapp', pasado, '15:00');
-    expect(mockServicio.llamarAgenda).toHaveBeenCalledWith('PATCH', '/citas/c1/mover', { fecha: pasado, horaInicio: '15:00', profesionalId: 'p2' });
-  });
-
-  // ─── Contrato de la nota de Ana (14-nov-2026) ───
-  const ID_CITA = '11111111-1111-4111-8111-111111111111';
-  const docSinTipo = { numeroDocumento: '12345678' };
-
-  it('documento SIN tipo: busca al paciente solo por el número', async () => {
-    await citasProximas(docSinTipo);
-    const where = mockPrisma.paciente.findFirst.mock.calls[0][0].where;
-    expect(where).toMatchObject({ numeroDocumento: '12345678' });
-    expect(where).not.toHaveProperty('tipoDocumento');
-  });
-
-  it('cada cita trae codigo (id si la registró la clínica), estadoCita y puedeCambiar', async () => {
-    const [c] = await citasProximas(docSinTipo);
-    expect(c).toMatchObject({ codigo: 'c1', estadoCita: 'agendada', puedeCambiar: true, puedeCancelar: true, puedeReprogramar: true });
-    expect(c).not.toHaveProperty('motivo');
-  });
-
-  it('con reserva pagada en línea: codigo LB y no se puede cancelar (motivo REQUIERE_ASESOR)', async () => {
-    mockPrisma.reservaWeb.findMany.mockResolvedValue([{ citaId: 'c1', codigo: 'LB-654321', canal: 'web', pagoEstado: 'aprobado', pasarela: 'niubiz', estado: 'confirmada' }]);
-    const [c] = await citasProximas(docSinTipo);
-    expect(c).toMatchObject({ codigo: 'LB-654321', puedeCambiar: false, puedeCancelar: false, puedeReprogramar: true, motivo: 'REQUIERE_ASESOR' });
-  });
-
-  it('esperando el pago previo: no se reprograma (motivo ESPERANDO_PAGO)', async () => {
-    mockPrisma.reservaWeb.findMany.mockResolvedValue([{ citaId: 'c1', codigo: 'LB-654321', canal: 'whatsapp', pagoEstado: 'pendiente', pasarela: 'woocommerce', estado: 'esperando_pago' }]);
-    const [c] = await citasProximas(docSinTipo);
-    expect(c).toMatchObject({ puedeCancelar: true, puedeReprogramar: false, motivo: 'ESPERANDO_PAGO' });
-  });
-
-  it('cancelar con su contrato: codigo = id de la cita → { codigo, estado: "cancelada", repetida }', async () => {
-    const r = await cancelarCompat(ID_CITA, docSinTipo, 'whatsapp', 'Viaje');
-    expect(mockPrisma.cita.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: ID_CITA } }));
-    expect(mockServicio.llamarAgenda).toHaveBeenCalledWith('PATCH', '/citas/c1/estado', expect.objectContaining({ estado: 'cancelada' }));
-    expect(r).toMatchObject({ codigo: ID_CITA, estado: 'cancelada', repetida: false });
-  });
-
-  it('cancelar con su contrato: codigo LB de OTRO canal también vale si el documento es del dueño', async () => {
-    mockPrisma.reservaWeb.findFirst.mockResolvedValueOnce({ citaId: 'c1' }).mockResolvedValue(null);
-    const r = await cancelarCompat('LB-654321', docSinTipo, 'whatsapp', null);
-    expect(mockPrisma.reservaWeb.findFirst.mock.calls[0][0]).toEqual({ where: { codigo: 'LB-654321' }, select: { citaId: true } });
-    expect(r).toMatchObject({ codigo: 'LB-654321', estado: 'cancelada', repetida: false });
-  });
-
-  it('cancelar con su contrato: documento de otra persona → 404 RESERVA_NO_ENCONTRADA', async () => {
-    mockPrisma.cita.findUnique.mockResolvedValue({ ...citaPaciente, pacienteId: 'otro' });
-    await expect(cancelarCompat(ID_CITA, docSinTipo, 'whatsapp', null)).rejects.toMatchObject({ statusCode: 404, code: 'RESERVA_NO_ENCONTRADA' });
-    expect(mockServicio.llamarAgenda).not.toHaveBeenCalled();
-  });
-
-  it('reprogramar con su contrato: MUEVE la misma cita y responde con codigoAnterior', async () => {
-    const r = await reprogramarCompat(ID_CITA, docSinTipo, 'whatsapp', pasado, '15:00');
-    expect(mockServicio.llamarAgenda).toHaveBeenCalledWith('PATCH', '/citas/c1/mover', { fecha: pasado, horaInicio: '15:00', profesionalId: 'p2' });
-    expect(r).toMatchObject({ codigo: ID_CITA, codigoAnterior: ID_CITA, estado: 'confirmada', citaId: 'c1', repetida: false, moneda: 'PEN' });
+  it('faltan menos de 2 h (o ya pasó) → FUERA_DE_PLAZO; el plazo se puede cambiar', () => {
+    const hoy = new Date(`${hoyLima}T12:00:00Z`); // minutosAhoraLima simulado = 12:00
+    expect(ev({ fecha: hoy, horaInicio: '13:30' }).bloqueo?.codigo).toBe('FUERA_DE_PLAZO');
+    expect(ev({ fecha: hoy, horaInicio: '14:00' }).bloqueo).toBeNull();
+    expect(ev({ fecha: new Date('2026-01-05T12:00:00Z') }).bloqueo?.codigo).toBe('FUERA_DE_PLAZO');
+    process.env.RESERVA_CHAT_CAMBIO_ANTICIPACION_MIN = '30';
+    expect(ev({ fecha: hoy, horaInicio: '13:00' }).bloqueo).toBeNull();
   });
 });
 
-describe('cancelar', () => {
-  it('cancela la cita con el endpoint de la Agenda y deja el motivo', async () => {
+describe('cancelar (por código LB del canal)', () => {
+  it('cancela con el endpoint de la Agenda y deja el motivo', async () => {
     const r = await cancelarReserva('LB-123456', 'whatsapp', 'Viaje');
     expect(mockServicio.llamarAgenda).toHaveBeenCalledWith('PATCH', '/citas/c1/estado', { estado: 'cancelada', motivoCancelacion: 'Cancelada por el paciente vía whatsapp (reserva LB-123456): Viaje' });
     expect(r.sinCambios).toBe(false);
@@ -172,31 +118,23 @@ describe('cancelar', () => {
     expect(mockPrisma.reservaWeb.findFirst).toHaveBeenCalledWith({ where: { codigo: 'LB-123456', canal: 'web' } });
   });
 
-  it('ya cancelada → responde sin tocar nada (reintento del chat)', async () => {
-    mockPrisma.cita.findUnique.mockResolvedValue({ ...citaBase, estado: 'cancelada' });
-    const r = await cancelarReserva('LB-123456', 'whatsapp', null);
-    expect(r.sinCambios).toBe(true);
+  it('ya cancelada → responde sin tocar nada (reintento)', async () => {
+    mockPrisma.cita.findUnique.mockResolvedValue(cita({ estado: 'cancelada' }));
+    expect((await cancelarReserva('LB-123456', 'whatsapp', null)).sinCambios).toBe(true);
     expect(mockServicio.llamarAgenda).not.toHaveBeenCalled();
   });
 
-  it('pagada en línea → no se cancela por aquí', async () => {
-    mockPrisma.reservaWeb.findFirst.mockResolvedValue({ ...reserva, pagoEstado: 'aprobado' });
-    await expect(cancelarReserva('LB-123456', 'whatsapp', null)).rejects.toMatchObject({ statusCode: 409, code: 'PAGADA_EN_LINEA' });
+  it('una regla lo impide → 409 con su código y sin tocar la Agenda', async () => {
+    mockPrisma.reservaWeb.findMany.mockResolvedValue([{ pagoEstado: 'aprobado', pasarela: 'niubiz', estado: 'confirmada' }]);
+    await expect(cancelarReserva('LB-123456', 'whatsapp', null)).rejects.toMatchObject({ statusCode: 409, code: 'REQUIERE_ASESOR' });
+    mockPrisma.cita.findUnique.mockResolvedValue(cita({ estado: 'llego' }));
+    mockPrisma.reservaWeb.findMany.mockResolvedValue([]);
+    await expect(cancelarReserva('LB-123456', 'whatsapp', null)).rejects.toMatchObject({ statusCode: 409, code: 'NO_SE_PUEDE_CANCELAR' });
     expect(mockServicio.llamarAgenda).not.toHaveBeenCalled();
   });
 
-  it('el paciente ya llegó → no se cancela', async () => {
-    mockPrisma.cita.findUnique.mockResolvedValue({ ...citaBase, estado: 'llego' });
-    await expect(cancelarReserva('LB-123456', 'whatsapp', null)).rejects.toMatchObject({ statusCode: 409, code: 'CITA_NO_MODIFICABLE' });
-  });
-
-  it('la hora de la cita ya pasó → no se cancela', async () => {
-    mockPrisma.cita.findUnique.mockResolvedValue({ ...citaBase, fecha: new Date('2026-01-05T12:00:00Z') });
-    await expect(cancelarReserva('LB-123456', 'whatsapp', null)).rejects.toMatchObject({ statusCode: 409, code: 'CITA_PASADA' });
-  });
-
-  it('la cita fue borrada de la agenda → sin cita', async () => {
-    mockPrisma.cita.findUnique.mockResolvedValue({ ...citaBase, deletedAt: new Date() });
+  it('la reserva no tiene cita → SIN_CITA', async () => {
+    mockPrisma.reservaWeb.findFirst.mockResolvedValue({ ...reserva, citaId: null });
     await expect(cancelarReserva('LB-123456', 'whatsapp', null)).rejects.toMatchObject({ statusCode: 409, code: 'SIN_CITA' });
   });
 
@@ -210,11 +148,11 @@ describe('cancelar', () => {
   });
 });
 
-describe('reprogramar', () => {
-  it('mueve la cita a una hora ofrecida, con el especialista que asigna la Agenda', async () => {
+describe('reprogramar (por código LB del canal)', () => {
+  it('mueve la misma cita a una hora ofrecida, con el especialista que asigna la Agenda', async () => {
     const r = await reprogramarReserva('LB-123456', 'whatsapp', pasado, '15:00');
     expect(mockServicio.horasLibres).toHaveBeenCalledWith('s1', 'sv1', pasado);
-    expect(mockProfesional).toHaveBeenCalledWith('s1', 'u1', 'sv1', pasado, '15:00', 'p1'); // prefiere al mismo especialista
+    expect(mockProfesional).toHaveBeenCalledWith('s1', 'u1', 'sv1', pasado, '15:00', 'p1');
     expect(mockServicio.llamarAgenda).toHaveBeenCalledWith('PATCH', '/citas/c1/mover', { fecha: pasado, horaInicio: '15:00', profesionalId: 'p2' });
     expect(r.sinCambios).toBe(false);
   });
@@ -225,7 +163,7 @@ describe('reprogramar', () => {
     expect(mockServicio.llamarAgenda).toHaveBeenCalledWith('PATCH', '/citas/c1/mover', expect.objectContaining({ profesionalId: 'p1' }));
   });
 
-  it('hora que no ofrece GET /horas → 409 sin mover', async () => {
+  it('hora que no ofrece GET /horas → 409 HORA_NO_DISPONIBLE sin mover', async () => {
     await expect(reprogramarReserva('LB-123456', 'whatsapp', pasado, '11:00')).rejects.toMatchObject({ statusCode: 409, code: 'HORA_NO_DISPONIBLE' });
     expect(mockServicio.llamarAgenda).not.toHaveBeenCalled();
   });
@@ -235,44 +173,130 @@ describe('reprogramar', () => {
     expect(mockServicio.llamarAgenda).toHaveBeenCalledWith('PATCH', '/citas/c1/mover', expect.objectContaining({ fecha: manana, horaInicio: '10:15' }));
   });
 
-  it('pago previo pendiente (13-nov-2026) → no se reprograma hasta pagar', async () => {
-    mockPrisma.reservaWeb.count.mockResolvedValueOnce(1);
-    await expect(reprogramarReserva('LB-123456', 'whatsapp', pasado, '15:00')).rejects.toMatchObject({ statusCode: 409, code: 'PAGO_PENDIENTE' });
-    expect(mockServicio.llamarAgenda).not.toHaveBeenCalled();
-  });
-
-  it('cita sin pagar → no pasa a sábado por WhatsApp con la tienda conectada; por la web sí', async () => {
-    const d = new Date(); d.setUTCDate(d.getUTCDate() + ((6 - d.getUTCDay() + 7) % 7 || 7));
-    const sabado = d.toISOString().slice(0, 10);
-    process.env.WOO_URL = 'https://tienda.test'; process.env.WOO_CONSUMER_KEY = 'ck_x'; process.env.WOO_CONSUMER_SECRET = 'cs_x';
-    try {
-      await expect(reprogramarReserva('LB-123456', 'whatsapp', sabado, '15:00')).rejects.toMatchObject({ statusCode: 409, code: 'PAGO_PREVIO_REQUERIDO' });
-      mockServicio.horasLibres.mockResolvedValueOnce(['15:00']);
-      await reprogramarReserva('LB-123456', 'web', sabado, '15:00');
-      expect(mockServicio.llamarAgenda).toHaveBeenCalledWith('PATCH', '/citas/c1/mover', expect.objectContaining({ fecha: sabado }));
-    } finally {
-      delete process.env.WOO_URL; delete process.env.WOO_CONSUMER_KEY; delete process.env.WOO_CONSUMER_SECRET;
-    }
-  });
-  it('misma fecha y hora → sin cambios', async () => {
+  it('misma fecha y hora → sin cambios (reintento)', async () => {
     const r = await reprogramarReserva('LB-123456', 'whatsapp', manana, '10:00');
     expect(r.sinCambios).toBe(true);
     expect(mockServicio.llamarAgenda).not.toHaveBeenCalled();
   });
 
-  it('pagada en línea → SÍ se puede reprogramar', async () => {
-    mockPrisma.reservaWeb.findFirst.mockResolvedValue({ ...reserva, pagoEstado: 'aprobado' });
-    await reprogramarReserva('LB-123456', 'whatsapp', pasado, '09:00');
-    expect(mockServicio.llamarAgenda).toHaveBeenCalled();
+  it('a sábado o domingo → REQUIERE_ASESOR (en cualquier API)', async () => {
+    for (const f of [proximo(6), proximo(0)]) {
+      await expect(reprogramarReserva('LB-123456', 'whatsapp', f, '15:00')).rejects.toMatchObject({ statusCode: 409, code: 'REQUIERE_ASESOR' });
+      await expect(reprogramarReserva('LB-123456', 'web', f, '15:00')).rejects.toMatchObject({ statusCode: 409, code: 'REQUIERE_ASESOR' });
+    }
+    expect(mockServicio.llamarAgenda).not.toHaveBeenCalled();
   });
 
-  it('cancelada → no se reprograma', async () => {
-    mockPrisma.cita.findUnique.mockResolvedValue({ ...citaBase, estado: 'cancelada' });
-    await expect(reprogramarReserva('LB-123456', 'whatsapp', pasado, '09:00')).rejects.toMatchObject({ statusCode: 409, code: 'CITA_NO_MODIFICABLE' });
+  it('servicio que no se reserva en línea en esa sede → REQUIERE_ASESOR', async () => {
+    mockServicio.servicioReservable.mockRejectedValue(new AppError('no', 400, 'SERVICIO_NO_RESERVABLE'));
+    await expect(reprogramarReserva('LB-123456', 'whatsapp', pasado, '15:00')).rejects.toMatchObject({ statusCode: 409, code: 'REQUIERE_ASESOR' });
+  });
+
+  it('paciente con otro documento (pasaporte) → REQUIERE_ASESOR', async () => {
+    mockPrisma.cita.findUnique.mockResolvedValue(cita({ paciente: { tipoDocumento: 'PASAPORTE' } }));
+    await expect(reprogramarReserva('LB-123456', 'whatsapp', pasado, '15:00')).rejects.toMatchObject({ statusCode: 409, code: 'REQUIERE_ASESOR' });
+  });
+
+  it('con pago → REQUIERE_ASESOR; esperando el pago previo → ESPERANDO_PAGO', async () => {
+    mockPrisma.reservaWeb.findMany.mockResolvedValue([{ pagoEstado: 'aprobado', pasarela: 'niubiz', estado: 'confirmada' }]);
+    await expect(reprogramarReserva('LB-123456', 'whatsapp', pasado, '15:00')).rejects.toMatchObject({ statusCode: 409, code: 'REQUIERE_ASESOR' });
+    mockPrisma.reservaWeb.findMany.mockResolvedValue([{ pagoEstado: 'pendiente', pasarela: 'woocommerce', estado: 'esperando_pago' }]);
+    await expect(reprogramarReserva('LB-123456', 'whatsapp', pasado, '15:00')).rejects.toMatchObject({ statusCode: 409, code: 'ESPERANDO_PAGO' });
+  });
+
+  it('cancelada → NO_VIGENTE', async () => {
+    mockPrisma.cita.findUnique.mockResolvedValue(cita({ estado: 'cancelada' }));
+    await expect(reprogramarReserva('LB-123456', 'whatsapp', pasado, '09:00')).rejects.toMatchObject({ statusCode: 409, code: 'NO_VIGENTE' });
   });
 
   it('el horario se ocupó justo antes (la Agenda responde 409) → se pasa tal cual', async () => {
     mockServicio.llamarAgenda.mockResolvedValueOnce(respuesta(409, { error: 'SLOT_OCUPADO', message: 'Ese horario ya está ocupado' }));
     await expect(reprogramarReserva('LB-123456', 'whatsapp', pasado, '09:00')).rejects.toMatchObject({ statusCode: 409, code: 'SLOT_OCUPADO' });
+  });
+});
+
+describe('por el paciente (documento + N.º de cita, id o LB)', () => {
+  const doc = { tipoDocumento: 'DNI', numeroDocumento: '12345678' };
+  const docSinTipo = { numeroDocumento: '12345678' };
+  const ID_CITA = '11111111-1111-4111-8111-111111111111';
+  beforeEach(() => {
+    mockPrisma.reservaWeb.findFirst.mockResolvedValue(null);
+    mockPrisma.cita.findMany.mockImplementation(async (q: { select?: { sede?: unknown } }) => (q.select?.sede
+      ? [{ id: 'c1', slotGrupoId: null, sede: { nombre: 'Los Olivos', direccion: 'Av. 1' }, servicio: { nombre: 'Evaluación' }, subcategoriaId: null, subcategoria: null }]
+      : [cita()]));
+  });
+
+  it('lee el N.º de cita con o sin «C-» y ceros', () => {
+    expect(leerNumeroCita('C-008323')).toBe(8323);
+    expect(leerNumeroCita('c8323')).toBe(8323);
+    expect(leerNumeroCita('8323')).toBe(8323);
+    expect(leerNumeroCita('LB-123456')).toBeNull();
+  });
+
+  it('lista las citas próximas con codigo, estadoCita y puedeCambiar, sin datos del paciente ni del profesional', async () => {
+    const r = await citasProximas(doc);
+    expect(mockPrisma.paciente.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ tipoDocumento: 'DNI', numeroDocumento: '12345678' }) }));
+    expect(r).toEqual([expect.objectContaining({ numeroCita: 'C-008323', codigo: 'c1', estadoCita: 'agendada', puedeCambiar: true, fecha: manana, sedeId: 's1', servicioId: 'sv1' })]);
+    expect(r[0]).not.toHaveProperty('motivo');
+    expect(r[0]).not.toHaveProperty('profesionalId');
+    expect(r[0]).not.toHaveProperty('pacienteId');
+  });
+
+  it('documento SIN tipo: busca solo por el número', async () => {
+    await citasProximas(docSinTipo);
+    expect(mockPrisma.paciente.findFirst.mock.calls[0][0].where).not.toHaveProperty('tipoDocumento');
+  });
+
+  it('una cita bloqueada sale con puedeCambiar: false y su motivo; con reserva, su codigo es el LB', async () => {
+    mockPrisma.reservaWeb.findMany.mockResolvedValue([{ citaId: 'c1', codigo: 'LB-654321', canal: 'web', pagoEstado: 'aprobado', pasarela: 'niubiz', estado: 'confirmada' }]);
+    const [c] = await citasProximas(docSinTipo);
+    expect(c).toMatchObject({ codigo: 'LB-654321', puedeCambiar: false, motivo: 'REQUIERE_ASESOR' });
+  });
+
+  it('documento desconocido → lista vacía; la cita de hoy cuya hora ya pasó no aparece', async () => {
+    mockPrisma.paciente.findFirst.mockResolvedValueOnce(null);
+    expect(await citasProximas(doc)).toEqual([]);
+    mockPrisma.cita.findMany.mockImplementation(async (q: { select?: { sede?: unknown } }) => (q.select?.sede ? [] : [cita({ fecha: new Date(`${hoyLima}T12:00:00Z`), horaInicio: '08:00' })]));
+    expect(await citasProximas(doc)).toEqual([]);
+  });
+
+  it('cita de OTRO paciente → 404 como si no existiera', async () => {
+    mockPrisma.cita.findUnique.mockResolvedValue(cita({ pacienteId: 'otro' }));
+    await expect(cancelarCitaPaciente('C-008323', doc, 'whatsapp', null)).rejects.toMatchObject({ statusCode: 404, code: 'CITA_NO_ENCONTRADA' });
+    expect(mockServicio.llamarAgenda).not.toHaveBeenCalled();
+  });
+
+  it('cancela y reprograma por N.º de cita', async () => {
+    const r = await cancelarCitaPaciente('C-008323', doc, 'whatsapp', 'Viaje');
+    expect(mockServicio.llamarAgenda).toHaveBeenCalledWith('PATCH', '/citas/c1/estado', { estado: 'cancelada', motivoCancelacion: 'Cancelada por el paciente vía whatsapp: Viaje' });
+    expect(r).toMatchObject({ numeroCita: 'C-008323', sinCambios: false });
+    await reprogramarCitaPaciente('C-008323', doc, 'whatsapp', pasado, '15:00');
+    expect(mockServicio.llamarAgenda).toHaveBeenCalledWith('PATCH', '/citas/c1/mover', { fecha: pasado, horaInicio: '15:00', profesionalId: 'p2' });
+  });
+
+  // ─── Contrato de la nota de Ana ───
+  it('cancelar con su contrato: codigo = id de la cita → { codigo, estado: "cancelada", repetida }', async () => {
+    const r = await cancelarCompat(ID_CITA, docSinTipo, 'whatsapp', 'Viaje');
+    expect(mockPrisma.cita.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: ID_CITA } }));
+    expect(r).toMatchObject({ codigo: ID_CITA, estado: 'cancelada', repetida: false });
+  });
+
+  it('cancelar con su contrato: codigo LB de OTRO canal vale si el documento es del dueño', async () => {
+    mockPrisma.reservaWeb.findFirst.mockResolvedValueOnce({ citaId: 'c1' });
+    const r = await cancelarCompat('LB-654321', docSinTipo, 'whatsapp', null);
+    expect(mockPrisma.reservaWeb.findFirst.mock.calls[0][0]).toEqual({ where: { codigo: 'LB-654321' }, select: { citaId: true } });
+    expect(r).toMatchObject({ codigo: 'LB-654321', estado: 'cancelada', repetida: false });
+  });
+
+  it('con su contrato: documento de otra persona → 404 RESERVA_NO_ENCONTRADA', async () => {
+    mockPrisma.cita.findUnique.mockResolvedValue(cita({ pacienteId: 'otro' }));
+    await expect(cancelarCompat(ID_CITA, docSinTipo, 'whatsapp', null)).rejects.toMatchObject({ statusCode: 404, code: 'RESERVA_NO_ENCONTRADA' });
+    await expect(reprogramarCompat(ID_CITA, docSinTipo, 'whatsapp', pasado, '15:00')).rejects.toMatchObject({ statusCode: 404, code: 'RESERVA_NO_ENCONTRADA' });
+  });
+
+  it('reprogramar con su contrato: MUEVE la misma cita y responde con codigoAnterior', async () => {
+    const r = await reprogramarCompat(ID_CITA, docSinTipo, 'whatsapp', pasado, '15:00');
+    expect(mockServicio.llamarAgenda).toHaveBeenCalledWith('PATCH', '/citas/c1/mover', { fecha: pasado, horaInicio: '15:00', profesionalId: 'p2' });
+    expect(r).toMatchObject({ codigo: ID_CITA, codigoAnterior: ID_CITA, estado: 'confirmada', citaId: 'c1', repetida: false, moneda: 'PEN' });
   });
 });

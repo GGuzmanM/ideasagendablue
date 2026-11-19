@@ -301,9 +301,41 @@
   0%, 100% { opacity: 1; filter: drop-shadow(0 0 2.5px currentColor) brightness(1.15); }
   50% { opacity: 0.45; filter: none; }
 }
-.navidad-foco { animation: navidad-titilar 1.8s ease-in-out infinite; }
+.navidad-foco { animation: navidad-titilar 1.8s steps(2) infinite; }
+
+/* Mascotas pixel del pie del menú (pingüino, T-Rex): saltito retro por pasos. */
+@keyframes navidad-mascota-pixel {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+.navidad-mascota-pixel {
+  animation: navidad-mascota-pixel 1.8s steps(1) infinite;
+}
+
+/* Parpadeo de las mascotas pixel: intercambio instantáneo de frames */
+@keyframes mascota-parpadeo {
+  0%, 88%, 94%, 100% { opacity: 1; }
+  89%, 93% { opacity: 0; }
+}
+@keyframes mascota-parpadeo-inv {
+  0%, 88%, 94%, 100% { opacity: 0; }
+  89%, 93% { opacity: 1; }
+}
+.navidad-ojos-abiertos {
+  animation: mascota-parpadeo 3.6s steps(1) infinite;
+}
+.navidad-ojos-cerrados {
+  animation: mascota-parpadeo-inv 3.6s steps(1) infinite;
+}
+
+@keyframes navidad-mecer {
+  0%, 100% { transform: rotate(-4deg); }
+  50% { transform: rotate(4deg) translateY(-1px); }
+}
+.navidad-mecer { animation: navidad-mecer 2.4s ease-in-out infinite; transform-box: fill-box; }
+
 @media (prefers-reduced-motion: reduce) {
-  .navidad-foco { animation: none; }
+  .navidad-foco, .navidad-mecer, .navidad-mascota-pixel, .navidad-ojos-abiertos, .navidad-ojos-cerrados { animation: none; }
 }
 
 /* Modo navideño: textura muy tenue de copos y estrellitas sobre el azul del menú lateral. */

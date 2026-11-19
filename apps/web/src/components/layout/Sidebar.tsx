@@ -3,7 +3,7 @@ import { cn } from '../../utils/cn';
 import { useAuthStore } from '../../stores/authStore';
 import { useContadorControles } from '../../services/controlesService';
 import { rutaWeb } from '../../utils/rutaBase';
-import { CuentaRegresiva, Gorrito, NavidadSwitch, Nieve, useTituloNavideno } from '../navidad/Navidad';
+import { CuentaRegresiva, EscenaPixel, Gorrito, NavidadSwitch, Nieve, useTituloNavideno } from '../navidad/Navidad';
 import { useNavidadVisible } from '../../stores/navidadStore';
 
 // El menú se guía por PERMISOS del rol (configurables en Administración → Roles).
@@ -72,6 +72,7 @@ export function Sidebar() {
 
       {/* Spacer */}
       <div className="flex-1" />
+      {navidad && <div className="w-full flex justify-center mb-1"><EscenaPixel compacto /></div>}
       <NavidadSwitch compacto />
 
       {/* Usuario */}

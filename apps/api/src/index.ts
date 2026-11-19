@@ -11,6 +11,7 @@ import verificacionPublicaRouter from './routes/verificacionPublica';
 import reservaWebRouter from './routes/reservaWeb';
 import reservaWebAgendaRouter from './routes/reservaWebAgenda';
 import { crearApiReservas, SCOPE_RESERVAS, SCOPE_RESERVAS_WHATSAPP } from './routes/reservaChat';
+import mcpRouter from './routes/mcp';
 import { reservaWebHabilitada, mantenimientoReservasWeb } from './services/reservaWeb/reservaWebService';
 import pagoWooRouter from './routes/pagoWoo';
 import { mantenimientoPagoPrevio } from './services/reservaWeb/pagoPrevio';
@@ -276,6 +277,8 @@ app.use(`${v1}/publico/reservas`, reservaWebRouter); // PÚBLICO: reserva web co
 // la WEB con «reservas:write» (la llave que ya existía) y WHATSAPP con «reservas:whatsapp». Ver routes/reservaChat.ts.
 app.use(`${v1}/integraciones/reservas`, crearApiReservas({ scope: SCOPE_RESERVAS, canal: 'web' }));
 app.use(`${v1}/integraciones/whatsapp`, crearApiReservas({ scope: SCOPE_RESERVAS_WHATSAPP, canal: 'whatsapp' }));
+// Servidor MCP para Ana (17-nov-2026): las mismas funciones como herramientas MCP (routes/mcp.ts).
+app.use(`${v1}/mcp`, mcpRouter);
 app.use(`${v1}/reservas-web`, reservaWebAgendaRouter); // Interno: reservas web en curso para la agenda (lista vacía si está apagada)
 
 // ─── Error handler ────────────────────────────────────────────────────────────

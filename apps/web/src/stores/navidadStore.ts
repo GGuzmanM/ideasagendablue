@@ -6,38 +6,73 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { useAuthStore } from './authStore';
 
+export type PersonajeNavidad = 'stitch' | 'dino' | 'capibara' | 'harry' | 'bob' | 'crash' | 'arbol';
+
 interface NavidadState {
   activo: boolean;
+  personaje: PersonajeNavidad | null;
+  modalSelectorAbierto: boolean;
   alternar: () => void;
+  setPersonaje: (p: PersonajeNavidad | null) => void;
+  abrirModalSelector: () => void;
+  cerrarModalSelector: () => void;
 }
 
 export const useNavidadStore = create<NavidadState>()(
   persist(
     (set) => ({
       activo: false,
-      alternar: () => set((s) => ({ activo: !s.activo })),
+      personaje: null,
+      modalSelectorAbierto: false,
+      alternar: () =>
+        set((s) => {
+          const nuevo = !s.activo;
+          return {
+            activo: nuevo,
+            // Al encender el modo navideño, abrimos el selector para que la persona elija o confirme su mascota:
+            modalSelectorAbierto: nuevo,
+          };
+        }),
+      setPersonaje: (p) => set({ personaje: p, modalSelectorAbierto: false }),
+      abrirModalSelector: () => set({ modalSelectorAbierto: true }),
+      cerrarModalSelector: () => set({ modalSelectorAbierto: false }),
     }),
-    { name: 'limablue-navidad' },
+    {
+      name: 'limablue-navidad',
+      partialize: (s) => ({ activo: s.activo, personaje: s.personaje }),
+    },
   ),
 );
 
 /** Cuentas que ven el modo navideño ANTES del 1 de diciembre (13-nov-2026). Es solo decoración: no da ningún permiso. */
-const USUARIOS_ANTICIPADOS = ['de.chigne@limablue.com'];
+const USUARIOS_ANTICIPADOS = [
+  'de.chigne@limablue.com',
+  'dechigne@limablue.com',
+  'al.leyva@limablue.com',
+  'alleyva@limablue.com',
+  'da.santos@limablue.com',
+  'dasantos@limablue.com',
+  'ga.mancilla@limablue.com',
+  'gamancilla@limablue.com',
+  'ja.ruiz@limablue.com',
+  'jaruiz@limablue.com',
+  'institucional@limablue.com',
+  'da.sirvas@limablue.com',
+  'dasirvas@limablue.com',
+];
+/** TEMPORAL (17-nov-2026): el rol admin también lo ve antes, para revisar la capibara. Poner en false para quitarlo. */
+const ADMIN_ANTICIPADO = true;
 
-/** ¿Estamos entre el 1 de diciembre y el 6 de enero (en Lima)? Con `email` de una cuenta anticipada, siempre sí. */
-export function esTemporadaNavidad(ahora: Date = new Date(), email?: string | null): boolean {
-  if (import.meta.env.DEV) return true;
-  if (email && USUARIOS_ANTICIPADOS.includes(email.trim().toLowerCase())) return true;
-  const partes = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima', month: 'numeric', day: 'numeric' }).formatToParts(ahora);
-  const mes = Number(partes.find((p) => p.type === 'month')?.value);
-  const dia = Number(partes.find((p) => p.type === 'day')?.value);
-  return mes === 12 || (mes === 1 && dia <= 6);
+/** Modo navideño habilitado para todas las cuentas (18-nov-2026) para que todo el equipo pueda disfrutarlo y escoger su mascota. */
+export function esTemporadaNavidad(_ahora: Date = new Date(), _email?: string | null, _rol?: string | null): boolean {
+  return true;
 }
 
 /** ¿Es temporada para la persona que inició sesión? (el switch solo aparece si sí). */
 export function useEnTemporadaNavidad(): boolean {
   const email = useAuthStore((s) => s.usuario?.email);
-  return esTemporadaNavidad(new Date(), email);
+  const rol = useAuthStore((s) => s.usuario?.rol);
+  return esTemporadaNavidad(new Date(), email, rol);
 }
 
 /** La decoración se muestra: es temporada (para esta persona) y la prendió. */

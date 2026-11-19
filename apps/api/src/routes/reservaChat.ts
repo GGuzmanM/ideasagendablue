@@ -96,6 +96,10 @@ export function crearApiReservas(o: { scope: string; canal: 'web' | 'whatsapp' }
   });
   const limiteConsultas = limite(240, 'Demasiadas consultas. Espera un minuto.');
   const limiteReservas = limite(30, 'Demasiadas reservas en un minuto. Espera un momento.');
+  // 16-nov-2026 (pedido del equipo del chat): buscar citas por DOCUMENTO y cancelar/reprogramar llevan límites cortos, para frenar
+  // a quien pruebe documentos ajenos.
+  const limiteBusqueda = limite(20, 'Demasiadas búsquedas en un minuto. Espera un momento.');
+  const limiteCambios = limite(10, 'Demasiados cambios en un minuto. Espera un momento.');
 
   router.use(requireAuth, exigirLlave);
 
@@ -127,33 +131,76 @@ export function crearApiReservas(o: { scope: string; canal: 'web' | 'whatsapp' }
     res.status(r.repetida ? 200 : 201).json(publico);
   });
 
-  router.post('/pacientes/citas', limiteConsultas, async (req, res) => {
+  router.post('/pacientes/citas', limiteBusqueda, async (req, res) => {
     res.json({ citas: await citasProximas(zDocumento.parse(req.body ?? {})) });
   });
 
-  router.post('/citas/:numeroCita/cancelar', limiteReservas, async (req, res) => {
+  router.post('/citas/:numeroCita/cancelar', limiteCambios, async (req, res) => {
     const b = zDocumento.and(z.object({ motivo: z.string().trim().max(300).optional().nullable() })).parse(req.body ?? {});
     res.json(await cancelarCitaPaciente(String(req.params.numeroCita), b, canal, b.motivo || null, meta(req)));
   });
 
-  router.post('/citas/:numeroCita/reprogramar', limiteReservas, async (req, res) => {
+  router.post('/citas/:numeroCita/reprogramar', limiteCambios, async (req, res) => {
     const b = zDocumento.and(z.object({ fecha, horaInicio: hora })).parse(req.body ?? {});
     res.json(await reprogramarCitaPaciente(String(req.params.numeroCita), b, canal, b.fecha, b.horaInicio, meta(req)));
   });
 
   // Contrato de la nota de Ana (14-nov-2026): lo mismo que POST /pacientes/citas, con el documento en la URL (va ANTES de /:codigo).
-  router.get('/citas-paciente', limiteConsultas, async (req, res) => {
+  router.get('/citas-paciente', limiteBusqueda, async (req, res) => {
     res.json({ citas: await citasProximas(zDocumentoLibre.parse(req.query)) });
   });
+
+  // ─── Rutas AGRUPADAS para el agente de GHL (16-nov-2026) — solo la API de WhatsApp ───────────────────────────────
+  // GHL deja 5 acciones «Llamada a API» por agente: con estas dos (más POST /) Ana usa 3. Hacen lo mismo que las rutas sueltas
+  // (mismas funciones, reglas y límites); las sueltas siguen funcionando. Van ANTES de GET /:codigo.
+  if (canal === 'whatsapp') {
+    const consultaSchema = z.discriminatedUnion('que', [
+      z.object({ que: z.literal('catalogo') }),
+      z.object({ que: z.literal('dias'), sedeId: uuid, servicioId: uuid, desde: fecha, hasta: fecha }),
+      z.object({ que: z.literal('horas'), sedeId: uuid, servicioId: uuid, fecha }),
+      z.object({ que: z.literal('reserva'), codigo: z.string().trim().min(6).max(40) }),
+      z.object({ que: z.literal('citas'), numeroDocumento: z.string(), tipoDocumento: z.enum(TIPOS_DOCUMENTO_RESERVA).optional().nullable() }),
+    ], { errorMap: () => ({ message: 'Indica qué consultar: que=catalogo, dias, horas, reserva o citas' }) });
+    // «Mis citas» busca por documento: lleva el límite corto de búsquedas (como la ruta suelta).
+    const limiteSiBuscaCitas = (req: Request, res: Response, next: NextFunction) => (req.query.que === 'citas' ? limiteBusqueda(req, res, next) : next());
+
+    router.get('/consultar', limiteSiBuscaCitas, limiteConsultas, async (req, res) => {
+      const q = consultaSchema.parse(req.query);
+      switch (q.que) {
+        case 'catalogo': res.json(await catalogo()); return;
+        case 'dias': res.json({ dias: await diasDisponibles(q.sedeId, q.servicioId, q.desde, q.hasta) }); return;
+        case 'horas': {
+          const hc = await horasConCupos(q.sedeId, q.servicioId, q.fecha);
+          res.json({ fecha: q.fecha, horas: hc.map((h) => h.hora), cupos: Object.fromEntries(hc.map((h) => [h.hora, h.cupos])) });
+          return;
+        }
+        case 'reserva': res.json(await estadoReservaPorCodigo(q.codigo, canal)); return;
+        case 'citas': res.json({ citas: await citasProximas(zDocumentoLibre.parse(q)) }); return;
+      }
+    });
+
+    const codigoCambio = z.string().trim().min(1, 'Indica el código de la cita').max(60);
+    const cambioSchema = z.discriminatedUnion('accion', [
+      z.object({ accion: z.literal('cancelar'), codigo: codigoCambio, numeroDocumento: z.string(), tipoDocumento: z.enum(TIPOS_DOCUMENTO_RESERVA).optional().nullable(), motivo: z.string().trim().max(300).optional().nullable() }),
+      z.object({ accion: z.literal('reprogramar'), codigo: codigoCambio, numeroDocumento: z.string(), tipoDocumento: z.enum(TIPOS_DOCUMENTO_RESERVA).optional().nullable(), fecha, horaInicio: hora }),
+    ], { errorMap: () => ({ message: 'Indica la acción: accion=cancelar o reprogramar' }) });
+
+    router.post('/cambiar', limiteCambios, async (req, res) => {
+      const b = cambioSchema.parse(req.body ?? {});
+      const doc = zDocumentoLibre.parse(b);
+      if (b.accion === 'cancelar') { res.json(await cancelarCompat(b.codigo, doc, canal, b.motivo || null, meta(req))); return; }
+      res.status(201).json(await reprogramarCompat(b.codigo, doc, canal, b.fecha, b.horaInicio, meta(req)));
+    });
+  }
 
   router.get('/:codigo', limiteConsultas, async (req, res) => {
     res.json(await estadoReservaPorCodigo(String(req.params.codigo), canal));
   });
 
-  // Cancelar y reprogramar (11-nov-2026). Las reglas de negocio (anticipación, cuántas veces…) las pone el cliente; ver services/reservaWeb/gestion.ts.
+  // Cancelar y reprogramar (11-nov-2026). Reglas (16-nov-2026, pedidas por el equipo del chat): ver services/reservaWeb/gestion.ts.
   // Sin documento: `codigo` = «LB-…» de una reserva de ESTE canal. Con `numeroDocumento` (contrato de la nota de Ana, 14-nov-2026):
   // `codigo` = «LB-…», id de la cita o «C-…», de cualquier cita del dueño de ese documento; reprogramar responde 201.
-  router.post('/:codigo/cancelar', limiteReservas, async (req, res) => {
+  router.post('/:codigo/cancelar', limiteCambios, async (req, res) => {
     const { motivo } = z.object({ motivo: z.string().trim().max(300).optional().nullable() }).parse(req.body ?? {});
     const doc = documentoOpcional(req.body);
     const codigo = String(req.params.codigo);
@@ -162,7 +209,7 @@ export function crearApiReservas(o: { scope: string; canal: 'web' | 'whatsapp' }
     res.json({ ...r, repetida: r.sinCambios });
   });
 
-  router.post('/:codigo/reprogramar', limiteReservas, async (req, res) => {
+  router.post('/:codigo/reprogramar', limiteCambios, async (req, res) => {
     const { fecha: f, horaInicio } = z.object({ fecha, horaInicio: hora }).parse(req.body ?? {});
     const doc = documentoOpcional(req.body);
     const codigo = String(req.params.codigo);
