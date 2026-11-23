@@ -116,6 +116,7 @@ export const ACCION_LABEL: Record<string, AccionStyle> = {
   agregar_comentario:           def('Comentario agregado', 'chat', 'primario'),
   editar_comentario:            def('Comentario corregido', 'edit_note', 'primario'),
   editar_canal:                 def('Canal de reserva cambiado', 'call', 'primario'),
+  editar_preferencia_profesional: def('«Solo» de la profesional cambiado', 'person_pin', 'primario'),
   marcar_pagada:                def('Cita marcada como pagada', 'payments', 'primario'),
   desmarcar_pagada:             def('Se quitó la marca de pagada', 'payments', 'primario'),
   cambiar_estado_pago:          def('Estado de pago cambiado', 'payments', 'primario'),
@@ -598,6 +599,8 @@ function detalleCita(log: AuditLog, nombresPorId: Record<string, string>, legibl
     }
     case 'cambiar_consultorio':
       return `Consultorio ${val('consultorioNumero', a.consultorioNumero)} → ${val('consultorioNumero', d.consultorioNumero)}${cascada}`;
+    case 'editar_preferencia_profesional':
+      return d.origenAsignacion === 'elegida_por_paciente' ? 'Ahora: el paciente pidió a esta profesional («Solo»)' : 'Ahora: asignada por la clínica (sin «Solo»)';
     case 'editar_canal':
       return `Canal ${val('canal', a.canal)} → ${val('canal', d.canal)}`;
     case 'editar_promocion':

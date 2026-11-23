@@ -99,6 +99,9 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
     descuentoPromo,
     profesionalId,
     setProfesionalId,
+    pedidaPorPaciente,
+    setPedidaPorPaciente,
+    esPreferenciaOpcional,
     fechaCita,
     setFechaCita,
     horaCita,
@@ -1105,31 +1108,60 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
               <label className="font-label-caps text-label-caps text-on-surface-variant text-[11px] font-bold">
                 PROFESIONAL
               </label>
-              <div className="relative">
-                <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none flex items-center gap-2">
-                  <span className="material-symbols-outlined text-amber-500 text-lg" style={{ fontVariationSettings: "'FILL' 1" }}>
-                    star
+              <div className="flex flex-col sm:flex-row gap-2">
+                <div className="relative flex-1 min-w-0">
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none flex items-center gap-2">
+                    <span className="material-symbols-outlined text-amber-500 text-lg" style={{ fontVariationSettings: "'FILL' 1" }}>
+                      star
+                    </span>
+                  </div>
+                  <select
+                    value={profesionalId}
+                    onChange={(e) => setProfesionalId(e.target.value)}
+                    className="w-full appearance-none bg-surface-container-low border border-outline-variant rounded-xl pl-11 pr-10 py-3 truncate text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all font-medium text-on-surface"
+                  >
+                    <option value="">Sin preferencia (asignación automática)</option>
+                    {profesionales.map((p) => {
+                      const ocup = profesionalesOcupados?.get(p.id);
+                      return (
+                        <option key={p.id} value={p.id} disabled={!!ocup}>
+                          {p.nombres} {p.apellidos} ({p.tipo})
+                          {ocup ? ` — OCUPADO ${ocup.hora} en ${ocup.unidad}` : ''}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-outline">
+                    expand_more
                   </span>
                 </div>
-                <select
-                  value={profesionalId}
-                  onChange={(e) => setProfesionalId(e.target.value)}
-                  className="w-full appearance-none bg-surface-container-low border border-outline-variant rounded-xl pl-11 pr-4 py-3 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all font-medium text-on-surface"
-                >
-                  <option value="">Sin preferencia (asignación automática)</option>
-                  {profesionales.map((p) => {
-                    const ocup = profesionalesOcupados?.get(p.id);
-                    return (
-                      <option key={p.id} value={p.id} disabled={!!ocup}>
-                        {p.nombres} {p.apellidos} ({p.tipo})
-                        {ocup ? ` — OCUPADO ${ocup.hora} en ${ocup.unidad}` : ''}
-                      </option>
-                    );
-                  })}
-                </select>
-                <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-outline">
-                  expand_more
-                </span>
+                {/* «Solo X» (21-nov-2026): al lado del profesional, a la misma altura. La cita va con la profesional elegida,
+                    pero solo queda «Solo X» si el paciente la pidió. */}
+                {esPreferenciaOpcional && profesionalId && (() => {
+                  const nombre = profesionales.find((p) => p.id === profesionalId)?.nombres?.split(' ')[0] ?? '';
+                  return (
+                    <label
+                      data-testid="pedida-por-paciente"
+                      title="Márcala solo si el paciente pidió a esta profesional: la cita quedará «Solo»."
+                      className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border cursor-pointer transition-colors sm:w-[215px] shrink-0 ${
+                        pedidaPorPaciente ? 'bg-amber-50 border-amber-300' : 'bg-surface-container-low border-outline-variant hover:border-primary/50'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={pedidaPorPaciente}
+                        onChange={(e) => setPedidaPorPaciente(e.target.checked)}
+                        className="h-4 w-4 shrink-0 accent-amber-600 cursor-pointer"
+                      />
+                      <span className="text-xs leading-tight min-w-0">
+                        <span className="block font-bold text-on-surface truncate">El paciente pidió a {nombre || 'ella'}</span>
+                        <span className="block text-on-surface-variant truncate">
+                          {pedidaPorPaciente ? `Quedará «Solo ${nombre}»` : 'No queda como «Solo»'}
+                        </span>
+                      </span>
+                    </label>
+                  );
+                })()}
               </div>
 
               {/* Aviso si el profesional elegido ya está ocupado a esa hora en otra unidad */}
@@ -1145,7 +1177,9 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
               )}
 
               <p className="font-body-md text-xs text-on-surface-variant/70 italic">
-                Por defecto se asigna automáticamente. Elige un médico o especialista solo si el paciente lo pidió expresamente.
+                {esPreferenciaOpcional
+                  ? 'Si no eliges a nadie, se asigna automáticamente. Marca la casilla solo si el paciente pidió a esa profesional.'
+                  : 'Por defecto se asigna automáticamente. Elige un médico o especialista solo si el paciente lo pidió expresamente.'}
               </p>
             </div>
           )}

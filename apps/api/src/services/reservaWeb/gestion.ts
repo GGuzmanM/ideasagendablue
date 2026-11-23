@@ -30,7 +30,7 @@ import { seleccionarProfesionalOptimo } from '../disponibilidad';
 import { fechaAStr, fechaDb, hoyLimaStr } from '../../utils/fechaLima';
 import { timeToMinutes, formatoNumeroCita } from '@limablue/shared';
 import { estadoReservaPorCodigo, horasLibres, limpiarCacheDias, llamarAgenda, minutosAhoraLima, servicioReservable, PASARELA_WOO } from './reservaWebService';
-import { esFinDeSemana } from './woocommerce';
+import { exigePagoPrevio } from './woocommerce';
 import { cerrarPagoPendienteDeCita } from './pagoPrevio';
 import { normalizarDocumento } from './validaciones';
 
@@ -123,7 +123,7 @@ async function cancelar(cita: CitaG, o: { motivoCita: string; ref: string; audit
 
 /** Reglas propias de REPROGRAMAR (además de evaluarCambio): a dónde y qué se puede mover por el chat. */
 async function exigirReprogramable(cita: CitaG, fecha: string) {
-  if (esFinDeSemana(fecha)) throw new AppError('Las citas de sábado y domingo requieren pago previo: lo coordina un asesor.', 409, 'REQUIERE_ASESOR');
+  if (exigePagoPrevio(fecha)) throw new AppError('Las citas de sábado, domingo y feriados requieren pago previo: lo coordina un asesor.', 409, 'REQUIERE_ASESOR');
   const tipo = cita.paciente?.tipoDocumento;
   if (tipo && tipo !== 'DNI' && tipo !== 'CE') throw new AppError('El documento del paciente no permite reservar en línea: lo resuelve un asesor.', 409, 'REQUIERE_ASESOR');
   try {

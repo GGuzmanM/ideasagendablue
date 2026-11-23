@@ -306,6 +306,20 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
     onError: (e: Error) => toast.error(e.message),
   });
 
+  // «Solo X» (21-nov-2026): corregir después de creada si el paciente pidió (o no) a la profesional. Solo Podología.
+  // Estado local: la etiqueta cambia al instante (la agenda se recarga después) y un 2.º clic no la revierte sin querer.
+  const [origenSel, setOrigenSel] = useState(cita.origenAsignacion);
+  useEffect(() => { setOrigenSel(cita.origenAsignacion); }, [cita.origenAsignacion]);
+  const preferenciaMutation = useMutation({
+    mutationFn: (pedida: boolean) => citasApi.marcarPedidaPorPaciente(cita.id, pedida),
+    onSuccess: (_r, pedida) => {
+      setOrigenSel(pedida ? 'elegida_por_paciente' : 'asignada_automaticamente');
+      invalidarAgenda(qc);
+      toast.success(pedida ? 'Marcada: el paciente pidió a esta profesional' : 'Quitado el «Solo»: asignada por la clínica');
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const { canales: canalesOpts } = useCanales();
   const [canalSel, setCanalSel] = useState(cita.canal);
   const canalMutation = useMutation({
@@ -716,6 +730,8 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
     canalSel,
     setCanalSel,
     canalMutation,
+    preferenciaMutation,
+    origenSel,
     puedeMarcarPagada,
     estadoPagoSel,
     setEstadoPagoSel,

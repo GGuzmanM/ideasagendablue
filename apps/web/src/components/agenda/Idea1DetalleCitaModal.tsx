@@ -112,6 +112,8 @@ export function Idea1DetalleCitaModal(props: UseIdea1DetalleCitaProps) {
     canalSel,
     setCanalSel,
     canalMutation,
+    preferenciaMutation,
+    origenSel,
     puedeMarcarPagada,
     estadoPagoSel,
     setEstadoPagoSel,
@@ -676,18 +678,30 @@ El otro servicio de la cita doble no cambia.
                 </>
               )}
 
-              {cita.origenAsignacion && !cita.solicitadoProfesional && (
+              {origenSel && !cita.solicitadoProfesional && (
                 <>
                   <div className="font-label-caps text-label-caps text-on-surface-variant/70 uppercase tracking-wider">Origen</div>
                   <div className="flex items-center gap-2 font-body-md text-on-surface-variant text-xs font-medium">
                     <span className="material-symbols-outlined text-primary text-lg">
-                      {cita.origenAsignacion === 'elegida_por_paciente' ? 'person_check' : 'smart_toy'}
+                      {origenSel === 'elegida_por_paciente' ? 'person_check' : 'smart_toy'}
                     </span>
                     <span>
-                      {cita.origenAsignacion === 'elegida_por_paciente'
-                        ? 'Eligió la profesional'
-                        : 'Asignación automática'}
+                      {origenSel === 'elegida_por_paciente'
+                        ? `El paciente la pidió («Solo ${cita.profesional?.nombres?.split(' ')[0] ?? ''}»)`
+                        : 'Asignada por la clínica'}
                     </span>
+                    {/* «Solo X» (21-nov-2026): corregirlo si se marcó (o no) por error al crear la cita. Solo Podología. */}
+                    {puedeEstado && cita.profesionalId && cita.unidadNegocio?.modoReserva === 'preferencia_opcional' && (
+                      <button
+                        type="button"
+                        data-testid="toggle-pedida-por-paciente"
+                        disabled={preferenciaMutation.isPending}
+                        onClick={() => preferenciaMutation.mutate(origenSel !== 'elegida_por_paciente')}
+                        className="ml-1 text-[11px] font-semibold text-primary hover:underline disabled:opacity-50"
+                      >
+                        {origenSel === 'elegida_por_paciente' ? 'Quitar «Solo»' : 'Marcar «Solo»'}
+                      </button>
+                    )}
                   </div>
                 </>
               )}

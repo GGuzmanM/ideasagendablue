@@ -211,7 +211,7 @@ function crearServidor(req: Request) {
   }, envolver(async (a) => buscarCupo(a)));
 
   s.registerTool('reservar_cita', {
-    description: 'Registra al paciente (DNI o CE) y CREA la cita. Úsala solo después de confirmar con el paciente servicio, tipo, sede, fecha, hora y sus datos, y de que haya aceptado el tratamiento de sus datos (aceptaDatos: true). La hora debe salir de horas_del_dia o buscar_cupo. Si la respuesta trae `pago` (sábado o domingo), entrega al paciente el enlace de pago tal cual y avísale que tiene `pago.minutos` minutos para pagar.',
+    description: 'Registra al paciente (DNI o CE) y CREA la cita. Úsala solo después de confirmar con el paciente servicio, tipo, sede, fecha, hora y sus datos, y de que haya aceptado el tratamiento de sus datos (aceptaDatos: true). La hora debe salir de horas_del_dia o buscar_cupo. Si la respuesta trae `pago` (sábado, domingo o feriado), entrega al paciente el enlace de pago tal cual y avísale que tiene `pago.minutos` minutos para pagar.',
     inputSchema: reservaShape,
   }, envolver(async (raw) => {
     limite('reservas');
@@ -242,7 +242,7 @@ function crearServidor(req: Request) {
   }, envolver(async (a) => { limite('cambios'); return cancelarCompat(a.codigo, documento(a), canal, a.motivo || null, meta); }));
 
   s.registerTool('reprogramar_cita', {
-    description: 'Cambia la fecha y hora de una cita del paciente (la MISMA cita se mueve: conserva su código). Antes verifica la hora con horas_del_dia o buscar_cupo (misma sede y servicio) y confirma con el paciente. Sábado y domingo no se reprograman por aquí (REQUIERE_ASESOR). Si responde HORA_NO_DISPONIBLE ofrece otra hora; con REQUIERE_ASESOR, FUERA_DE_PLAZO, ESPERANDO_PAGO, NO_SE_PUEDE_CANCELAR o NO_VIGENTE deriva a un asesor.',
+    description: 'Cambia la fecha y hora de una cita del paciente (la MISMA cita se mueve: conserva su código). Antes verifica la hora con horas_del_dia o buscar_cupo (misma sede y servicio) y confirma con el paciente. Sábado, domingo y feriados no se reprograman por aquí (REQUIERE_ASESOR). Si responde HORA_NO_DISPONIBLE ofrece otra hora; con REQUIERE_ASESOR, FUERA_DE_PLAZO, ESPERANDO_PAGO, NO_SE_PUEDE_CANCELAR o NO_VIGENTE deriva a un asesor.',
     inputSchema: { codigo, numeroDocumento, tipoDocumento, fecha, horaInicio: hora },
   }, envolver(async (a) => { limite('cambios'); return reprogramarCompat(a.codigo, documento(a), canal, a.fecha, a.horaInicio, meta); }));
 
@@ -252,7 +252,7 @@ function crearServidor(req: Request) {
   }, envolver(async (a) => { limite('cambios'); return agregarNotaCita(a.codigo, documento(a), a.texto, meta); }));
 
   s.registerTool('extender_pago', {
-    description: 'Da 10 minutos más para pagar una reserva de sábado o domingo, UNA sola vez, mientras siga en esperando_pago. Si responde PAGO_VENCIDO hay que reservar de nuevo (revisando que la hora siga libre); YA_EXTENDIDO: ya se usó la extensión.',
+    description: 'Da 10 minutos más para pagar una reserva de sábado, domingo o feriado, UNA sola vez, mientras siga en esperando_pago. Si responde PAGO_VENCIDO hay que reservar de nuevo (revisando que la hora siga libre); YA_EXTENDIDO: ya se usó la extensión.',
     inputSchema: { codigo: z.string().trim().min(6).max(40).describe('Código «LB-123456» de la reserva'), numeroDocumento },
   }, envolver(async (a) => { limite('cambios'); return extenderPago(a.codigo, a.numeroDocumento, canal); }));
 

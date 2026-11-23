@@ -156,6 +156,10 @@ export function useIdea1NuevaCitaForm({
   const [promocionId, setPromocionId] = useState('');
   const [codigoPromo, setCodigoPromo] = useState(''); // cupón/convenio si la promo lo requiere
   const [profesionalId, setProfesionalId] = useState(profInicial);
+  // «Solo X» (21-nov-2026): hacer clic en la columna de una podóloga la ELIGE, pero eso no es un pedido del paciente.
+  // Solo si recepción marca la casilla la cita queda «Solo X». Se desmarca al cambiar de profesional.
+  const [pedidaPorPaciente, setPedidaPorPaciente] = useState(false);
+  useEffect(() => { setPedidaPorPaciente(false); }, [profesionalId]);
   const [fechaCita, setFechaCita] = useState<string>(format(fecha, 'yyyy-MM-dd'));
   const [horaCita, setHoraCita] = useState<string>(horaInicial);
   const [comentarioRecepcion, setComentarioRecepcion] = useState('');
@@ -218,6 +222,9 @@ export function useIdea1NuevaCitaForm({
   // elige aquí. El roster de médicos habilitados se gestiona en /herramientas/baro-solicitud
   // (también desde un modal en este formulario). ──
   const esBaro = /baropodometr/i.test(unidadesDeSede.find((u) => u.id === unidadNegocioId)?.nombre ?? '');
+  // Podología (preferencia opcional): la única unidad donde se pregunta si el paciente pidió a la profesional.
+  const esPreferenciaOpcional = unidadesDeSede.find((u) => u.id === unidadNegocioId)?.modoReserva === 'preferencia_opcional';
+  const enviarPedida = esPreferenciaOpcional && profesionalId ? { pedidaPorPaciente } : {};
   const puedeGestionarBaro = useAuthStore((s) => s.isCoordinadora()); // admin + coordinadora_sedes
   const { data: baroRoster } = useQuery({
     queryKey: ['baro-solicitud', sedeId, fechaCita],
@@ -903,6 +910,7 @@ export function useIdea1NuevaCitaForm({
           paquetePacienteId: finalPaqueteId || undefined,
           motivoRetroactivo: esRetroactiva ? motivoRetroactivo.trim() : undefined,
           ...(estadoPago !== 'pendiente' && comprobante ? { comprobanteUrl: comprobante.url, comprobanteNombre: comprobante.nombre, comprobanteMimeType: comprobante.mimeType } : {}),
+          ...enviarPedida,
           extra: {
             servicioId: extraServicioId,
             subcategoriaId: extraSubcategoriaId || undefined,
@@ -921,6 +929,7 @@ export function useIdea1NuevaCitaForm({
           profesionalId: profesionalId || undefined,
           // Baro: el médico elegido (por solicitud) para esta cita. La máquina la asigna el back.
           solicitadoProfesionalId: esBaro ? (medicoBaroId || undefined) : undefined,
+          ...enviarPedida,
           fecha: fechaCita,
           horaInicio: horaCita,
           canal,
@@ -1162,6 +1171,9 @@ export function useIdea1NuevaCitaForm({
     descuentoPromo,
     profesionalId,
     setProfesionalId,
+    pedidaPorPaciente,
+    setPedidaPorPaciente,
+    esPreferenciaOpcional,
     fechaCita,
     setFechaCita,
     horaCita,

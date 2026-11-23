@@ -7,7 +7,9 @@
 //                                              «reservas:whatsapp», solo sirve en /api/v1/integraciones/whatsapp.
 //   node reserva-servicios.js llave-web      → crea (y reemplaza la anterior) la llave de la API WEB: permiso «reservas:write»,
 //                                              solo sirve en /api/v1/integraciones/reservas.
-//   node reserva-servicios.js sin-llave-whatsapp | sin-llave-web → desactiva esa llave
+//   node reserva-servicios.js llave-lectura  → crea (y reemplaza la anterior) la llave de SOLO LECTURA: permiso «profesionales:read»,
+//                                              solo GET /api/v1/profesionales y /api/v1/sedes (21-nov-2026; candado en middleware/auth.ts).
+//   node reserva-servicios.js sin-llave-whatsapp | sin-llave-web | sin-llave-lectura → desactiva esa llave
 //   Las llaves se imprimen UNA vez; en la base solo queda su huella. Se reemplazan por PERMISO, no por nombre: la llave web
 //   creada antes del 12-nov-2026 se llama «Chat de WhatsApp (reservas)» pero tiene «reservas:write», así que es la web.
 // Imprime el resultado en JSON. Necesita DATABASE_URL en el entorno.
@@ -20,13 +22,14 @@ const NOMBRE_LLAVE = 'Reserva web (interna)';
 const LLAVES_API = {
   whatsapp: { nombre: 'API WhatsApp (reservas)', scope: 'reservas:whatsapp', prefijo: 'lbwsp_' },
   web: { nombre: 'API web (reservas)', scope: 'reservas:write', prefijo: 'lbweb_' },
+  lectura: { nombre: 'Solo lectura (profesionales y sedes)', scope: 'profesionales:read', prefijo: 'lbro_' },
 };
 
 (async () => {
   const prisma = new PrismaClient();
   const accion = process.argv[2] || '';
   try {
-    const api = /^(sin-)?llave-(whatsapp|web)$/.exec(accion);
+    const api = /^(sin-)?llave-(whatsapp|web|lectura)$/.exec(accion);
     if (api) {
       const l = LLAVES_API[api[2]];
       await prisma.apiKey.updateMany({ where: { scopes: { has: l.scope }, activa: true }, data: { activa: false } });

@@ -232,8 +232,8 @@ asesor (salvo `HORA_NO_DISPONIBLE`, que se resuelve ofreciendo otra hora):
 | Código | Cuándo |
 |---|---|
 | `FUERA_DE_PLAZO` | Faltan menos de **2 horas** para la cita, o ya pasó (el servidor puede cambiar el plazo: `RESERVA_CHAT_CAMBIO_ANTICIPACION_MIN`) |
-| `REQUIERE_ASESOR` | La cita ya tiene un **pago** (en línea o en la sede), es de un **paquete** o de una visita de **dos servicios**, o pide un **profesional en particular**. Al reprogramar, además: a **sábado o domingo**, un servicio que no se reserva en línea en esa sede, o un paciente sin DNI ni CE |
-| `ESPERANDO_PAGO` | La reserva de fin de semana aún espera su pago previo (se libera sola a los 10 minutos) |
+| `REQUIERE_ASESOR` | La cita ya tiene un **pago** (en línea o en la sede), es de un **paquete** o de una visita de **dos servicios**, o pide un **profesional en particular**. Al reprogramar, además: a **sábado, domingo o feriado**, un servicio que no se reserva en línea en esa sede, o un paciente sin DNI ni CE |
+| `ESPERANDO_PAGO` | La reserva de sábado, domingo o feriado aún espera su pago previo (se libera sola a los 10 minutos) |
 | `NO_SE_PUEDE_CANCELAR` | La cita ya está en curso o fue atendida (llegó, en atención, completada, no vino) |
 | `NO_VIGENTE` | Reprogramar una cita que ya está cancelada |
 | `HORA_NO_DISPONIBLE` | La hora nueva ya no está libre: la cita queda como estaba |
@@ -328,12 +328,14 @@ con `POST /` y Cambiar cita). Hacen lo mismo que las rutas sueltas (mismas funci
 `codigo` es el que da la lista de citas (`LB-…` o el id de la cita). Una combinación inválida (por ejemplo `que=horas` sin `fecha`, o una
 `accion` desconocida) responde `422` con el campo que falta.
 
-### 3.9 Pago previo de sábado y domingo (13-nov-2026) — solo la API de WhatsApp
-Las citas de **sábado y domingo** que se reservan por `/integraciones/whatsapp` se pagan **antes**, por la tienda en línea de Limablue
-(Niubiz). Lunes a viernes y la API web: sin cambios (se paga en la sede). Feriados: por ahora no piden pago. Si en el servidor no está
+### 3.9 Pago previo de sábado, domingo y feriados (13-nov-2026; feriados desde el 18-nov) — solo la API de WhatsApp
+Las citas de **sábado, domingo y feriados** que se reservan por `/integraciones/whatsapp` se pagan **antes**, por la tienda en línea de Limablue
+(Niubiz). Lunes a viernes no feriados y la API web: sin cambios (se paga en la sede). **Feriados**: los nacionales de Perú (1-ene, Jueves y
+Viernes Santo, 1-may, 7-jun, 29-jun, 23-jul, 28 y 29-jul, 6-ago, 30-ago, 8-oct, 1-nov, 8 y 9-dic, 25-dic) más los días que la clínica
+agregue en el servidor (`FERIADOS_EXTRA`, p. ej. un feriado puente). Si en el servidor no está
 conectada la tienda, todo sigue como siempre (`confirmada`, se paga en la sede).
 
-`POST /` de un sábado o domingo responde **201** con la cita **apartada** y el enlace de pago:
+`POST /` de un sábado, domingo o feriado responde **201** con la cita **apartada** y el enlace de pago:
 ```json
 {
   "codigo": "LB-123456", "numeroCita": "C-008340", "estado": "esperando_pago", "citaId": "…", "repetida": false,

@@ -55,7 +55,7 @@ export interface CitaResumen {
   // `consultorios`: nº de consultorios de la sede (selector C1..CN; 0 = no numera consultorios).
   sede: { id: string; nombre: string; color: string; consultorios?: number };
   unidadNegocioId: string;
-  unidadNegocio: { id: string; nombre: string; color: string };
+  unidadNegocio: { id: string; nombre: string; color: string; modoReserva?: 'preferencia_opcional' | 'sin_eleccion' | 'preferencia_obligatoria' };
   servicioId: string;
   servicio: { id: string; nombre: string; duracionMinutos: number; color: string };
   // Subcategoría elegida (ej. Profilaxis → Regular/Premium/…). null si el servicio no tiene.
@@ -144,6 +144,7 @@ export interface CrearCitaInput {
   motivoRetroactivo?: string; // obligatorio si `fecha` es anterior a hoy (cita retroactiva)
   pagada?: boolean; // (anterior) ya está pagada al agendar
   estadoPago?: EstadoPago; // estado de pago al agendar (por defecto: pendiente)
+  pedidaPorPaciente?: boolean; // Podología: true = el paciente pidió a esta profesional («Solo X»); false = la eligió la clínica
 }
 
 // Agendamiento de un bloque combinado: ancla (profilaxis) + un servicio extra.
@@ -164,6 +165,7 @@ export interface CrearCitaCombinadaInput {
   motivoRetroactivo?: string; // obligatorio si `fecha` es anterior a hoy (bloque retroactivo)
   pagada?: boolean; // (anterior)
   estadoPago?: EstadoPago; // el bloque se paga junto: va en las dos citas
+  pedidaPorPaciente?: boolean; // Podología: «Solo X» solo si el paciente pidió a la profesional
   comprobanteUrl?: string; // comprobante de pago del bloque (se guarda en la principal)
   comprobanteNombre?: string;
   comprobanteMimeType?: string;
@@ -192,7 +194,7 @@ export interface OcupacionExterna {
   estado: string;
   pacienteNombre: string;
   servicioNombre: string;
-  unidadNegocio: { id: string; nombre: string; color: string };
+  unidadNegocio: { id: string; nombre: string; color: string; modoReserva?: 'preferencia_opcional' | 'sin_eleccion' | 'preferencia_obligatoria' };
   enColumna: string; // dónde ocurre físicamente (ej. "Baro 1")
   sedeNombre?: string; // presente = la cita es de OTRA sede (misma persona en 2 sedes, p. ej. el dermatólogo)
   enOtraColumna?: boolean; // misma unidad: pedida «Solo X», la cita está en la columna `enColumna`
@@ -294,6 +296,10 @@ export const citasApi = {
   // Corregir un comentario: el autor los suyos, admin cualquiera (el servidor lo exige).
   editarComentario: (citaId: string, comentarioId: string, texto: string) =>
     api.patch<CitaResumen>(`/citas/${citaId}/comentarios/${comentarioId}`, { texto }),
+
+  // «Solo X» (21-nov-2026): marcar o quitar que el paciente pidió a la profesional (solo Podología).
+  marcarPedidaPorPaciente: (id: string, pedidaPorPaciente: boolean) =>
+    api.patch<CitaResumen>(`/citas/${id}/pedida-por-paciente`, { pedidaPorPaciente }),
 
   // Canal de reserva (de dónde viene el cliente).
   actualizarCanal: (id: string, canal: string) =>

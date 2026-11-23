@@ -161,6 +161,19 @@ export function requireAcceso(scope: string, permiso: string) {
   };
 }
 
+/**
+ * Llave de SOLO LECTURA (21-nov-2026, pedida para consultar qué podólogas atienden en cada sede y día). Se crea con
+ * «Llaves API (web y WhatsApp).bat» › opción 5 (permiso `profesionales:read`). Sin este candado, cualquier llave activa podía
+ * leer todas las rutas que solo piden `requireAuth`; esta queda limitada a GET de estas listas (con sus filtros por query).
+ */
+export const SCOPE_LECTURA = 'profesionales:read';
+const RUTAS_LECTURA = new Set(['/api/v1/profesionales', '/api/v1/sedes']);
+export function lecturaPermitida(req: Pick<Request, 'method' | 'baseUrl' | 'path'>): boolean {
+  if (req.method !== 'GET') return false;
+  const ruta = `${req.baseUrl}${req.path}`.replace(/\/+$/, '');
+  return RUTAS_LECTURA.has(ruta);
+}
+
 export async function requireAuth(req: Request, _res: Response, next: NextFunction): Promise<void> {
   const authHeader = req.headers.authorization;
 
@@ -203,6 +216,10 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
     const apiKeys = await prisma.apiKey.findMany({ where: { activa: true } });
     for (const ak of apiKeys) {
       if (await bcrypt.compare(rawKey, ak.keyHash)) {
+        // Llave de SOLO LECTURA (21-nov-2026): solo consulta las listas permitidas; cualquier otra ruta o método → 403.
+        if (ak.scopes.includes(SCOPE_LECTURA) && !lecturaPermitida(req)) {
+          throw new AppError('Esta llave es de solo lectura: solo sirve para consultar profesionales y sedes', 403, 'SOLO_LECTURA');
+        }
         req.apiKey = { id: ak.id, scopes: ak.scopes };
         await prisma.apiKey.update({ where: { id: ak.id }, data: { ultimoUso: new Date() } });
         return next();

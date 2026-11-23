@@ -1,5 +1,5 @@
 /**
- * CLIENTE DE WOOCOMMERCE (13-nov-2026) — pago previo de las citas de SÁBADO y DOMINGO reservadas por el chat de WhatsApp.
+ * CLIENTE DE WOOCOMMERCE (13-nov-2026) — pago previo de las citas de SÁBADO, DOMINGO y FERIADOS (18-nov) reservadas por el chat de WhatsApp.
  *
  * La Agenda crea un pedido «pendiente de pago» en la tienda de limablue.com (allí ya está la pasarela Niubiz) y usa su enlace de
  * pago (`payment_url`). La lógica de la reserva (cuándo se confirma o se cancela) está en pagoPrevio.ts; aquí solo las llamadas
@@ -32,15 +32,43 @@ export function webhookWooConfigurado(): boolean {
   return wooConfigurado() && !!secretoWebhook();
 }
 
-/** Sábado o domingo. `fecha` = «AAAA-MM-DD» (día calendario de Lima). Feriados: todavía no. */
+/** Sábado o domingo. `fecha` = «AAAA-MM-DD» (día calendario de Lima). */
 export function esFinDeSemana(fecha: string): boolean {
   const dia = fechaDb(fecha).getUTCDay();
   return dia === 0 || dia === 6;
 }
 
-/** ¿Esta reserva del chat se paga por adelantado? Fin de semana Y tienda conectada. */
+// Feriados nacionales FIJOS de Perú (MM-DD). 7-jun (Bandera) y 23-jul (Fuerza Aérea) son feriados desde 2023.
+const FERIADOS_FIJOS = new Set(['01-01', '05-01', '06-07', '06-29', '07-23', '07-28', '07-29', '08-06', '08-30', '10-08', '11-01', '12-08', '12-09', '12-25']);
+
+/** Domingo de Pascua (calendario gregoriano, algoritmo anónimo) → «AAAA-MM-DD» del día `desplazamiento` días después. */
+function diaDesdePascua(anio: number, desplazamiento: number): string {
+  const a = anio % 19, b = Math.floor(anio / 100), c = anio % 100, d = Math.floor(b / 4), e = b % 4;
+  const f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const mes = Math.floor((h + l - 7 * m + 114) / 31), dia = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(Date.UTC(anio, mes - 1, dia) + desplazamiento * 86_400_000).toISOString().slice(0, 10);
+}
+
+/**
+ * Feriado nacional de Perú (18-nov-2026): los fijos + Jueves y Viernes Santo (se calculan cada año). Los días no laborables
+ * decretados (puentes, etc.) se agregan en el agenda.env: FERIADOS_EXTRA=AAAA-MM-DD,AAAA-MM-DD. `fecha` = «AAAA-MM-DD».
+ */
+export function esFeriado(fecha: string): boolean {
+  if (FERIADOS_FIJOS.has(fecha.slice(5, 10))) return true;
+  if ((process.env.FERIADOS_EXTRA || '').split(',').map((s) => s.trim()).includes(fecha)) return true;
+  const anio = Number(fecha.slice(0, 4));
+  return fecha === diaDesdePascua(anio, -3) || fecha === diaDesdePascua(anio, -2);
+}
+
+/** Días que el chat cobra por adelantado: sábado, domingo o feriado. */
+export function exigePagoPrevio(fecha: string): boolean {
+  return esFinDeSemana(fecha) || esFeriado(fecha);
+}
+
+/** ¿Esta reserva del chat se paga por adelantado? Sábado, domingo o feriado Y tienda conectada. */
 export function requierePagoPrevio(fecha: string): boolean {
-  return wooConfigurado() && esFinDeSemana(fecha);
+  return wooConfigurado() && exigePagoPrevio(fecha);
 }
 
 /**

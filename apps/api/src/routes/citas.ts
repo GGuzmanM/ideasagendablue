@@ -156,6 +156,10 @@ const crearCitaSchema = z.object({
   motivoRetroactivo: z.string().trim().max(500).optional(),
   pagada: z.boolean().optional(), // (anterior) true = pago completo
   estadoPago: zEstadoPago.optional(), // 29-sep-2026: pendiente / incompleto / completo
+  // 21-nov-2026 («Solo X»): ¿el PACIENTE pidió a esta profesional? Hacer clic en la columna de una podóloga ya la elige,
+  // pero eso no es un pedido del paciente. false = va con ella pero como automática (sin «Solo X»). Sin el campo = como antes
+  // (elegirla = pedida), para no cambiar a quien ya crea citas por otro lado. Solo aplica a Podología (preferencia opcional).
+  pedidaPorPaciente: z.boolean().optional(),
 });
 
 // Bloque combinado: ancla (profilaxis) + un servicio extra en el mismo slot de 1 h.
@@ -181,6 +185,10 @@ const crearCombinadaSchema = z.object({
   comprobanteUrl: z.string().optional(), // 29-sep-2026: el comprobante del bloque va en la PRINCIPAL
   comprobanteNombre: z.string().optional(),
   comprobanteMimeType: z.string().optional(),
+  // 21-nov-2026 («Solo X»): ¿el PACIENTE pidió a esta profesional? Hacer clic en la columna de una podóloga ya la elige,
+  // pero eso no es un pedido del paciente. false = va con ella pero como automática (sin «Solo X»). Sin el campo = como antes
+  // (elegirla = pedida), para no cambiar a quien ya crea citas por otro lado. Solo aplica a Podología (preferencia opcional).
+  pedidaPorPaciente: z.boolean().optional(),
   extra: z.object({
     servicioId: z.string().uuid(),
     profesionalId: z.string().uuid().optional(), // default: profesional del ancla
@@ -426,7 +434,7 @@ router.get('/', requireAuth, async (req, res) => {
       atendidoPor: { select: { id: true, nombres: true, apellidos: true } }, // columna Adicional: quién atendió
       medico: { select: { id: true, nombres: true, apellidos: true, colegiatura: true } },
       sede: { select: { id: true, nombre: true, color: true, consultorios: true } },
-      unidadNegocio: { select: { id: true, nombre: true, color: true } },
+      unidadNegocio: { select: { id: true, nombre: true, color: true, modoReserva: true } },
       servicio: { select: { id: true, nombre: true, duracionMinutos: true, color: true } },
       subcategoria: { select: { id: true, nombre: true } },
       paquetePaciente: { select: { id: true, sesionesTotal: true, sesionesUsadas: true, paquete: { select: { nombre: true } } } },
@@ -488,7 +496,7 @@ async function citasDeAsignadosEnOtrasSedes(sedeId: string, fecha: string) {
       id: true, horaInicio: true, duracionMinutos: true, estado: true, profesionalId: true, solicitadoProfesionalId: true,
       paciente: { select: { nombres: true, apellidoPaterno: true } },
       servicio: { select: { nombre: true } },
-      unidadNegocio: { select: { id: true, nombre: true, color: true } },
+      unidadNegocio: { select: { id: true, nombre: true, color: true, modoReserva: true } },
       sede: { select: { nombre: true } },
     },
     orderBy: { horaInicio: 'asc' },
@@ -528,7 +536,7 @@ router.get('/ocupacion-externa', requireAuth, async (req, res) => {
       solicitadoProfesionalId: true,
       paciente: { select: { nombres: true, apellidoPaterno: true } },
       servicio: { select: { nombre: true, color: true } },
-      unidadNegocio: { select: { id: true, nombre: true, color: true } },
+      unidadNegocio: { select: { id: true, nombre: true, color: true, modoReserva: true } },
       profesional: { select: { id: true, nombres: true, apellidos: true } },
       solicitadoProfesional: { select: { id: true, nombres: true, apellidos: true } },
     },
@@ -570,7 +578,7 @@ router.get('/ocupacion-externa', requireAuth, async (req, res) => {
       id: true, horaInicio: true, duracionMinutos: true, estado: true, profesionalId: true, solicitadoProfesionalId: true,
       paciente: { select: { nombres: true, apellidoPaterno: true } },
       servicio: { select: { nombre: true } },
-      unidadNegocio: { select: { id: true, nombre: true, color: true } },
+      unidadNegocio: { select: { id: true, nombre: true, color: true, modoReserva: true } },
       profesional: { select: { nombres: true, apellidos: true } },
     },
   });
@@ -1102,7 +1110,7 @@ router.post('/', requireAuth, requireAcceso('appointments:write', 'citas.crear')
       // del automático). 10-oct-2026: antes se mandaba a una máquina libre como el baro «Solo X», y una cita de
       // Ortésicos (Podología) pedida con Carla Castro terminó en «Baro 2» dentro de Podología. Las máquinas solo
       // operan en Baropodometría, que va por la rama de arriba.
-      origenAsignacion = 'elegida_por_paciente';
+      origenAsignacion = data.pedidaPorPaciente === false ? 'asignada_automaticamente' : 'elegida_por_paciente';
     }
   } else {
     // preferencia_obligatoria (Fisioterapia)
@@ -1627,7 +1635,7 @@ router.post('/combinada', requireAuth, requireAcceso('appointments:write', 'cita
   // (igual que una profilaxis normal "Sin preferencia"). El extra usa la suya o, por
   // defecto, la misma del ancla.
   let anclaProfesionalId = data.profesionalId ?? null;
-  let origenAncla: 'elegida_por_paciente' | 'asignada_automaticamente' = 'elegida_por_paciente';
+  let origenAncla: 'elegida_por_paciente' | 'asignada_automaticamente' = data.pedidaPorPaciente === false ? 'asignada_automaticamente' : 'elegida_por_paciente';
   if (!anclaProfesionalId) {
     anclaProfesionalId = await seleccionarProfesionalOptimo(data.sedeId, data.unidadNegocioId, data.servicioId, data.fecha, data.horaInicio);
     if (!anclaProfesionalId) throw new AppError('No hay profesionales disponibles para este slot', 409, 'NO_DISPONIBLE');
@@ -1717,7 +1725,7 @@ router.post('/combinada', requireAuth, requireAcceso('appointments:write', 'cita
             pacienteId: data.pacienteId, profesionalId: extraProfesionalId, sedeId: data.sedeId,
             unidadNegocioId: extraSrv.unidadNegocioId, servicioId: data.extra.servicioId, subcategoriaId: subcategoriaExtra, fecha: fechaDate,
             horaInicio: data.horaInicio, duracionMinutos: duracionSlot, estado: 'agendada',
-            canal: data.canal, origenAsignacion: 'elegida_por_paciente', creadoPorUsuarioId: usuarioId ?? null,
+            canal: data.canal, origenAsignacion: data.pedidaPorPaciente === false ? 'asignada_automaticamente' : 'elegida_por_paciente', creadoPorUsuarioId: usuarioId ?? null,
             ...(estadoPagoInicial(data) !== 'pendiente' ? camposPago(estadoPagoInicial(data), usuarioId) : {}),
             motivoRetroactivo,
             paquetePacienteId: data.extra.paquetePacienteId, sesionNumero: sesionExtra,
@@ -2748,6 +2756,42 @@ router.patch('/:id/canal', requireAuth, requireAcceso('appointments:write', 'cit
     cambiadoPor: req.user?.userId ?? 'sistema',
   });
   res.json(citaCompleta);
+});
+
+// ─── PATCH /citas/:id/pedida-por-paciente ─────────────────────────────────────
+// «Solo X» (21-nov-2026): marca o desmarca que el PACIENTE pidió a la profesional de la cita (`origenAsignacion`), por si
+// recepción se equivocó al crearla. Solo Podología (preferencia opcional): en Fisioterapia elegir es obligatorio y en
+// Baropodometría la marca es de la máquina. No mueve la cita. En un bloque combinado se marca el bloque entero.
+router.patch('/:id/pedida-por-paciente', requireAuth, requireAcceso('appointments:write', 'citas.estado'), guardSedeCita, async (req, res) => {
+  const { pedidaPorPaciente } = z.object({ pedidaPorPaciente: z.boolean() }).parse(req.body);
+  const cita = await prisma.cita.findUnique({ where: { id: req.params.id, deletedAt: null }, include: { unidadNegocio: { select: { modoReserva: true } } } });
+  if (!cita) throw new AppError('Cita no encontrada', 404);
+  if (cita.unidadNegocio.modoReserva !== 'preferencia_opcional') {
+    throw new AppError('Solo en las citas de Podología se puede indicar si el paciente pidió a la profesional', 400, 'NO_APLICA');
+  }
+  if (!cita.profesionalId) throw new AppError('La cita no tiene profesional', 400, 'SIN_PROFESIONAL');
+  const origen = pedidaPorPaciente ? 'elegida_por_paciente' as const : 'asignada_automaticamente' as const;
+  const grupo = cita.slotGrupoId
+    ? await prisma.cita.findMany({ where: { slotGrupoId: cita.slotGrupoId, deletedAt: null }, select: { id: true, origenAsignacion: true, sedeId: true } })
+    : [{ id: cita.id, origenAsignacion: cita.origenAsignacion, sedeId: cita.sedeId }];
+  const cambian = grupo.filter((c) => c.origenAsignacion !== origen);
+  if (cambian.length) {
+    await prisma.$transaction(async (tx) => {
+      for (const c of cambian) {
+        await tx.cita.update({ where: { id: c.id }, data: { origenAsignacion: origen } });
+        await auditEnTx(tx, {
+          citaId: c.id, usuarioId: req.user?.userId, accion: 'editar_preferencia_profesional', entidad: 'cita', entidadId: c.id,
+          antes: { origenAsignacion: c.origenAsignacion }, despues: { origenAsignacion: origen }, sedeId: c.sedeId,
+          ip: req.ip, userAgent: req.headers['user-agent'] as string | undefined,
+        });
+      }
+    });
+  }
+  for (const c of cambian) {
+    const completa = await getCitaCompleta(c.id);
+    emitirEventoCita({ tipo: 'cita:actualizada', sedeId: c.sedeId, fecha: cita.fecha.toISOString().split('T')[0]!, cita: completa as never, cambiadoPor: req.user?.userId ?? 'sistema' });
+  }
+  res.json(await getCitaCompleta(cita.id));
 });
 
 // ─── PATCH /citas/:id/pago  (y /pagada, la anterior) ───────────────────────────

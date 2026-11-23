@@ -26,6 +26,8 @@ import { AppError } from '../middleware/errorHandler';
 import { timeToMinutes } from '@limablue/shared';
 import { turnosDelDia } from '../services/disponibilidad';
 import { auditEnTx } from '../services/audit';
+import { embudoAna } from '../services/embudoAnaService';
+import { sinRetorno } from '../services/sinRetornoService';
 
 const router = Router();
 const requireGestor = requirePermiso('analytics.ver');
@@ -328,6 +330,24 @@ router.patch('/meta/:profesionalId', requireAuth, requireGestor, async (req, res
     });
   });
   res.json({ ok: true, metaDiasMes: body.metaDiasMes });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EMBUDO DE ANA POR DÍA (18-nov-2026): agendaron por Ana, pagaron, vinieron, no vinieron y los que vinieron «de afuera».
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/embudo-ana', requireAuth, requireGestor, async (req, res) => {
+  const { desde, hasta, sedeId } = rangoSchema.parse(req.query);
+  if (desde > hasta) throw new AppError('«desde» no puede ser posterior a «hasta»', 400);
+  if ((diaUTC(hasta).getTime() - diaUTC(desde).getTime()) / 86400000 > 92) throw new AppError('Máximo 93 días por consulta', 400);
+  res.json(await embudoAna(desde, hasta, sedeId));
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PACIENTES SIN RETORNO (18-nov-2026): se atendieron y no volvieron a agendar, por rangos de días, servicio y sede.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/sin-retorno', requireAuth, requireGestor, async (req, res) => {
+  const { dias, sedeId } = z.object({ dias: z.coerce.number().int().min(7).max(180).default(90), sedeId: z.string().uuid().optional() }).parse(req.query);
+  res.json(await sinRetorno(dias, sedeId));
 });
 
 export default router;

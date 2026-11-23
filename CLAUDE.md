@@ -85,7 +85,11 @@ Reemplaza un ERP de escritorio de 14 años. 5 sedes, ~400 citas diarias, 40 pod�
     así valen `PAGADA_EN_LINEA` y `pagado`) + `PATCH /citas/:id/pago`. Vencida sin pagar → `mantenimientoPagoPrevio` cancela cita y pedido
     (`expirada`); pagó tarde o sin cita → `reembolsar`. Hacia el chat `pagoEstado` sale `pagado` (no `aprobado`), como en la nota del equipo de Ana. Estas reservas NO cuentan como «apartadas» en `horasLibres` (su cita ya ocupa la hora) ni
     las cierra `mantenimientoReservasWeb`. Reprogramar por WhatsApp: con pago pendiente no (`PAGO_PENDIENTE`); sin pagar a sáb/dom no
-    (`PAGO_PREVIO_REQUERIDO`). La misma `referencia` devuelve la reserva en cualquier estado. Feriados: aún no.
+    (`PAGO_PREVIO_REQUERIDO`). La misma `referencia` devuelve la reserva en cualquier estado. **Feriados (18-nov-2026)**: cuentan como sáb/dom
+    (`esFeriado` / `exigePagoPrevio` en `woocommerce.ts`: fijos de Perú + Jueves/Viernes Santo + `FERIADOS_EXTRA=AAAA-MM-DD,…` del agenda.env).
+  - **Reportes del chat (18-nov-2026, solo API, permiso `analytics.ver`)**: `GET /reportes/embudo-ana?desde&hasta[&sedeId]` (`embudoAnaService.ts`;
+    «por Ana» = cita enlazada a una reserva `whatsapp`; «pagaron» = `pagoEstado` aprobado/monto_distinto, NO `pagado`) y
+    `GET /reportes/sin-retorno?dias=90[&sedeId]` (`sinRetornoService.ts`, rangos 1-7…32+). Tests: `embudo-ana`, `sin-retorno`, `pago-feriados`.
   - **Aviso 2 h antes** (`GHL_AVISO_WEBHOOK_URL`): `services/avisoWhatsappService.ts`, cada minuto, POST a un flujo de GHL con la hora ACTUAL
     de la cita; una vez por reserva (`reservas_web.avisoWhatsappEn`, migración `20261112120000_aviso_whatsapp_reserva`, copiada IDÉNTICA a la
     del paquete del equipo de Ana para que su huella coincida).
@@ -107,6 +111,9 @@ Reemplaza un ERP de escritorio de 14 años. 5 sedes, ~400 citas diarias, 40 pod�
   en una cita en «No show» que la pasa a «Llegó» / «Agendada» y nada más (`puedeRescatarNoShow` en `estadoCitaService.ts`; queda `rescateNoShow` en la auditoría).
   Migración `20261111120000_permisos_estado_no_show` (data). El rol `admin` no se edita por API: todo permiso nuevo se le otorga por migración.
   La auditoría (`auditoria.ver`) es un permiso independiente: lo tienen admin y coordinadora; cualquier otro rol lo recibe encendiéndolo en Roles.
+- **Llave de SOLO LECTURA (21-nov-2026)**: permiso `profesionales:read` (prefijo `lbro_`), se crea con «Llaves API (web y WhatsApp).bat» › 5
+  (6 la desactiva; `reserva-servicios.js llave-lectura`). Candado en `requireAuth` (`lecturaPermitida` en `middleware/auth.ts`): solo GET
+  `/api/v1/profesionales` y `/api/v1/sedes`; cualquier otra ruta o método → 403 `SOLO_LECTURA`. Las demás llaves no cambian. Tests: `llave-lectura`.
 - **El rol se lee de la BD en cada request** (`requireAuth` y el socket), NO del token: el JWT dura hasta 30 días y un cambio de rol
   (ascenso a admin, o quitarle permisos) debe aplicar al instante. Antes `/auth/me` usaba el de la BD y el resto el del token → la pantalla
   ofrecía la Auditoría y el API respondía 403 (lista vacía). Corregido 11-nov-2026.
@@ -198,6 +205,10 @@ packages/shared/     ← tipos TypeScript compartidos
 - Soft delete en todos los modelos (`deletedAt`, `activo`)
 - Un SUPER_ADMIN/admin no puede desactivarse a sí mismo
 - Drag & drop para reprogramar citas entre especialistas
+- **«Solo X» en Podología (21-nov-2026)**: hacer clic en la columna de una podóloga la ELIGE, pero la cita solo queda «Solo X»
+  (`origenAsignacion = 'elegida_por_paciente'`) si recepción marca «El paciente pidió a …» en Nueva Cita (`pedidaPorPaciente` en POST /citas
+  y /citas/combinada; sin el campo = como antes, elegida = pedida). Se corrige luego con `PATCH /citas/:id/pedida-por-paciente` (bloque entero,
+  solo `preferencia_opcional`; audit `editar_preferencia_profesional`). Fisioterapia y Baropodometría no cambian.
 - **Cambiar tratamiento en cita doble (13-nov-2026)**: `PATCH /citas/:id/tratamiento` cambia UNA mitad (`cambiarTratamientoBloque` en `routes/citas.ts`).
   Reglas en `services/tratamientoBloque.ts`: 2.º servicio = extra activo de `combinaciones_permitidas` para el ancla de la PRINCIPAL (fila con
   `servicioAnclaId` null = ancla global); 1.er servicio = un ancla que permita el 2.º actual y de la MISMA duración (con una sola ancla: solo cambia su tipo).
