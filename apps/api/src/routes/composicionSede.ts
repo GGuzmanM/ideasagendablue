@@ -5,6 +5,7 @@ import PDFDocument from 'pdfkit';
 import { prisma } from '../db';
 import { requireAuth, requirePermiso } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
+import { esTipoPodologia } from '@limablue/shared';
 
 // ─── Composición de sede ──────────────────────────────────────────────────────
 // Herramienta INTERNA (no de agenda): traza quién compone cada sede en un mes.
@@ -52,7 +53,7 @@ async function construirComposicion(mes: string) {
       fechaInicio: { lte: monthEnd },
       OR: [{ fechaFin: null }, { fechaFin: { gte: monthStart } }],
       profesional: {
-        tipo: { in: ['podologa', 'fisioterapeuta'] },
+        tipo: { in: ['podologa', 'asistente_podologa', 'fisioterapeuta'] },
         activo: true, deletedAt: null,
         // Las columnas «Adicional» no son personal (ver utils/fichaAdicional.ts; tolera «Adiconal»).
         NOT: { OR: [{ nombres: { startsWith: 'Adicional', mode: 'insensitive' } }, { nombres: { startsWith: 'Adiconal', mode: 'insensitive' } }] },
@@ -97,7 +98,7 @@ async function construirComposicion(mes: string) {
       // `motivo` viaja al frontend para marcar COBERTURAS (movimiento temporal con motivo
       // específico) en la línea de tiempo — misma semántica que el tablero de Movimientos.
       const persona: PersonaRoster = { id: a.profesional.id, nombre: nombreCompleto(a.profesional.nombres, a.profesional.apellidos), motivo: a.motivo, ...clamp(a.fechaInicio, a.fechaFin) };
-      (a.profesional.tipo === 'podologa' ? comp.podologas : comp.fisioterapeutas).push(persona);
+      (esTipoPodologia(a.profesional.tipo) ? comp.podologas : comp.fisioterapeutas).push(persona);
     }
     for (const a of asigAdmin) {
       if (a.sedeId !== s.id) continue;

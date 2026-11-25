@@ -254,7 +254,7 @@ export const PISTAS_NATURALES: Record<SeccionDictado, string[]> = {
     'colocación de', 'infiltración de', 'curación realizada', 'curación de', 'curamos', 'debridamiento', 'desbridamiento', 'enucleación', 'se enucleó',
     'se cauterizó', 'cauterización', 'con anestesia', 'anestesia local', 'anestesia troncular', 'hoy se realizó', 'hoy se realiza', 'hoy se', 'el día de hoy se',
     'en esta sesión se', 'en la sesión de hoy', 'en esta sesión', 'se le aplicó', 'se le aplica', 'se le colocó', 'se le coloca', 'se le retiró', 'se le retira',
-    'se hizo curación', 'se realizó curación', 'se realizó fresado', 'se realizó quiropodia', 'se realizó espiculectomía', 'se realizó onicotomía',
+    'se hizo curación', 'se realizó curación', 'se realizó fresado', 'se realizó espiculectomía', 'se realizó onicotomía',
     'se realizó matricectomía', 'se realizó láser', 'se realizó sesión', 'se dio sesión', 'se dio la sesión', 'se cumplió', 'cumplimos', 'se terminó', 'terminamos',
     'se completó', 'completamos', 'se lijó', 'lijamos', 'se pulió', 'pulimos', 'se levantó', 'levantamos', 'se liberó', 'liberamos', 'se resecó', 'resecamos'],
   diagnostico: [],
@@ -630,7 +630,8 @@ export function adivinarTipoProcedimiento(texto: string): TipoProcedimiento | nu
   const t = sinAcentos(texto.toLowerCase());
   const reglas: [RegExp, TipoProcedimiento][] = [
     // La espiculectomía (lo más común en el uñero) es una onicotomía; si además hay matricectomía, gana esta (va primero).
-    [/matricectom/, 'matricectomia'], [/\blaser\b/, 'laser'], [/onicotom|espiculectom/, 'onicotomia'], [/quiropod/, 'quiropodia'],
+    // (25-nov-2026: la quiropodia se retiró de la lista —es profilaxis, no un procedimiento—, así que ya no se sugiere.)
+    [/matricectom/, 'matricectomia'], [/\blaser\b/, 'laser'], [/onicotom|espiculectom/, 'onicotomia'],
     [/infiltrac/, 'infiltracion'], [/de[sb]brid/, 'debridacion'], [/curaci/, 'curacion'],
   ];
   for (const [re, tipo] of reglas) if (re.test(t)) return tipo;

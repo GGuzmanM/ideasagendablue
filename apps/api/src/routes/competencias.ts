@@ -4,6 +4,7 @@ import { prisma } from '../db';
 import { requireAuth, requirePermiso } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { registrarAudit } from '../services/audit';
+import { esTipoPodologia } from '@limablue/shared';
 
 const router = Router();
 
@@ -17,7 +18,7 @@ function catDeUnidad(nombre: string): 'podo' | 'baro' | 'fisio' | null {
 }
 // Categoría "propia" de un profesional según su tipo.
 function catDeTipo(tipo: string): 'podo' | 'baro' | 'fisio' | null {
-  return tipo === 'podologa' ? 'podo' : tipo === 'fisioterapeuta' ? 'fisio' : tipo === 'medico' ? 'baro' : null;
+  return esTipoPodologia(tipo) ? 'podo' : tipo === 'fisioterapeuta' ? 'fisio' : tipo === 'medico' ? 'baro' : null;
 }
 
 // Matriz completa de competencias

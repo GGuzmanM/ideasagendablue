@@ -18,6 +18,7 @@ import { auditEnTx } from './audit';
 import { invalidateDisponibilidadCache, invalidateDisponibilidadFecha, flushDisponibilidadCache } from '../redis';
 import { emitirHorarioActualizado } from '../socket';
 import { fechaDb, LIMA_OFFSET_H } from '../utils/fechaLima';
+import { esTipoPodologia } from '@limablue/shared';
 
 const ESTADOS_CANCELADOS = ['cancelada', 'no_show', 'reprogramada'] as const;
 
@@ -64,7 +65,7 @@ export async function setOverrideTurnoFecha(opts: {
     select: { id: true, tipo: true },
   });
   if (!prof) throw new AppError('Profesional no encontrado', 404);
-  if (prof.tipo !== 'podologa') throw new AppError('La hora de entrada solo aplica a podólogas', 400);
+  if (!esTipoPodologia(prof.tipo)) throw new AppError('La hora de entrada solo aplica a podólogas', 400);
 
   // El toggle 8/9 solo tiene sentido Lun-Vie (sábado la base ya es 08:00 y no hay elección).
   const fechas = [...new Set(opts.fechas)].filter((f) => {
@@ -125,7 +126,7 @@ export async function setPresenciaExcepcion(opts: {
     select: { id: true, tipo: true },
   });
   if (!prof) throw new AppError('Profesional no encontrado', 404);
-  if (prof.tipo !== 'podologa') throw new AppError('Solo aplica a podólogas', 400);
+  if (!esTipoPodologia(prof.tipo)) throw new AppError('Solo aplica a podólogas', 400);
 
   const fechaPunto = fechaDb(fecha);
   // El día debe estar HABILITADO (excepción de sede abierta) para poder marcar presencia.

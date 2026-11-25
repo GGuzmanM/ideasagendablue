@@ -11,11 +11,12 @@ import { esFichaAdicional, fijarSedeBaseEnTx, notificarCambioMovimiento } from '
 import { auditEnTx, registrarAudit } from '../services/audit';
 import { asignacionesDeLaSemana, estadoEnDia } from '../services/personalSemana';
 import { setOverrideTurnoFecha, setPresenciaExcepcion, setHorarioBase, efectosCambioHorario } from '../services/horarioService';
+import { TIPOS_PODOLOGIA } from '@limablue/shared';
 
 const router = Router();
 
 router.get('/', requireAuth, async (req, res) => {
-  const { sedeId, unidadNegocioId, fecha, activo } = req.query as Record<string, string>;
+  const { sedeId, unidadNegocioId, fecha, activo, soloConTurno } = req.query as Record<string, string>;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const where: Record<string, any> = { deletedAt: null };
@@ -211,14 +212,21 @@ router.get('/', requireAuth, async (req, res) => {
 
   if (esDiaExcepcionAbierta) {
     lista = lista.filter((row) => turnos.has(row.id) || idsConCita.has(row.id));
+  } else if (soloConTurno === '1' && sedeId && fecha) {
+    // 24-nov-2026 (columnas de la AGENDA): quien no trabaja ese día no sale como columna (Wenceslao aparecía todos los días con
+    // horario solo miércoles y viernes). Sale si tiene turno o alguna cita ese día. Quien NO tiene ningún horario cargado
+    // sigue saliendo siempre (no se le esconde por un dato que falta), igual que las máquinas de baro sin horario.
+    const sinHorario = new Set(profesionales.filter((p) => p.horarios.length === 0).map((p) => p.id));
+    lista = lista.filter((row) => turnos.has(row.id) || idsConCita.has(row.id) || sinHorario.has(row.id));
   }
 
   // Orden de columnas (izq → der): normales alfabético, luego "Adicional" (capacidad
   // extra), y al final los marcados con `ordenAgenda` (p.ej. Wenceslao al extremo
   // derecho). El sort de V8 es estable → dentro de cada grupo se conserva el alfabético.
+  // 24-nov-2026: las asistentes de podóloga van después de las podólogas (y antes de las «Adicional»).
   const ordenMap = new Map(profesionales.map((p) => [p.id, p.ordenAgenda]));
-  const peso = (row: { id: string; nombres: string }) =>
-    ordenMap.get(row.id) ?? (esFichaAdicional(row.nombres) ? 500 : 0);
+  const peso = (row: { id: string; nombres: string; tipo: string }) =>
+    ordenMap.get(row.id) ?? (esFichaAdicional(row.nombres) ? 500 : row.tipo === 'asistente_podologa' ? 100 : 0);
   lista.sort((a, b) => peso(a) - peso(b));
 
   res.json(lista);
@@ -328,7 +336,7 @@ router.get('/seleccionables', requireAuth, async (req, res) => {
 const profesionalSchema = z.object({
   nombres: z.string().min(2),
   apellidos: z.string().min(2),
-  tipo: z.enum(['podologa', 'medico', 'fisioterapeuta']),
+  tipo: z.enum(['podologa', 'medico', 'fisioterapeuta', 'asistente_podologa']),
   unidadNegocioId: z.string().uuid(),
   colegiatura: z.string().optional().nullable(),
   // Correo de agenda personal del profesional. Si está definido, sus citas se sincronizan a
@@ -464,7 +472,7 @@ router.get('/horarios-entrada', requireAuth, requirePermiso('horarios.editar'), 
   const ids = [...asignacionesSemana.keys()];
 
   const profs = await prisma.profesional.findMany({
-    where: { id: { in: ids }, tipo: 'podologa', deletedAt: null, activo: true },
+    where: { id: { in: ids }, tipo: { in: [...TIPOS_PODOLOGIA] }, deletedAt: null, activo: true },
     select: {
       id: true, nombres: true, apellidos: true, colorAvatar: true,
       horarios: { where: { activo: true }, select: { diaSemana: true, horaInicio: true } },
@@ -531,7 +539,7 @@ router.get('/personal-excepcion', requireAuth, requirePermiso('horarios.editar')
   const asigs = await prisma.asignacionSede.findMany({
     where: {
       sedeId, fechaInicio: { lte: fechaPunto }, OR: [{ fechaFin: null }, { fechaFin: { gte: fechaPunto } }],
-      profesional: { tipo: 'podologa', activo: true, deletedAt: null },
+      profesional: { tipo: { in: [...TIPOS_PODOLOGIA] }, activo: true, deletedAt: null },
     },
     select: { profesionalId: true },
   });
@@ -593,7 +601,7 @@ router.get('/dia-especial', requireAuth, requirePermiso('horarios.editar'), asyn
   const abierto = !!(exc && exc.abierto && exc.horaApertura && exc.horaCierre);
 
   const podologas = await prisma.profesional.findMany({
-    where: { tipo: 'podologa', activo: true, deletedAt: null },
+    where: { tipo: { in: [...TIPOS_PODOLOGIA] }, activo: true, deletedAt: null },
     select: {
       id: true, nombres: true, apellidos: true, colorAvatar: true,
       asignaciones: {
@@ -640,7 +648,7 @@ router.post('/dia-especial/set', requireAuth, requirePermiso('horarios.editar'),
     horaInicio: z.enum(HORAS_ENTRADA).optional(),
   }).parse(req.body);
 
-  const prof = await prisma.profesional.findFirst({ where: { id: profesionalId, tipo: 'podologa', activo: true, deletedAt: null }, select: { id: true } });
+  const prof = await prisma.profesional.findFirst({ where: { id: profesionalId, tipo: { in: [...TIPOS_PODOLOGIA] }, activo: true, deletedAt: null }, select: { id: true } });
   if (!prof) throw new AppError('Podóloga no encontrada', 404);
 
   const resultados: { fecha: string; accion: string }[] = [];

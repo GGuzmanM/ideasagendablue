@@ -133,7 +133,8 @@ export interface AtencionCompleta extends AtencionClinica {
 }
 
 // ─── Bloque 3 · procedimientos, escalas y podograma ──────────────────────────
-export type TipoProcedimiento = 'matricectomia' | 'laser' | 'curacion' | 'debridacion' | 'onicotomia' | 'quiropodia' | 'infiltracion' | 'otro';
+// 'fisioterapia' (25-nov-2026) = un tratamiento marcado en la hoja de Fisioterapia: lo crea su propia pantalla, no el formulario general.
+export type TipoProcedimiento = 'matricectomia' | 'laser' | 'curacion' | 'debridacion' | 'onicotomia' | 'quiropodia' | 'infiltracion' | 'otro' | 'fisioterapia';
 export type TipoEscala = 'eva' | 'wagner' | 'texas' | 'iwgdf' | 'monofilamento' | 'termometria' | 'ulcera' | 'itb' | 'osi' | 'manchester' | 'examen';
 export type Pie = 'izquierdo' | 'derecho' | 'ambos';
 export type PiePodograma = 'izquierdo' | 'derecho';
@@ -144,8 +145,17 @@ export type TipoLesion = 'hiperqueratosis' | 'heloma' | 'onicocriptosis' | 'ulce
 
 export const TIPO_PROCEDIMIENTO_LABEL: Record<TipoProcedimiento, string> = {
   matricectomia: 'Matricectomía', laser: 'Láser', curacion: 'Curación', debridacion: 'Debridación',
-  onicotomia: 'Onicotomía', quiropodia: 'Quiropodia', infiltracion: 'Infiltración', otro: 'Otro',
+  onicotomia: 'Onicotomía', quiropodia: 'Quiropodia', infiltracion: 'Infiltración', otro: 'Otro', fisioterapia: 'Fisioterapia',
 };
+/**
+ * Tipos RETIRADOS: ya no se ofrecen para registrar ni para plantillas, pero lo guardado conserva su nombre (por eso siguen en
+ * `TIPO_PROCEDIMIENTO_LABEL`). 25-nov-2026 · quiropodia: los doctores indicaron que es profilaxis, no un procedimiento.
+ * El servidor rechaza registrarlos (`TIPOS_PROCEDIMIENTO_RETIRADOS` en bloque3Service.ts): si se cambia una lista, cambiar la otra.
+ */
+export const TIPOS_PROCEDIMIENTO_RETIRADOS: readonly TipoProcedimiento[] = ['quiropodia'];
+/** Los tipos que ofrece el formulario «Registrar procedimiento» (sin los retirados ni los tratamientos de fisio, que tienen su lista). */
+export const TIPOS_PROCEDIMIENTO_FORMULARIO = (Object.keys(TIPO_PROCEDIMIENTO_LABEL) as TipoProcedimiento[])
+  .filter((t) => t !== 'fisioterapia' && !TIPOS_PROCEDIMIENTO_RETIRADOS.includes(t));
 // Nombre claro primero, la sigla después: quien no la conoce igual entiende qué mide.
 export const TIPO_ESCALA_LABEL: Record<TipoEscala, string> = {
   eva: 'Dolor del 0 al 10 (EVA)', wagner: 'Úlcera: grado Wagner', texas: 'Úlcera: clasificación Texas', iwgdf: 'Riesgo de pie diabético (IWGDF)',
@@ -410,6 +420,29 @@ export const historiaClinicaApi = {
     }
     return res.blob();
   },
+  // Mapa corporal 3D (Fisioterapia, 24-nov-2026): reemplaza las zonas marcadas de la atención.
+  guardarMapaCorporal: (atencionId: string, marcas: { zona: string; tipo: string; intensidad?: number | null; nota?: string | null; puntos?: number[] | null; capa?: 'musculos' | null; estructuras?: string[] | null }[]) =>
+    api.put<AtencionCompleta>(`${B}/atenciones/${atencionId}/mapa-corporal`, { marcas }),
+  // Tratamiento de Fisioterapia (25-nov-2026): deja la atención con exactamente estos tratamientos marcados.
+  guardarTratamientoFisio: (atencionId: string, data: { tratamientos: string[]; comentario?: string | null; sesiones?: number | null; patologias?: { incluir: string[]; excluir: string[] } | null }) =>
+    api.put<AtencionCompleta>(`${B}/atenciones/${atencionId}/tratamiento-fisio`, data),
+  tratamientoFisioAnterior: (atencionId: string) =>
+    api.get<{
+      atencionId: string; fecha: string; servicio: string; sesiones: number | null; comentario: string | null;
+      patologias: { incluir: { codigo: string; descripcion: string }[]; excluir: string[] } | null; tratamientos: { clave: string; nombre: string }[];
+    } | null>(`${B}/atenciones/${atencionId}/tratamiento-fisio/anterior`),
+  blobEvaluacionFisioPdf: async (atencionId: string): Promise<Blob> => {
+    const token = useAuthStore.getState().token;
+    const res = await fetch(`/api/v1${B}/atenciones/${atencionId}/evaluacion-fisio.pdf`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: 'No se pudo generar la hoja' }));
+      throw new Error((err as { message?: string; error?: string }).message ?? (err as { error?: string }).error ?? 'No se pudo generar la hoja');
+    }
+    return res.blob();
+  },
+  // Escala de cada punto en las atenciones del paciente (sin lo pintado): para comparar con la sesión anterior.
+  historialMapaCorporal: (pacienteId: string) =>
+    api.get<{ atencionId: string; fecha: string; marcas: { zona: string; tipo: string; intensidad: number | null; capa?: 'musculos' | null }[] }[]>(`${B}/paciente/${pacienteId}/mapa-corporal-historial`),
   guardarDibujoSilueta: (atencionId: string, data: { vista: VistaSilueta; pie: PiePodograma; anotaciones: AnotacionPodograma[] }) =>
     api.put<AtencionCompleta>(`${B}/atenciones/${atencionId}/dibujos`, data),
   guardarAnotacionesPodograma: (id: string, anotaciones: AnotacionPodograma[]) => api.patch<AtencionCompleta>(`${B}/podograma/imagenes/${id}/anotaciones`, { anotaciones }),

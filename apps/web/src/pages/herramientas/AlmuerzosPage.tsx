@@ -265,7 +265,7 @@ function FilaProfesional({
 }) {
   const iniciales = `${prof.nombres[0] ?? ''}${prof.apellidos[0] ?? ''}`.toUpperCase();
   const turno = prof.almuerzo ? TURNOS_ALMUERZO.find((t) => t.horaInicio === prof.almuerzo!.horaInicio) : null;
-  const tipoLabel = prof.tipo === 'podologa' ? 'Podóloga' : 'Fisioterapeuta';
+  const tipoLabel = prof.tipo === 'podologa' ? 'Podóloga' : prof.tipo === 'asistente_podologa' ? 'Asistente de podóloga' : 'Fisioterapeuta';
   const noDisponible = prof.noDisponibleMotivo !== null;
 
   return (

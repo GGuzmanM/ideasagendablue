@@ -9,6 +9,7 @@ import { AppError } from '../middleware/errorHandler';
 import { invalidateDisponibilidadCache } from '../redis';
 import { sincronizarReunionOutlook } from '../services/outlookCalendarService';
 import { MARCA_MANUAL } from '../services/importarOcupacionOutlook';
+import { esTipoPodologia } from '@limablue/shared';
 
 const router = Router();
 
@@ -193,7 +194,7 @@ router.post('/', requireAuth, PUEDE_AUSENCIAS, async (req, res) => {
   if (!prof || !prof.activo || prof.deletedAt) throw new AppError('Profesional no encontrado', 404);
   // Podólogas, fisioterapeutas y baro (médico/máquina "Baro N"): se pueden bloquear
   // en un rango (ej. reunión de médicos → no atienden baro durante ese rato).
-  if (prof.tipo !== 'podologa' && prof.tipo !== 'fisioterapeuta' && prof.tipo !== 'medico') {
+  if (!esTipoPodologia(prof.tipo) && prof.tipo !== 'fisioterapeuta' && prof.tipo !== 'medico') {
     throw new AppError('Los permisos aplican a podólogas, fisioterapeutas y baropodometría', 400);
   }
 
@@ -312,7 +313,7 @@ router.post('/multiple', requireAuth, PUEDE_AUSENCIAS, async (req, res) => {
   for (const id of ids) {
     const prof = profPorId.get(id);
     if (!prof) { invalidos.push({ profesionalId: id, motivo: 'no encontrado' }); continue; }
-    if (prof.tipo !== 'podologa' && prof.tipo !== 'fisioterapeuta' && prof.tipo !== 'medico') {
+    if (!esTipoPodologia(prof.tipo) && prof.tipo !== 'fisioterapeuta' && prof.tipo !== 'medico') {
       invalidos.push({ profesionalId: id, motivo: 'tipo no bloqueable' });
       continue;
     }
@@ -483,7 +484,7 @@ async function analizarVacaciones(profIds: string[], sedeId: string, fechaInicio
   for (const id of ids) {
     const prof = profPorId.get(id);
     if (!prof) { invalidos.push({ profesionalId: id, motivo: 'no encontrado' }); continue; }
-    if (prof.tipo !== 'podologa' && prof.tipo !== 'fisioterapeuta' && prof.tipo !== 'medico') {
+    if (!esTipoPodologia(prof.tipo) && prof.tipo !== 'fisioterapeuta' && prof.tipo !== 'medico') {
       invalidos.push({ profesionalId: id, motivo: 'tipo no bloqueable' });
       continue;
     }

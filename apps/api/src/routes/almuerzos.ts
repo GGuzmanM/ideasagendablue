@@ -5,6 +5,7 @@ import { requireAuth, requirePermiso } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { crearAlmuerzo, esFinDeSemana } from '../services/almuerzoService';
 import { registrarAudit } from '../services/audit';
+import { esTipoPodologia } from '@limablue/shared';
 
 const router = Router();
 
@@ -95,7 +96,7 @@ router.post('/', requireAuth, requirePermiso('horarios.editar'), async (req, res
     throw new AppError('Profesional no encontrado', 404);
   }
 
-  if (profesional.tipo !== 'podologa' && profesional.tipo !== 'fisioterapeuta') {
+  if (!esTipoPodologia(profesional.tipo) && profesional.tipo !== 'fisioterapeuta') {
     throw new AppError('El almuerzo aplica solo a podólogas y fisioterapeutas.', 400);
   }
 

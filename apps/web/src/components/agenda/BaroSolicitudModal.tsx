@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { baroSolicitudApi, type ProfBaro } from '../../api/baroSolicitud';
 
-const TIPO_LABEL: Record<string, string> = { medico: 'Médico', podologa: 'Podóloga', fisioterapeuta: 'Fisioterapeuta' };
+const TIPO_LABEL: Record<string, string> = { medico: 'Médico', podologa: 'Podóloga', fisioterapeuta: 'Fisioterapeuta', asistente_podologa: 'Asistente de podóloga' };
 
 interface Props {
   onClose: () => void;

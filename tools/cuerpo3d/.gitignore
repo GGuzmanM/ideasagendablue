@@ -1,0 +1,4 @@
+# El original de BodyParts3D pesa 136 MB: se vuelve a bajar (ver construir-musculos.mjs), no va al repositorio.
+fuente-bp3d/*.zip
+fuente-bp3d/obj/
+node_modules/

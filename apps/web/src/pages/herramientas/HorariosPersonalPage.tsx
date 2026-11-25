@@ -17,7 +17,7 @@ const DIAS = [
   { n: 1, label: 'Lunes' }, { n: 2, label: 'Martes' }, { n: 3, label: 'Miércoles' },
   { n: 4, label: 'Jueves' }, { n: 5, label: 'Viernes' }, { n: 6, label: 'Sábado' }, { n: 0, label: 'Domingo' },
 ];
-const TIPO_LABEL: Record<string, string> = { podologa: 'Podólogas', medico: 'Médicos', fisioterapeuta: 'Fisioterapeutas' };
+const TIPO_LABEL: Record<string, string> = { podologa: 'Podólogas', medico: 'Médicos', fisioterapeuta: 'Fisioterapeutas', asistente_podologa: 'Asistentes de podóloga' };
 
 export function SemanaTipoContent({ sedeId, sedeNombre }: { sedeId?: string; sedeNombre?: string } = {}) {
   const [q, setQ] = useState('');

@@ -2,13 +2,15 @@
 // procedimiento (5.2). Vista pura; la lógica vive en usePlantillasAdmin
 // (services/historiaClinicaService.ts). Solo administración, coordinación y médicos (el backend
 // también lo exige).
-import { TIPO_PROCEDIMIENTO_LABEL, type TipoProcedimiento } from '../../api/historiaClinica';
+import { TIPO_PROCEDIMIENTO_LABEL, TIPOS_PROCEDIMIENTO_RETIRADOS, type TipoProcedimiento } from '../../api/historiaClinica';
 import { usePlantillasAdmin } from '../../services/historiaClinicaService';
 import { BuscadorCie10 } from './Buscadores';
 import { EditorConsentimientoOficial } from '../consentimientos/EditorConsentimientoOficial';
 
 /** Procedimientos que pueden tener consentimiento propio (mismos slugs que el bloque 3 y el API). */
-const PROCEDIMIENTOS: TipoProcedimiento[] = ['matricectomia', 'onicotomia', 'laser', 'curacion', 'debridacion', 'infiltracion', 'quiropodia', 'otro'];
+// Sin los retirados (quiropodia, 25-nov-2026: es profilaxis). Una plantilla que ya exista con ese tipo se sigue viendo y se puede quitar.
+const PROCEDIMIENTOS: TipoProcedimiento[] = (['matricectomia', 'onicotomia', 'laser', 'curacion', 'debridacion', 'infiltracion', 'quiropodia', 'otro'] as TipoProcedimiento[])
+  .filter((t) => !TIPOS_PROCEDIMIENTO_RETIRADOS.includes(t));
 
 const INPUT = 'w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2.5 lg:py-2 text-base lg:text-sm text-on-surface outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all';
 const LBL = 'block text-[10px] font-semibold uppercase tracking-wide text-on-surface-variant mb-1';

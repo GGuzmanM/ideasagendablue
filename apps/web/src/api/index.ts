@@ -149,10 +149,12 @@ export interface DiaEspecial {
 }
 
 export const profesionalesApi = {
-  listar: (params: { sedeId?: string; unidadNegocioId?: string; fecha?: string; activo?: boolean }) =>
+  // soloConTurno: columnas de la agenda (24-nov-2026) → sin quien no trabaja ese día (salvo que tenga cita o ningún horario).
+  listar: (params: { sedeId?: string; unidadNegocioId?: string; fecha?: string; activo?: boolean; soloConTurno?: boolean }) =>
     api.get<Profesional[]>('/profesionales', {
       ...params,
       activo: params.activo != null ? String(params.activo) : undefined,
+      soloConTurno: params.soloConTurno ? '1' : undefined,
     } as Record<string, string>),
 
   obtener: (id: string) => api.get<Profesional>(`/profesionales/${id}`),

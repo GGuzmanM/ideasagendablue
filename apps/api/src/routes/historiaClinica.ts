@@ -14,6 +14,8 @@ import { nuevoPdf } from '../services/pdfComun';
 import * as resumen from '../services/resumenPacienteService';
 import { escribirResumenPacientePdf } from '../services/resumenPacientePdf';
 import { escribirHistoriaPdf, cargarFotosPdf } from '../services/historiaPdf';
+import * as tf from '../services/tratamientoFisio';
+import { escribirEvaluacionFisioPdf } from '../services/evaluacionFisioPdf';
 import * as cs from '../services/consentimientoService';
 import * as ctl from '../services/controlService';
 import { enviarAvisoCoordinacion, enviarRecordatoriosPacientes } from '../services/avisosControles';
@@ -801,6 +803,15 @@ router.get('/paciente/:pacienteId/podograma-historial', ...verHc, async (req, re
   res.json(historial);
 });
 
+// Mapa corporal (Fisioterapia): la escala de cada punto en las atenciones del paciente, para comparar con la sesión anterior
+router.get('/paciente/:pacienteId/mapa-corporal-historial', ...verHc, async (req, res) => {
+  const { pacienteId } = req.params;
+  await hc.assertAccesoPaciente(user(req), pacienteId);
+  const historial = await fp.historialMapaCorporal(pacienteId);
+  if (historial.length) await hc.auditarLecturaHC({ ...ctx(req), pacienteId, origen: 'escalas' });
+  res.json(historial);
+});
+
 // Plantillas de nota por diagnóstico (1.1) y autotextos (1.2): las lee cualquiera con hc.ver;
 // las gestionan administración, coordinación y médicos.
 const plantillaSchema = z.object({
@@ -947,6 +958,65 @@ router.put('/atenciones/:id/dibujos', ...registrar, async (req, res) => {
   const { sedeId } = await sedeDeAtencion(req.params.id);
   assertSede(req, sedeId);
   res.json(await b3.guardarDibujoSilueta({ ...ctx(req), atencionId: req.params.id, ...data }));
+});
+
+// Mapa corporal 3D (Fisioterapia, 24-nov-2026): reemplaza la lista de zonas marcadas de la atención.
+const mapaCorporalSchema = z.object({
+  marcas: z.array(z.object({
+    zona: z.string().trim().regex(/^[a-z0-9_]{2,40}$/),
+    tipo: z.enum(b3.TIPOS_MARCA_CORPORAL),
+    intensidad: z.number().int().min(0).max(10).nullable().optional(),
+    nota: z.string().max(300).nullable().optional(),
+    // Pintado con el pincel: x, y, z, radio (mm), de cuatro en cuatro. Hasta 500 toques por hallazgo.
+    puntos: z.array(z.number().int().min(-2000).max(3000)).max(2000).refine((p) => p.length % 4 === 0, 'puntos va de cuatro en cuatro').nullable().optional(),
+    // Capa de músculos y huesos (26-nov-2026): los puntos son de ese modelo; `estructuras` = lo que tocó el pincel.
+    capa: z.enum(['musculos']).nullable().optional(),
+    estructuras: z.array(z.string().trim().min(1).max(80)).max(8).nullable().optional(),
+  })).max(300),
+});
+router.put('/atenciones/:id/mapa-corporal', ...registrar, async (req, res) => {
+  const { marcas } = mapaCorporalSchema.parse(req.body);
+  const { sedeId } = await sedeDeAtencion(req.params.id);
+  assertSede(req, sedeId);
+  res.json(await b3.guardarMapaCorporal({ ...ctx(req), atencionId: req.params.id, marcas }));
+});
+
+// Tratamiento de Fisioterapia (25-nov-2026): la tabla «TRATAMIENTO» de la hoja de evaluación. Deja la atención con exactamente
+// los tratamientos enviados, UN comentario general y las sesiones recomendadas. Se guardan como procedimientos.
+const tratamientoFisioSchema = z.object({
+  tratamientos: z.array(z.enum(tf.CLAVES_TRATAMIENTO_FISIO)).max(40),
+  comentario: z.string().max(tf.MAX_COMENTARIO_FISIO).nullable().optional(),
+  // Patologías de la hoja impresa: códigos CIE-10 que se AGREGAN (del historial del paciente) y los de esta atención que se QUITAN.
+  patologias: z.object({
+    incluir: z.array(z.string().trim().min(1).max(12)).max(tf.MAX_PATOLOGIAS_HOJA).optional(),
+    excluir: z.array(z.string().trim().min(1).max(12)).max(30).optional(),
+  }).nullable().optional(),
+  sesiones: z.number().int().min(1).max(99).nullable().optional(),
+});
+router.put('/atenciones/:id/tratamiento-fisio', ...registrar, async (req, res) => {
+  const data = tratamientoFisioSchema.parse(req.body);
+  const { sedeId } = await sedeDeAtencion(req.params.id);
+  assertSede(req, sedeId);
+  res.json(await tf.guardarTratamientoFisio({ ...ctx(req), atencionId: req.params.id, ...data }));
+});
+// Lo marcado en la atención de fisio anterior del paciente, para ofrecer «usar el mismo».
+router.get('/atenciones/:id/tratamiento-fisio/anterior', ...verHc, async (req, res) => {
+  const at = await hc.atencionOr404(uuid.parse(req.params.id));
+  await hc.assertAccesoPaciente(user(req), at.pacienteId);
+  res.json(await tf.tratamientoFisioAnterior(at.id));
+});
+// Hoja imprimible «Evaluación fisioterapéutica» (mismo candado que ver la historia).
+router.get('/atenciones/:id/evaluacion-fisio.pdf', ...verHc, async (req, res) => {
+  const datos = await tf.evaluacionFisioParaPdf(uuid.parse(req.params.id));
+  await hc.assertAccesoPaciente(user(req), datos.pacienteId);
+  await hc.auditarLecturaHC({ ...ctx(req), pacienteId: datos.pacienteId, origen: 'pdf', atencionId: datos.atencionId, sedeId: datos.sedeId });
+  const doc = nuevoPdf('Evaluación fisioterapéutica');
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="evaluacion-fisioterapeutica-${new Date(datos.fecha).toISOString().slice(0, 10)}.pdf"`);
+  res.setHeader('Cache-Control', 'private, no-store');
+  doc.pipe(res);
+  escribirEvaluacionFisioPdf(doc, datos);
+  doc.end();
 });
 
 router.patch('/podograma/imagenes/:id/anotaciones', ...registrar, async (req, res) => {

@@ -1,0 +1,9 @@
+{
+  "name": "limablue-cuerpo3d",
+  "private": true,
+  "description": "Herramientas para regenerar los modelos del mapa corporal 3D (no forman parte de la app)",
+  "type": "module",
+  "devDependencies": {
+    "meshoptimizer": "0.22.0"
+  }
+}

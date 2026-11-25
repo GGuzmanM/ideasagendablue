@@ -23,7 +23,7 @@ import { z } from 'zod';
 import { prisma } from '../db';
 import { requireAuth, requirePermiso } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
-import { timeToMinutes } from '@limablue/shared';
+import { timeToMinutes, TIPOS_PODOLOGIA } from '@limablue/shared';
 import { turnosDelDia } from '../services/disponibilidad';
 import { auditEnTx } from '../services/audit';
 import { embudoAna } from '../services/embudoAnaService';
@@ -217,7 +217,7 @@ router.get('/rotacion', requireAuth, requireGestor, async (req, res) => {
 
   // Podólogas objetivo.
   const podologas = await prisma.profesional.findMany({
-    where: { tipo: 'podologa', deletedAt: null, ...(profesionalId ? { id: profesionalId } : {}) },
+    where: { tipo: { in: [...TIPOS_PODOLOGIA] }, deletedAt: null, ...(profesionalId ? { id: profesionalId } : {}) },
     select: { id: true, nombres: true, apellidos: true, colorAvatar: true, metaDiasMes: true },
     orderBy: [{ apellidos: 'asc' }, { nombres: 'asc' }],
   });

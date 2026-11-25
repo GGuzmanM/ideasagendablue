@@ -40,7 +40,7 @@ import { useAutotextoStore } from '../stores/autotextoStore';
 import { useFotosPendientesStore, usePendientesDe, useTotalPendientes, type FotoPendiente, type CamposPendiente } from '../stores/fotosPendientesStore';
 import { useBorradoresStore, useMarcarBorrador, hayBorradores } from '../stores/borradoresStore';
 
-export type TabHc = 'evolucion' | 'receta' | 'antecedentes' | 'procedimientos' | 'escalas' | 'podograma' | 'fotos' | 'consentimientos' | 'constancias';
+export type TabHc = 'evolucion' | 'receta' | 'antecedentes' | 'procedimientos' | 'escalas' | 'podograma' | 'fotos' | 'consentimientos' | 'constancias' | 'cuerpo';
 const ESTADOS_ATENDIDA = ['llego', 'en_atencion', 'completada'];
 /** Un renglón de la línea de tiempo: atención nueva, visita del sistema anterior (Genexis, con su nota clínica del
  *  ERP si la tiene) o nota del ERP sin visita de Genexis (28-sep-2026). */
@@ -96,7 +96,7 @@ export function useHistoriaClinicaPage() {
   const refrescarSi409 = (e: Error) => { if (ERROR_TIENE_409(e) && atencionSel) void qc.invalidateQueries({ queryKey: atencionKey(atencionSel) }); toast.error(e.message); };
 
   // ?tab=receta (desde «Pacientes del día») abre directo en esa pestaña.
-  const TABS_HC: TabHc[] = ['evolucion', 'receta', 'antecedentes', 'procedimientos', 'escalas', 'podograma', 'fotos', 'consentimientos', 'constancias'];
+  const TABS_HC: TabHc[] = ['evolucion', 'receta', 'antecedentes', 'procedimientos', 'escalas', 'podograma', 'fotos', 'consentimientos', 'constancias', 'cuerpo'];
   const tabParam = params.get('tab') as TabHc | null;
   const [tab, setTab] = useState<TabHc>(tabParam && TABS_HC.includes(tabParam) ? tabParam : 'evolucion');
   // La vista del podograma (planta / dorso) y su modo (punto, pintar, historial) viven AQUÍ y no en el
@@ -1435,7 +1435,7 @@ export function usePodograma(
     dibujoDe, agregarTrazoSilueta, borrarTrazoSilueta, deshacerDibujo, limpiarDibujo, descartarDibujo, guardarDibujoMut,
     puedeDeshacerDibujo: pilaDibujoLen > 0, dibujoSucio: clavesDibujoSucias.length > 0,
     hayDibujoEnVista: dibujoDe(vistaSilueta, 'izquierdo').length + dibujoDe(vistaSilueta, 'derecho').length > 0,
-    dibujosGuardados: (atencion?.dibujosSilueta ?? []).filter((d) => d.anotaciones?.length),
+    dibujosGuardados: (atencion?.dibujosSilueta ?? []).filter((d) => d.anotaciones?.length && (d.vista as string) !== 'cuerpo3d'), // el mapa corporal 3D no es silueta del pie
     marcas: atencion?.marcasPodograma ?? [], pendiente, marcarPunto, cancelar, tipoLesion, setTipoLesion, nota, setNota, agregarMut, eliminarMut,
     // imágenes
     imagenes, porVista, otras, imagenSel, setImagenSelId, verSilueta, setVerSilueta, urlImagen, cargandoImagen, subirArchivo, subirMut, eliminarImagenMut,

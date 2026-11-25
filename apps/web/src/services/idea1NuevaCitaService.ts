@@ -25,6 +25,7 @@ import { calcularEdad } from './pacientesService';
 import { combinacionesApi } from '../api/combinaciones';
 import { usePaquetesPaciente } from '../api/paquetesSesiones';
 import { useCanales } from '../hooks/useCanales';
+import { useSiguienteSesion } from '../hooks/useSiguienteSesion';
 import { promocionesApi, calcularConPromo, type PromocionElegible } from '../api/promociones';
 import { useAuthStore } from '../stores/authStore';
 import { invalidarAgenda } from './idea1DetalleCitaService';
@@ -416,6 +417,17 @@ export function useIdea1NuevaCitaForm({
     staleTime: STALE_CONFIG,
   });
   useEffect(() => { setExtraSubcategoriaId(''); }, [extraServicioId]); // otro extra → su subcategoría se vuelve a elegir
+
+  // Seguimiento automático de sesiones (24-nov-2026): «Sesión 1» viva → se preselecciona «Sesión 2» (también en el extra).
+  // No aplica si la opción la fija una membresía.
+  const ayudaSesion = useSiguienteSesion({
+    pacienteId: pacienteSeleccionado?.id, servicioId, opciones: subcategorias as { id: string }[],
+    valor: subcategoriaId, setValor: setSubcategoriaId, habilitado: !membSel,
+  });
+  const ayudaSesionExtra = useSiguienteSesion({
+    pacienteId: pacienteSeleccionado?.id, servicioId: extraServicioId, opciones: extraSubcategorias as { id: string }[],
+    valor: extraSubcategoriaId, setValor: setExtraSubcategoriaId, habilitado: combinar,
+  });
 
   // Competencias activas entre profesionales y servicios de esta unidad de negocio
   const { data: competencias = [] } = useQuery({
@@ -1146,6 +1158,8 @@ export function useIdea1NuevaCitaForm({
     setServicioId,
     subcategoriaId,
     setSubcategoriaId,
+    ayudaSesion,
+    ayudaSesionExtra,
     paquetePacienteId,
     setPaquetePacienteId,
     membSel,

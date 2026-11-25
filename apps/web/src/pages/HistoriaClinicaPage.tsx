@@ -31,6 +31,11 @@ import { useInvalidarControles } from '../services/controlesService';
 import { BotonHistorialGenexis } from '../components/pacientes/HistorialGenexis';
 import type { HistorialGenexisRegistro } from '../api';
 import { ComparadorFotos } from '../components/historiaClinica/ComparadorFotos';
+import { PanelCuerpo3D, PanelEscalasFisio } from '../components/historiaClinica/PanelCuerpo3D';
+import { marcasCorporalesDe } from '../components/historiaClinica/useMapaCorporal';
+import { PanelTratamientoFisio, type PatologiaPrevia } from '../components/historiaClinica/PanelTratamientoFisio';
+import { esTratamientoFisio } from '../components/historiaClinica/tratamientoFisio';
+import { esAtencionFisio } from '../utils/esAtencionFisio';
 import { SiluetaPie, MonofilamentoPie, aspectoSilueta, proporcionSilueta } from '../components/historiaClinica/SiluetaPie';
 import { estiloGiro, giroSilueta, puntoTocado } from '../utils/giroSilueta';
 import { LienzoSilueta } from '../components/historiaClinica/LienzoSilueta';
@@ -45,7 +50,7 @@ import { ZONAS_PIE, coordZona, zonaPorId } from '../utils/zonasPie';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useHistoriaClinicaPage, useMotivoAnamnesis, useAntecedentesAlergias, useRecetasAtencion, useEscalas, usePodograma, useMiniaturaPodograma, useFotosClinicas, useFotoUrl, MF_ETIQUETAS, IWGDF_CONTROL, type TabHc } from '../services/historiaClinicaService';
 import type { FotoPendiente, CamposPendiente } from '../stores/fotosPendientesStore';
-import { VISTA_SILUETA_LABEL, TIPO_ANTECEDENTE_LABEL, TIPO_NOTA_LABEL, TIPO_PROCEDIMIENTO_LABEL, TIPO_ESCALA_LABEL, TIPO_LESION_LABEL, COLOR_LESION, etiquetaLesion, PIE_LABEL, VISTAS_PODOGRAMA, VISTA_PODOGRAMA_LABEL, CATEGORIA_FOTO_LABEL, edadDe, nombreProfesional, type AtencionClinica, type AtencionCompleta, type TipoAntecedente, type TipoNota, type SeveridadAlergia, type TipoProcedimiento, type TipoEscala, type TipoLesion, type MarcaPodograma, type VistaSilueta, type AnotacionPodograma, type ImagenPodograma, type VistaPodograma, type CategoriaFoto, type FotoClinica, type Pie } from '../api/historiaClinica';
+import { VISTA_SILUETA_LABEL, TIPO_ANTECEDENTE_LABEL, TIPO_NOTA_LABEL, TIPO_PROCEDIMIENTO_LABEL, TIPOS_PROCEDIMIENTO_FORMULARIO, TIPO_ESCALA_LABEL, TIPO_LESION_LABEL, COLOR_LESION, etiquetaLesion, PIE_LABEL, VISTAS_PODOGRAMA, VISTA_PODOGRAMA_LABEL, CATEGORIA_FOTO_LABEL, edadDe, nombreProfesional, type AtencionClinica, type AtencionCompleta, type TipoAntecedente, type TipoNota, type SeveridadAlergia, type TipoProcedimiento, type TipoEscala, type TipoLesion, type MarcaPodograma, type VistaSilueta, type AnotacionPodograma, type ImagenPodograma, type VistaPodograma, type CategoriaFoto, type FotoClinica, type Pie } from '../api/historiaClinica';
 import { TIPO_DOC_LABEL } from '../api/recetas';
 import { historiaClinicaApi, ORIGEN_CONTROL_LABEL, type NotaErp } from '../api/historiaClinica';
 import toast from 'react-hot-toast';
@@ -72,6 +77,11 @@ const TABS: { id: TabHc; label: string; icon: string; pronto?: boolean }[] = [
   { id: 'fotos', label: 'Fotos', icon: 'photo_camera' },
   { id: 'consentimientos', label: 'Consentimientos', icon: 'contract' },
 ];
+// 24-nov-2026 · Fisioterapia: no emite receta y tiene el mapa corporal 3D (justo después de Escalas).
+const TAB_CUERPO = { id: 'cuerpo' as const, label: 'Cuerpo 3D', icon: 'accessibility_new' };
+const tabsDe = (fisio: boolean) => (fisio
+  ? TABS.filter((t) => t.id !== 'receta').flatMap((t) => (t.id === 'escalas' ? [t, TAB_CUERPO] : [t]))
+  : TABS);
 
 export function HistoriaClinicaPage() {
   const h = useHistoriaClinicaPage();
@@ -252,9 +262,9 @@ export function HistoriaClinicaPage() {
           {/* Pestañas: pegadas arriba al desplazar (en tablet la página entera es la que scrollea) */}
           {/* En tablet las 8 pestañas se reparten en dos filas (nada queda oculto fuera de la pantalla) */}
           <div className="sticky top-0 z-10 border-b border-outline-variant/20 bg-surface-container-lowest px-3 lg:px-6 pt-2 lg:pt-3 flex gap-1 flex-wrap">
-            {TABS.map((t) => (
-              <button key={t.id} disabled={t.pronto} onClick={() => h.setTab(t.id)} title={t.pronto ? 'Próximamente' : undefined}
-                className={`px-3 lg:px-4 py-3 lg:py-2.5 text-sm font-semibold border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${h.tab === t.id ? 'border-primary text-primary' : 'border-transparent text-on-surface-variant hover:text-on-surface'} ${t.pronto ? 'opacity-40 cursor-not-allowed' : ''}`}>
+            {tabsDe(esAtencionFisio(h.atencion)).map((t) => (
+              <button key={t.id} disabled={'pronto' in t && t.pronto} onClick={() => h.setTab(t.id)} title={'pronto' in t && t.pronto ? 'Próximamente' : undefined}
+                className={`px-3 lg:px-4 py-3 lg:py-2.5 text-sm font-semibold border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${h.tab === t.id ? 'border-primary text-primary' : 'border-transparent text-on-surface-variant hover:text-on-surface'} ${'pronto' in t && t.pronto ? 'opacity-40 cursor-not-allowed' : ''}`}>
                 <span className="material-symbols-outlined text-base">{t.icon}</span>{t.label}
                 {t.id === 'fotos' && h.fotosSinGuardar > 0 && (
                   <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold flex items-center justify-center" title="Fotos sin guardar" data-testid="badge-fotos-sin-guardar">{h.fotosSinGuardar}</span>
@@ -266,7 +276,7 @@ export function HistoriaClinicaPage() {
           <div className="max-w-[1100px] min-w-0">
             {h.tab === 'antecedentes' && <PanelAntecedentes h={h} v2 />}
             {h.tab !== 'antecedentes' && h.genexisSel && <VisitaGenexisCard visita={h.visitaGenexis} nota={h.notaErpSel} />}
-            {(h.tab === 'evolucion' || h.tab === 'receta' || h.tab === 'procedimientos' || h.tab === 'escalas' || h.tab === 'podograma' || h.tab === 'fotos' || h.tab === 'consentimientos') && !h.genexisSel && (
+            {(h.tab === 'evolucion' || h.tab === 'receta' || h.tab === 'procedimientos' || h.tab === 'escalas' || h.tab === 'podograma' || h.tab === 'fotos' || h.tab === 'consentimientos' || h.tab === 'cuerpo') && !h.genexisSel && (
               !h.atencionSel ? (
                 <div className="text-center py-20 text-on-surface-variant">
                   <span className="material-symbols-outlined text-5xl mb-2">clinical_notes</span>
@@ -280,12 +290,14 @@ export function HistoriaClinicaPage() {
                 <>
                   <CabeceraAtencion h={h} a={h.atencion} />
                   {h.tab === 'evolucion' && <PanelEvolucion h={h} a={h.atencion} />}
-                  {h.tab === 'receta' && <PanelReceta h={h} a={h.atencion} />}
-                  {h.tab === 'procedimientos' && <PanelProcedimientos h={h} a={h.atencion} />}
-                  {h.tab === 'escalas' && <PanelEscalas h={h} a={h.atencion} />}
+                  {h.tab === 'receta' && !esAtencionFisio(h.atencion) && <PanelReceta h={h} a={h.atencion} />}
+                  {h.tab === 'receta' && esAtencionFisio(h.atencion) && <p className="text-sm text-on-surface-variant py-6">Fisioterapia no emite receta.</p>}
+                  {h.tab === 'procedimientos' && (esAtencionFisio(h.atencion) ? <ProcedimientosDeFisio h={h} a={h.atencion} /> : <PanelProcedimientos h={h} a={h.atencion} />)}
+                  {h.tab === 'escalas' && (esAtencionFisio(h.atencion) ? <EscalasDeFisio h={h} a={h.atencion} /> : <PanelEscalas h={h} a={h.atencion} />)}
                   {h.tab === 'podograma' && <PanelPodograma h={h} a={h.atencion} />}
                   {h.tab === 'fotos' && <PanelFotos h={h} a={h.atencion} />}
                   {h.tab === 'consentimientos' && <PanelConsentimientos a={h.atencion} puedeRegistrar={h.puedeRegistrar} />}
+                  {h.tab === 'cuerpo' && <PanelCuerpo3D a={h.atencion} puedeRegistrar={h.puedeRegistrar} />}
                 </>
               )
             )}
@@ -430,7 +442,7 @@ function CabeceraAtencion({ h, a, sinMotivo = false }: { h: H; a: AtencionComple
   // Consentimiento que el tratamiento exige y aún no se firmó (se puede firmar en cualquier momento).
   const sinConsentimiento = usePendientesConsentimiento(a.citaId);
   // Cierre inteligente (misma regla y textos que la Bandeja clínica): avisa, no bloquea.
-  const faltantes = [...sinGuardar, ...sinConsentimiento.map((p) => `Falta firmar el consentimiento «${p.nombre}» (pestaña Consentimientos)`), ...faltantesAtencion(a)];
+  const faltantes = [...sinGuardar, ...sinConsentimiento.map((p) => `Falta firmar el consentimiento «${p.nombre}» (pestaña Consentimientos)`), ...faltantesAtencion(a, { fisio: esAtencionFisio(a) })];
   const cerrada = a.estado === 'cerrada';
   const invalidarControles = useInvalidarControles();
   // Siempre pasa por el diálogo: además de lo que falta, propone los próximos controles (4.1).
@@ -885,19 +897,49 @@ function PanelAntecedentes({ h, v2 = false }: { h: H; v2?: boolean }) {
 }
 
 // ─── Bloque 3 · Procedimientos ───────────────────────────────────────────────
-function PanelProcedimientos({ h, a, v2 = false }: { h: H; a: AtencionCompleta; v2?: boolean }) {
+/**
+ * 25-nov-2026 · Fisioterapia: la sección de procedimientos es la tabla «TRATAMIENTO» de su hoja de evaluación (marcar,
+ * describir, imprimir). El formulario general queda plegado debajo por si hace falta algo que no está en la lista.
+ */
+function ProcedimientosDeFisio({ h, a, v2 = false }: { h: H; a: AtencionCompleta; v2?: boolean }) {
+  const otros = a.procedimientos.filter((x) => !esTratamientoFisio(x)).length;
+  // Patologías que el paciente ya tiene de OTRAS atenciones (de cualquier servicio): una por código, la más reciente.
+  const previas: PatologiaPrevia[] = [];
+  for (const x of atencionesPrevias(h, a)) {
+    for (const d of x.diagnosticos) {
+      if (!previas.some((p) => p.codigo === d.cie10.codigo)) previas.push({ codigo: d.cie10.codigo, descripcion: d.cie10.descripcion, fecha: x.fecha, servicio: x.servicio.nombre });
+    }
+  }
+  return (
+    <div className="space-y-5">
+      <PanelTratamientoFisio a={a} puedeRegistrar={h.puedeRegistrar} patologiasPrevias={previas} />
+      {(otros > 0 || (h.puedeRegistrar && a.estado === 'abierta')) && (
+        <details className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest" open={otros > 0} data-testid="otros-procedimientos">
+          <summary className="cursor-pointer select-none px-4 sm:px-5 py-3 text-sm font-semibold text-on-surface-variant hover:text-on-surface">
+            Otro procedimiento (que no está en la lista){otros > 0 ? ` · ${otros}` : ''}
+          </summary>
+          <div className="px-3 sm:px-4 pb-4"><PanelProcedimientos h={h} a={a} v2={v2} sinFisio /></div>
+        </details>
+      )}
+    </div>
+  );
+}
+
+function PanelProcedimientos({ h, a, v2 = false, sinFisio = false }: { h: H; a: AtencionCompleta; v2?: boolean; sinFisio?: boolean }) {
   const p = h.procedimientos; // vive en la página: el borrador sobrevive al cambio de pestaña
   const dictadoProc = h.dictado; // dictado por voz en el detalle del procedimiento
   const quitar = useConfirmarQuitar();
   const editable = h.puedeRegistrar && !p.cerrada;
+  // En fisio, los tratamientos de su lista se ven arriba (PanelTratamientoFisio): aquí solo lo demás.
+  const lista = sinFisio ? p.procedimientos.filter((x) => !esTratamientoFisio(x)) : p.procedimientos;
   return (
     <div className="space-y-5">
       {quitar.dialogo}
       <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5">
         <h3 className="font-headline-sm text-headline-sm font-semibold text-on-surface flex items-center mb-3"><span className="material-symbols-outlined mr-2 text-primary">medical_services</span>Procedimientos realizados</h3>
-        {p.procedimientos.length === 0 && <p className="text-sm text-on-surface-variant">Ninguno registrado en esta atención.{editable ? ' Si hiciste un tratamiento, regístralo abajo.' : ''}</p>}
+        {lista.length === 0 && <p className="text-sm text-on-surface-variant">Ninguno registrado en esta atención.{editable ? ' Si hiciste un tratamiento, regístralo abajo.' : ''}</p>}
         <div className="space-y-2">
-          {p.procedimientos.map((x) => (
+          {lista.map((x) => (
             <div key={x.id} className="rounded-xl border border-outline-variant/20 px-4 py-3">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-sm font-bold text-on-surface">{TIPO_PROCEDIMIENTO_LABEL[x.tipo]}{x.nombre && x.nombre !== TIPO_PROCEDIMIENTO_LABEL[x.tipo] ? ` · ${x.nombre}` : ''}</span>
@@ -925,7 +967,7 @@ function PanelProcedimientos({ h, a, v2 = false }: { h: H; a: AtencionCompleta; 
             <div><label className={LBL}>Tipo</label>
               <select value={p.tipo} onChange={(e) => p.setTipo(e.target.value as TipoProcedimiento | '')} className={INPUT}>
                 <option value="">Selecciona…</option>
-                {(Object.keys(TIPO_PROCEDIMIENTO_LABEL) as TipoProcedimiento[]).map((t) => <option key={t} value={t}>{TIPO_PROCEDIMIENTO_LABEL[t]}</option>)}
+                {TIPOS_PROCEDIMIENTO_FORMULARIO.map((t) => <option key={t} value={t}>{TIPO_PROCEDIMIENTO_LABEL[t]}</option>)}
               </select>
             </div>
             <div><label className={LBL}>Lado</label>
@@ -969,6 +1011,18 @@ function PanelProcedimientos({ h, a, v2 = false }: { h: H; a: AtencionCompleta; 
         </section>
       )}
     </div>
+  );
+}
+
+/**
+ * 24-nov-2026 · Fisioterapia: la escala va POR PUNTO del mapa corporal (EVA en cada dolor), no una por atención. El panel de
+ * escalas de siempre (pie) queda plegado debajo; los doctores no cambian.
+ */
+function EscalasDeFisio({ h, a }: { h: H; a: AtencionCompleta }) {
+  return (
+    <PanelEscalasFisio a={a} puedeRegistrar={h.puedeRegistrar} onAbrirMapa={() => h.setTab('cuerpo')} otrasAbiertas={a.escalas.length > 0}>
+      <PanelEscalas h={h} a={a} />
+    </PanelEscalasFisio>
   );
 }
 
@@ -1902,9 +1956,12 @@ function useAnchoMinimo(px: number): boolean {
 
 function VistaUnica({ h }: { h: H }) {
   const v2 = leerHcV2();
-  const enAtencion = h.tab !== 'podograma' && h.tab !== 'fotos' && !(v2 && h.tab === 'constancias');
+  const fisio = esAtencionFisio(h.atencion);
+  const enAtencion = h.tab !== 'podograma' && h.tab !== 'fotos' && h.tab !== 'cuerpo' && !(v2 && h.tab === 'constancias');
   const tabs: { id: TabHc; label: string; icon: string; activa: boolean }[] = [
     { id: 'antecedentes', label: 'Atención', icon: 'clinical_notes', activa: enAtencion },
+    // 24-nov-2026 · Fisioterapia: mapa corporal 3D.
+    ...(fisio ? [{ id: 'cuerpo' as const, label: 'Cuerpo 3D', icon: 'accessibility_new', activa: h.tab === 'cuerpo' }] : []),
     { id: 'podograma', label: 'Podograma', icon: 'footprint', activa: h.tab === 'podograma' },
     { id: 'fotos', label: 'Fotos', icon: 'photo_camera', activa: h.tab === 'fotos' },
     ...(v2 ? [{ id: 'constancias' as const, label: 'Constancias', icon: 'verified', activa: h.tab === 'constancias' }] : []),
@@ -1933,8 +1990,9 @@ function VistaUnica({ h }: { h: H }) {
                 <CabeceraAtencion h={h} a={a} />
                 {h.tab === 'podograma' && <PanelPodograma h={h} a={a} />}
                 {/* v2: las escalas viven junto al podograma (ya no ocupan la pantalla principal de la atención) */}
-                {v2 && h.tab === 'podograma' && <div className="mt-6"><SeccionUnica id="escalas" titulo="Escalas"><PanelEscalas h={h} a={a} /></SeccionUnica></div>}
+                {v2 && !fisio && h.tab === 'podograma' && <div className="mt-6"><SeccionUnica id="escalas" titulo="Escalas"><PanelEscalas h={h} a={a} /></SeccionUnica></div>}
                 {h.tab === 'fotos' && <PanelFotos h={h} a={a} />}
+                {h.tab === 'cuerpo' && <PanelCuerpo3D a={a} puedeRegistrar={h.puedeRegistrar} />}
                 {v2 && h.tab === 'constancias' && <ConstanciasSection a={a} puedeRegistrar={h.puedeRegistrar} esMedicoPrescriptor={h.esMedicoPrescriptor} />}
               </>
             )}
@@ -2027,6 +2085,7 @@ function PanelDiagnosticosPrevios({ h, a }: { h: H; a: AtencionCompleta | null }
 function IndiceVistaUnica({ h }: { h: H }) {
   const v2 = leerHcV2();
   const a = h.atencion && h.atencionSel && !h.genexisSel ? h.atencion : null;
+  const fisio = esAtencionFisio(a);
   const pendientesFirma = usePendientesConsentimiento(a?.citaId ?? null);
   const hc = h.historia;
   const items: { id: SeccionUnicaId; n?: number; label: string; hecho: boolean; aviso?: boolean }[] = [
@@ -2034,14 +2093,16 @@ function IndiceVistaUnica({ h }: { h: H }) {
     ...(a ? [
       { id: 'motivo' as const, n: 2, label: v2 && !esPrimeraConsulta(h, a) ? 'Evolución (SOAP)' : 'Motivo y anamnesis', hecho: a.notas.length > 0 },
       { id: 'diagnostico' as const, n: 3, label: 'Diagnóstico', hecho: a.diagnosticos.length > 0 },
-      { id: 'receta' as const, n: 4, label: 'Tratamiento (receta)', hecho: a.recetas.length > 0 },
-      { id: 'procedimientos' as const, n: 5, label: 'Procedimientos y consentimientos', hecho: a.procedimientos.length > 0 && pendientesFirma.length === 0, aviso: pendientesFirma.length > 0 },
+      // 24-nov-2026 · Fisioterapia: sin receta; cierra con la escala de cada punto del mapa corporal.
+      ...(fisio ? [] : [{ id: 'receta' as const, n: 4, label: 'Tratamiento (receta)', hecho: a.recetas.length > 0 }]),
+      { id: 'procedimientos' as const, n: fisio ? 4 : 5, label: fisio ? 'Tratamiento y consentimientos' : 'Procedimientos y consentimientos', hecho: a.procedimientos.length > 0 && pendientesFirma.length === 0, aviso: pendientesFirma.length > 0 },
+      ...(fisio ? [{ id: 'escalas' as const, n: 5, label: 'Escalas por punto', hecho: marcasCorporalesDe(a).some((m) => m.intensidad != null) }] : []),
       ...(v2
         ? [
           ...(puedeVerNotasMedico(h.usuario?.rol) ? [{ id: 'notas' as const, label: 'Notas para doctores', hecho: false }] : []),
           { id: 'previos' as const, label: 'Diagnósticos previos', hecho: false },
         ]
-        : [{ id: 'escalas' as const, label: 'Escalas', hecho: a.escalas.length > 0 }]),
+        : (fisio ? [] : [{ id: 'escalas' as const, label: 'Escalas', hecho: a.escalas.length > 0 }])),
     ] : []),
   ];
   return (
@@ -2104,7 +2165,9 @@ function ContenidoVistaUnica({ h }: { h: H }) {
   const escalasAlCostado = useAnchoMinimo(ANCHO_ESCALAS_AL_COSTADO);
   const a = h.atencion && h.atencionSel && !h.genexisSel && !h.errorAtencion && !h.cargandoAtencion ? h.atencion : null;
   const primeraConsulta = !!a && esPrimeraConsulta(h, a);
+  const fisio = esAtencionFisio(a); // 24-nov-2026: sin receta; al final, la escala de cada punto del mapa corporal
   const ladoV2 = v2 && escalasAlCostado;
+  const escalasLado = !v2 && escalasAlCostado && !fisio; // las escalas de los doctores, al costado en pantallas anchas
   const panelesV2 = a ? (
     <>
       {puedeVerNotasMedico(h.usuario?.rol) && h.pacienteId && (
@@ -2132,7 +2195,7 @@ function ContenidoVistaUnica({ h }: { h: H }) {
   }, [h.tab, a?.id]);
 
   return (
-    <div className={`p-3 sm:p-4 lg:p-6 ${escalasAlCostado && a ? 'grid grid-cols-[minmax(0,1fr)_460px] gap-6 items-start' : ''}`}>
+    <div className={`p-3 sm:p-4 lg:p-6 ${(escalasLado || ladoV2) && a ? 'grid grid-cols-[minmax(0,1fr)_460px] gap-6 items-start' : ''}`}>
       <div className="space-y-8 min-w-0 max-w-[1100px]">
         {a && <CabeceraAtencion h={h} a={a} sinMotivo />}
         <SeccionUnica id="antecedentes" n={1} plegable titulo="Antecedentes y alergias"><PanelAntecedentes h={h} v2={v2} /></SeccionUnica>
@@ -2150,20 +2213,21 @@ function ContenidoVistaUnica({ h }: { h: H }) {
               </SeccionUnica>
             )}
             <SeccionUnica id="diagnostico" n={3} plegable titulo="Diagnóstico"><PanelDiagnosticos h={h} a={a} /></SeccionUnica>
-            <SeccionUnica id="receta" n={4} titulo="Tratamiento (receta)"><PanelReceta h={h} a={a} v2={v2} /></SeccionUnica>
-            <SeccionUnica id="procedimientos" n={5} titulo="Procedimientos y consentimientos">
-              <PanelProcedimientos h={h} a={a} v2={v2} />
+            {!fisio && <SeccionUnica id="receta" n={4} titulo="Tratamiento (receta)"><PanelReceta h={h} a={a} v2={v2} /></SeccionUnica>}
+            <SeccionUnica id="procedimientos" n={fisio ? 4 : 5} titulo={fisio ? 'Tratamiento y consentimientos' : 'Procedimientos y consentimientos'}>
+              {fisio ? <ProcedimientosDeFisio h={h} a={a} v2={v2} /> : <PanelProcedimientos h={h} a={a} v2={v2} />}
               <PanelConsentimientos a={a} puedeRegistrar={h.puedeRegistrar} v2={v2} />
             </SeccionUnica>
+            {fisio && <SeccionUnica id="escalas" n={5} titulo="Escalas por punto"><EscalasDeFisio h={h} a={a} /></SeccionUnica>}
             {v2
               ? (!ladoV2 && panelesV2)
-              : (!escalasAlCostado && <SeccionUnica id="escalas" titulo="Escalas"><PanelEscalas h={h} a={a} /></SeccionUnica>)}
+              : (!fisio && !escalasAlCostado && <SeccionUnica id="escalas" titulo="Escalas"><PanelEscalas h={h} a={a} /></SeccionUnica>)}
           </>
         ) : (
           <ConAtencionSeleccionada h={h}>{() => null}</ConAtencionSeleccionada>
         )}
       </div>
-      {!v2 && escalasAlCostado && a && (
+      {escalasLado && a && (
         <aside className="sticky top-32 max-h-[calc(100vh-10rem)] overflow-y-auto pr-1">
           <SeccionUnica id="escalas" titulo="Escalas"><PanelEscalas h={h} a={a} /></SeccionUnica>
         </aside>

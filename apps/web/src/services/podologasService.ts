@@ -12,6 +12,7 @@ export const TIPO_LABELS: Record<string, string> = {
   podologa: 'Podóloga',
   medico: 'Médico',
   fisioterapeuta: 'Fisioterapeuta',
+  asistente_podologa: 'Asistente de podóloga', // 24-nov-2026: mismos servicios que una podóloga
 };
 
 export interface FormProfesional {

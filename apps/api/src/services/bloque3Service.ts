@@ -37,6 +37,12 @@ async function etiquetaProfesional(profesionalId?: string | null): Promise<strin
 // 1.11 / 1.12 · Procedimientos
 // ─────────────────────────────────────────────────────────────────────────────
 const TIPOS_PROCEDIMIENTO = ['matricectomia', 'laser', 'curacion', 'debridacion', 'onicotomia', 'quiropodia', 'infiltracion', 'otro'] as const;
+/**
+ * Tipos RETIRADOS: ya no se pueden registrar, pero los que están guardados siguen valiendo (se ven, se editan y se quitan).
+ * 25-nov-2026 · quiropodia: los doctores indicaron que es profilaxis, no un procedimiento. La pantalla tampoco la ofrece
+ * (`TIPOS_PROCEDIMIENTO_RETIRADOS` en apps/web/src/api/historiaClinica.ts): si se cambia una lista, cambiar la otra.
+ */
+export const TIPOS_PROCEDIMIENTO_RETIRADOS: readonly string[] = ['quiropodia'];
 const PIES = ['izquierdo', 'derecho', 'ambos'] as const;
 
 export interface CamposProcedimiento {
@@ -78,6 +84,9 @@ export async function agregarProcedimiento(p: Ctx & CamposProcedimiento & { aten
   const at = await atencionOr404(p.atencionId);
   exigirAbierta(at);
   const tipo = assertTipoProcedimiento(p.tipo ?? '');
+  if (TIPOS_PROCEDIMIENTO_RETIRADOS.includes(tipo)) {
+    throw new AppError(`«${etiquetaTipoProcedimiento(tipo)}» ya no se registra como procedimiento`, 400, 'PROCEDIMIENTO_TIPO_RETIRADO');
+  }
   const nombre = limpiar(p.nombre) ?? etiquetaTipoProcedimiento(tipo);
   const pie = assertPie(p.pie);
   const profesionalEtiqueta = await etiquetaProfesional(p.profesionalId);
@@ -154,6 +163,7 @@ function etiquetaTipoProcedimiento(tipo: string): string {
   const map: Record<string, string> = {
     matricectomia: 'Matricectomía', laser: 'Láser', curacion: 'Curación', debridacion: 'Debridación',
     onicotomia: 'Onicotomía', quiropodia: 'Quiropodia', infiltracion: 'Infiltración', otro: 'Procedimiento',
+    fisioterapia: 'Fisioterapia', // 25-nov-2026: solo lo crea services/tratamientoFisio.ts (no está en TIPOS_PROCEDIMIENTO)
   };
   return map[tipo] ?? 'Procedimiento';
 }
@@ -746,6 +756,51 @@ export async function guardarDibujoSilueta(p: Ctx & { atencionId: string; vista:
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// MAPA CORPORAL 3D (24-nov-2026, Fisioterapia): zonas del cuerpo marcadas con lo que tienen (dolor, inflamación, edema,
+// sensibilidad, desgarro, tensión, punto gatillo). Se guarda como una capa más de `dibujos_silueta` (vista «cuerpo3d», una por
+// atención): sin tablas nuevas. Guardar = reemplazar la lista (auditado). Las zonas son ids del modelo de la pantalla.
+// ─────────────────────────────────────────────────────────────────────────────
+export const VISTA_CUERPO_3D = 'cuerpo3d';
+const PIE_CUERPO_3D = 'cuerpo';
+export const TIPOS_MARCA_CORPORAL = ['dolor', 'inflamacion', 'edema', 'sensibilidad', 'desgarro', 'tension', 'punto_gatillo'] as const;
+/**
+ * `puntos` (25-nov-2026) = lo PINTADO con el pincel dentro de la zona, como en el podograma: x, y, z, radio en milímetros del modelo,
+ * de cuatro en cuatro. Sin `puntos` el hallazgo es de la zona completa.
+ */
+export interface MarcaCorporal {
+  zona: string; tipo: (typeof TIPOS_MARCA_CORPORAL)[number]; intensidad?: number | null; nota?: string | null; puntos?: number[] | null;
+  /** Capa del modelo donde se marcó: sin valor = cuerpo con piel; 'musculos' = músculos y huesos (los `puntos` son de ESE modelo). */
+  capa?: 'musculos' | null;
+  /** Músculos / huesos que tocó el pincel en la capa de músculos (nombres para mostrar). */
+  estructuras?: string[] | null;
+}
+
+export async function guardarMapaCorporal(p: Ctx & { atencionId: string; marcas: MarcaCorporal[] }) {
+  const at = await atencionOr404(p.atencionId);
+  exigirAbierta(at);
+  // Una marca por capa, zona y tipo (la última gana): pintar dos veces lo mismo no duplica.
+  const unicas = [...new Map(p.marcas.map((m) => [`${m.capa ?? ''}|${m.zona}|${m.tipo}`, {
+    zona: m.zona, tipo: m.tipo, intensidad: m.intensidad ?? null, nota: m.nota?.trim() || null,
+    ...(m.puntos?.length ? { puntos: m.puntos } : {}),
+    ...(m.capa ? { capa: m.capa } : {}),
+    ...(m.estructuras?.length ? { estructuras: m.estructuras } : {}),
+  }])).values()];
+  const etiqueta = await etiquetaUsuario(prisma, p.usuarioId);
+  const clave = { atencionId_vista_pie: { atencionId: at.id, vista: VISTA_CUERPO_3D, pie: PIE_CUERPO_3D } };
+  await prisma.$transaction(async (tx) => {
+    const previo = await tx.dibujoSilueta.findUnique({ where: clave, select: { anotaciones: true } });
+    const row = await tx.dibujoSilueta.upsert({
+      where: clave,
+      create: { atencionId: at.id, vista: VISTA_CUERPO_3D, pie: PIE_CUERPO_3D, anotaciones: unicas, registradoPorUsuarioId: p.usuarioId ?? null, registradoEtiqueta: etiqueta },
+      update: { anotaciones: unicas, registradoPorUsuarioId: p.usuarioId ?? null, registradoEtiqueta: etiqueta, deletedAt: null },
+    });
+    const antes = previo && Array.isArray(previo.anotaciones) ? previo.anotaciones.length : 0;
+    await auditEnTx(tx, { ...ctxAudit(p), citaId: at.citaId, accion: 'mapa_corporal', entidad: 'dibujo_silueta', entidadId: row.id, sedeId: at.sedeId, antes: { marcas: antes }, despues: { marcas: unicas.length, pintadas: unicas.filter((m) => 'puntos' in m).length, conEscala: unicas.filter((m) => m.intensidad != null).length, zonas: [...new Set(unicas.map((m) => m.zona))] } });
+  });
+  return getAtencionCompleta(at.id);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Bandeja del día (ronda del médico): atenciones abiertas para cerrar en lote + abandono
 // ─────────────────────────────────────────────────────────────────────────────
 /** Cierre inteligente (misma regla que el front): qué le falta a una atención. Aviso, no bloqueo. */
@@ -753,7 +808,9 @@ export async function guardarDibujoSilueta(p: Ctx & { atencionId: string; vista:
 export function faltantesDeAtencion(a: {
   diagnosticos: { principal: boolean }[]; notas: unknown[]; procedimientos: unknown[];
   marcasPodograma: unknown[]; imagenesPodograma: unknown[]; recetas: { estado?: string }[];
-  dibujosSilueta?: { anotaciones: unknown }[]; dibujado?: boolean; motivoConsulta?: string | null;
+  dibujosSilueta?: { vista?: string; anotaciones: unknown }[]; dibujado?: boolean; motivoConsulta?: string | null;
+  fisio?: boolean; // 24-nov-2026: Fisioterapia no emite receta ni usa el podograma como registro principal
+  sinEscala?: number; // Fisioterapia: hallazgos del mapa corporal sin su escala (si no viene, se cuenta de dibujosSilueta)
 }): string[] {
   const f: string[] = [];
   if (a.motivoConsulta !== undefined && !(a.motivoConsulta ?? '').trim()) f.push('Falta el motivo de consulta');
@@ -762,6 +819,14 @@ export function faltantesDeAtencion(a: {
   if (!a.notas.length) f.push('Sin nota de evolución');
   if (!a.procedimientos.length) f.push('Sin procedimiento (si hubo tratamiento)');
   const dibujado = a.dibujado ?? (a.dibujosSilueta ?? []).some((d) => Array.isArray(d.anotaciones) && d.anotaciones.length > 0);
+  if (a.fisio) {
+    if (!dibujado) f.push('Mapa corporal sin marcar');
+    // La escala va por punto: se avisa de los hallazgos que quedaron sin su escala (EVA / intensidad).
+    const sinEscala = a.sinEscala ?? (a.dibujosSilueta ?? []).filter((d) => d.vista === VISTA_CUERPO_3D)
+      .flatMap((d) => (Array.isArray(d.anotaciones) ? d.anotaciones : [])).filter((m) => (m as { intensidad?: number | null } | null)?.intensidad == null).length;
+    if (sinEscala) f.push(sinEscala === 1 ? '1 hallazgo del mapa corporal sin escala' : `${sinEscala} hallazgos del mapa corporal sin escala`);
+    return f;
+  }
   if (!a.marcasPodograma.length && !a.imagenesPodograma.length && !dibujado) f.push('Podograma vacío');
   // Una receta anulada no cuenta como receta.
   if (!a.recetas.some((r) => r.estado === undefined || r.estado === 'emitida')) f.push('Sin receta ni indicaciones');
@@ -779,7 +844,7 @@ export async function bandejaDelDia(p: { sedeIds: string[] | null; profesionalId
       cita: { select: { id: true, horaInicio: true, estado: true } },
       servicio: { select: { nombre: true, color: true } },
       sede: { select: { nombre: true } },
-      profesional: { select: { nombres: true, apellidos: true } },
+      profesional: { select: { nombres: true, apellidos: true, tipo: true } },
       notas: { where: { deletedAt: null }, select: { id: true } },
       diagnosticos: { where: { deletedAt: null }, select: { principal: true } },
       procedimientos: { where: { deletedAt: null }, select: { id: true } },
@@ -796,6 +861,17 @@ export async function bandejaDelDia(p: { sedeIds: string[] | null; profesionalId
           SELECT DISTINCT "atencionId" FROM dibujos_silueta
           WHERE "atencionId" = ANY(${idsAbiertas}::uuid[]) AND "deletedAt" IS NULL AND jsonb_array_length(anotaciones) > 0`
         ).map((r) => r.atencionId)
+      : [],
+  );
+  // Fisioterapia: hallazgos del mapa corporal que quedaron sin su escala (se cuentan en la base, sin traer lo pintado).
+  const sinEscalaPor = new Map(
+    idsAbiertas.length
+      ? (await prisma.$queryRaw<{ atencionId: string; n: number }[]>`
+          SELECT d."atencionId", count(*)::int AS n FROM dibujos_silueta d, jsonb_array_elements(d.anotaciones) m
+          WHERE d."atencionId" = ANY(${idsAbiertas}::uuid[]) AND d."deletedAt" IS NULL AND d.vista = ${VISTA_CUERPO_3D}
+            AND (m->>'intensidad') IS NULL
+          GROUP BY d."atencionId"`
+        ).map((r) => [r.atencionId, r.n] as const)
       : [],
   );
 
@@ -837,7 +913,7 @@ export async function bandejaDelDia(p: { sedeIds: string[] | null; profesionalId
       id: a.id, fecha: a.fecha, citaId: a.cita.id, horaInicio: a.cita.horaInicio, motivoConsulta: a.motivoConsulta,
       paciente: a.paciente, servicio: a.servicio, sede: a.sede, profesional: a.profesional,
       totales: { notas: a.notas.length, diagnosticos: a.diagnosticos.length, procedimientos: a.procedimientos.length, recetas: a.recetas.filter((r) => r.estado === 'emitida').length },
-      faltantes: faltantesDeAtencion({ ...a, dibujado: conDibujo.has(a.id) }),
+      faltantes: faltantesDeAtencion({ ...a, dibujado: conDibujo.has(a.id), fisio: a.profesional?.tipo === 'fisioterapeuta', sinEscala: sinEscalaPor.get(a.id) ?? 0 }),
     })),
     sinVolver,
   };

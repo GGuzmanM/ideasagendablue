@@ -209,6 +209,81 @@ packages/shared/     ← tipos TypeScript compartidos
   (`origenAsignacion = 'elegida_por_paciente'`) si recepción marca «El paciente pidió a …» en Nueva Cita (`pedidaPorPaciente` en POST /citas
   y /citas/combinada; sin el campo = como antes, elegida = pedida). Se corrige luego con `PATCH /citas/:id/pedida-por-paciente` (bloque entero,
   solo `preferencia_opcional`; audit `editar_preferencia_profesional`). Fisioterapia y Baropodometría no cambian.
+- **Agenda y personal (24-nov-2026)**, migración `20261124120000_asistente_podologa_traslado_completada` (agrega 1 valor al enum + el permiso a
+  3 roles; 0 filas reescritas):
+  - **Columnas solo de quien trabaja ese día**: `GET /profesionales?…&soloConTurno=1` (lo manda la agenda) quita a quien no tiene turno ni cita
+    ese día (Wenceslao salía todos los días); quien no tiene NINGÚN horario cargado sigue saliendo. Sin el parámetro, igual que antes.
+  - **Asistente de podóloga**: `TipoProfesional.asistente_podologa`. Hace lo mismo que una podóloga (competencias, horarios, reportes,
+    asignación automática): usar `esTipoPodologia` / `TIPOS_PODOLOGIA` de `@limablue/shared`, NO `tipo === 'podologa'`. En la agenda va
+    después de las podólogas (peso 100 en el orden de `GET /profesionales`) y su cabecera dice «asistente».
+  - **Trasladar una cita COMPLETADA** a otra profesional, mismo día y hora, con `citas.trasladar_completada` (admin, recepción, coordinadora):
+    `PATCH /citas/:id/mover` y `/grupo/:id/mover` (`assertTrasladoCompletada`); solo a quien esté LIBRE (sin intercambio). La historia clínica
+    se queda con quien la registró (no se llama a `atencionSigueAProfesional`). A otro día/hora → 400 `TRASLADO_SOLO_PROFESIONAL`.
+- **Fisioterapia en la historia clínica (24-nov-2026)** (`esAtencionFisio` en `web/src/utils`: profesional fisioterapeuta o cita del área):
+  sin receta (pestaña, sección e índice), escalas por punto al final de la atención (ver más abajo) y pestaña **«Cuerpo 3D»** (`components/historiaClinica/MapaCorporal3D.tsx`,
+  three.js 0.170; cuerpo humano real, ver «Cuerpo 3D» más abajo; zonas anterior/posterior y lado del PACIENTE; seleccionar o pintar
+  dolor/inflamación/edema/sensibilidad/desgarro/tensión/punto gatillo, intensidad 0–10 y nota; se guarda solo). Se guarda en `dibujos_silueta`
+  con vista `cuerpo3d` (`PUT /historia-clinica/atenciones/:id/mapa-corporal`, `guardarMapaCorporal` en `bloque3Service.ts`; audit
+  `mapa_corporal`); la ficha previa y el podograma la excluyen. Al cerrar, fisio no pide receta ni podograma: pide «Mapa corporal sin marcar».
+  Los ids de zona se guardan: no cambiarlos. Tests: `fisio-asistente`.
+- **Seguimiento automático de sesiones (24-nov-2026)**: al elegir en Nueva Cita un servicio cuyas opciones son una serie («Sesión 1…N»,
+  «Sesion 1…N», «Curación 1…N», «Consulta 1/2», «Infiltración 1/2»; «1ra Atención» → «Consecutiva») se PRESELECCIONA la que sigue a la última
+  cita viva del paciente en ese servicio (12 meses; cancelada / no show / reprogramada no cuentan; tras la última de la serie no propone nada).
+  Regla en `services/siguienteSesion.ts` (`sugerirSiguienteSesion`, pura), ruta `GET /pacientes/:id/siguiente-sesion?servicioId=`; pantalla:
+  `hooks/useSiguienteSesion.ts` (no pisa una opción elegida a mano ni la de una membresía; también en el extra combinado). Sin migración. Tests: `siguiente-sesion`.
+- **Cuerpo 3D = BodyParts3D 4.0, dos capas del MISMO cuerpo** (26-nov-2026; el modelo de MakeHuman se retiró): «Piel»
+  (`apps/web/src/assets/cuerpo3d.bin`, 1,4 MB) y «Músculos» (`cuerpo3d-musculos.lbcz`, LBC1 + gzip, 2,5 MB, se baja al abrirla con
+  `DecompressionStream`). Las hace `tools/cuerpo3d/construir.mjs` (`npm install` ahí; necesita el original de 136 MB, que NO va al repo: ver
+  `tools/cuerpo3d/LEEME.md`). **Atribución obligatoria (CC BY 4.0)**: «BodyParts3D, © The Database Center for Life Science licensed under CC
+  Attribution 4.0 International» va en el campo `credito` de cada archivo y la pantalla la muestra bajo el lienzo: no quitarla.
+  Piel: la pieza «Skin» (escaneo de un hombre) → mitad izquierda reflejada (SIMÉTRICA), zona genital alisada (NEUTRA), Taubin, oclusión por
+  trazado de rayos, zonas y corte de triángulos por el borde exacto de las zonas (las líneas finas). Músculos: ~730 de las 2 234 piezas
+  simplificadas con meshoptimizer (3,1 M → 300 mil triángulos), cada vértice con su zona y su pieza (nombre en español). Las ZONAS son las mismas
+  en las dos: «huesos de zona» armados con los huesos reales (centros de húmero, fémur, astrágalo…); los ids NO se cambian.
+  La pantalla solo descarga y lee (`cargarCuerpo(capa)` en `components/historiaClinica/cuerpo3dMalla.ts`); `cuerpo3dModelo.ts` = nombres de
+  zonas y hallazgos. `MapaCorporal3D.tsx`: color por vértice (tejido / piel, zona, lo pintado × oclusión), entorno `RoomEnvironment`, luz
+  principal y contraluz que siguen a la cámara, fondo de estudio oscuro, líneas `LineSegments2`; la zona bajo el puntero se busca una vez por
+  cuadro y nunca mientras se gira. No se usan archivos de terceros que reempaquetan BodyParts3D (p. ej. Astra).
+- **Pincel del mapa corporal (25-nov-2026, como el podograma)**: en «Cuerpo 3D» se PINTA con el dedo solo la parte afectada (3 grosores +
+  borrador, aro de cursor sobre la piel); el otro modo, «Zona completa», marca toda la zona. Sin migración: cada hallazgo (`zona` + `tipo`) de
+  `dibujos_silueta` / vista `cuerpo3d` lleva opcionalmente `puntos` = toques del pincel, de cuatro en cuatro (x, y, z, radio en MILÍMETROS del
+  modelo; máx. 500 por hallazgo, `MAX_TOQUES`); sin `puntos` = toda la zona. Valida `mapaCorporalSchema` (`routes/historiaClinica.ts`), conserva
+  `guardarMapaCorporal`. En pantalla (`MapaCorporal3D.tsx`): `pincelar` ajusta cada toque al vértice más cercano y rellena el tramo entre toques;
+  `capaPintura` lo lleva a color por vértice con borde suave (solo piel que mira al mismo lado); `indiceVertices` (`cuerpo3dMalla.ts`) = rejilla
+  de 3 cm. Un trazo que cruza dos zonas queda como un hallazgo en cada una. Los `puntos` dependen de la malla: si se regenera el modelo con otra
+  forma o escala, lo ya pintado se desplaza.
+- **Escala POR PUNTO en Fisioterapia (24-nov-2026; los doctores no cambian)**: la escala ya no es una por atención sino la de cada hallazgo
+  del mapa corporal: el `intensidad` 0–10 que ya se guardaba (EVA en el dolor, «intensidad» en lo demás; `ESCALA_TIPO` / `nivelEscala` en
+  `cuerpo3dModelo.ts`, control `EscalaPunto.tsx`). Sin migración. Se pone en la lista de «Cuerpo 3D» y en la sección 5 «Escalas por punto» al
+  final de la atención (`PanelEscalasFisio` en `PanelCuerpo3D.tsx`; las dos editan la misma lista con `useMapaCorporal`); el panel de escalas
+  del pie queda plegado debajo («Otras escalas») y ya no sale bajo el podograma en fisio. Compara con la sesión anterior del mismo punto
+  (`GET /historia-clinica/paciente/:id/mapa-corporal-historial`, `historialMapaCorporal` en `fichaPreviaService.ts`, sin `puntos`). Al cerrar y
+  en la Bandeja avisa «N hallazgos del mapa corporal sin escala» (0 cuenta como puesta). El PDF de la historia lista cada punto
+  (`services/mapaCorporalTexto.ts`: repite los nombres de zona de la pantalla; el test `fisio-asistente` comprueba que sigan iguales).
+- **Tratamiento de Fisioterapia y hoja «Evaluación fisioterapéutica» (25-nov-2026; los doctores no cambian)**: en fisio la sección 4 es
+  «Tratamiento y consentimientos»: los 16 tratamientos de su hoja de papel con casilla, UN comentario general (máx. 500, pedido del dueño: no
+  uno por tratamiento) y el N.º de sesiones recomendadas (`PanelTratamientoFisio.tsx`, se guarda solo con `useGuardadoSolo`, el mismo guardado
+  del mapa corporal). SIN migración: cada marcado es una fila de `procedimientos_atencion` con `tipo = 'fisioterapia'` y `parametros.clave`; lo
+  del plan entero va REPETIDO en todas las filas: `parametros.comentario` (el `detalle` queda vacío) y `sesionesTotales`; sin nada marcado no
+  se guardan (`services/tratamientoFisio.ts`; catálogo repetido en `web/.../tratamientoFisio.ts`, las claves no se cambian). `PUT
+  /historia-clinica/atenciones/:id/tratamiento-fisio {tratamientos: claves[], comentario, sesiones}` deja EXACTAMENTE lo enviado (audit
+  `tratamiento_fisio`); `GET …/tratamiento-fisio/anterior` = lo marcado en la atención anterior («Usar el mismo»); `GET …/evaluacion-fisio.pdf`
+  = la hoja imprimible en MEDIA HOJA como la receta (`evaluacionFisioPdf.ts`: mitad de arriba de una A4 + línea de corte, nunca pasa de ahí:
+  lo largo se recorta con «…»; datos, antecedentes, CIE-10, tabla con casillas, comentario, puntos del cuerpo con su escala). «Ocupación» sale
+  como renglón para llenar a mano: el paciente no tiene ese campo y el dueño dijo que NO se migre. **Patologías de la hoja**: arriba de
+  la lista se elige qué sale en «Diagnóstico (CIE-10)»: los diagnósticos de la atención (marcados; se pueden quitar de la hoja sin borrarlos
+  de la historia) y los de OTRAS atenciones del paciente, de cualquier servicio (se agregan sin copiarlos como diagnóstico). Va en
+  `parametros.patologias = {incluir: [{codigo, descripcion}], excluir: [codigos]}`, también repetido por fila; el PUT recibe códigos y toma
+  la descripción del catálogo CIE-10 (inexistente → 400); regla en `diagnosticosDeLaHoja` / `patologiasEnHoja` (pantalla). El tipo `fisioterapia` NO está en el formulario general de procedimientos (`TIPOS_PROCEDIMIENTO_FORMULARIO`), que en fisio
+  queda plegado («Otro procedimiento»). Tests: `tratamiento-fisio`. OJO: no existe un rol «Fisioterapeuta»; se crea en Administración › Roles.
+- **Quiropodia retirada de los procedimientos (25-nov-2026)**: los doctores indicaron que es profilaxis, no un procedimiento. Ya no se
+  ofrece en «Registrar procedimiento», ni en las plantillas, ni la sugiere el dictado, y el API rechaza registrarla (400
+  `PROCEDIMIENTO_TIPO_RETIRADO`). Lo ya guardado se sigue viendo y se puede quitar: el tipo sigue en `TIPO_PROCEDIMIENTO_LABEL`.
+  Lista en dos sitios (`TIPOS_PROCEDIMIENTO_RETIRADOS` en `bloque3Service.ts` y en `web/src/api/historiaClinica.ts`). Sin migración.
+  NO es el servicio «Quiropodia» de la agenda (ese se activa o desactiva en Administración › Servicios).
+- **Hallazgos por capa (26-nov-2026)**: `capa: 'musculos'` (sin valor = piel) y `estructuras` (músculos / huesos que tocó el pincel, máx. 8;
+  solo en músculos). La clave de un hallazgo es capa + zona + tipo y lo de una capa no se dibuja en la otra. A BodyParts3D le faltan el recto
+  del abdomen, el dorsal ancho, el masetero y los músculos de la cara.
 - **Cambiar tratamiento en cita doble (13-nov-2026)**: `PATCH /citas/:id/tratamiento` cambia UNA mitad (`cambiarTratamientoBloque` en `routes/citas.ts`).
   Reglas en `services/tratamientoBloque.ts`: 2.º servicio = extra activo de `combinaciones_permitidas` para el ancla de la PRINCIPAL (fila con
   `servicioAnclaId` null = ancla global); 1.er servicio = un ancla que permita el 2.º actual y de la MISMA duración (con una sola ancla: solo cambia su tipo).

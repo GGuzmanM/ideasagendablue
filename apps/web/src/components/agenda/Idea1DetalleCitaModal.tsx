@@ -622,7 +622,8 @@ El otro servicio de la cita doble no cambia.
                 <span>{profActual}</span>
                 {/* 30-oct-2026: el lápiz vuelve, ahora para pasar la cita a otra profesional o columna «Adicional» (mismo día y hora),
                     o INTERCAMBIAR si está ocupada. Mismas reglas que arrastrar en la agenda; baro va en máquina (se cambia al reprogramar). */}
-                {puedeReprogramar && !['completada', 'cancelada', 'no_show', 'reprogramada'].includes(estadoNorm) && !equipoBaro && !/baropodometr/i.test(cita.unidadNegocio?.nombre ?? '') && (
+                {/* 24-nov-2026: una COMPLETADA también, con «citas.trasladar_completada» (solo a otra profesional libre, misma hora). */}
+                {puedeReprogramar && (!['completada', 'cancelada', 'no_show', 'reprogramada'].includes(estadoNorm) || (estadoNorm === 'completada' && permisos.includes('citas.trasladar_completada'))) && !equipoBaro && !/baropodometr/i.test(cita.unidadNegocio?.nombre ?? '') && (
                   <button
                     type="button" onClick={() => setCambiandoProf((v) => !v)} data-testid="btn-cambiar-profesional"
                     title="Pasar a otra profesional o intercambiar" aria-label="Cambiar de profesional" aria-expanded={cambiandoProf}

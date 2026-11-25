@@ -155,6 +155,29 @@ export async function escalasDePaciente(pacienteId: string, tipo?: string) {
 }
 
 /**
+ * Mapa corporal del paciente a lo largo de sus atenciones (24-nov-2026, Fisioterapia): la escala de cada punto (zona + hallazgo)
+ * en cada sesión, de la más antigua a la más nueva, para decir «anterior 7 → mejoró 3». No trae lo pintado (`puntos`), que pesa.
+ */
+export async function historialMapaCorporal(pacienteId: string) {
+  const filas = await prisma.dibujoSilueta.findMany({
+    where: { deletedAt: null, vista: 'cuerpo3d', atencion: { pacienteId } },
+    select: { atencionId: true, anotaciones: true, atencion: { select: { fecha: true, creadoEn: true } } },
+  });
+  return filas
+    .sort((a, b) => (a.atencion.fecha.getTime() - b.atencion.fecha.getTime()) || (a.atencion.creadoEn.getTime() - b.atencion.creadoEn.getTime()))
+    .map((f) => ({
+      atencionId: f.atencionId,
+      fecha: f.atencion.fecha,
+      marcas: (Array.isArray(f.anotaciones) ? f.anotaciones : []).flatMap((m) => {
+        const x = m as { zona?: unknown; tipo?: unknown; intensidad?: unknown; capa?: unknown } | null;
+        if (!x || typeof x.zona !== 'string' || typeof x.tipo !== 'string') return [];
+        return [{ zona: x.zona, tipo: x.tipo, intensidad: typeof x.intensidad === 'number' ? x.intensidad : null, ...(x.capa === 'musculos' ? { capa: 'musculos' as const } : {}) }];
+      }),
+    }))
+    .filter((f) => f.marcas.length > 0);
+}
+
+/**
  * Historial del podograma: todo lo registrado sobre el pie del paciente, atención por atención
  * (puntos, dibujos, fotos, procedimientos y mediciones de úlcera). El front lo reparte por zona.
  */
@@ -166,7 +189,7 @@ export async function historialPodograma(pacienteId: string) {
       id: true, fecha: true,
       profesional: { select: { nombres: true, apellidos: true } },
       marcasPodograma: { where: { deletedAt: null }, orderBy: { creadoEn: 'asc' }, select: { id: true, pie: true, vista: true, x: true, y: true, zona: true, tipoLesion: true, nota: true } },
-      dibujosSilueta: { where: { deletedAt: null }, select: { vista: true, pie: true, anotaciones: true } },
+      dibujosSilueta: { where: { deletedAt: null, vista: { not: 'cuerpo3d' } }, select: { vista: true, pie: true, anotaciones: true } }, // el mapa corporal 3D no es silueta del pie
       fotos: { where: { deletedAt: null }, orderBy: { tomadaEn: 'asc' }, select: { id: true, pie: true, zona: true, categoria: true, descripcion: true, tomadaEn: true } },
       procedimientos: { where: { deletedAt: null }, orderBy: { creadoEn: 'asc' }, select: { id: true, tipo: true, nombre: true, pie: true, ubicacion: true, detalle: true } },
       escalas: { where: { deletedAt: null, tipo: 'ulcera' }, orderBy: { creadoEn: 'asc' }, select: { id: true, datos: true, resultado: true, pie: true } },

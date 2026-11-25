@@ -11,6 +11,7 @@ import { normalizarPaciente } from '../utils/normalizarPaciente';
 import { UBIGEO_EXTRANJERO, esPaisValido } from '@limablue/shared';
 import { redis } from '../redis';
 import { datosFaltantes, faltanDatosPaciente } from '../utils/datosPaciente';
+import { siguienteSesion } from '../services/siguienteSesion';
 
 const router = Router();
 
@@ -269,6 +270,13 @@ router.get('/:id', requireAuth, requireAcceso('patients:read', 'pacientes.ver'),
 // ⚠ Vista de SALDO de paquetes (consumos reales). Su vista HERMANA de AGENDAMIENTO
 // (cupo por citas programadas + Genexis) vive en /paquetes/paciente/:id — ver la nota
 // allá antes de cambiar reglas de conteo en cualquiera de las dos.
+// Seguimiento automático (24-nov-2026): qué opción del servicio le toca («Sesión 2» si la 1 está viva). Ver services/siguienteSesion.ts.
+router.get('/:id/siguiente-sesion', requireAuth, requireAcceso('patients:read', 'pacientes.ver'), async (req, res) => {
+  const { servicioId } = z.object({ servicioId: z.string().uuid() }).parse(req.query);
+  const pacienteId = z.string().uuid().parse(req.params.id);
+  res.json(await siguienteSesion(pacienteId, servicioId));
+});
+
 router.get('/:id/paquetes', requireAuth, requireAcceso('patients:read', 'pacientes.ver'), async (req, res) => {
   const paquetes = await prisma.paquetePaciente.findMany({
     where: { pacienteId: req.params.id, deletedAt: null },

@@ -8,6 +8,8 @@
  */
 import { leerArchivo } from './almacenArchivos';
 import type { HistoriaParaPdf } from './historiaClinicaService';
+import { puntosDelMapa, lineaPunto, nombreZonaCuerpo, nombreHallazgo } from './mapaCorporalTexto';
+import { comentarioDeFila } from './tratamientoFisio';
 import {
   Doc, W, H, M, CONTENT_W, AZUL, AZUL_C, GRIS, INK, ROJO, ROJO_F, LINEA, SUAVE, SEXO, CLINICA,
   fechaLima, soloFecha, edadDe, dibujarCabecera, campo,
@@ -176,10 +178,19 @@ export function escribirHistoriaPdf(doc: Doc, h: HistoriaParaPdf, opts: { fotos?
           p.sesionNumero ? `sesión ${p.sesionNumero}${p.sesionesTotales ? `/${p.sesionesTotales}` : ''}` : null].filter(Boolean).join(' · ');
         parrafo(`${partes}${p.detalle ? `. ${p.detalle}` : ''}`);
       }
+      // Fisioterapia: el comentario es UNO para todo el tratamiento (va repetido en cada fila; se imprime una vez).
+      const comentarioFisio = a.procedimientos.map(comentarioDeFila).find(Boolean);
+      if (comentarioFisio) parrafo(comentarioFisio, 'Comentario del tratamiento');
     }
     if (a.escalas.length) {
       subtitulo('Escalas y mediciones');
       for (const e of a.escalas) parrafo(e.resultado || '—', `${ESCALA[e.tipo] ?? e.tipo}${e.pie ? ` (${PIE_LABEL[e.pie] ?? e.pie})` : ''}`);
+    }
+    // 24-nov-2026 · Fisioterapia: la escala va por punto del mapa corporal (EVA en cada dolor).
+    const puntos = a.dibujosSilueta.flatMap((d) => puntosDelMapa(d.anotaciones));
+    if (puntos.length) {
+      subtitulo('Mapa corporal · escala de cada punto');
+      for (const p of puntos) parrafo(lineaPunto(p), `${nombreZonaCuerpo(p.zona)} · ${nombreHallazgo(p.tipo)}${p.musculos ? ' (músculos)' : ''}`);
     }
     if (a.recetas.length) {
       subtitulo('Recetas e indicaciones');

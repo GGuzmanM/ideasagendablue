@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { competenciasApi, serviciosApi, profesionalesApi, sedesApi } from '../api';
+import { esTipoPodologia } from '@limablue/shared';
 
 // Categoría por área/tipo (regla dura: cada profesional solo atiende su categoría; el baro por
 // solicitud de las podólogas se asigna desde Movimientos, no en esta matriz).
@@ -13,7 +14,7 @@ function catDeUnidad(nombre: string): 'podo' | 'baro' | 'fisio' | null {
   return null;
 }
 function catDeTipo(tipo: string): 'podo' | 'baro' | 'fisio' | null {
-  return tipo === 'podologa' ? 'podo' : tipo === 'fisioterapeuta' ? 'fisio' : tipo === 'medico' ? 'baro' : null;
+  return esTipoPodologia(tipo) ? 'podo' : tipo === 'fisioterapeuta' ? 'fisio' : tipo === 'medico' ? 'baro' : null;
 }
 
 // Filtro por TIPO de profesional (además del área de los servicios).
@@ -78,12 +79,12 @@ export function useCompetenciasData() {
   const personas = (profesionales ?? []).filter(p => !esMaquina(p));
   const conteoTipo: Record<TipoProfFiltro, number> = {
     todos: personas.length,
-    podologa: personas.filter(p => p.tipo === 'podologa').length,
+    podologa: personas.filter(p => esTipoPodologia(p.tipo)).length,
     fisioterapeuta: personas.filter(p => p.tipo === 'fisioterapeuta').length,
     medico: personas.filter(p => p.tipo === 'medico').length,
   };
   const profsFiltrados = personas
-    .filter(p => tipoFiltro === 'todos' || p.tipo === tipoFiltro)
+    .filter(p => tipoFiltro === 'todos' || p.tipo === tipoFiltro || (tipoFiltro === 'podologa' && esTipoPodologia(p.tipo))) // asistentes van con las podólogas
     .filter(p => sedeIdFiltro === 'todas' || p.sedeActual?.id === sedeIdFiltro)
     .filter(p => filtroProf === '' || `${p.nombres} ${p.apellidos}`.toLowerCase().includes(filtroProf.toLowerCase()));
 

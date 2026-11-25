@@ -21,6 +21,7 @@ import {
   fechaLima, edadDe, urlVerificacionReceta, VERIFICACION_PUBLICA,
 } from './pdfComun';
 import { esFichaAdicional } from '../utils/fichaAdicional';
+import { esTipoPodologia } from '@limablue/shared';
 
 type Item = RecetaCompleta['items'][number];
 
@@ -54,7 +55,7 @@ export function escribirRecetaPdf(doc: Doc, r: RecetaCompleta, opts: { copias?: 
 type PersonaCita = { id: string; nombres: string; apellidos: string; tipo: string; esEquipo: boolean } | null | undefined;
 function podologaQueAtendio(r: RecetaCompleta): { etiqueta: string; nombre: string } | null {
   const c = r.atencion?.cita;
-  const valida = (p: PersonaCita) => !!p && !p.esEquipo && (p.tipo === 'podologa' || p.tipo === 'fisioterapeuta') && !esFichaAdicional(p.nombres);
+  const valida = (p: PersonaCita) => !!p && !p.esEquipo && (esTipoPodologia(p.tipo) || p.tipo === 'fisioterapeuta') && !esFichaAdicional(p.nombres);
   const p = valida(c?.profesional) ? c!.profesional : valida(c?.atendidoPor) ? c!.atendidoPor : null;
   if (!p || p.id === r.emisor.id) return null;
   // Solo primer nombre y primer apellido (pedido de la clínica).

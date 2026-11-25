@@ -8,7 +8,7 @@ import { api, profesionalesApi, pacientesApi, disponibilidadApi, competenciasApi
 import { useCanales } from '../hooks/useCanales';
 import { usePromociones } from '../hooks/usePromociones';
 import { usePaquetesPaciente, paquetesElegibles, paquetesOtraSede, paquetesSesionesApi } from '../api/paquetesSesiones';
-import { generarSlotsDelDia, horaInicioValidaParaDuracion, esCitaInactiva } from '@limablue/shared';
+import { generarSlotsDelDia, horaInicioValidaParaDuracion, esCitaInactiva, esTipoPodologia } from '@limablue/shared';
 import { useAuthStore } from '../stores/authStore';
 import { copiaListasDelDia, esClaveDelDia, parchearCita } from './agendaTiempoReal';
 import { estadoPagoDe, infoEstadoPago, type EstadoPago } from '../utils/estadoPago';
@@ -433,7 +433,7 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
     queryKey: ['profesionales-sede', cita.sedeId, cita.unidadNegocio?.id, (cita.fecha ?? '').slice(0, 10), 'atendido-por'],
     queryFn: () => profesionalesApi.listar({ sedeId: cita.sedeId, unidadNegocioId: cita.unidadNegocio!.id, fecha: (cita.fecha ?? '').slice(0, 10), activo: true }),
     enabled: esAdicional && !!cita.unidadNegocio?.id,
-    select: (ps) => ps.filter((p) => p.tipo === 'podologa' && !/^(adicional|baro)/i.test(p.nombres.trim())),
+    select: (ps) => ps.filter((p) => esTipoPodologia(p.tipo) && !/^(adicional|baro)/i.test(p.nombres.trim())),
   });
   // Solo quienes HACEN el servicio de la cita (competencia activa). Primero las de la sede ese día; luego las de otras
   // sedes (una podóloga de Lince pudo cubrir en Paz Soldán). Si el servicio no tiene competencias cargadas, todas las del día.
@@ -447,7 +447,7 @@ export function useIdea1DetalleCita({ cita: citaProp, onClose }: UseIdea1Detalle
     const hacen = new Map<string, { id: string; nombres: string; apellidos: string }>();
     for (const c of competenciasUnidad) {
       const p = c.profesional;
-      if (!c.activa || c.servicio?.id !== cita.servicio?.id || !p || p.tipo !== 'podologa' || p.activo === false) continue;
+      if (!c.activa || c.servicio?.id !== cita.servicio?.id || !p || !esTipoPodologia(p.tipo) || p.activo === false) continue;
       if (/^(adicional|baro)/i.test(p.nombres.trim())) continue;
       hacen.set(p.id, { id: p.id, nombres: p.nombres, apellidos: p.apellidos });
     }

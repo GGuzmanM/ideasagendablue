@@ -74,6 +74,8 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
     setServicioId,
     subcategoriaId,
     setSubcategoriaId,
+    ayudaSesion,
+    ayudaSesionExtra,
     paquetePacienteId,
     setPaquetePacienteId,
     membSel,
@@ -787,6 +789,11 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
                     </span>
                   </div>
                 )}
+                {ayudaSesion && !subcatFijadaMemb && (
+                  <p className="text-[11px] font-medium text-emerald-700 flex items-center gap-1" data-testid="ayuda-sesion">
+                    <span className="material-symbols-outlined text-sm">event_repeat</span>{ayudaSesion}
+                  </p>
+                )}
               </div>
             )}
 
@@ -858,6 +865,9 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
                             </option>
                           ))}
                         </select>
+                        {ayudaSesionExtra && (
+                          <p className="text-[11px] font-medium text-emerald-700 mt-1" data-testid="ayuda-sesion-extra">{ayudaSesionExtra}</p>
+                        )}
                       </>
                     )}
                   </div>
@@ -1125,7 +1135,7 @@ export function Idea1NuevaCitaModal(props: UseIdea1NuevaCitaFormProps) {
                       const ocup = profesionalesOcupados?.get(p.id);
                       return (
                         <option key={p.id} value={p.id} disabled={!!ocup}>
-                          {p.nombres} {p.apellidos} ({p.tipo})
+                          {p.nombres} {p.apellidos} ({p.tipo === 'asistente_podologa' ? 'asistente' : p.tipo})
                           {ocup ? ` — OCUPADO ${ocup.hora} en ${ocup.unidad}` : ''}
                         </option>
                       );

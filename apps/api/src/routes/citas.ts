@@ -39,7 +39,7 @@ import { verificarTokenConfirmacion } from '../utils/confirmToken';
 import { fechaDb, fechaAStr, hoyLimaStr, esFechaPasadaLima, diasEnPasadoLima } from '../utils/fechaLima';
 import { filtroFechaVisor, puedeTodasSedesVisor } from '../utils/rangoVisor';
 import { zFechaCita, zHoraCita, zComentarioCita, assertFechaNoMuyLejana } from '../utils/validacionCita';
-import { horaInicioValidaParaDuracion, timeToMinutes, minutesToTime } from '@limablue/shared';
+import { horaInicioValidaParaDuracion, timeToMinutes, minutesToTime, esTipoPodologia } from '@limablue/shared';
 import { getCitaCompleta, promoCitaSelect, comentariosInclude, crearComentarioEnTx } from '../services/citaCompleta';
 import { cambiarEstadoCita, ESTADOS_FINALES } from '../services/estadoCitaService';
 import { estadoAlMover, citaParaAuditoria } from '../services/agendaReglas';
@@ -99,6 +99,24 @@ function assertFechaMovible(nuevaFecha: string, fechaActual: Date): void {
     throw new AppError('No se puede mover una cita a un día que ya pasó. Si hay que registrar algo que ya ocurrió, agenda una cita nueva con su motivo.', 400, 'FECHA_PASADA');
   }
   assertFechaNoMuyLejana(nuevaFecha);
+}
+
+// ─── Traslado de una cita COMPLETADA (24-nov-2026) ─────────────────────────────
+// Una cita ya atendida solo se pasa a OTRA profesional en su MISMO día y hora (p. ej. se registró en la columna equivocada), con el
+// permiso «citas.trasladar_completada» (recepción y coordinadora). La historia clínica se queda con quien la registró; la sesión
+// descontada y el pago no cambian. Moverla a otro día u hora sigue bloqueado.
+export const PERMISO_TRASLADO_COMPLETADA = 'citas.trasladar_completada';
+function assertTrasladoCompletada(req: Request, original: { fecha: Date; horaInicio: string; profesionalId: string | null; modoReserva: string }, destino: { fecha: string; horaInicio: string; profesionalId?: string | null }): void {
+  if (req.apiKey || !req.user?.permisos?.includes(PERMISO_TRASLADO_COMPLETADA)) {
+    throw new AppError('No se puede mover una cita finalizada (para pasar una cita completada a otra profesional hace falta el permiso «Trasladar una cita completada»)', 403, 'ESTADO_FINAL');
+  }
+  if (original.modoReserva === 'sin_eleccion') throw new AppError('Una cita de baropodometría completada no se traslada', 400, 'ESTADO_FINAL');
+  if (fechaAStr(original.fecha) !== destino.fecha || original.horaInicio !== destino.horaInicio) {
+    throw new AppError('Una cita completada solo se pasa a otra profesional en su mismo día y hora', 400, 'TRASLADO_SOLO_PROFESIONAL');
+  }
+  if (!destino.profesionalId || destino.profesionalId === original.profesionalId) {
+    throw new AppError('Elige a la profesional a la que pasa la cita completada', 400, 'TRASLADO_SOLO_PROFESIONAL');
+  }
 }
 
 async function resolverSubcategoria(servicioId: string, subcategoriaId?: string | null): Promise<string | null> {
@@ -1936,7 +1954,7 @@ router.post('/reportar-enfermedad', requireAuth, requirePermiso('movimientos.edi
     select: { tipo: true, activo: true, deletedAt: true, nombres: true, apellidos: true },
   });
   if (!prof || !prof.activo || prof.deletedAt) throw new AppError('Profesional no encontrado', 404);
-  if (prof.tipo !== 'podologa' && prof.tipo !== 'fisioterapeuta' && prof.tipo !== 'medico') {
+  if (!esTipoPodologia(prof.tipo) && prof.tipo !== 'fisioterapeuta' && prof.tipo !== 'medico') {
     throw new AppError('Solo se puede reportar enfermedad de podólogas, fisioterapeutas o baropodometría', 400, 'TIPO_NO_BLOQUEABLE');
   }
 
@@ -2108,7 +2126,12 @@ router.patch('/:id/mover', requireAuth, requireAcceso('appointments:write', 'cit
   });
   if (!cita) throw new AppError('Cita no encontrada', 404);
 
-  if (ESTADOS_FINALES.includes(cita.estado)) {
+  // 24-nov-2026: una COMPLETADA se puede pasar a otra profesional (mismo día y hora) con su permiso; el resto de finales, no.
+  const trasladoCompletada = cita.estado === 'completada';
+  if (trasladoCompletada) {
+    assertTrasladoCompletada(req, { fecha: cita.fecha, horaInicio: cita.horaInicio, profesionalId: cita.profesionalId, modoReserva: cita.unidadNegocio.modoReserva }, data);
+    if (cita.slotGrupoId) throw new AppError('Esta cita es parte de un bloque de dos servicios: se traslada el bloque completo, no una sola.', 409, 'CITA_EN_BLOQUE');
+  } else if (ESTADOS_FINALES.includes(cita.estado)) {
     throw new AppError('No se puede mover una cita finalizada', 400, 'ESTADO_FINAL');
   }
   assertFechaMovible(data.fecha, cita.fecha);
@@ -2287,7 +2310,8 @@ router.patch('/:id/mover', requireAuth, requireAcceso('appointments:write', 'cit
       });
       if (tieneAtencion) await sincronizarFechaAtencion(tx, cita.id, fechaDb(data.fecha));
       // Otra podóloga (persona): la atención (abierta o cerrada) queda a nombre de la última a la que se asignó la cita.
-      const atencionDe = atencionDeCita && nuevoProfesionalId ? await atencionSigueAProfesional(tx, cita.id, nuevoProfesionalId) : null;
+      // Completada trasladada: la historia clínica se queda con quien la registró (24-nov-2026).
+      const atencionDe = atencionDeCita && nuevoProfesionalId && !trasladoCompletada ? await atencionSigueAProfesional(tx, cita.id, nuevoProfesionalId) : null;
       await auditEnTx(tx, {
         citaId: cita.id,
         usuarioId,
@@ -2353,14 +2377,21 @@ router.patch('/grupo/:slotGrupoId/mover', requireAuth, requireAcceso('appointmen
   if (todas.length === 0) throw new AppError('Bloque combinado no encontrado', 404);
   // 14-oct-2026: si una mitad ya terminó (1º completado, 2º cancelado…), se mueve solo lo que sigue pendiente;
   // lo terminado se queda donde se hizo. Antes respondía «bloque con citas finalizadas» y no dejaba mover el 2º.
-  const citas = todas.filter(c => !ESTADOS_FINALES.includes(c.estado));
-  if (citas.length === 0) {
+  let citas = todas.filter(c => !ESTADOS_FINALES.includes(c.estado));
+  // 24-nov-2026: bloque YA ATENDIDO (nada pendiente y alguna mitad completada) → se traslada entero a otra profesional, mismo
+  // día y hora, con el permiso «citas.trasladar_completada». La historia clínica se queda con quien la registró.
+  const trasladoCompletada = citas.length === 0 && todas.some((c) => c.estado === 'completada');
+  if (trasladoCompletada) {
+    const ref = todas.find((c) => c.estado === 'completada')!;
+    assertTrasladoCompletada(req, { fecha: ref.fecha, horaInicio: ref.horaInicio, profesionalId: ref.profesionalId, modoReserva: ref.unidadNegocio.modoReserva }, data);
+    citas = todas.filter((c) => c.estado === 'completada');
+  } else if (citas.length === 0) {
     throw new AppError('No se puede mover un bloque ya finalizado', 400, 'ESTADO_FINAL');
   }
   assertFechaMovible(data.fecha, citas[0]!.fecha);
   // Historia clínica: bloque con atención registrada → mover solo coordinación/admin (acción no visible).
   const bloqueConAtencion = !!(await prisma.atencionClinica.findFirst({ where: { citaId: { in: todas.map(c => c.id) } }, select: { id: true } }));
-  if (bloqueConAtencion && !['admin', 'coordinadora_sedes'].includes(req.user?.rol ?? '')) {
+  if (bloqueConAtencion && !trasladoCompletada && !['admin', 'coordinadora_sedes'].includes(req.user?.rol ?? '')) {
     throw new AppError('El bloque ya tiene atención clínica registrada: solo coordinación o administración pueden moverlo', 403, 'CITA_CON_ATENCION_CLINICA');
   }
 
@@ -2433,7 +2464,7 @@ router.patch('/grupo/:slotGrupoId/mover', requireAuth, requireAcceso('appointmen
           },
         });
         if (bloqueConAtencion) await sincronizarFechaAtencion(tx, c.id, fechaDb(data.fecha));
-        const atencionDe = bloqueConAtencion && nuevoProfesionalId ? await atencionSigueAProfesional(tx, c.id, nuevoProfesionalId) : null;
+        const atencionDe = bloqueConAtencion && nuevoProfesionalId && !trasladoCompletada ? await atencionSigueAProfesional(tx, c.id, nuevoProfesionalId) : null;
         await auditEnTx(tx, {
           citaId: c.id, usuarioId, accion: 'mover', entidad: 'cita', entidadId: c.id,
           antes: { profesionalId: c.profesionalId, fecha: c.fecha, horaInicio: c.horaInicio },
@@ -2642,7 +2673,7 @@ router.patch('/:id/atendido-por', requireAuth, requireAcceso('appointments:write
   let nombre: string | null = null;
   if (profesionalId) {
     const p = await prisma.profesional.findUnique({ where: { id: profesionalId }, select: { nombres: true, apellidos: true, tipo: true, activo: true, deletedAt: true, esEquipo: true } });
-    if (!p || !p.activo || p.deletedAt || p.esEquipo || p.tipo !== 'podologa' || esFichaAdicional(p.nombres)) {
+    if (!p || !p.activo || p.deletedAt || p.esEquipo || !esTipoPodologia(p.tipo) || esFichaAdicional(p.nombres)) {
       throw new AppError('Elige una podóloga activa (no otra columna Adicional)', 400, 'ATENDIO_INVALIDO');
     }
     nombre = `${p.nombres} ${p.apellidos}`.trim();
@@ -2904,7 +2935,9 @@ router.get('/:id/destinos-profesional', requireAuth, requireAcceso('appointments
   const fecha = fechaAStr(cita.fecha);
   const base = { fecha, horaInicio: cita.horaInicio, duracionMinutos: cita.duracionMinutos };
   const noMovible = (motivo: string) => res.json({ ...base, movible: false, motivo, esBloque: false, destinos: [] });
-  if ([...ESTADOS_FINALES, 'reprogramada'].includes(cita.estado)) return noMovible('La cita ya terminó, se canceló o no vino');
+  // 24-nov-2026: una COMPLETADA se puede pasar a otra profesional LIBRE (sin intercambio) con «citas.trasladar_completada».
+  const trasladoCompletada = cita.estado === 'completada' && !req.apiKey && !!req.user?.permisos?.includes(PERMISO_TRASLADO_COMPLETADA);
+  if ([...ESTADOS_FINALES, 'reprogramada'].includes(cita.estado) && !trasladoCompletada) return noMovible('La cita ya terminó, se canceló o no vino');
   if (cita.unidadNegocio.modoReserva === 'sin_eleccion') return noMovible('Las citas de baropodometría van en máquina: se cambian con «Reprogramar cita»');
   if (!cita.profesionalId || !cita.profesional) return noMovible('La cita no tiene profesional');
   const esAdmin = req.user?.rol === 'admin';
@@ -2914,7 +2947,10 @@ router.get('/:id/destinos-profesional', requireAuth, requireAcceso('appointments
   const grupo = cita.slotGrupoId
     ? await prisma.cita.findMany({ where: { slotGrupoId: cita.slotGrupoId, deletedAt: null }, include: { servicio: { select: { nombre: true } } }, orderBy: { slotRol: 'asc' } })
     : [];
-  const ladoMover = (grupo.length ? grupo.filter((c) => !ESTADOS_FINALES.includes(c.estado)) : [{ ...cita }]);
+  if (trasladoCompletada && grupo.some((c) => !ESTADOS_FINALES.includes(c.estado))) return noMovible('Una mitad del bloque sigue pendiente: muévela primero o espera a que termine');
+  const ladoMover = (grupo.length
+    ? grupo.filter((c) => (trasladoCompletada ? c.estado === 'completada' : !ESTADOS_FINALES.includes(c.estado)))
+    : [{ ...cita }]);
   const lado: LugarCita[] = ladoMover.map((c) => ({ servicioId: c.servicioId, servicioNombre: ('servicio' in c && c.servicio ? c.servicio.nombre : cita.servicio.nombre), duracionMinutos: c.duracionMinutos }));
   const esBloque = ladoMover.length > 1;
   const idsMover = (grupo.length ? grupo : [cita]).map((c) => c.id);
@@ -2944,12 +2980,13 @@ router.get('/:id/destinos-profesional', requireAuth, requireAcceso('appointments
     const nombre = adicional ? `${p.nombres} ${p.apellidos}`.trim() : nombreDe(p);
     const avisos: string[] = [];
     if (cita.solicitadoProfesionalId) avisos.push(`Deja de ser «Solo ${cita.solicitadoProfesional ? nombreDe(cita.solicitadoProfesional) : 'el médico pedido'}»: la atiende ${nombre}`);
-    if (tieneAtencion) avisos.push('Su atención clínica registrada pasa a esa profesional');
+    if (tieneAtencion) avisos.push(trasladoCompletada ? 'La historia clínica se queda a nombre de quien la registró' : 'Su atención clínica registrada pasa a esa profesional');
     const ficha = { id: p.id, nombre, nombres: p.nombres, apellidos: p.apellidos, colorAvatar: p.colorAvatar, adicional, avisos };
 
     const falla = await motivoNoCabe(p.id, lado, cita.sedeId, fecha, cita.horaInicio, idsMover);
     if (!falla) { destinos.push({ ...ficha, estado: 'libre' as const }); continue; }
     if (falla.codigo !== 'PROFESIONAL_OCUPADO') { destinos.push({ ...ficha, estado: 'no_disponible' as const, motivo: falla.mensaje }); continue; }
+    if (trasladoCompletada) { destinos.push({ ...ficha, estado: 'no_disponible' as const, motivo: 'Tiene otra cita a esa hora: una cita completada solo pasa a quien esté libre' }); continue; }
 
     // Ocupada: ¿con quién? (las citas que se cruzan con el horario de esta cita en esa persona).
     const ini = timeToMinutes(cita.horaInicio), fin = ini + lado[0]!.duracionMinutos;

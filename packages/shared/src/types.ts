@@ -21,7 +21,10 @@ export type OrigenAsignacion = 'elegida_por_paciente' | 'asignada_automaticament
 
 export type RolUsuario = 'admin' | 'coordinadora_sedes' | 'recepcionista';
 
-export type TipoProfesional = 'podologa' | 'medico' | 'fisioterapeuta';
+export type TipoProfesional = 'podologa' | 'medico' | 'fisioterapeuta' | 'asistente_podologa';
+/** 24-nov-2026: la asistente de podóloga hace lo mismo que una podóloga (mismos servicios, horarios y reportes). */
+export const TIPOS_PODOLOGIA: readonly TipoProfesional[] = ['podologa', 'asistente_podologa'];
+export const esTipoPodologia = (tipo: string | null | undefined): boolean => tipo === 'podologa' || tipo === 'asistente_podologa';
 
 export type TurnoHorario = 'manana' | 'tarde' | 'completo';
 

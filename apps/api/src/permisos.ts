@@ -20,6 +20,8 @@ export const PERMISOS_VALIDOS = [
   // Estados (11-nov-2026). `estado_libre` = pasar la cita a CUALQUIER estado desde el desplegable (lo que hacía solo el rol admin).
   // `noshow_llego` / `noshow_agendada` = en una cita en «No show», un botón para pasarla a «Llegó» / «Agendada» (nada más).
   'citas.estado_libre', 'citas.noshow_llego', 'citas.noshow_agendada',
+  // 24-nov-2026: pasar una cita COMPLETADA a otra profesional en su mismo día y hora (recepción y coordinadora).
+  'citas.trasladar_completada',
   // «Reservas web» en el menú (29-oct-2026): seguimiento de quién empezó a reservar por internet. Apagado para todos los roles
   // (solo admin); se enciende desde Administración › Roles.
   'reservas_web.ver',
@@ -68,7 +70,7 @@ export const ROLES_SISTEMA: { nombre: string; label: string; descripcion: string
   {
     nombre: 'coordinadora_sedes', label: 'Coordinadora de Sedes', descripcion: 'Gestión de agenda, pacientes y reportes', esSistema: true,
     permisos: [
-      ...CITAS, 'citas.revertir', ...PACIENTES, 'membresias.ver', 'membresias.vender', 'membresias.consumir', 'membresias.gestionar',
+      ...CITAS, 'citas.revertir', 'citas.trasladar_completada', ...PACIENTES, 'membresias.ver', 'membresias.vender', 'membresias.consumir', 'membresias.gestionar',
       'promociones.ver', 'promociones.gestionar', 'movimientos.ver', 'movimientos.editar', 'horarios.ver', 'horarios.editar', 'ausencias.gestionar',
       'profesionales.ver', 'profesionales.editar', 'competencias.editar', 'servicios.ver', 'servicios.editar',
       'analytics.ver', 'analytics.agentes', 'exportar.usar', 'comunicaciones.gestionar', 'canales.gestionar', 'notificaciones.ver', 'auditoria.ver',
@@ -78,7 +80,7 @@ export const ROLES_SISTEMA: { nombre: string; label: string; descripcion: string
   {
     // Recepción registra la historia a nombre de la podóloga (hc.registrar) y vende membresías en su sede.
     nombre: 'recepcionista', label: 'Recepcionista', descripcion: 'Agenda, pacientes y venta de membresías (su sede)', esSistema: true,
-    permisos: [...CITAS, 'citas.noshow_llego', ...PACIENTES, 'membresias.ver', 'membresias.vender', 'membresias.consumir', 'exportar.usar', 'comunicaciones.gestionar', ...CLINICA],
+    permisos: [...CITAS, 'citas.noshow_llego', 'citas.trasladar_completada', ...PACIENTES, 'membresias.ver', 'membresias.vender', 'membresias.consumir', 'exportar.usar', 'comunicaciones.gestionar', ...CLINICA],
   },
   {
     // Contact center ve TODAS las sedes (ROLES_TODAS_SEDES) y NO tiene acceso clínico.

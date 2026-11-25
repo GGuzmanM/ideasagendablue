@@ -6,7 +6,7 @@ import { es } from 'date-fns/locale';
 import { sedesApi, profesionalesApi, citasApi } from '../api';
 import { almuerzosApi, type BloqueoAlmuerzo } from '../api/almuerzos';
 import { permisosApi } from '../api/permisos';
-import { TURNOS_ALMUERZO, horasEnMinutos } from '@limablue/shared';
+import { TURNOS_ALMUERZO, horasEnMinutos, esTipoPodologia } from '@limablue/shared';
 import { useAuthStore } from '../stores/authStore';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -110,7 +110,7 @@ export function useAlmuerzosData(overrideSedeId?: string) {
 
   // Elegibles del módulo: podólogas en todas las sedes; fisioterapeutas solo en Paz Soldán.
   const elegibles = useMemo(
-    () => profesionales.filter((p) => p.tipo === 'podologa' || (p.tipo === 'fisioterapeuta' && esPazSoldan)),
+    () => profesionales.filter((p) => esTipoPodologia(p.tipo) || (p.tipo === 'fisioterapeuta' && esPazSoldan)),
     [profesionales, esPazSoldan],
   );
 

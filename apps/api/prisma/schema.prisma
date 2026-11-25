@@ -118,6 +118,8 @@ enum TipoProfesional {
   podologa
   medico
   fisioterapeuta
+  // 24-nov-2026: hace lo mismo que una podóloga (mismos servicios, horarios, reportes); en la agenda va después de las podólogas.
+  asistente_podologa
 }
 
 enum TurnoHorario {

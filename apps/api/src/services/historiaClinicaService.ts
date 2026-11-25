@@ -303,6 +303,8 @@ export async function historiaParaPdf(pacienteId: string) {
           diagnosticos: diagnosticosInclude,
           procedimientos: procedimientosInclude,
           escalas: escalasInclude,
+          // Fisioterapia: el mapa corporal (la escala de cada punto). Solo esa capa: las siluetas del pie no van al PDF.
+          dibujosSilueta: { where: { deletedAt: null, vista: 'cuerpo3d' }, select: { anotaciones: true } },
           // 05-oct-2026: el PDF de la historia completa NO muestra lo anulado (recetas, indicaciones y constancias);
           // lo anulado sigue en la historia en pantalla y en Auditoría.
           recetas: {

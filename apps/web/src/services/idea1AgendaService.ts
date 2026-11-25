@@ -422,7 +422,8 @@ export function procesarYOrdenarDoctores(params: {
       id: p.id,
       nombres: p.nombres,
       apellidos: p.apellidos,
-      especialidad: p.tipo || activeUnidadName,
+      // 24-nov-2026: la asistente sale como «asistente» en la cabecera de su columna (las podólogas igual que antes).
+      especialidad: p.tipo === 'asistente_podologa' ? 'asistente' : (p.tipo || activeUnidadName),
       activo: p.activo,
       sedeId: p.sedeActual?.id || sedeId || '',
       avatarUrl: undefined,
@@ -757,6 +758,7 @@ export function useIdea1AgendaData() {
         unidadNegocioId: unidadNegocioId!,
         fecha: fechaStr(),
         activo: true,
+        soloConTurno: true, // quien no trabaja ese día no sale como columna
       }),
     enabled: !!sedeId && !!unidadNegocioId,
   });
